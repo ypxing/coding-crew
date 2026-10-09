@@ -335,6 +335,14 @@ vol_dir() {
   echo "$FAKE/vols/$n"
 }
 
+# state_dir — the override's state volume (where the install lock lives), as a dir under the fake
+state_dir() {
+  local n
+  n="$(grep -o 'name: wt_[A-Za-z0-9_]*_state_[A-Za-z0-9]*' "$OVERRIDE" | head -1 | sed 's/^name: //')"
+  [ -n "$n" ] || return 1
+  echo "$FAKE/vols/$n"
+}
+
 _installs() { grep -c . "$FAKE/install.calls" || true; }
 
 @test "the first install runs the command, writes the stamp in the volume and releases the lock" {
@@ -345,7 +353,7 @@ _installs() { grep -c . "$FAKE/install.calls" || true; }
   [[ "$output" != *"Present:"* ]]
   [ "$(_installs)" -eq 1 ]
   [ -f "$(vol_dir)/.crew-stamp" ]
-  [ ! -e "$(vol_dir)/.crew-lock" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
 }
 
 @test "with the stamp present, no install command runs and it exits 0" {
@@ -355,7 +363,7 @@ _installs() { grep -c . "$FAKE/install.calls" || true; }
   [ "$status" -eq 0 ]
   [[ "$output" == *"Present:"* ]]
   [ "$(_installs)" -eq 1 ]
-  [ ! -e "$(vol_dir)/.crew-lock" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
 }
 
 @test "a second worktree with the same lockfiles reuses the volume: no install" {
@@ -392,14 +400,14 @@ _installs() { grep -c . "$FAKE/install.calls" || true; }
   [[ "$output" != *"Present:"* ]]
   [ "$(_installs)" -eq 2 ]
   [ -f "$(vol_dir)/.crew-stamp" ]
-  [ ! -e "$(vol_dir)/.crew-lock" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
 }
 
 @test "--force waits for a lock someone holds, like any other install" {
   use_fake_docker
   bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" >/dev/null
-  mkdir "$(vol_dir)/.crew-lock"
-  date +%s > "$(vol_dir)/.crew-lock/started"
+  mkdir "$(state_dir)/.crew-lock"
+  date +%s > "$(state_dir)/.crew-lock/started"
   SECONDS=0
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --force --timeout 2
   [ "$status" -eq 0 ]
@@ -414,7 +422,7 @@ _installs() { grep -c . "$FAKE/install.calls" || true; }
   [ "$status" -eq 3 ]
   [[ "$output" == *"npm ERR! boom"* ]]
   [ ! -e "$(vol_dir)/.crew-stamp" ]
-  [ ! -e "$(vol_dir)/.crew-lock" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
 }
 
 # ─── the lock: waiting and taking over ──────────────────────────────────────
@@ -422,8 +430,8 @@ _installs() { grep -c . "$FAKE/install.calls" || true; }
 # hold_lock <age-seconds> — a lock left in the volume by a holder that started <age> seconds ago
 hold_lock() {
   bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" >/dev/null
-  mkdir -p "$(vol_dir)/.crew-lock"
-  echo $(( $(date +%s) - $1 )) > "$(vol_dir)/.crew-lock/started"
+  mkdir -p "$(state_dir)/.crew-lock"
+  echo $(( $(date +%s) - $1 )) > "$(state_dir)/.crew-lock/started"
 }
 
 @test "a lock younger than --timeout makes the install wait for it" {
@@ -438,7 +446,7 @@ hold_lock() {
 @test "a wait ends as soon as the holder's install leaves the stamp" {
   use_fake_docker
   hold_lock 0
-  ( sleep 1; : > "$(vol_dir)/.crew-stamp"; rm -f "$(vol_dir)/.crew-lock/started"; rmdir "$(vol_dir)/.crew-lock" ) &
+  ( sleep 1; : > "$(vol_dir)/.crew-stamp"; rm -f "$(state_dir)/.crew-lock/started"; rmdir "$(state_dir)/.crew-lock" ) &
   SECONDS=0
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --timeout 60
   wait
@@ -457,7 +465,49 @@ hold_lock() {
   [ "$SECONDS" -lt 15 ]
   [ "$(_installs)" -eq 1 ]
   [ -f "$(vol_dir)/.crew-stamp" ]
-  [ ! -e "$(vol_dir)/.crew-lock" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
+}
+
+@test "the override mounts the lock's state volume outside every dependency directory" {
+  bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  grep -Eq '^      - wt_[A-Za-z0-9_]+_state_[0-9a-f]{8}:/crew-state$' "$OVERRIDE"
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --query state-path
+  [ "$output" = "/crew-state" ]
+}
+
+# An install that empties the vendor directory (as `npm ci` does) takes everything in it, the lock
+# included if it lived there: a second run would then find no lock and install again, concurrently.
+@test "two concurrent runs install once, even when the install empties the vendor directory" {
+  use_fake_docker
+  export FAKE_NPM_SLEEP=4
+  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" >"$TEMP_DIR/first.out" 2>&1 &
+  first=$!
+  sleep 2
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --timeout 60
+  wait "$first"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Present:"* ]]
+  [ "$(_installs)" -eq 1 ]
+  [ -f "$(vol_dir)/.crew-stamp" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
+}
+
+@test "two concurrent host-run installs run the command once, even when it empties the vendor directory" {
+  use_fake_docker
+  export FAKE_NPM_SLEEP=4
+  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" \
+    --install-cmd "docker compose run --rm app npm ci" >"$TEMP_DIR/first.out" 2>&1 &
+  first=$!
+  sleep 2
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --timeout 60 \
+    --install-cmd "docker compose run --rm app npm ci"
+  wait "$first"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Present:"* ]]
+  [[ "$output" != *"on the host"* ]]
+  [ "$(_installs)" -eq 1 ]
+  [ -f "$(vol_dir)/.crew-stamp" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
 }
 
 # ─── an --install-cmd that runs docker itself ────────────────────────────────
@@ -489,7 +539,7 @@ _skip_unless_make_sees_stubs() {
   order="$(grep -n -o -E ' _ (lock|unlock-ok) |run --rm app npm ci$|--entrypoint sh app -c for d' "$FAKE/docker.calls" | sed 's/^[0-9]*://' | tr -s ' ' | tr '\n' '|')"
   [ "$order" = " _ lock |run --rm app npm ci|--entrypoint sh app -c for d| _ unlock-ok |" ]
   [ -f "$(vol_dir)/.crew-stamp" ]
-  [ ! -e "$(vol_dir)/.crew-lock" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
 }
 
 @test "a host-run install with the stamp present runs neither the command nor the probe" {
@@ -500,7 +550,7 @@ _skip_unless_make_sees_stubs() {
   [[ "$output" == *"Present:"* ]]
   [[ "$output" != *"on the host"* ]]
   [ "$(_installs)" -eq 1 ]
-  [ ! -e "$(vol_dir)/.crew-lock" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
 }
 
 @test "a make target whose recipe runs plain docker compose runs on the host, then the volumes are probed" {
@@ -556,7 +606,7 @@ MAKE
   [[ "$output" == *"volumes the checks run against are still empty"* ]]
   [[ "$output" == *"/opt/app/node_modules"* ]]
   [ ! -e "$(vol_dir)/.crew-stamp" ]
-  [ ! -e "$(vol_dir)/.crew-lock" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
 }
 
 @test "a probe that itself fails is exit 5 naming the probe, not an empty volume" {
@@ -580,7 +630,7 @@ MAKE
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "docker compose run --rm app npm ci"
   [ "$status" -eq 3 ]
   [ ! -e "$(vol_dir)/.crew-stamp" ]
-  [ ! -e "$(vol_dir)/.crew-lock" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
 }
 
 @test "an install that runs inside the service is not probed" {

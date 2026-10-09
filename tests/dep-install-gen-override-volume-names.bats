@@ -41,12 +41,15 @@ names() {
 
   run names "$PARENT/product-services"
   [ "$status" -eq 0 ]
-  [ "${#lines[@]}" -eq 2 ]
+  [ "${#lines[@]}" -eq 3 ]
   root="${lines[0]}"
   [[ "$root" =~ ^wt_product_services_[0-9a-f]{4}_nm_root_[0-9a-f]{8}$ ]]
   [[ "${lines[1]}" =~ ^wt_product_services_[0-9a-f]{4}_nm_packages_web_[0-9a-f]{8}$ ]]
+  # the install lock's volume follows the dependency volumes
+  [[ "${lines[2]}" =~ ^wt_product_services_[0-9a-f]{4}_state_[0-9a-f]{8}$ ]]
   # one install writes every volume, so every name carries the same lock hash
   [ "${root##*_}" = "${lines[1]##*_}" ]
+  [ "${root##*_}" = "${lines[2]##*_}" ]
   # the services mount the same name
   run bash "$SCRIPT" --project-root "$PARENT/product-services" --main-root "$PARENT/product-services" --dry-run
   grep -qx "      - $root:/opt/app/node_modules" <<<"$output"
@@ -109,6 +112,17 @@ names() {
   echo 'console.log(1)' > "$PARENT/one/index.js"
   echo '# docs' > "$PARENT/one/README.md"
   [ "$(names "$PARENT/one" "$PARENT/main")" = "$(names "$PARENT/two" "$PARENT/main")" ]
+}
+
+@test "<lock8> and the volume names ignore manifests under dot-directories, as the manifest scan does" {
+  fixture "$PARENT/proj"
+  before="$(names "$PARENT/proj")"
+  mkdir -p "$PARENT/proj/.output/server" "$PARENT/proj/.claude/worktrees/x" "$PARENT/proj/packages/.cache/y"
+  echo '{"name":"built"}' > "$PARENT/proj/.output/server/package.json"
+  echo '{"name":"other"}' > "$PARENT/proj/.claude/worktrees/x/package.json"
+  echo '{"name":"cached"}' > "$PARENT/proj/packages/.cache/y/package.json"
+  [ "$(names "$PARENT/proj")" = "$before" ]
+  [ "$(bash "$SCRIPT" --project-root "$PARENT/proj" --main-root "$PARENT/proj" --query manifest-dirs)" = "$PARENT/proj" ]
 }
 
 @test "the volume key and the explicit name are the same, and the git hooks/info volumes are not hashed" {

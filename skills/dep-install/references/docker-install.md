@@ -108,7 +108,7 @@ the override, checks for the volumes' completion stamp (`.crew-stamp` in the roo
 volume; present → no install command runs), runs an `--install-cmd` that invokes docker itself on
 the host rather than nesting it — after checking it is not a `docker run`/`docker exec` (which load
 no compose file), and probing the shared volumes afterwards — and — the reason to call it here
-instead of hand-running `docker compose` yourself — takes a lock inside the volume (`.crew-lock`)
+instead of hand-running `docker compose` yourself — takes a lock in the override's state volume (`.crew-lock` at `/crew-state`, which an install that empties the dependency directory cannot delete)
 before actually installing, so this call and any other install already in flight against the same
 volume (another worktree with the same lockfiles, or another sprint) can never run at the same time.
 A lock older than `--timeout` is taken over; a younger one is waited for.

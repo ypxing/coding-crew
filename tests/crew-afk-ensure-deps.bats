@@ -671,7 +671,8 @@ volume_names() { grep -o 'name: wt_[A-Za-z0-9_]*' "$(git -C "$1" rev-parse --pat
   [ -n "$(volume_names "$WT1")" ]
   [ "$(volume_names "$WT1")" != "$(volume_names "$WT2")" ]
   [ "$(grep -c . "$TEMP_DIR/fake/install.calls")" -eq 2 ]
-  [ "$(ls "$TEMP_DIR/fake/vols" | wc -l)" -eq 2 ]
+  # one dependency volume and one lock (state) volume per lockfile hash
+  [ "$(ls "$TEMP_DIR/fake/vols" | wc -l)" -eq 4 ]
 }
 
 @test "two worktrees with identical lockfiles name the same volumes: one install, then DEPS: docker-present" {

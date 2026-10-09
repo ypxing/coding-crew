@@ -58,6 +58,33 @@ logged() { tr '\n' ' ' < "$LOG" | sed 's/ $//'; }
   [ "$(logged)" = "compose -f $WORK/docker-compose.yml -f $WORK/docker-compose.override.yml -f $OVERRIDE run app x" ]
 }
 
+@test "COMPOSE_FILE set only in the dir's .env: its entries become -f flags, then the override" {
+  printf 'OTHER=1\nCOMPOSE_FILE=a.yml:b.yml\n' > .env
+  run docker compose run app true
+  [ "$(logged)" = "compose -f a.yml -f b.yml -f $OVERRIDE run app true" ]
+}
+
+@test "the process env's COMPOSE_FILE wins over .env, and a quoted .env value with COMPOSE_PATH_SEPARATOR is split" {
+  printf 'COMPOSE_FILE=a.yml:b.yml\n' > .env
+  COMPOSE_FILE=c.yml run docker compose up
+  [ "$(logged)" = "compose -f c.yml -f $OVERRIDE up" ]
+  printf 'export COMPOSE_FILE="x.yml|y.yml" # note\nCOMPOSE_PATH_SEPARATOR=|\n' > .env
+  run docker compose up
+  [ "$(logged)" = "compose -f x.yml -f y.yml -f $OVERRIDE up" ]
+}
+
+@test "--env-file names the dotenv file COMPOSE_FILE is read from" {
+  printf 'COMPOSE_FILE=e.yml\n' > other.env
+  run docker compose --env-file other.env up
+  [ "$(logged)" = "compose --env-file other.env -f e.yml -f $OVERRIDE up" ]
+}
+
+@test "compose.yaml with a docker-compose.override.yml beside it: both are made explicit" {
+  touch compose.yaml docker-compose.override.yml
+  run docker compose run app true
+  [ "$(logged)" = "compose -f $WORK/compose.yaml -f $WORK/docker-compose.override.yml -f $OVERRIDE run app true" ]
+}
+
 @test "a default compose file with no override of its own adds just itself" {
   touch compose.yaml
   run docker compose up
