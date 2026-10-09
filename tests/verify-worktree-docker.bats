@@ -396,7 +396,7 @@ _installs() { grep -c . "$FAKE/install.calls" || true; }
   [ -f "$TEMP_DIR/.git/crew-compose.override.yml" ]
   [ "$(_installs)" -eq 1 ]
   # the install first, then the check, each a `docker compose run` carrying the override
-  runs="$(grep -E '^compose .* run ' "$FAKE/docker.calls")"
+  runs="$(grep -E '^compose .* run ' "$FAKE/docker.calls" | grep -v -e '--user=0')"
   [ "$(grep -c . <<<"$runs")" -ge 2 ]
   [[ "$(head -1 <<<"$runs")" == *"npm ci"* ]]
   [[ "$(tail -1 <<<"$runs")" == *"crew-compose.override.yml run --rm app sh -c cd \"/opt/app\" && true"* ]]

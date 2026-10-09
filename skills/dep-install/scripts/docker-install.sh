@@ -273,15 +273,22 @@ esac
 present() { echo "crew-stamp: present"; exit 0; }
 if [ "$force" != 1 ] && [ -f "$stamp" ]; then present; fi
 waited=0
-until mkdir "$lock" 2>/dev/null; do
+while ! mkdir "$lock" 2>/dev/null; do
   if [ "$force" != 1 ] && [ -f "$stamp" ]; then present; fi
+  if [ ! -d "$lock" ]; then
+    # no holder: the holder may have just released it (try once more), else the path is unusable
+    if mkdir "$lock" 2>/dev/null; then break; fi
+    if [ ! -d "$lock" ]; then
+      echo "crew-lock: cannot create the install lock at $lock and no other holder has it (is $s writable by this user?)" >&2
+      exit 1
+    fi
+  fi
   started=$(cat "$lock/started" 2>/dev/null)
   case "$started" in ""|*[!0-9]*) started="" ;; esac
   if [ -n "$started" ]; then age=$(( $(date +%s) - started )); else age=$waited; fi
   if [ "$age" -gt "$t" ]; then
     echo "crew-lock: taking over a lock older than ${t}s" >&2
-    if mv "$lock" "$lock.stale.$$" 2>/dev/null; then unlock "$lock.stale.$$"; fi
-    continue
+    if mv "$lock" "$lock.stale.$$" 2>/dev/null; then unlock "$lock.stale.$$"; continue; fi
   fi
   sleep 1
   waited=$((waited + 1))
@@ -307,6 +314,13 @@ _container() {
     *)   CONTAINER_ARGV=("${COMPOSE_RUN[@]}" --no-deps --entrypoint sh "$SERVICE" -c "$CONTAINER_SCRIPT" _ "$mode" "$STAMP_DIR" "$TIMEOUT" "$FORCE" "$cmd" "$STATE_PATH") ;;
   esac
 }
+
+# The state volume is a fresh named volume Docker mounts root-owned (no image ships the path), so
+# a service running as a non-root user could not create the lock in it. One root run opens it up
+# (sticky and world-writable, like /tmp) before any lock is taken; best-effort — if it fails the
+# lock's own error names the path.
+${TIMEOUT_BIN:+"$TIMEOUT_BIN" 120} "${COMPOSE_RUN[@]}" --no-deps --user=0 --entrypoint sh "$SERVICE" \
+  -c 'mkdir -p "$1" && chmod 1777 "$1"' _ "$STATE_PATH" >/dev/null 2>&1 || true
 
 OUT_FILE="$(mktemp)"
 LOCK_HELD=0

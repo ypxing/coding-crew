@@ -32,8 +32,10 @@ setup() {
   unset MAIN_ROOT
   TEMP_DIR=$(mktemp -d)
   export TEMP_DIR
-  MAIN=$(mktemp -d)
-  WORK=$(mktemp -d)
+  # physical paths: the docker shim reports the override via `git rev-parse`, which resolves
+  # symlinks (macOS's /var -> /private/var), so a logical path would never match its calls
+  MAIN=$(cd "$(mktemp -d)" && pwd -P)
+  WORK=$(cd "$(mktemp -d)" && pwd -P)
   export MAIN WORK
   git init -q "$MAIN"
   git init -q "$WORK"
@@ -456,6 +458,30 @@ hold_lock() {
   [ "$(_installs)" -eq 0 ]
 }
 
+@test "a lock path that cannot be created fails fast with an error naming it, not a busy wait" {
+  use_fake_docker
+  bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  mkdir -p "$(state_dir)"
+  : > "$(state_dir)/.crew-lock"   # a file where the lock dir goes: mkdir fails, and no holder exists
+  SECONDS=0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --timeout 30
+  [ "$status" -eq 3 ]
+  [ "$SECONDS" -lt 15 ]
+  [[ "$output" == *"cannot create the install lock"*".crew-lock"* ]]
+  [ "$(_installs)" -eq 0 ]
+}
+
+@test "the state volume is opened to a non-root service in a root run before the lock is taken" {
+  use_fake_docker
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  prep="$(grep -n -e '--user=0' "$FAKE/docker.calls" | head -1 | cut -d: -f1)"
+  [ -n "$prep" ]
+  [ "$prep" -eq 1 ]
+  [[ "$(sed -n "${prep}p" "$FAKE/docker.calls")" == *"--no-deps"*"--entrypoint sh"* ]]
+  [ -f "$(vol_dir)/.crew-stamp" ]
+}
+
 @test "a lock older than --timeout is taken over, not waited for" {
   use_fake_docker
   hold_lock 1000
@@ -637,7 +663,8 @@ MAKE
   use_fake_docker
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
-  ! grep -q -- "--entrypoint" "$FAKE/docker.calls"
+  # the probe is the one container run that lists the volumes; the state-dir prep is not it
+  ! grep -q -- "ls -A" "$FAKE/docker.calls"
 }
 
 @test "no compose file is exit 2, not a failure" {
