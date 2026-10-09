@@ -154,6 +154,7 @@ test("a user's own worktree on feature/<slug> is never removed: the run exits 1 
 test("launched from a linked worktree, the run resolves the main checkout: sprint.env's MAIN_ROOT is it", () => {
   const root = userOnMain();
   addIssue(root, "01-alpha.md");
+  addIssue(root, "02-fix-findings-alpha.md", { status: "deferred-findings" });
   const linked = join(root, "..", `${root.split("/").pop()}-linked`);
   git(root, "worktree", "add", "-q", "-b", "scratchpad", linked, "main");
   const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], {
@@ -162,6 +163,9 @@ test("launched from a linked worktree, the run resolves the main checkout: sprin
   });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(readFileSync(join(root, ".scratch/demo/sprint.env"), "utf8"), new RegExp(`MAIN_ROOT="?${root}"?\\n`));
+  // The orchestrator's tracker reads the main checkout: the parked fix issue was found, promoted and closed.
+  assert.deepEqual([...state(root).completed_slugs].sort(), ["alpha", "fix-findings-alpha"]);
+  assert.equal(existsSync(join(root, ".scratch/demo/issues/done/02-fix-findings-alpha.md")), true);
 });
 
 test("a new feature branch cut from a local default branch behind origin logs the WARNING", () => {

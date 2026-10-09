@@ -33,7 +33,9 @@ export async function mergeAndClose(ctx, worker, outcome) {
     // A retry would re-run the same merge into the same dirty feature worktree: block for a human.
     const dirty = /failed \(main-tree-dirty — ([^)]*)\)/.exec(merge.stderr);
     if (dirty) {
-      const summary = `${dirty[1]} — the feature worktree had uncommitted changes; re-running recreates it (discarding them) and resumes at the merge`;
+      // The script names the feature worktree's path, which is gone once the run ends: drop it.
+      const what = dirty[1].replace(/ in .*? would be overwritten/, " would be overwritten");
+      const summary = `${what} — the feature worktree had uncommitted changes; re-running recreates it (discarding them) and resumes at the merge`;
       return finishBlocked(ctx, worker, outcome, taggedReason(MAIN_TREE_DIRTY_TAG, summary));
     }
     // merge-branches.sh's own conflict line; it has already aborted the merge.
