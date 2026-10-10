@@ -40,16 +40,44 @@ That's the whole workflow.
 
 ```mermaid
 flowchart LR
-    plan["👤 <b>plan</b><br/>/crew-grill"] --> issues["🤖 PRD + issues"]
-    issues --> build["🤖 <b>build in parallel</b><br/>TDD · your checks · criteria"]
-    build --> review["🤖 <b>review the whole feature</b><br/>against the PRD"]
-    review --> pr["👤 <b>merge a PR</b>"]
-    review -. "fix findings once" .-> build
+    idea(["💡 <b>Your idea</b>"]) --> plan
+
+    subgraph you1 ["👤 You"]
+        plan["🧭 <b>Plan together</b><br/><code>/crew-grill</code>"]
+    end
+
+    plan --> issues
+
+    subgraph crew ["🤖 The crew · /crew-afk · while you're away"]
+        direction LR
+        issues["📋 <b>PRD + issues</b><br/>testable criteria"]
+        issues --> c1["🧪 <b>Coder</b><br/>TDD · own worktree"]
+        issues --> c2["🧪 <b>Coder</b><br/>TDD · own worktree"]
+        issues --> c3["🧪 <b>Coder</b><br/>TDD · own worktree"]
+        c1 & c2 & c3 --> gate{{"🚦 <b>Gate</b><br/>your checks + criteria"}}
+        gate -- "merge" --> review["🔍 <b>Feature review</b><br/>against the PRD"]
+        review -. "fix findings once" .-> gate
+    end
+
+    review --> pr
+
+    subgraph you2 ["👤 You"]
+        pr(["✅ <b>One reviewed PR</b>"])
+    end
 
     classDef human fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
-    classDef bot fill:#f1f5f9,stroke:#64748b,color:#0f172a
-    class plan,pr human
-    class issues,build,review bot
+    classDef bot fill:#ffffff,stroke:#64748b,stroke-width:1.5px,color:#0f172a
+    classDef code fill:#ecfdf5,stroke:#059669,stroke-width:1.5px,color:#064e3b
+    classDef gate fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
+    classDef done fill:#dcfce7,stroke:#16a34a,stroke-width:2.5px,color:#14532d
+    class idea,plan human
+    class issues,review bot
+    class c1,c2,c3 code
+    class gate gate
+    class pr done
+    style you1 fill:#eff6ff,stroke:#93c5fd,color:#1e3a8a
+    style you2 fill:#eff6ff,stroke:#93c5fd,color:#1e3a8a
+    style crew fill:#f8fafc,stroke:#cbd5e1,color:#334155
 ```
 
 1. **Plan.** `/crew-grill` questions your idea until the edge cases are decided, then splits the work
