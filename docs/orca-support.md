@@ -91,12 +91,16 @@ never edits an issue's `Status:` or criteria boxes.
 - **Where.** orca creates the log terminal and the agent with `--worktree path:<_feature>`. herdr
   opens both as tabs of the feature worktree's workspace (`worktree open` returns the one already
   open), never the triggering workspace (`HERDR_WORKSPACE_ID` is not read).
-- **`_feature` is kept.** While the agent is live at the end of the run (a signal included) the
-  `_feature` worktree stays registered and on disk, and herdr's workspace holding the agent is
-  not closed. A run with no host, under `--dry-run`, or whose agent failed to open removes
-  `_feature` as before. The next run reuses a clean `_feature` in place and refuses a dirty one,
-  listing its files. A run from inside `_feature` takes `<slug>` from the path; `--feature-slug`
-  naming another feature exits 1.
+- **`_feature` is kept.** While the agent still passes the host's liveness check at the end of
+  the run (a signal included) the `_feature` worktree stays registered and on disk, and herdr's
+  workspace holding the agent is not closed. A run with no host, under `--dry-run`, or whose agent
+  failed to open or is gone by the end removes `_feature` as before; herdr's workspace is closed
+  only when this run made it (`worktree open`'s `already_open` is false), never one a developer
+  already had open. The next run reuses a clean `_feature` in place and refuses a dirty one
+  (whatever branch or detached HEAD it is on), listing its files. A run that reuses or adopts the
+  agent pushes it a run-start notice, which returns it to "leave the checkout alone until the end
+  notice". A run from inside `_feature` takes `<slug>` from the path; `--feature-slug` naming
+  another feature exits 1.
 - **Env.** An agent a host starts gets the host's shell env, not crew-afk's (a live probe failed
   with "There's an issue with the selected model" until the launch carried
   `CLAUDE_CODE_USE_BEDROCK=1`). So the host is given `bash .scratch/<slug>/watch/launch.sh`,

@@ -217,7 +217,8 @@ branch that moved during review fails `check ac --at-tip` as stale.
 Under orca or herdr, `main.mjs` calls `ensureWatchSession` (`pane-host/index.mjs`) right after
 `ensurePaneWorkspace`, inside `if (options.paneHost && !options.dryRun)`. One interactive agent per slug, in the
 sprint's `crew/<slug>/_feature` (`effects.featureRoot`), on `--platform` and the coder's resolved model: each adapter's
-`interactive({cwd, mainRoot, model, protocol, policy})` returns its argv with the rendered
+`interactive({cwd, mainRoot, model, protocol, policy})` returns its argv (a writing role under codex gets
+`workspaceWriteArgs`: network on, the git dirs writable, `mainRoot` added; approvals stay on) with the rendered
 `orchestrator/roles/followup.md` (`ROLE_POLICY.followup`: `readOnly: false`, no sub-agents, no default effort; the
 CLI's own permission prompts stay on) as the initial prompt, and `worker-terminal.mjs`'s `writeLaunchScript`
 (the `envScript` a worker terminal uses, not a copy) gives the host a `bash <launch.sh>` that sources crew-afk's 0600
@@ -233,10 +234,19 @@ path:<featureRoot>`; herdr the feature worktree's workspace, never `HERDR_WORKSP
   (and the launch `env.sh` is deleted) and `_paneWatch = null`, so pushes log `MILESTONE-PUSH-SKIPPED` and the exit
   code is unchanged.
 - Nothing closes the agent, a signal and a thrown error included: orca's handle is never added to `_paneTerminals`,
-  and `closePaneWorkspace` is a no-op while `hasPaneAgent(effects)`. `main.mjs` keeps `_feature` at the end (`finally`
-  and the signal handler) under the same test; with no agent it removes it as before. `ensureWorktree` in checkout
-  mode reuses a clean worktree already at `path` on `branch` (`created: false`) and refuses a dirty one (`stale`,
-  listing its files).
+  and `closePaneWorkspace` is a no-op while `hasPaneAgent(effects)`. At the end (`finally` and the signal handler)
+  `settlePaneAgent` first asks the adapter whether the recorded agent still passes `watchAlive` (its blocking twin
+  `watchAliveSync`, so the handler need not yield); a dead one is dropped (`_paneWatch` null). `main.mjs` then keeps
+  `_feature` and the workspace only for a live one; with none it removes `_feature` as before and closes the
+  workspace. herdr's `closeWorkspace` closes only a workspace this run made (`worktree open`'s `already_open` is
+  `false`; `workspace create` always). `ensureWorktree` in checkout mode reuses a clean worktree already at `path`
+  on `branch` (`created: false`) and refuses a dirty one (`stale`, listing its files) whatever branch or detached
+  HEAD it has checked out; a clean one on another branch is recreated.
+- A run that reused or adopted the agent (`_paneWatchReused`) pushes it a run-start notice
+  (`queueRunStartNotice`, right after `ensureWatchSession`); `followup.md` says that notice returns it to the
+  "until the end notice" rules. The brief names every sprint source under the main checkout (`<main>`, the git
+  common dir's parent) and carries the tracker lookup, since `_feature` has neither `.scratch/` nor, when it is
+  gitignored, `.coding-crew/`; `skills/crew-afk/SKILL.md`'s `CREW_AFK` lookup falls back to the same main-checkout copy.
 - `resolveFeatureSlug` takes the slug from a cwd inside `<worktreeRoot>/crew/<slug>/_feature` under any tracker and
   refuses a differing `--feature-slug` (exit 1) before the lease.
 - `ctx.out` appends to `.scratch/<slug>/traces/summary-<runId>.md` (`:` → `-`) and, while an agent is live, prints
