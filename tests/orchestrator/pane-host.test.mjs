@@ -208,6 +208,7 @@ test("ensurePaneWorkspace (herdr) opens the _feature worktree as the sprint work
   const open = effects._calls[0];
   assert.deepEqual(open.slice(0, 4), ["herdr", "worktree", "open", "--path"]);
   assert.equal(open[4], effects.featureRoot);
+  assert.equal(open[open.indexOf("--cwd") + 1], root, "herdr resolves --path in the repo --cwd names, not the focused workspace's");
   assert.equal(open[open.indexOf("--label") + 1], "alpha");
 });
 

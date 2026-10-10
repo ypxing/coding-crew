@@ -26,14 +26,15 @@ export const launcherHandle = () => process.env.HERDR_PANE_ID || null;
 /**
  * The sprint's workspace is its feature-branch worktree (`worktree open` returns the workspace
  * already open on it, so a re-run reuses the one a live agent sits in, whatever pane launched this
- * run); with none (a dry run) the main checkout. Never the triggering workspace.
+ * run); with none (a dry run) the main checkout. Never the triggering workspace. `--cwd` names the
+ * repo: herdr resolves `--path` against it (or else the focused workspace), not the CLI's cwd.
  * Returns `{workspaceId, created}`: `created` is false for a workspace `worktree open` found
  * already open (its `already_open`, which a host that omits it leaves false too: not ours to close).
  */
 async function openFeatureWorkspace(effects, label) {
   const inWorktree = Boolean(effects.featureRoot) && effects.featureRoot !== effects.mainRoot;
   const create = inWorktree
-    ? await paneHostExec(effects, ["worktree", "open", "--path", effects.featureRoot, "--label", label, "--no-focus"])
+    ? await paneHostExec(effects, ["worktree", "open", "--path", effects.featureRoot, "--cwd", effects.mainRoot, "--label", label, "--no-focus"])
     : await paneHostExec(effects, ["workspace", "create", "--cwd", effects.mainRoot, "--label", label, "--no-focus"]);
   const result = paneHostJson(create)?.result;
   const workspaceId = result?.workspace?.workspace_id;
