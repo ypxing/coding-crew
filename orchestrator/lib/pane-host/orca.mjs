@@ -1,8 +1,9 @@
 /**
  * orca (https://onorca.dev): flat — a worktree is the container, a terminal is the pane,
- * so there is no workspace object to create, reuse or close. The main checkout is already
- * an orca-managed worktree; a terminal is scoped to it by `--worktree path:<mainRoot>`, or to the
- * dispatch's own worktree once adoptWorktree has named that to orca.
+ * so there is no workspace object to create, reuse or close. The log terminal and the feature
+ * agent are scoped to the sprint's `_feature` worktree by `--worktree path:<featureRoot>` (named
+ * to orca by adoptWorktree when it was made); a worker terminal to the dispatch's own worktree
+ * once adopted, else to the main checkout, which is already an orca-managed worktree.
  * Ambient ids: ORCA_WORKTREE_ID / ORCA_TAB_ID / ORCA_TERMINAL_HANDLE. See
  * docs/orca-support.md.
  */
@@ -56,6 +57,12 @@ export function adoptWorktree(effects, path, { title, issue, parent }) {
   (effects._paneAdopted ??= new Set()).add(path);
 }
 
+/** The worktree the sprint's own terminals open in: `_feature`, or the main checkout when the run has none (a dry run). */
+const featureWorktree = (effects) => effects.featureRoot ?? effects.mainRoot;
+
+/** The pane that launched this run, for D6's adoption: orca's ambient terminal handle. */
+export const launcherHandle = () => process.env.ORCA_TERMINAL_HANDLE || null;
+
 /**
  * Throws when the log terminal can't be created: with no workspace create to fail loudly,
  * a failure preflight didn't catch would otherwise leave no tab and no reason.
@@ -91,7 +98,7 @@ async function openLogTerminal(effects, label, logFile) {
       "terminal",
       "create",
       "--worktree",
-      `path:${effects.mainRoot}`,
+      `path:${featureWorktree(effects)}`,
       "--title",
       `${label}-log`,
       "--command",
@@ -190,9 +197,9 @@ export async function watchAlive(effects, handle) {
 }
 
 /**
- * The watch agent: a terminal in the main checkout running `command`. Its handle is deliberately
- * never `track`ed, so no sweep (closeTerminals) can close it. Returns `{handle}` or `{failure}`,
- * never throws.
+ * The feature agent: a terminal in the `_feature` worktree running `command`. Its handle is
+ * deliberately never `track`ed, so no sweep (closeTerminals) can close it. Returns `{handle}` or
+ * `{failure}`, never throws.
  */
 export async function openWatch(effects, { slug, command }) {
   try {
@@ -200,7 +207,7 @@ export async function openWatch(effects, { slug, command }) {
       "terminal",
       "create",
       "--worktree",
-      `path:${effects.mainRoot}`,
+      `path:${featureWorktree(effects)}`,
       "--title",
       `${slug}-watch`,
       "--command",
@@ -238,7 +245,7 @@ export async function notify(effects, handle, message) {
   try {
     const agentIdentity = paneHostJson(show)?.result?.terminal?.agentIdentity;
     if (!agentIdentity) {
-      const reason = "watch terminal is not running an agent orca recognises";
+      const reason = "agent terminal is not running an agent orca recognises";
       effects.log?.(`NOTIFY-SKIP ${reason}`);
       return { sent: false, reason };
     }

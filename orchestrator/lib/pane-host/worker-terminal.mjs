@@ -140,7 +140,7 @@ export async function spawnInWorkerTerminal(
 }
 
 /**
- * An interactive agent a host starts (the watch agent) gets that host's shell
+ * An interactive agent a host starts (the feature agent) gets that host's shell
  * env, not crew-afk's, so it runs through the same `env.sh` a worker terminal does. Writes
  * `<dir>/env.sh` (0600, sourced then deleted by the script) and `<dir>/launch.sh`: source it, cd to
  * `cwd`, then `exec` the argv, so the agent is the terminal's process. The argv (a protocol in it,

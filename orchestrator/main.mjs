@@ -14,9 +14,11 @@
  *                                           none] or $CREW_PANE_HOST, which beats the file, as
  *                                           do the legacy $ORCA_ENV=1 / $HERDR_ENV=1 (orca
  *                                           first). Opens one tab tailing the trace log and
- *                                           one watch agent for the slug (reused across runs,
- *                                           never closed) that every milestone and the outcome
- *                                           are pushed to; nothing load-bearing runs through it. Needs
+ *                                           one feature agent for the slug, both in its
+ *                                           `_feature` worktree (reused across runs, never
+ *                                           closed; `_feature` is kept while it lives), that
+ *                                           every milestone and the outcome are pushed to;
+ *                                           nothing load-bearing runs through it. Needs
  *                                           `herdr server` / `orca open` running. `run` prints
  *                                           `PANE-HOST: <host|none>` first, for a human or script
  *                                           that wants the resolved host (the launcher skills do
@@ -109,10 +111,10 @@ import {
   retiredNotice,
   validateFlags,
 } from "./lib/crew-config.mjs";
-import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, notifyWatchSession } from "./lib/pane-host/index.mjs";
+import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, hasPaneAgent, notifyWatchSession } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
-import { ensureWorktree, featureWorktreePath, removeWorktree, worktreeRoot } from "./lib/worktree.mjs";
+import { ensureWorktree, featureSlugOfPath, featureWorktreePath, removeWorktree, worktreeRoot } from "./lib/worktree.mjs";
 import { resolveInstallDir } from "./lib/install-dir.mjs";
 import { skillDirCandidates } from "./lib/skill-dirs.mjs";
 import { acquireLease, releaseLease } from "./lib/lease.mjs";
@@ -285,8 +287,20 @@ function readyFeatureCandidates(mainRoot) {
  * path) would mean, or explain why it can't. Returns `{ slug }` (slug may be null when
  * nothing is ready yet — session-init.sh's own "No issues found" error still covers that),
  * or `{ error }` when more than one feature dir has a ready issue.
+ *
+ * A cwd inside `<worktreeRoot>/crew/<slug>/_feature` names its feature, under any tracker, ahead
+ * of the ready-issue scan; an explicit slug that differs from it is refused.
  */
-function resolveFeatureSlug(mainRoot, explicitSlug) {
+function resolveFeatureSlug(mainRoot, explicitSlug, worktreeRootDir, cwd = process.cwd()) {
+  const here = worktreeRootDir ? featureSlugOfPath(worktreeRootDir, cwd) : null;
+  if (here) {
+    if (explicitSlug && explicitSlug !== here) {
+      return {
+        error: `crew-afk: --feature-slug ${explicitSlug} names a different feature than the checkout this runs in: ${cwd} is the _feature worktree of '${here}'. Drop --feature-slug to run '${here}', or run '${explicitSlug}' from the main checkout.`,
+      };
+    }
+    return { slug: here };
+  }
   if (explicitSlug) return { slug: explicitSlug };
   const candidates = readyFeatureCandidates(mainRoot);
   if (candidates.size <= 1) return { slug: candidates.size === 1 ? [...candidates.keys()][0] : null };
@@ -579,7 +593,7 @@ async function main() {
   // --- plan: read-only, zero tokens ----------------------------------------
   if (options.command === "plan") {
     // Resolved exactly as `run` resolves it, so the preview matches what `run` would do.
-    const resolved = resolveFeatureSlug(mainRoot, options.featureSlug);
+    const resolved = resolveFeatureSlug(mainRoot, options.featureSlug, options.worktreeRoot);
     if (resolved.error) {
       console.error(resolved.error);
       return 1;
@@ -626,7 +640,7 @@ async function main() {
 
   // --- run -----------------------------------------------------------------
   // The try starts here, not around runSprint, so a setup failure also reaches the
-  // end-of-run push in `finally` — the watch agent's only notice that the run ended. State is
+  // end-of-run push in `finally` — the feature agent's only notice that the run ended. State is
   // declared outside it so `finally` sees whatever got assigned.
   let sprint;
   // A run-stopping failure once the sprint exists: stderr for whoever launched the run, and the
@@ -655,12 +669,17 @@ async function main() {
   let runStarted = false;
   // `.scratch/<slug>/traces/summary-<runId>.md`, set once ctx exists: all ctx.out printed.
   let summaryFile;
+  // Set when ctx.out kept summary text off stdout because the feature agent was there to get it.
+  let outWithheld = false;
+  // How the end push went; `sent: true` is what lets stdout end with a pointer line.
+  let endPush = null;
   let lockPath;
   let lease;
-  // The sprint's `crew/<slug>/_feature` worktree, once made. Removed on every ending; the branch stays.
+  // The sprint's `crew/<slug>/_feature` worktree, once made. Removed on every ending unless the
+  // feature agent is live in it (`keep`: the developer works there next); the branch stays.
   let featureWorktree;
-  const removeFeatureWorktree = () => {
-    if (!featureWorktree) return;
+  const removeFeatureWorktree = ({ keep = false } = {}) => {
+    if (!featureWorktree || keep) return;
     const path = featureWorktree;
     featureWorktree = null;
     removeWorktree(effects, { mainRoot, path });
@@ -680,7 +699,8 @@ async function main() {
         console.error(`crew-afk: could not record why the run ended: ${err.message}`);
       }
     }
-    removeFeatureWorktree();
+    // The feature agent keeps its worktree, as at a normal ending.
+    removeFeatureWorktree({ keep: hasPaneAgent(effects) });
     if (lease) releaseLease(effects, lease);
     process.exit(SIGNAL_EXIT[signal]);
   };
@@ -699,7 +719,7 @@ async function main() {
     }
 
     // Before session-init.sh touches disk — see readyFeatureCandidates.
-    resolved = resolveFeatureSlug(mainRoot, options.featureSlug);
+    resolved = resolveFeatureSlug(mainRoot, options.featureSlug, options.worktreeRoot);
     if (resolved.error) {
       console.error(resolved.error);
       exitCode = 1;
@@ -817,7 +837,9 @@ async function main() {
         platform: options.platform,
         // The coder's resolved model, when the coder runs on this platform (else the CLI's own).
         model: options.crew.coder.runtime === options.platform ? options.model : undefined,
-        effort: options.effort?.watcher,
+        effort: options.effort?.followup,
+        // A failed open is a WARN that must outlive the scrollback, not a debug-level effects line.
+        log: (line) => emit(line.replace(/^WARN /, ""), /^WARN /.test(line) ? "warn" : "info"),
       });
     }
 
@@ -879,7 +901,10 @@ async function main() {
         if (shows("debug")) console.error(line);
       },
       out: (text) => {
-        console.log(text);
+        // With a live feature agent the summary goes to the file alone: the agent gets it at the
+        // end push, and stdout ends with a pointer or, failing that, the file (below).
+        if (!effects._paneWatch) console.log(text);
+        else outWithheld = true;
         try {
           appendFileSync(summaryFile, `${text}\n`);
         } catch {
@@ -939,6 +964,9 @@ async function main() {
         console.error(`crew-afk: could not record why the run ended: ${err.message}`);
       }
     }
+    // The feature agent outlives the run: `_feature` and the workspace holding it stay while it
+    // is there (a failed open, --dry-run or no host leaves none, and both go as before).
+    const agentLive = hasPaneAgent(effects);
     // No-ops unless opened above; here so a thrown error can't leave them dangling.
     await closePaneLogTab(effects);
     await closePaneWorkspace(effects);
@@ -950,9 +978,9 @@ async function main() {
       const label = resolved?.slug ? `crew-afk (${resolved.slug})` : "crew-afk";
       // The summary file names itself; a run that never reached ctx has only the failure's first line.
       const detail = summaryFile && existsSync(summaryFile) ? `Summary: ${summaryFile}` : failureLine ?? "no summary was written";
-      await notifyWatchSession(effects, `${label}: sprint ${outcome}. ${detail}`);
+      endPush = await notifyWatchSession(effects, `${label}: sprint ${outcome}. ${detail}`);
     }
-    removeFeatureWorktree();
+    removeFeatureWorktree({ keep: agentLive });
     if (lease) {
       const r = releaseLease(effects, lease);
       if (r.superseded) console.error(`crew-afk: feature lease ${lease.slug} is now held by another run — left alone.`);
@@ -965,6 +993,17 @@ async function main() {
     }
     // Last: released earlier, a second `run` could start while this one is still closing.
     releaseSprintLock(lockPath);
+    if (outWithheld && summaryFile) {
+      if (endPush?.sent) {
+        console.log(`crew-afk: summary sent to the ${sprint?.featureSlug ?? resolved?.slug} agent in ${effects.featureRoot} — also at ${summaryFile}`);
+      } else {
+        try {
+          process.stdout.write(readFileSync(summaryFile, "utf8"));
+        } catch {
+          /* nothing was written, so nothing was withheld */
+        }
+      }
+    }
     for (const signal of Object.keys(SIGNAL_EXIT)) process.removeListener(signal, onSignal);
   }
 }

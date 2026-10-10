@@ -43,7 +43,7 @@ export default {
   },
 
   /**
-   * The watch agent: claude's own interactive mode, the protocol as its first prompt. The prompt
+   * The feature agent: claude's own interactive mode, the protocol as its first prompt. The prompt
    * comes first because `--add-dir` and `--disallowedTools` are variadic and would swallow one that
    * followed. Permission prompts stay on: a human is in the pane.
    */

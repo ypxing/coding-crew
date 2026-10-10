@@ -53,6 +53,7 @@ REPO/.coding-crew/crew-afk/platforms.json exec=0
 REPO/.coding-crew/crew-afk/review-rollup.mjs exec=0
 REPO/.coding-crew/crew-afk/roles/ /
 REPO/.coding-crew/crew-afk/roles/coder.md exec=0
+REPO/.coding-crew/crew-afk/roles/followup.md exec=0
 REPO/.coding-crew/crew-afk/roles/reviewer.md exec=0
 REPO/.coding-crew/crew-afk/roles/reviewer/ /
 REPO/.coding-crew/crew-afk/roles/reviewer/references/ /
@@ -64,7 +65,6 @@ REPO/.coding-crew/crew-afk/roles/reviewer/scripts/ /
 REPO/.coding-crew/crew-afk/roles/reviewer/scripts/dependency-audit.sh exec=1
 REPO/.coding-crew/crew-afk/roles/reviewer/scripts/review-context.sh exec=1
 REPO/.coding-crew/crew-afk/roles/triage.md exec=0
-REPO/.coding-crew/crew-afk/roles/watcher.md exec=0
 REPO/.coding-crew/dep-install/ /
 REPO/.coding-crew/dep-install/scripts/ /
 REPO/.coding-crew/dep-install/scripts/detect-compose-bypass.sh exec=1
