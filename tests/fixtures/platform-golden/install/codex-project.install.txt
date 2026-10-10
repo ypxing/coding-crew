@@ -124,7 +124,6 @@ REPO/.coding-crew/crew-afk/lib/commands.mjs exec=0
 REPO/.coding-crew/crew-afk/lib/crew-config.mjs exec=0
 REPO/.coding-crew/crew-afk/lib/dispatch.mjs exec=0
 REPO/.coding-crew/crew-afk/lib/effects.mjs exec=0
-REPO/.coding-crew/crew-afk/lib/followup.mjs exec=0
 REPO/.coding-crew/crew-afk/lib/install-dir.mjs exec=0
 REPO/.coding-crew/crew-afk/lib/integration-fix.mjs exec=0
 REPO/.coding-crew/crew-afk/lib/labels.mjs exec=0
@@ -176,7 +175,6 @@ REPO/.coding-crew/crew-afk/roles/reviewer/scripts/ /
 REPO/.coding-crew/crew-afk/roles/reviewer/scripts/dependency-audit.sh exec=1
 REPO/.coding-crew/crew-afk/roles/reviewer/scripts/review-context.sh exec=1
 REPO/.coding-crew/crew-afk/roles/triage.md exec=0
-REPO/.coding-crew/crew-afk/roles/watcher.md exec=0
 REPO/.coding-crew/dep-install/ /
 REPO/.coding-crew/dep-install/scripts/ /
 REPO/.coding-crew/dep-install/scripts/detect-compose-bypass.sh exec=1

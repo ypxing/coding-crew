@@ -11,13 +11,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ADAPTERS, DEFAULT_PARALLEL, PLATFORMS } from "../../orchestrator/lib/adapters/index.mjs";
 import { ROLE_AGENTS, ROLE_POLICY, renderRolePrompt } from "../../orchestrator/lib/adapters/render.mjs";
 
+const ROLES_DIR = fileURLToPath(new URL("../../orchestrator/roles", import.meta.url));
 const PLATFORMS_JSON = JSON.parse(readFileSync(fileURLToPath(new URL("../../orchestrator/platforms.json", import.meta.url)), "utf8"));
 
 /** The adapter contract's required fields, and the type each must have. */
@@ -87,34 +88,30 @@ test("ROLE_POLICY declares a policy for every role with a protocol", () => {
 // Since then: the reviewer and triage may spawn sub-agents, so claude no longer denies them Agent.
 // And claude passes the role's effort (`--effort`), which it used to drop.
 const CLAUDE_READ_ONLY = ["--effort", "high", "--disallowedTools", "Edit", "Write", "NotebookEdit"];
-// The watcher: read-only, no sub-agents, and no effort (its CLI's default applies).
+// The feature agent (followup): it edits, takes no sub-agents, and has no effort (its CLI's default applies).
 const EXPECTED_POLICY_ARGS = {
   claude: {
     coder: ["--effort", "high", "--disallowedTools", "Agent"],
     reviewer: CLAUDE_READ_ONLY,
     triage: CLAUDE_READ_ONLY,
-    watcher: ["--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent"],
     followup: ["--disallowedTools", "Agent"],
   },
   copilot: {
     coder: ["--reasoning-effort", "high"],
     reviewer: ["--reasoning-effort", "high", "--deny-tool", "write"],
     triage: ["--reasoning-effort", "high", "--deny-tool", "write"],
-    watcher: ["--deny-tool", "write"],
     followup: [],
   },
   pi: {
     coder: ["--thinking", "high", "--tools", "read,bash,edit,write"],
     reviewer: ["--thinking", "high", "--tools", "read,bash"],
     triage: ["--thinking", "high", "--tools", "read,bash"],
-    watcher: ["--tools", "read,bash"],
     followup: ["--tools", "read,bash,edit,write"],
   },
   codex: {
     coder: ["-c", 'model_reasoning_effort="high"'],
     reviewer: ["-c", 'model_reasoning_effort="high"'],
     triage: ["-c", 'model_reasoning_effort="high"'],
-    watcher: [],
     followup: [],
   },
 };
@@ -131,49 +128,43 @@ test("every platform's expected policy flags are pinned", () => {
   assert.deepEqual(Object.keys(EXPECTED_POLICY_ARGS).sort(), [...PLATFORMS].sort());
 });
 
-test("watcher is a read-only role without sub-agents or a default effort, and renders its protocol on every platform", () => {
-  assert.equal(ROLE_AGENTS.watcher, "crew-watcher");
-  assert.deepEqual(ROLE_POLICY.watcher, { readOnly: true, subagents: false });
-  for (const platform of PLATFORMS) {
-    const text = renderRolePrompt("watcher", platform);
-    assert.match(text, /watch/i, platform);
-    assert.doesNotMatch(text, /\{\{/, platform);
-  }
-});
-
-test("followup is an interactive role that may edit, without sub-agents or a default effort, and renders for every platform", () => {
+test("followup is the feature agent: it may edit, takes no sub-agents or default effort, and renders its protocol on every platform", () => {
   assert.equal(ROLE_AGENTS.followup, "crew-followup");
-  assert.deepEqual(ROLE_POLICY.followup, { readOnly: false, subagents: false, unattended: true });
+  assert.deepEqual(ROLE_POLICY.followup, { readOnly: false });
   for (const platform of PLATFORMS) {
     const text = renderRolePrompt("followup", platform);
-    assert.match(text, /QUESTION:/, platform);
-    assert.match(text, /DONE:/, platform);
-    assert.match(text, /orchestration ask/, platform);
-    assert.match(text, /worker_done/, platform);
+    assert.match(text, /feature agent/i, platform);
     assert.doesNotMatch(text, /\{\{/, platform);
-    for (const line of text.split("\n")) {
-      assert.doesNotMatch(line, /^\s*(QUESTION|DONE):/, `${platform}: no line of the brief may look like an answer line`);
-    }
   }
 });
 
-test("watcher names crew-afk followup as the only way to start follow-up work", () => {
+test("the feature agent's brief: checkout unchanged until the end notice, follow-up work in place after it, commit everything, never an issue's Status or criteria", () => {
   for (const platform of PLATFORMS) {
-    const text = renderRolePrompt("watcher", platform);
-    assert.match(text, /`crew-afk followup` is the only way to start follow-up work/, platform);
-    assert.match(text, new RegExp(`followup start <slug> "<task>" --platform ${platform}`), platform);
+    const text = renderRolePrompt("followup", platform);
+    assert.match(text, /Until the end notice[\s\S]*leave the checkout unchanged/, platform);
+    assert.match(text, /After the end notice[\s\S]*follow-up work in place/, platform);
+    assert.match(text, /Commit everything before you stop/, platform);
+    assert.match(text, /Never edit an issue's `Status:` line or tick its criteria boxes/, platform);
+    assert.doesNotMatch(text, /crew-afk followup|followup (start|wait|reply)|_followup/, platform);
   }
+});
+
+test("there is no watcher role", () => {
+  assert.equal(ROLE_AGENTS.watcher, undefined);
+  assert.equal(ROLE_POLICY.watcher, undefined);
+  assert.equal(existsSync(join(ROLES_DIR, "watcher.md")), false);
 });
 
 // interactive({cwd, mainRoot, model, protocol, policy}) → argv, `cmd` first: the CLI's own
 // interactive mode with the protocol as its initial prompt, then the policy's flags.
-const WATCHER = ROLE_POLICY.watcher;
+const WATCHER = ROLE_POLICY.followup;
 const INTERACTIVE = { cwd: "/main", mainRoot: "/main", protocol: "BRIEF", policy: WATCHER };
 const EXPECTED_INTERACTIVE = {
-  claude: ["claude", "BRIEF", "--add-dir", "/main", "--model", "sonnet", "--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent"],
-  codex: ["codex", "--cd", "/main", "--sandbox", "read-only", "--model", "gpt-5", "BRIEF"],
-  pi: ["pi", "--model", "m1", "--tools", "read,bash", "BRIEF"],
-  copilot: ["copilot", "-i", "BRIEF", "--add-dir", "/main", "--model", "m1", "--deny-tool", "write"],
+  claude: ["claude", "BRIEF", "--add-dir", "/main", "--model", "sonnet", "--disallowedTools", "Agent"],
+  // "/main" is no git repo here, so no writable roots; the full set is pinned by the test below.
+  codex: ["codex", "--cd", "/main", "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", "gpt-5", "BRIEF"],
+  pi: ["pi", "--model", "m1", "--tools", "read,bash,edit,write", "BRIEF"],
+  copilot: ["copilot", "-i", "BRIEF", "--add-dir", "/main", "--model", "m1"],
 };
 const MODELS = { claude: "sonnet", codex: "gpt-5", pi: "m1", copilot: "m1" };
 
@@ -198,59 +189,59 @@ test("every platform's interactive argv is pinned", () => {
   assert.deepEqual(Object.keys(EXPECTED_INTERACTIVE).sort(), [...PLATFORMS].sort());
 });
 
-// A follow-up worker has no human at its terminal: its argv must not stop at a permission prompt,
-// and must let it commit from a linked worktree. The watcher's (a human is in that pane) is pinned above.
-function linkedWorktree() {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "crew-platforms-")));
-  const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" });
-  git("init", "-q", "-b", "main");
-  git("config", "user.email", "t@example.com");
-  git("config", "user.name", "T");
-  writeFileSync(join(root, "a"), "a\n");
-  git("add", "-A");
-  git("commit", "-q", "-m", "seed");
-  const wt = join(root, "wt");
-  git("worktree", "add", "-q", "-b", "feature", wt);
-  return { root, wt, common: join(root, ".git"), own: join(root, ".git", "worktrees", "wt") };
+// A human is in every interactive pane, so no role's argv may turn off its CLI's permission or
+// approval prompts, and the feature agent's argv has its edit tools on.
+const NO_PROMPT_FLAGS = ["--permission-mode", "bypassPermissions", "--dangerously-skip-permissions", "--allow-all-tools", "--allow-all", "--yolo", "--ask-for-approval", "never"];
+
+for (const platform of Object.keys(EXPECTED_INTERACTIVE)) {
+  test(`${platform}: no role's interactive() argv turns off permission or approval prompts`, () => {
+    for (const role of Object.keys(ROLE_POLICY)) {
+      assert.equal(ROLE_POLICY[role].unattended, undefined, `${role} has no unattended policy`);
+      const argv = ADAPTERS[platform].interactive({ ...INTERACTIVE, model: MODELS[platform], policy: ROLE_POLICY[role] });
+      for (const flag of NO_PROMPT_FLAGS) assert.ok(!argv.includes(flag), `${platform} × ${role}: ${flag} in ${argv.join(" ")}`);
+      assert.ok(!argv.some((a) => /skipDangerousModePermissionPrompt/.test(a)), `${platform} × ${role}: no settings override of the bypass-mode dialog`);
+    }
+  });
 }
 
-test("followup's unattended policy: claude bypasses permission prompts (and the one-time bypass-mode warning), copilot allows all tools, the watcher's argv is unchanged", () => {
-  const FOLLOWUP = ROLE_POLICY.followup;
-  const claude = ADAPTERS.claude.interactive({ ...INTERACTIVE, model: "sonnet", policy: FOLLOWUP });
-  assert.deepEqual(claude, ["claude", "BRIEF", "--add-dir", "/main", "--model", "sonnet", "--permission-mode", "bypassPermissions", "--settings", '{"skipDangerousModePermissionPrompt":true}', "--disallowedTools", "Agent"]);
-  const copilot = ADAPTERS.copilot.interactive({ ...INTERACTIVE, model: "m1", policy: FOLLOWUP });
-  assert.deepEqual(copilot, ["copilot", "-i", "BRIEF", "--add-dir", "/main", "--model", "m1", "--allow-all-tools"]);
-  for (const platform of ["claude", "copilot"]) {
-    const argv = ADAPTERS[platform].interactive({ ...INTERACTIVE, model: MODELS[platform] });
-    assert.deepEqual(argv, EXPECTED_INTERACTIVE[platform], `${platform}: the watcher's argv is unchanged`);
-  }
-});
+// The codex feature agent works in `_feature`, a linked worktree: its sandbox must be able to write
+// the git dirs (the index lives in the main repo's), the main checkout's `.scratch/` and use the
+// network, as a codex worker's does. Its approval prompts stay on.
+test("codex: interactive() for the feature agent makes the git dirs and the main checkout writable, without disabling approvals", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "crew-codex-interactive-")));
+  const main = join(dir, "main");
+  const feature = join(dir, "main", ".scratch", "worktrees", "crew", "demo", "_feature");
+  const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" } });
+  mkdirSync(main);
+  git(main, "init", "-q", "-b", "main");
+  git(main, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init");
+  mkdirSync(join(feature, ".."), { recursive: true });
+  git(main, "worktree", "add", "-q", "-b", "feature/demo", feature);
+  const commonDir = join(main, ".git");
+  const ownDir = join(commonDir, "worktrees", "_feature");
 
-test("codex: a follow-up worker runs workspace-write with network, the git dirs writable and no approval prompts, the watcher read-only as before", () => {
-  const { root, wt, common, own } = linkedWorktree();
-  const argv = ADAPTERS.codex.interactive({ cwd: wt, mainRoot: root, model: "gpt-5", protocol: "BRIEF", policy: ROLE_POLICY.followup });
+  const argv = ADAPTERS.codex.interactive({ cwd: feature, mainRoot: main, model: "gpt-5", protocol: "BRIEF", policy: WATCHER });
+
   assert.deepEqual(argv, [
     "codex",
     "--cd",
-    wt,
+    feature,
     "--sandbox",
     "workspace-write",
     "-c",
     "sandbox_workspace_write.network_access=true",
     "-c",
-    `sandbox_workspace_write.writable_roots=[${JSON.stringify(common)},${JSON.stringify(own)}]`,
+    `sandbox_workspace_write.writable_roots=[${JSON.stringify(commonDir)},${JSON.stringify(ownDir)}]`,
     "--add-dir",
-    root,
-    "--ask-for-approval",
-    "never",
+    main,
     "--model",
     "gpt-5",
     "BRIEF",
   ]);
-  const built = ADAPTERS.codex.build({ cwd: wt, mainRoot: root, model: "gpt-5", policy: ROLE_POLICY.followup, protocol: "P", prompt: "T" });
-  for (const flag of ["sandbox_workspace_write.network_access=true", `sandbox_workspace_write.writable_roots=[${JSON.stringify(common)},${JSON.stringify(own)}]`]) {
-    assert.ok(built.args.includes(flag) && argv.includes(flag), `build() and interactive() agree on ${flag}`);
-  }
-  const watcher = ADAPTERS.codex.interactive({ ...INTERACTIVE, model: "gpt-5" });
-  assert.deepEqual(watcher, EXPECTED_INTERACTIVE.codex);
+  assert.ok(!argv.includes("--ask-for-approval") && !argv.includes("never"), "approval prompts stay on");
+});
+
+test("codex: interactive() for a read-only policy keeps the read-only sandbox and adds no writable roots", () => {
+  const argv = ADAPTERS.codex.interactive({ ...INTERACTIVE, policy: { ...WATCHER, readOnly: true } });
+  assert.deepEqual(argv, ["codex", "--cd", "/main", "--sandbox", "read-only", "BRIEF"]);
 });

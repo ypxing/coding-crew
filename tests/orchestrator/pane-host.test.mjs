@@ -16,12 +16,11 @@ import {
   ensurePaneWorkspace,
   ensureWatchSession,
   notifyWatchSession,
-  awaitFollowup,
-  openFollowup,
   preflightPaneHost,
   queuePaneNotice,
-  replyFollowup,
-  supportsFollowups,
+  queueRunStartNotice,
+  settlePaneAgent,
+  AGENT_START_GRACE_MS,
 } from "../../orchestrator/lib/pane-host/index.mjs";
 import { levelFor } from "../../orchestrator/lib/log.mjs";
 import { notifyMilestone } from "../../orchestrator/lib/pipeline/shared.mjs";
@@ -209,6 +208,7 @@ test("ensurePaneWorkspace (herdr) opens the _feature worktree as the sprint work
   const open = effects._calls[0];
   assert.deepEqual(open.slice(0, 4), ["herdr", "worktree", "open", "--path"]);
   assert.equal(open[4], effects.featureRoot);
+  assert.equal(open[open.indexOf("--cwd") + 1], root, "herdr resolves --path in the repo --cwd names, not the focused workspace's");
   assert.equal(open[open.indexOf("--label") + 1], "alpha");
 });
 
@@ -239,38 +239,32 @@ test("ensurePaneWorkspace (herdr) swallows a failed log tab create — cosmetic,
   assert.ok(!effects._calls.some((c) => c[1] === "pane" && c[2] === "run"), "never attempted pane run without a pane id");
 });
 
-// The reused pane's own tab still shows whatever it was called before crew-afk started
-// running in it — herdr also injects that pane's own tab as HERDR_TAB_ID, so this is the
-// one chance to relabel it to the sprint's feature slug, the same way a freshly created
-// workspace already is. The run's own log tab still opens inside the reused workspace too.
-test("ensurePaneWorkspace (herdr) reuses an ambient HERDR_WORKSPACE_ID, renames the triggering tab, and still opens its own log tab", async () => {
+// The sprint's log tab and feature agent live in the feature worktree's own workspace, whatever
+// workspace the launching pane is in: a checkout that launches several sprints must not pile them
+// up in one workspace, and the launching pane's own tab is left as the human named it.
+test("ensurePaneWorkspace (herdr) opens the _feature worktree's workspace and its log tab there, even when HERDR_WORKSPACE_ID names a triggering workspace", async () => {
   const { root } = fixture();
   const logFile = join(root, "trace.log");
   const effects = fakeHerdrEffects(
     [
-      json({ result: { type: "ok" } }), // tab rename
+      json({ result: { workspace: { workspace_id: "w9" } } }), // worktree open
       ...herdrLogTabResponses(),
     ],
     { mainRoot: root },
   );
+  effects.featureRoot = join(root, ".scratch/worktrees/crew/alpha/_feature");
 
   const workspaceId = await withHerdrWorkspaceId("w1", () =>
-    withHerdrTabId("w1:t1", () => ensurePaneWorkspace(effects, { featureSlug: "implement-user-auth", logFile })),
+    withHerdrTabId("w1:t1", () => ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile })),
   );
 
-  assert.equal(workspaceId, "w1", "the ambient workspace is reused, not created");
-  assert.ok(!effects._calls.some((c) => c[1] === "workspace" && c[2] === "create"));
-  assert.deepEqual(effects._calls[0], ["herdr", "tab", "rename", "w1:t1", "implement-user-auth"]);
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "pane", "run", "w1:plog", "tail", "-f", logFile]);
-});
-
-test("ensurePaneWorkspace (herdr) never renames the triggering pane's own tab when no feature slug resolved", async () => {
-  const { root } = fixture();
-  const effects = fakeHerdrEffects([], { mainRoot: root });
-
-  await withHerdrWorkspaceId("w1", () => withHerdrTabId("w1:t1", () => ensurePaneWorkspace(effects, {})));
-
-  assert.deepEqual(effects._calls, [], "no feature slug resolved, so the pane's own tab is left exactly as the human named it");
+  assert.equal(workspaceId, "w9", "the feature worktree's workspace, not the ambient one");
+  assert.deepEqual(effects._calls[0].slice(0, 4), ["herdr", "worktree", "open", "--path"]);
+  const tabCreate = effects._calls[1];
+  assert.deepEqual(tabCreate.slice(0, 5), ["herdr", "tab", "create", "--workspace", "w9"]);
+  assert.equal(tabCreate[tabCreate.indexOf("--cwd") + 1], effects.featureRoot);
+  assert.ok(!effects._calls.some((c) => c[1] === "tab" && c[2] === "rename"), "the triggering tab is not renamed");
+  assert.ok(!effects._calls.some((c) => c.includes("w1")), "nothing is opened in the triggering workspace");
 });
 
 test("closePaneWorkspace (herdr) closes the workspace ensurePaneWorkspace created, and is a no-op when nothing was ever created", async () => {
@@ -279,22 +273,50 @@ test("closePaneWorkspace (herdr) closes the workspace ensurePaneWorkspace create
   assert.deepEqual(untouched._calls, [], "nothing to close — no run ever created a workspace on this effects instance");
 
   const { root } = fixture();
-  const effects = fakeHerdrEffects([json({ result: { workspace: { workspace_id: "w1" } } }), json({ result: { type: "ok" } })], { mainRoot: root });
+  const effects = fakeHerdrEffects([json({ result: { already_open: false, workspace: { workspace_id: "w1" } } }), json({ result: { type: "ok" } })], { mainRoot: root });
   await ensurePaneWorkspace(effects, { featureSlug: "alpha" });
   await closePaneWorkspace(effects);
   assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w1"]);
 });
 
-test("closePaneWorkspace (herdr) never closes a workspace reused via HERDR_WORKSPACE_ID — that would close the pane crew-afk was launched from", async () => {
+// `worktree open` returns the workspace already open on `_feature` (a developer's own, or one a
+// previous run's agent died in), flagged `already_open: true`: not this run's to close.
+test("closePaneWorkspace (herdr) never closes a workspace `worktree open` returned already open, even when the agent's open fails", async () => {
   const { root } = fixture();
-  const effects = fakeHerdrEffects([], { mainRoot: root });
+  const effects = fakeHerdrEffects([json({ result: { already_open: true, workspace: { workspace_id: "w3" } } }), { code: 1, stdout: "", stderr: "tab create failed" }], { mainRoot: root });
+  effects.featureRoot = join(root, ".scratch/worktrees/crew/alpha/_feature");
+  effects.log = () => {};
+  effects.exec = () => ({ code: 0, stdout: "", stderr: "" });
+  effects.env = {};
 
-  await withHerdrWorkspaceId("w1", () => ensurePaneWorkspace(effects, { featureSlug: "alpha" }));
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha" });
+  assert.equal(await ensureWatchSession(effects, { slug: "alpha", platform: "claude" }), null, "the agent did not open");
+  await closePaneWorkspace(effects);
+
+  assert.ok(!effects._calls.some((c) => c[1] === "workspace" && c[2] === "close"), JSON.stringify(effects._calls));
+});
+
+test("closePaneWorkspace (herdr) closes a workspace it made itself when there is no feature worktree to open", async () => {
+  const { root } = fixture();
+  const effects = fakeHerdrEffects([json({ result: { workspace: { workspace_id: "w2" } } }), json({ result: { type: "ok" } })], { mainRoot: root });
+
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha" });
+  await closePaneWorkspace(effects);
+
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w2"]);
+});
+
+test("closePaneWorkspace (herdr) leaves the workspace open while the feature agent lives in it", async () => {
+  const { root } = fixture();
+  const effects = watching(fakeHerdrEffects([json({ result: { workspace: { workspace_id: "w9" } } })], { mainRoot: root }), "w9:p1");
+  effects.featureRoot = join(root, ".scratch/worktrees/crew/alpha/_feature");
+
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha" });
   await closePaneWorkspace(effects);
 
   assert.ok(
     !effects._calls.some((c) => c[1] === "workspace" && c[2] === "close"),
-    "the reused workspace is left open — it belongs to whoever is still using that pane",
+    "the agent is the developer's terminal now: its workspace is not closed out from under it",
   );
 });
 
@@ -314,20 +336,21 @@ test("closePaneLogTab (herdr) closes the log tab ensurePaneWorkspace opened, and
   assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:log"]);
 });
 
-// The case closePaneWorkspace's own reuse test above leaves unclosed: a workspace reused
-// via HERDR_WORKSPACE_ID survives (it belongs to whoever's pane triggered the run), but this
-// run's own log tab inside it is still this run's to close — otherwise it tails the trace
-// log forever after a run launched from inside an existing herdr pane.
-test("closePaneLogTab (herdr) closes this run's own log tab even when the workspace it lives in was reused, not created", async () => {
+// The workspace survives a live agent, but this run's own log tab inside it is still this run's to
+// close — otherwise it tails the trace log forever after the run.
+test("closePaneLogTab (herdr) closes this run's own log tab even when the workspace is kept for the feature agent", async () => {
   const { root } = fixture();
   const logFile = join(root, "trace.log");
-  const effects = fakeHerdrEffects([...herdrLogTabResponses(), json({ result: { type: "ok" } })], { mainRoot: root });
+  const effects = watching(
+    fakeHerdrEffects([json({ result: { workspace: { workspace_id: "w9" } } }), ...herdrLogTabResponses(), json({ result: { type: "ok" } })], { mainRoot: root }),
+    "w9:p1",
+  );
 
-  await withHerdrWorkspaceId("w1", () => ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile }));
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile });
   await closePaneWorkspace(effects);
   await closePaneLogTab(effects);
 
-  assert.ok(!effects._calls.some((c) => c[1] === "workspace" && c[2] === "close"), "the reused workspace itself is still left open");
+  assert.ok(!effects._calls.some((c) => c[1] === "workspace" && c[2] === "close"), "the workspace itself is left open");
   assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:log"], "but this run's own log tab is closed");
 });
 
@@ -779,6 +802,9 @@ import { renderRolePrompt } from "../../orchestrator/lib/adapters/render.mjs";
 function watchFixture(host, responses, { cliOnPath = true, env = { CREW_WATCH_PROBE: "from-crew-afk" }, ...opts } = {}) {
   const { root } = fixture();
   const effects = fakePaneHostEffects(host, responses, { mainRoot: root, ...opts });
+  effects.featureRoot = join(root, ".scratch", "worktrees", "crew", "alpha", "_feature");
+  // main.mjs's ensureWorktree names `_feature` to orca (adoptWorktree) before any terminal opens.
+  effects._paneAdopted = new Set([effects.featureRoot]);
   effects.env = env;
   effects.log = (line) => (effects._logs ??= []).push(line);
   effects.exec = (cmd, args) => {
@@ -790,7 +816,7 @@ function watchFixture(host, responses, { cliOnPath = true, env = { CREW_WATCH_PR
     mkdirSync(join(root, ".scratch", "alpha"), { recursive: true });
     writeFileSync(watchFile, typeof value === "string" ? value : JSON.stringify(value));
   };
-  return { root, effects, watchFile, record, saved: () => JSON.parse(readFileSync(watchFile, "utf8")) };
+  return { root, featureRoot: effects.featureRoot, effects, watchFile, record, saved: () => JSON.parse(readFileSync(watchFile, "utf8")) };
 }
 const WATCH = { slug: "alpha", platform: "claude", model: "sonnet" };
 const orcaCreated = (handle = "term_w") => json({ result: { terminal: { handle } } });
@@ -805,32 +831,55 @@ function launchScriptOf(command) {
   return { path: m[1], text: readFileSync(m[1], "utf8") };
 }
 
-test("ensureWatchSession (orca) with no usable watch.json creates <slug>-watch in the main checkout and records its handle", async () => {
-  const { root, effects, saved } = watchFixture("orca", [orcaCreated("term_w")]);
+test("ensureWatchSession (orca) with no usable watch.json creates <slug>-watch in the _feature worktree and records its handle", async () => {
+  const { root, featureRoot, effects, saved } = watchFixture("orca", [orcaCreated("term_w")]);
   const watch = await ensureWatchSession(effects, WATCH);
   assert.equal(effects._calls.length, 1);
   const [cmd, ...args] = effects._calls[0];
   assert.equal(cmd, "orca");
-  assert.deepEqual(args.slice(0, 7), ["terminal", "create", "--worktree", `path:${root}`, "--title", "alpha-watch", "--command"]);
+  assert.deepEqual(args.slice(0, 7), ["terminal", "create", "--worktree", `path:${featureRoot}`, "--title", "alpha-watch", "--command"]);
   assert.equal(args[8], "--json");
   const { text } = launchScriptOf(args[7]);
-  const argv = ["claude", renderRolePrompt("watcher", "claude", { mainRoot: root }), "--add-dir", root, "--model", "sonnet", "--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent"];
+  assert.ok(text.includes(`cd -P '${featureRoot}'`), "the agent starts in _feature");
+  // The feature agent edits (permission prompts stay on): claude is not denied Edit/Write, only sub-agents.
+  const argv = ["claude", renderRolePrompt("followup", "claude", { mainRoot: root }), "--add-dir", root, "--model", "sonnet", "--disallowedTools", "Agent"];
   const quoted = argv.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ");
-  assert.ok(text.includes(`exec ${quoted}`), "the argv carries the rendered watcher protocol as its initial prompt");
+  assert.ok(text.includes(`exec ${quoted}`), "the argv carries the rendered feature-agent protocol as its initial prompt");
   assert.deepEqual(saved(), { host: "orca", handle: "term_w" });
   assert.equal(watch.handle, "term_w");
   assert.deepEqual(effects._paneWatch, { host: "orca", handle: "term_w" });
 });
 
+test("the log terminal and the agent terminal are both created with --worktree path:<featureRoot>, even from inside another orca worktree", async () => {
+  const { featureRoot, root, effects } = watchFixture("orca", [orcaCreated("term_log"), orcaCreated("term_w")]);
+  await withOrcaWorktreeId("wt-trigger", async () => {
+    await ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile: join(root, "trace.log") });
+    await ensureWatchSession(effects, WATCH);
+  });
+  const worktrees = effects._calls.filter((c) => c[2] === "create").map((c) => c[c.indexOf("--worktree") + 1]);
+  assert.deepEqual(worktrees, [`path:${featureRoot}`, `path:${featureRoot}`]);
+});
+
+test("orca: when `_feature` was never adopted (worktree set failed), both terminals are scoped to the main checkout and the agent still starts in _feature", async () => {
+  const { featureRoot, root, effects } = watchFixture("orca", [orcaCreated("term_log"), orcaCreated("term_w")]);
+  effects._paneAdopted = new Set();
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile: join(root, "trace.log") });
+  await ensureWatchSession(effects, WATCH);
+  const creates = effects._calls.filter((c) => c[2] === "create");
+  assert.deepEqual(creates.map((c) => c[c.indexOf("--worktree") + 1]), [`path:${root}`, `path:${root}`]);
+  const { text } = launchScriptOf(creates[1][creates[1].indexOf("--command") + 1]);
+  assert.ok(text.includes(`cd -P '${featureRoot}'`), "the agent's cwd is _feature");
+});
+
 test("ensureWatchSession gives the host a command that sources crew-afk's env.sh before the interactive argv, then deletes it", async () => {
   for (const [host, responses, setup] of [
     ["orca", [orcaCreated()], () => {}],
-    ["herdr", [herdrWorkspace(), json({ result: { type: "ok" } })], () => {}],
+    ["herdr", [herdrWorkspace(), herdrTab(), json({ result: { type: "ok" } })], () => {}],
   ]) {
     setup();
     const { effects } = watchFixture(host, responses, { env: { CREW_WATCH_PROBE: "it's from crew-afk" } });
     await ensureWatchSession(effects, WATCH);
-    const command = host === "orca" ? effects._calls[0][8] : effects._calls[1][4];
+    const command = host === "orca" ? effects._calls[0][8] : effects._calls[2][4];
     const { path, text } = launchScriptOf(command);
     const lines = text.split("\n");
     const source = lines.findIndex((l) => /^\. '.*env\.sh'; rm -f '.*env\.sh'$/.test(l));
@@ -843,7 +892,7 @@ test("ensureWatchSession gives the host a command that sources crew-afk's env.sh
   }
 });
 
-test("ensureWatchSession puts CREW_PANE_HOST=<effects.paneHost> in the launch env, so `followup start` run from the watch agent resolves the host `run --pane-host` chose", async () => {
+test("ensureWatchSession puts CREW_PANE_HOST=<effects.paneHost> in the launch env, so a crew-afk command run from the watch agent resolves the host `run --pane-host` chose", async () => {
   // `run --pane-host orca` sets effects.paneHost; the agent's own shell has neither the flag nor the legacy ORCA_ENV.
   const { effects } = watchFixture("orca", [orcaCreated()], { env: {} });
   await ensureWatchSession(effects, WATCH);
@@ -880,15 +929,12 @@ test("a failed openWatch deletes the env.sh it wrote on both hosts, and so does 
   assert.deepEqual(envFiles(root), [], "a throw leaves no env.sh either");
 });
 
-test("ensureWatchSession (herdr) closes the tab or workspace it made when pane run fails, leaving no empty <slug>-watch behind", async () => {
-  const outside = watchFixture("herdr", [herdrWorkspace("w9", "w9:p1"), { code: 1, stdout: "", stderr: "pane not found" }, json({})]);
-  assert.equal(await ensureWatchSession(outside.effects, WATCH), null);
-  assert.deepEqual(outside.effects._calls[2], ["herdr", "workspace", "close", "w9"]);
-  assert.equal(existsSync(outside.watchFile), false, "nothing recorded");
-
-  const inside = watchFixture("herdr", [herdrTab("w1:tw", "w1:pw"), { code: 1, stdout: "", stderr: "pane not found" }, json({})]);
-  assert.equal(await withHerdrWorkspaceId("w1", () => ensureWatchSession(inside.effects, WATCH)), null);
-  assert.deepEqual(inside.effects._calls[2], ["herdr", "tab", "close", "w1:tw"]);
+test("ensureWatchSession (herdr) closes the tab it made when pane run fails, leaving no empty <slug>-watch behind", async () => {
+  const run = watchFixture("herdr", [herdrWorkspace("w9", "w9:p1"), herdrTab("w9:tw", "w9:pw"), { code: 1, stdout: "", stderr: "pane not found" }, json({})]);
+  assert.equal(await ensureWatchSession(run.effects, WATCH), null);
+  assert.deepEqual(run.effects._calls[3], ["herdr", "tab", "close", "w9:tw"]);
+  assert.ok(!run.effects._calls.some((c) => c[1] === "workspace" && c[2] === "close"), "the workspace is the sprint's, not the agent's to close");
+  assert.equal(existsSync(run.watchFile), false, "nothing recorded");
 });
 
 test("ensureWatchSession (orca) reuses the recorded handle while terminal show reports an agentIdentity, creating nothing", async () => {
@@ -922,21 +968,24 @@ test("ensureWatchSession (orca) replaces a recorded handle that is dead, shows n
   }
 });
 
-test("ensureWatchSession (herdr) inside herdr opens a new tab in HERDR_WORKSPACE_ID and starts the agent with pane run", async () => {
-  const { root, effects, saved } = watchFixture("herdr", [herdrTab("w1:tw", "w1:pw"), json({ result: { type: "ok" } })]);
+test("ensureWatchSession (herdr) opens its tab in the feature worktree's workspace, never the triggering one", async () => {
+  const { featureRoot, effects, saved } = watchFixture("herdr", [herdrWorkspace("w9", "w9:p1"), herdrTab("w9:tw", "w9:pw"), json({ result: { type: "ok" } })]);
   await withHerdrWorkspaceId("w1", () => ensureWatchSession(effects, WATCH));
-  assert.deepEqual(effects._calls[0], ["herdr", "tab", "create", "--workspace", "w1", "--cwd", root, "--label", "alpha-watch", "--no-focus"]);
-  assert.deepEqual(effects._calls[1].slice(0, 4), ["herdr", "pane", "run", "w1:pw"]);
-  launchScriptOf(effects._calls[1][4]);
-  assert.deepEqual(saved(), { host: "herdr", handle: "w1:pw" });
+  assert.deepEqual(effects._calls[0].slice(0, 5), ["herdr", "worktree", "open", "--path", featureRoot]);
+  assert.deepEqual(effects._calls[1], ["herdr", "tab", "create", "--workspace", "w9", "--cwd", featureRoot, "--label", "alpha-watch", "--no-focus"]);
+  assert.deepEqual(effects._calls[2].slice(0, 4), ["herdr", "pane", "run", "w9:pw"]);
+  launchScriptOf(effects._calls[2][4]);
+  assert.deepEqual(saved(), { host: "herdr", handle: "w9:pw" });
 });
 
-test("ensureWatchSession (herdr) outside herdr opens a <slug>-watch workspace on the main checkout", async () => {
-  const { root, effects, saved } = watchFixture("herdr", [herdrWorkspace("w9", "w9:p1"), json({ result: { type: "ok" } })]);
+test("ensureWatchSession (herdr) puts the agent in the workspace ensurePaneWorkspace already opened, with no second worktree open", async () => {
+  const { root, featureRoot, effects } = watchFixture("herdr", [herdrWorkspace("w9", "w9:p1"), ...herdrLogTabResponses(), herdrTab("w9:tw", "w9:pw"), json({ result: { type: "ok" } })]);
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile: join(root, "trace.log") });
   await ensureWatchSession(effects, WATCH);
-  assert.deepEqual(effects._calls[0], ["herdr", "workspace", "create", "--cwd", root, "--label", "alpha-watch", "--no-focus"]);
-  assert.deepEqual(effects._calls[1].slice(0, 4), ["herdr", "pane", "run", "w9:p1"]);
-  assert.deepEqual(saved(), { host: "herdr", handle: "w9:p1" });
+  assert.equal(effects._calls.filter((c) => c[1] === "worktree").length, 1);
+  const tabs = effects._calls.filter((c) => c[1] === "tab" && c[2] === "create");
+  assert.deepEqual(tabs.map((c) => c[4]), ["w9", "w9"]);
+  assert.deepEqual(tabs.map((c) => c[c.indexOf("--cwd") + 1]), [featureRoot, featureRoot]);
 });
 
 test("ensureWatchSession (herdr) reuses the recorded pane while pane list reports an agent_status other than unknown", async () => {
@@ -951,11 +1000,11 @@ test("ensureWatchSession (herdr) reuses the recorded pane while pane list report
     ["pane gone", herdrPanes({ pane_id: "w1:other", agent_status: "idle" })],
     ["list failed", { code: 1, stdout: "", stderr: "herdr: down" }],
   ]) {
-    const dead = watchFixture("herdr", [list, herdrWorkspace("w10", "w10:p1"), json({ result: { type: "ok" } })]);
+    const dead = watchFixture("herdr", [list, herdrWorkspace("w10", "w10:p1"), herdrTab("w10:t", "w10:pn"), json({ result: { type: "ok" } })]);
     dead.record({ host: "herdr", handle: "w9:p1" });
     await ensureWatchSession(dead.effects, WATCH);
-    assert.equal(dead.effects._calls[1][2], "create", name);
-    assert.deepEqual(dead.saved(), { host: "herdr", handle: "w10:p1" }, name);
+    assert.equal(dead.effects._calls[1][2], "open", name);
+    assert.deepEqual(dead.saved(), { host: "herdr", handle: "w10:pn" }, name);
   }
 });
 
@@ -969,7 +1018,7 @@ test("pushes go to the watch handle on both hosts and never to ORCA_TERMINAL_HAN
   const orcaTargets = orca.effects._calls.slice(1).map((c) => c[c.indexOf("--terminal") + 1]);
   assert.deepEqual(orcaTargets, ["term_w", "term_w"]);
 
-  const herdr = watchFixture("herdr", [herdrWorkspace("w9", "w9:p1"), json({ result: { type: "ok" } }), json({ result: { type: "ok" } })]);
+  const herdr = watchFixture("herdr", [herdrWorkspace("w9", "w9:p1"), herdrTab("w9:t", "w9:p1"), json({ result: { type: "ok" } }), json({ result: { type: "ok" } })]);
   await withHerdrPaneId("w1:trigger", async () => {
     await ensureWatchSession(herdr.effects, WATCH);
     queuePaneNotice(herdr.effects, "[alpha] a: coder finished");
@@ -988,14 +1037,13 @@ test("no ending closes the watch agent: its handle is never tracked, and the end
   assert.ok(!orca.effects._calls.some((c) => c.includes("term_w") && c.includes("close")), JSON.stringify(orca.effects._calls));
   assert.ok(existsSync(join(orca.root, ".scratch", "alpha", "watch.json")));
 
-  const herdr = watchFixture("herdr", [herdrWorkspace("w9", "w9:p1"), json({ result: { type: "ok" } }), herdrWorkspace("w2", "w2:p1"), herdrTab("w2:log", "w2:plog"), json({ result: { type: "ok" } }), json({}), json({})]);
-  await ensureWatchSession(herdr.effects, WATCH);
+  const herdr = watchFixture("herdr", [herdrWorkspace("w9", "w9:p1"), herdrTab("w9:log", "w9:plog"), json({ result: { type: "ok" } }), herdrTab("w9:t", "w9:pw"), json({ result: { type: "ok" } }), json({})]);
   await ensurePaneWorkspace(herdr.effects, { featureSlug: "alpha", logFile: join(herdr.root, "trace.log") });
+  await ensureWatchSession(herdr.effects, WATCH);
   await closePaneWorkspace(herdr.effects);
   await closePaneLogTab(herdr.effects);
   const closes = herdr.effects._calls.filter((c) => c[2] === "close");
-  assert.deepEqual(closes.map((c) => c[3]).sort(), ["w2", "w2:log"], "the sprint's own workspace and log tab only");
-  assert.ok(closes.every((c) => !String(c[3]).startsWith("w9")), "the watch workspace is never closed");
+  assert.deepEqual(closes.map((c) => c[3]), ["w9:log"], "the log tab only: the agent's tab and the workspace holding it stay");
 });
 
 test("ensureWatchSession opens nothing and writes no watch.json under --dry-run, CREW_PANE_HOST=none or no pane host", async () => {
@@ -1052,165 +1100,191 @@ test("ensureWatchSession never throws: a host call that throws is a WARN", async
   assert.match(effects._logs.join("\n"), /^WARN .*ENOENT/m);
 });
 
-// ─── follow-up workers: openFollowup / awaitFollowup / replyFollowup ─────────────────────────
-//
-// The command (`crew-afk followup`) over a fake host is followup.test.mjs; these pin each
-// adapter's ops and the dispatch through index.mjs.
+// ─── the launching pane as the agent (D6) ──────────────────────────────────────────────────────
 
-const FOLLOWUP = { slug: "alpha", worktree: "/root/.scratch/worktrees/crew/alpha/_followup", command: "bash '/launch.sh'", spec: "BRIEF + TASK", coordinator: "term_watch" };
+const orcaAgent = (handle = "term_l") => json({ result: { terminal: { handle, agentIdentity: "claude" } } });
 
-test("supportsFollowups is true for orca and herdr and false with no host", () => {
-  assert.equal(supportsFollowups({ paneHost: "orca" }), true);
-  assert.equal(supportsFollowups({ paneHost: "herdr" }), true);
-  assert.equal(supportsFollowups({ paneHost: null }), false);
+/** Runs `fn` with cwd inside `dir` (made when missing), and restores it. */
+async function inDir(dir, fn) {
+  mkdirSync(dir, { recursive: true });
+  const prior = process.cwd();
+  process.chdir(dir);
+  try {
+    return await fn();
+  } finally {
+    process.chdir(prior);
+  }
+}
+
+test("a launching orca terminal inside _feature that shows an agent is recorded as the agent and receives every push; no agent opens", async () => {
+  const { featureRoot, effects, saved } = watchFixture("orca", [orcaAgent("term_l"), orcaAgent("term_l"), json({ result: { send: { accepted: true } } })]);
+  const watch = await withOrcaTerminalHandle("term_l", () => inDir(join(featureRoot, "src"), () => ensureWatchSession(effects, WATCH)));
+  assert.deepEqual(watch, { host: "orca", handle: "term_l" });
+  assert.deepEqual(saved(), { host: "orca", handle: "term_l" });
+  assert.deepEqual(effects._calls, [["orca", "terminal", "show", "--terminal", "term_l", "--json"]], "only the liveness check: nothing created");
+  assert.deepEqual(effects._execs ?? [], [], "no platform CLI lookup either");
+
+  const sent = await notifyWatchSession(effects, "[alpha] a: coder finished");
+  assert.deepEqual(sent, { sent: true });
+  const send = effects._calls.at(-1);
+  assert.equal(send[2], "send");
+  assert.equal(send[send.indexOf("--terminal") + 1], "term_l");
 });
 
-test("openFollowup (orca) creates a Run from the watch handle, a terminal in the follow-up worktree, then starts it as the Run's worker", async () => {
-  const effects = fakeOrcaEffects([json({ result: { run: { id: "run_9" } } }), orcaCreated("term_f"), json({ result: {} })]);
-  const opened = await openFollowup(effects, FOLLOWUP);
-  assert.deepEqual(opened, { runId: "run_9", terminal: "term_f", coordinator: "term_watch" });
-  assert.deepEqual(effects._calls.map((c) => c.slice(0, 3)), [
-    ["orca", "orchestration", "run-create"],
-    ["orca", "terminal", "create"],
-    ["orca", "orchestration", "worker-start"],
-  ]);
-  assert.ok(effects._calls[0].join(" ").includes("--from term_watch"));
-  assert.ok(effects._calls[1].join(" ").includes(`--worktree path:${FOLLOWUP.worktree}`));
-  assert.ok(effects._calls[2].join(" ").includes(`--run run_9 --worktree path:${FOLLOWUP.worktree} --terminal term_f --spec BRIEF + TASK --from term_watch`));
-  assert.ok(effects._timeouts.every((t) => t === 10000), "every call is bounded");
-  assert.equal(effects._paneTerminals?.has("term_f") ?? false, false, "the follow-up terminal is not swept by the run's own close");
+test("a launching herdr pane inside _feature whose agent_status is not unknown is adopted the same way", async () => {
+  const { featureRoot, effects, saved } = watchFixture("herdr", [herdrPanes({ pane_id: "w1:pl", agent_status: "idle" })]);
+  const watch = await withHerdrPaneId("w1:pl", () => inDir(featureRoot, () => ensureWatchSession(effects, WATCH)));
+  assert.deepEqual(watch, { host: "herdr", handle: "w1:pl" });
+  assert.deepEqual(saved(), { host: "herdr", handle: "w1:pl" });
+  assert.deepEqual(effects._calls, [["herdr", "pane", "list"]]);
 });
 
-test("openFollowup (orca) reports the host's JSON error, not its stderr banner", async () => {
-  const fenced = { code: 1, stdout: JSON.stringify({ ok: false, error: { code: "consumer_fenced", message: "worker-start requires the coordinator terminal" } }), stderr: "[relay-connect] Handshake OK" };
-  const effects = fakeOrcaEffects([json({ result: { run: { id: "run_9" } } }), orcaCreated("term_f"), fenced, json({ result: {} })]);
-  const opened = await openFollowup(effects, FOLLOWUP);
-  assert.match(opened.failure, /worker-start exit=1 consumer_fenced: worker-start requires the coordinator terminal/);
+test("the launching pane is not adopted from outside _feature, or when it shows no agent: a new agent opens", async () => {
+  const outside = watchFixture("orca", [orcaCreated("term_w")]);
+  const watch = await withOrcaTerminalHandle("term_l", () => inDir(join(outside.root, "elsewhere"), () => ensureWatchSession(outside.effects, WATCH)));
+  assert.equal(watch.handle, "term_w");
+  assert.equal(outside.effects._calls[0][2], "create", "no liveness probe of a launcher outside _feature");
+
+  const shell = watchFixture("orca", [json({ result: { terminal: { handle: "term_l" } } }), orcaCreated("term_w")]);
+  const opened = await withOrcaTerminalHandle("term_l", () => inDir(shell.featureRoot, () => ensureWatchSession(shell.effects, WATCH)));
+  assert.equal(opened.handle, "term_w", "a plain shell is not an agent");
+  assert.deepEqual(shell.effects._calls.map((c) => c[2]), ["show", "create"]);
 });
 
-test("openFollowup (orca) with no coordinator handle fails before any host call", async () => {
-  const effects = fakeOrcaEffects([]);
-  const opened = await openFollowup(effects, { ...FOLLOWUP, coordinator: undefined });
-  assert.match(opened.failure, /no watch agent handle/);
-  assert.equal(effects._calls.length, 0);
+test("a live recorded agent is reused instead of the launching pane", async () => {
+  const { featureRoot, effects, record, saved } = watchFixture("orca", [orcaAgent("term_rec")]);
+  record({ host: "orca", handle: "term_rec" });
+  const watch = await withOrcaTerminalHandle("term_l", () => inDir(featureRoot, () => ensureWatchSession(effects, WATCH)));
+  assert.deepEqual(watch, { host: "orca", handle: "term_rec" });
+  assert.deepEqual(saved(), { host: "orca", handle: "term_rec" });
+  assert.deepEqual(effects._calls, [["orca", "terminal", "show", "--terminal", "term_rec", "--json"]]);
 });
 
-test("awaitFollowup (orca) prefers the worker_done over an unanswered question, and skips answered ones", async () => {
-  const msg = (m) => ({ to_handle: "run:run_9", ...m });
-  const effects = fakeOrcaEffects([
-    json({ result: { messages: [msg({ id: "q1", type: "question", sequence: 2, body: "old?" }), msg({ id: "q2", type: "question", sequence: 4, body: "new?" })] } }),
-    json({ result: { messages: [msg({ id: "q1", type: "question", sequence: 2, body: "old?" }), msg({ id: "d", type: "worker_done", sequence: 6, body: "done" })] } }),
-  ]);
-  const rec = { runId: "run_9", answered: ["q1"] };
-  assert.deepEqual(await awaitFollowup(effects, rec, { pollMs: 1 }), { kind: "question", text: "new?", messageId: "q2" });
-  assert.deepEqual(await awaitFollowup(effects, rec, { pollMs: 1 }), { kind: "done", text: "done", messageId: "d" });
+test("an adopted launching pane is never closed by an ending, and its workspace is kept", async () => {
+  const { root, featureRoot, effects } = watchFixture("herdr", [herdrWorkspace("w9", "w9:p1"), ...herdrLogTabResponses(), herdrPanes({ pane_id: "w9:pl", agent_status: "working" }), json({ result: { type: "ok" } })]);
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile: join(root, "trace.log") });
+  await withHerdrPaneId("w9:pl", () => inDir(featureRoot, () => ensureWatchSession(effects, WATCH)));
+  await closePaneWorkspace(effects);
+  await closePaneLogTab(effects);
+  assert.deepEqual(effects._calls.filter((c) => c[2] === "close").map((c) => c[3]), ["w1:log"]);
 });
 
-test("replyFollowup (orca) is orchestration reply --id of the pending question; with none it fails without a host call", async () => {
-  const effects = fakeOrcaEffects([json({ result: {} })]);
-  assert.match((await replyFollowup(effects, { runId: "run_9" }, "x")).failure, /no open question/);
-  assert.equal(effects._calls.length, 0);
-  const sent = await replyFollowup(effects, { runId: "run_9", coordinator: "term_watch", pending: { messageId: "q2" } }, "yes");
-  assert.deepEqual(sent, { messageId: "q2" });
-  assert.deepEqual(effects._calls[0], ["orca", "orchestration", "reply", "--id", "q2", "--body", "yes", "--run", "run_9", "--from", "term_watch", "--json"]);
+// A reused or adopted agent may have been handed the checkout at an earlier run's end notice, so
+// a new run tells it that the sprint is merging into the checkout again (followup.md).
+test("a run that reuses or adopts the feature agent pushes it a run-start notice; one that opens a new agent does not", async () => {
+  const reused = watchFixture("orca", [orcaAgent("term_rec"), orcaAgent("term_rec"), json({ result: { send: { accepted: true } } })]);
+  reused.record({ host: "orca", handle: "term_rec" });
+  await ensureWatchSession(reused.effects, WATCH);
+  queueRunStartNotice(reused.effects, "alpha");
+  await drainPaneNotices(reused.effects);
+  const send = reused.effects._calls.at(-1);
+  assert.equal(send[2], "send");
+  assert.equal(send[send.indexOf("--terminal") + 1], "term_rec");
+  const text = send[send.indexOf("--text") + 1];
+  assert.match(text, /^\[alpha\] .*run started/, text);
+  assert.match(text, /until the end notice/, text);
+
+  const adopted = watchFixture("herdr", [herdrPanes({ pane_id: "w1:pl", agent_status: "idle" }), json({ result: { type: "ok" } })]);
+  await withHerdrPaneId("w1:pl", () => inDir(adopted.featureRoot, () => ensureWatchSession(adopted.effects, WATCH)));
+  queueRunStartNotice(adopted.effects, "alpha");
+  await drainPaneNotices(adopted.effects);
+  assert.deepEqual(adopted.effects._calls.at(-1).slice(0, 4), ["herdr", "agent", "prompt", "w1:pl"]);
+  assert.match(adopted.effects._calls.at(-1)[4], /^\[alpha\] .*run started/);
+
+  const opened = watchFixture("orca", [orcaCreated("term_new")]);
+  await ensureWatchSession(opened.effects, WATCH);
+  queueRunStartNotice(opened.effects, "alpha");
+  await drainPaneNotices(opened.effects);
+  assert.equal(opened.effects._calls.length, 1, "a new agent's brief is its start: only the create");
 });
 
-test("openFollowup (herdr) never throws: a host call that throws is a failure with its text", async () => {
-  const effects = fakeHerdrEffects([]);
-  const opened = await openFollowup(effects, FOLLOWUP);
-  assert.match(opened.failure, /no more canned herdr responses/);
+// The agent's cwd is `_feature`, where `.scratch/` and (when gitignored) `.coding-crew/` are not:
+// the brief names every sprint source under the main checkout and says how to find it.
+test("the feature agent's brief names sprint sources under the main checkout, found from _feature by the git common dir", () => {
+  const brief = renderRolePrompt("followup", "claude", { mainRoot: "/main" });
+  const common = '$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")';
+  assert.ok(brief.includes(common), "how to find the main checkout from _feature");
+  assert.ok(brief.includes(`${common}/.coding-crew/tracker/cli.mjs`), "the tracker CLI resolves under the main checkout");
+  assert.match(brief, /run-start notice/i, "a run-start notice returns the agent to the until-the-end-notice rules");
+  // A source path is `.scratch/<x>` or `.coding-crew/<x>`; the bare directory names in the prose are not.
+  for (const line of brief.split("\n")) {
+    assert.ok(!/(^|[\s`(])\.scratch\/[^\s`]/.test(line), `a source path resolving inside _feature: ${line}`);
+    assert.ok(!/(^|[\s`(])(node )?\.coding-crew\/[^\s`]/.test(line), `a source path resolving inside _feature: ${line}`);
+  }
 });
 
-test("openFollowup (herdr) waits for the started agent's first turn to end before prompting the spec", async () => {
-  const effects = fakeHerdrEffects([herdrWorkspace("w2", "w2:p1"), json({}), json({}), json({})]);
-  const opened = await openFollowup(effects, FOLLOWUP);
-  assert.deepEqual(opened, { handle: "w2:p1" });
-  assert.deepEqual(effects._calls.map((c) => c.slice(0, 4)), [
-    ["herdr", "workspace", "create", "--cwd"],
-    ["herdr", "pane", "run", "w2:p1"],
-    ["herdr", "agent", "wait", "w2:p1"],
-    ["herdr", "agent", "prompt", "w2:p1"],
-  ]);
-  const wait = effects._calls[2];
-  assert.ok(wait.includes("--until") && wait.includes("idle") && wait.includes("done"), `the first turn ends as idle or done: ${wait}`);
-  assert.ok(!wait.includes("working"), "not the state the first prompt is already in");
-  assert.ok(wait.includes("--timeout"), "a stalled start fails rather than hanging");
-  assert.equal(effects._calls[3][4], "BRIEF + TASK");
+// At the run's end `_feature` and the agent's workspace are kept only for an agent that still lives:
+// a dead one (its pane closed, its CLI exited) leaves nothing to keep them for.
+test("settlePaneAgent keeps a live agent and drops one the host no longer reports, so its workspace closes", async () => {
+  const orcaExec = (terminal) => (_cmd, args) => (args.includes("show") ? { code: terminal ? 0 : 1, stdout: JSON.stringify({ result: { terminal } }), stderr: "" } : { code: 0, stdout: "", stderr: "" });
+  const live = watchFixture("orca", []);
+  live.effects._paneWatch = { host: "orca", handle: "term_w" };
+  live.effects.exec = orcaExec({ handle: "term_w", agentIdentity: "claude" });
+  assert.equal(settlePaneAgent(live.effects), true);
+  assert.deepEqual(live.effects._paneWatch, { host: "orca", handle: "term_w" });
+
+  for (const [name, terminal] of [["a closed terminal", null], ["a shell, no agentIdentity", { handle: "term_w" }]]) {
+    const dead = watchFixture("orca", []);
+    dead.effects._paneWatch = { host: "orca", handle: "term_w" };
+    dead.effects._paneWatchReused = true; // a reused agent was identified once; an opened one is judged by presence
+    dead.effects.exec = orcaExec(terminal);
+    assert.equal(settlePaneAgent(dead.effects), false, name);
+    assert.equal(dead.effects._paneWatch, null, name);
+  }
+
+  const none = watchFixture("herdr", []);
+  assert.equal(settlePaneAgent(none.effects), false, "no agent was ever opened");
+
+  const herdr = watchFixture("herdr", [json({ result: { workspace: { workspace_id: "w9" }, already_open: false } }), json({ result: { type: "ok" } })]);
+  await ensurePaneWorkspace(herdr.effects, { featureSlug: "alpha" });
+  herdr.effects._paneWatch = { host: "herdr", handle: "w9:p1" };
+  herdr.effects._paneWatchReused = true;
+  herdr.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { panes: [{ pane_id: "w9:p1", agent_status: "unknown" }] } }), stderr: "" });
+  assert.equal(settlePaneAgent(herdr.effects), false);
+  await closePaneWorkspace(herdr.effects);
+  assert.deepEqual(herdr.effects._calls.at(-1), ["herdr", "workspace", "close", "w9"], "a dead agent's workspace is closed like any other");
 });
 
-test("openFollowup (herdr) retries the first-turn wait while herdr has not detected the agent yet (agent_not_found), then prompts the spec", async () => {
-  const notYet = { code: 1, stdout: JSON.stringify({ error: { code: "agent_not_found", message: "agent target w2:p1 not found" } }), stderr: "" };
-  const effects = fakeHerdrEffects([herdrWorkspace("w2", "w2:p1"), json({}), notYet, notYet, json({}), json({})]);
-  const slept = [];
-  const opened = await openFollowup(effects, { ...FOLLOWUP, sleep: async (ms) => slept.push(ms) });
-  assert.deepEqual(opened, { handle: "w2:p1" });
-  assert.deepEqual(effects._calls.map((c) => c.slice(1, 3).join(" ")), ["workspace create", "pane run", "agent wait", "agent wait", "agent wait", "agent prompt"]);
-  assert.equal(slept.length, 2, "one pause per not-yet-detected answer");
+// A run can end seconds after it opened the agent (lint errors, sync conflict), before the host has
+// identified the starting CLI as an agent: only a pane or terminal the host no longer lists is gone.
+test("settlePaneAgent keeps an agent this run just opened while the host lists it but has not yet identified it", async () => {
+  const herdr = watchFixture("herdr", [json({ result: { workspace: { workspace_id: "w9" }, already_open: false } })]);
+  await ensurePaneWorkspace(herdr.effects, { featureSlug: "alpha" });
+  herdr.effects._paneWatch = { host: "herdr", handle: "w9:p1" };
+  herdr.effects._paneWatchReused = false;
+  herdr.effects._paneWatchOpenedAt = Date.now();
+  herdr.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { panes: [{ pane_id: "w9:p1", agent_status: "unknown" }] } }), stderr: "" });
+  assert.equal(settlePaneAgent(herdr.effects), true, "listed pane, agent_status unknown");
+  const before = herdr.effects._calls.length;
+  await closePaneWorkspace(herdr.effects);
+  assert.equal(herdr.effects._calls.length, before, "no workspace close while the agent lives");
+
+  const gone = watchFixture("herdr", []);
+  gone.effects._paneWatch = { host: "herdr", handle: "w9:p1" };
+  gone.effects._paneWatchReused = false;
+  gone.effects._paneWatchOpenedAt = Date.now();
+  gone.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { panes: [] } }), stderr: "" });
+  assert.equal(settlePaneAgent(gone.effects), false, "a pane the host no longer lists is gone");
+
+  const orca = watchFixture("orca", []);
+  orca.effects._paneWatch = { host: "orca", handle: "term_w" };
+  orca.effects._paneWatchReused = false;
+  orca.effects._paneWatchOpenedAt = Date.now();
+  orca.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { terminal: { handle: "term_w" } } }), stderr: "" });
+  assert.equal(settlePaneAgent(orca.effects), true, "orca terminal present, no agentIdentity yet");
+  orca.effects.exec = () => ({ code: 1, stdout: "", stderr: "" });
+  orca.effects._paneWatch = { host: "orca", handle: "term_w" };
+  assert.equal(settlePaneAgent(orca.effects), false, "orca terminal show fails");
 });
 
-test("openFollowup (herdr) gives up on an agent herdr never detects, closing the pane it made", async () => {
-  const notYet = { code: 1, stdout: JSON.stringify({ error: { code: "agent_not_found", message: "agent target w2:p1 not found" } }), stderr: "" };
-  const effects = fakeHerdrEffects([herdrWorkspace("w2", "w2:p1"), json({}), ...Array.from({ length: 500 }, () => notYet), json({})]);
-  let now = 0;
-  const opened = await openFollowup(effects, { ...FOLLOWUP, sleep: async (ms) => (now += ms), now: () => now });
-  assert.match(opened.failure, /herdr agent wait exit=1 .*agent_not_found/);
-  assert.ok(!effects._calls.some((c) => c[2] === "prompt"), "the spec was never sent");
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w2"]);
-});
-
-test("openFollowup (herdr) whose first turn never ends fails with the host's text, never prompts the spec, and closes the pane it made", async () => {
-  const effects = fakeHerdrEffects([herdrWorkspace("w2", "w2:p1"), json({}), { code: 124, stdout: "", stderr: "timeout" }, json({})]);
-  const opened = await openFollowup(effects, FOLLOWUP);
-  assert.match(opened.failure, /herdr agent wait exit=124 \(timed out/);
-  assert.ok(!effects._calls.some((c) => c[2] === "prompt"), "the spec was never sent");
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w2"]);
-});
-
-// What herdr's pane shows after each turn: the echoed prompt, then the worker's output.
-const read = (text) => json({ result: { read: { text } } });
-const turnEnded = () => json({});
-
-test("awaitFollowup (herdr) takes only a marker after the last answer crew-afk sent: a second turn with no marker is the no-marker failure, not the earlier question", async () => {
-  const pane = "⏺ Looking.\nQUESTION: keep the old API?\n\n> yes\n⏺ Working on it, tests pass.\n";
-  const effects = fakeHerdrEffects([turnEnded(), read(pane)]);
-  const answer = await awaitFollowup(effects, { handle: "w2:p1", lastAnswer: "yes" });
-  assert.match(answer.failure, /ended with no QUESTION:\/DONE: line/);
-  assert.match(answer.failure, /Working on it/);
-});
-
-test("awaitFollowup (herdr) returns a marker the worker wrote after the echoed answer, and one before it is ignored", async () => {
-  const pane = "QUESTION: keep the old API?\n\n> yes\n⏺ Kept it.\n⏺ DONE: kept the old API; committed 9f2e\n";
-  const effects = fakeHerdrEffects([turnEnded(), read(pane)]);
-  assert.deepEqual(await awaitFollowup(effects, { handle: "w2:p1", lastAnswer: "yes" }), { kind: "done", text: "kept the old API; committed 9f2e" });
-});
-
-test("awaitFollowup (herdr) fails, rather than guess, when the answer it sent is not in the pane's recent text", async () => {
-  const effects = fakeHerdrEffects([turnEnded(), read("QUESTION: keep the old API?\nsome other output\n")]);
-  const answer = await awaitFollowup(effects, { handle: "w2:p1", lastAnswer: "yes" });
-  assert.match(answer.failure, /answer crew-afk sent is not in the pane/);
-});
-
-test("awaitFollowup (herdr) finds an answer the worker's TUI hard-wrapped across several pane lines", async () => {
-  const lastAnswer = "keep the old API but deprecate it, and move every caller in orchestrator/lib to the new one";
-  const pane = "QUESTION: keep the old API?\n\n> keep the old API but deprecate it, and move every caller in\n  orchestrator/lib to the new one\n⏺ DONE: deprecated it; committed 9f2e\n";
-  const effects = fakeHerdrEffects([turnEnded(), read(pane)]);
-  assert.deepEqual(await awaitFollowup(effects, { handle: "w2:p1", lastAnswer }), { kind: "done", text: "deprecated it; committed 9f2e" });
-});
-
-test("awaitFollowup (herdr) whose answer's echo scrolled out of a full read takes the whole read as this turn", async () => {
-  const pane = [...Array.from({ length: 399 }, (_, i) => `⏺ step ${i}`), "⏺ QUESTION: also drop the shim?"].join("\n");
-  const effects = fakeHerdrEffects([turnEnded(), read(pane)]);
-  assert.deepEqual(await awaitFollowup(effects, { handle: "w2:p1", lastAnswer: "yes" }), { kind: "question", text: "also drop the shim?" });
-});
-
-test("awaitFollowup (herdr) with a wrapped echo and no marker after it is still the no-marker failure", async () => {
-  const lastAnswer = "keep the old API but deprecate it, and move every caller in orchestrator/lib to the new one";
-  const pane = "QUESTION: keep the old API?\n\n> keep the old API but deprecate it, and move every caller in\n  orchestrator/lib to the new one\n⏺ Working on it.\n";
-  const effects = fakeHerdrEffects([turnEnded(), read(pane)]);
-  assert.match((await awaitFollowup(effects, { handle: "w2:p1", lastAnswer })).failure, /ended with no QUESTION:\/DONE: line/);
-});
-
-test("awaitFollowup (herdr) with no answer sent yet (the first turn) takes the last marker in the pane", async () => {
-  const effects = fakeHerdrEffects([turnEnded(), read("⏺ working\nQUESTION: which branch?\n")]);
-  assert.deepEqual(await awaitFollowup(effects, { handle: "w2:p1" }), { kind: "question", text: "which branch?" });
+// herdr's pane (and the shell `pane run` typed into) outlives a CLI that exited, so past the start-up
+// grace a listed pane with no agent in it is a dead agent, as for a reused one.
+test("settlePaneAgent drops an agent this run opened that the host still lists but no longer identifies, once past the start-up grace", () => {
+  const herdr = watchFixture("herdr", []);
+  herdr.effects._paneWatch = { host: "herdr", handle: "w9:p1" };
+  herdr.effects._paneWatchReused = false;
+  herdr.effects._paneWatchOpenedAt = Date.now() - AGENT_START_GRACE_MS - 1;
+  herdr.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { panes: [{ pane_id: "w9:p1", agent_status: "unknown" }] } }), stderr: "" });
+  assert.equal(settlePaneAgent(herdr.effects), false);
+  assert.equal(herdr.effects._paneWatch, null);
 });

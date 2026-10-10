@@ -708,10 +708,14 @@ test("afk.effort: a non-object, an unknown role or a non-string value is a confi
   }
 });
 
-test("afk.effort: the watcher has no default effort, and takes one from afk.effort.watcher", () => {
-  assert.equal("watcher" in resolveSettings({}).effort, false);
-  const root = tmpRoot({ "config.json": { afk: { effort: { watcher: "low" } } } });
+test("afk.effort: the feature agent (followup) has no default effort and takes one from afk.effort.followup; watcher is an unknown role", () => {
+  assert.equal("followup" in resolveSettings({}).effort, false);
+  const root = tmpRoot({ "config.json": { afk: { effort: { followup: "low" } } } });
   const loaded = loadConfig(root, { home: EMPTY_HOME });
-  assert.equal(resolveSettings({ afk: loaded.config.afk, origin: loaded.origin }).effort.watcher, "low");
+  assert.equal(resolveSettings({ afk: loaded.config.afk, origin: loaded.origin }).effort.followup, "low");
   rmSync(root, { recursive: true, force: true });
+
+  const stale = tmpRoot({ "config.json": { afk: { effort: { watcher: "low" } } } });
+  assert.throws(() => loadConfig(stale, { home: EMPTY_HOME }), /unknown role "afk\.effort\.watcher"/);
+  rmSync(stale, { recursive: true, force: true });
 });

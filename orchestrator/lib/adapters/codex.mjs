@@ -24,8 +24,7 @@ function sandboxFor(policy) {
 /**
  * What a workspace-write run needs beyond the sandbox itself: network on (dep-install), the git
  * dirs writable (a linked worktree's index lives in the main repo's git dir), the main checkout
- * added (traces, prompts and reports live under .scratch). Shared by build() and an unattended
- * interactive() run.
+ * added (traces, prompts and reports live under .scratch). Used by build() and interactive().
  */
 function workspaceWriteArgs(cwd, mainRoot) {
   const args = ["-c", "sandbox_workspace_write.network_access=true"];
@@ -83,14 +82,15 @@ export default {
   policyArgs: ({ effort }) => (effort ? ["-c", `model_reasoning_effort="${effort}"`] : []),
 
   /**
-   * The TUI with the protocol as its initial prompt (the last argument), in the role's sandbox. An
-   * `unattended` role that may write (a follow-up worker) gets build()'s network and git dirs, and
-   * never asks for approval: nobody is at its terminal.
+   * The TUI with the protocol as its initial prompt (the last argument), in the role's sandbox;
+   * approval prompts stay on for the human in the pane. A role that writes (the feature agent, in
+   * a linked worktree) gets what a workspace-write dispatch gets: network, the git dirs and the
+   * main checkout writable.
    */
   interactive({ cwd, mainRoot, model, protocol, policy }) {
     const sandbox = sandboxFor(policy);
     const argv = ["codex", "--cd", cwd, "--sandbox", sandbox];
-    if (policy?.unattended && sandbox === "workspace-write") argv.push(...workspaceWriteArgs(cwd, mainRoot), "--ask-for-approval", "never");
+    if (sandbox === "workspace-write") argv.push(...workspaceWriteArgs(cwd, mainRoot));
     if (model && model !== "inherit") argv.push("--model", model);
     if (policy) argv.push(...this.policyArgs(policy));
     argv.push(protocol);

@@ -18,6 +18,8 @@ yourself.**
 
 ```bash
 CREW_AFK="$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/main.mjs"
+# a linked worktree (the feature agent's `_feature`) may lack .coding-crew/: the main checkout's copy
+[ -f "$CREW_AFK" ] || CREW_AFK="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.coding-crew/crew-afk/main.mjs"
 [ -f "$CREW_AFK" ] || CREW_AFK="$HOME/.coding-crew/crew-afk/main.mjs"
 node "$CREW_AFK" run --platform {{PLATFORM}} "$@"
 ```
@@ -56,10 +58,10 @@ A dead run's feature lease needs `--reclaim`.
    shell `&`/`disown` — that bypasses the completion notification, so no summary reaches you.
 2. **Don't poll and don't relay.** Wait for the completion notification, however the run
    was started: every line you read or echo costs tokens, and the human watches
-   `orchestrator.log` (or the sprint's watch agent, when the run has one). If asked for
+   `orchestrator.log` (or the sprint's feature agent, when the run has one). If asked for
    progress, answer in one sentence from the latest `[STEP]` lines on **stderr** — never echo
-   them. On exit, print the stdout summary as-is — it is the report; don't rewrite it. The
-   same text is saved to `.scratch/<feature-slug>/traces/summary-<run-id>.md`.
+   them. On exit, print the stdout as-is — it is the report (or, with a feature agent, one line
+   pointing at it); don't rewrite it. The summary is saved to `.scratch/<feature-slug>/traces/summary-<run-id>.md`.
 3. If asked, the log is `.scratch/<feature-slug>/traces/orchestrator.log`.
 4. Report the exit code and stop: `0` finished, `2` stalled or capped (needs a human), `3` no
    ready issues, `1` setup problem — print its stderr verbatim.
