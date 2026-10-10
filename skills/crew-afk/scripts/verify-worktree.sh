@@ -167,8 +167,16 @@ _VW_RUN_ARGS=(--project-root "$WORKTREE_DIR")
 # CREW_VERIFY_DOCKER=off is the rollback lever, independent of CREW_DEPS, back to the
 # always-host behaviour this gate had before docker mode was mechanized here.
 if [ "${CREW_VERIFY_DOCKER:-on}" != "off" ] && [ -n "$RUN_SCRIPT" ]; then
+  # A docker-mode worktree whose crew override was never written (ensure-deps.sh only writes it on
+  # its own docker path) would make run.sh fall back to the host, and with it skip the install below.
+  # gen-override.sh is deterministic and also what docker-install.sh runs first, so write it now.
+  _vw_override="$(git -C "$WORKTREE_DIR" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)/crew-compose.override.yml"
+  if [ ! -f "$_vw_override" ] && [ -f "$_vw_dep_scripts/gen-override.sh" ] &&
+     bash "$_vw_dep_scripts/resolve-mode.sh" "${_VW_RUN_ARGS[@]}" --no-heuristic 2>/dev/null | grep -qx 'INSTALL_MODE=docker'; then
+    bash "$_vw_dep_scripts/gen-override.sh" --project-root "$WORKTREE_DIR" --main-root "${_VW_MAIN_ROOT:-$WORKTREE_DIR}" >/dev/null 2>&1 || true
+  fi
   _vw_describe="$(bash "$RUN_SCRIPT" "${_VW_RUN_ARGS[@]}" --describe 2>/dev/null || true)"
-  if printf '%s\n' "$_vw_describe" | grep -qx 'RUN=docker'; then
+  if grep -qx 'RUN=docker' <<<"$_vw_describe"; then
     DOCKER_MODE=1
     DOCKER_SERVICE="$(printf '%s\n' "$_vw_describe" | sed -n 's/^SERVICE=//p')"
     DOCKER_CONTAINER_SRC="$(printf '%s\n' "$_vw_describe" | sed -n 's/^CONTAINER_SRC=//p')"
@@ -241,12 +249,12 @@ _discover_from_claude_md() {
   local in_section=0
   while IFS= read -r line; do
     if [[ "$line" =~ ^## ]]; then
-      if echo "$line" | grep -qi "$category"; then
+      if grep -qi "$category" <<<"$line"; then
         in_section=1
       else
         in_section=0
       fi
-    elif [[ "$in_section" -eq 1 ]] && echo "$line" | grep -q "Run:"; then
+    elif [[ "$in_section" -eq 1 ]] && grep -q "Run:" <<<"$line"; then
       # Extract content between backticks
       local extracted
       extracted=$(echo "$line" | sed "s/.*\`\([^\`]*\)\`.*/\1/")
@@ -664,9 +672,16 @@ _run_category() {
     local via
     via="$(bash "$RUN_SCRIPT" "${_VW_RUN_ARGS[@]}" --describe -- "$cmd" 2>/dev/null | sed -n 's/^VIA=//p')"
     case "$via" in
-      nested) echo "$label: running on host (docker: $DOCKER_SERVICE skipped — '$cmd' recipe already manages docker itself): $cmd" ;;
       docker) echo "$label: running (docker: $DOCKER_SERVICE): cd \"$DOCKER_CONTAINER_SRC\" && $cmd" ;;
-      *) via=host; echo "$label: running: $cmd" ;;
+      *)
+        # host — and a stale `nested` from an older describe, which run.sh also runs as host.
+        via=host
+        if bash "$_vw_dep_scripts/detect-docker-nesting.sh" --dir "$WORKTREE_DIR" --cmd "$cmd"; then
+          echo "$label: running on host (docker: $DOCKER_SERVICE skipped — '$cmd' recipe already manages docker itself): $cmd"
+        else
+          echo "$label: running: $cmd"
+        fi
+        ;;
     esac
     _exec_and_report "$label" bash "$RUN_SCRIPT" "${_VW_RUN_ARGS[@]}" --via "$via" -- "$cmd"
     return
@@ -676,6 +691,28 @@ _run_category() {
   # Run in the worktree directory so relative paths resolve correctly
   _exec_and_report "$label" bash -c 'cd "$1" && eval "$2"' _ "$WORKTREE_DIR" "$cmd"
 }
+
+# ─── dependencies, docker mode ───────────────────────────────────────────────
+# The dependency volumes are named by a hash of this worktree's lockfiles, so a branch that changed
+# one since its deps install (a coder adding a package) would have its checks read volumes that
+# were never installed. docker-install.sh is install-if-missing: with the stamp present it costs
+# one container start; with the lockfiles changed it installs into the new-hash volumes first. It
+# also rewrites this worktree's override to name them, which the checks below pick up. A failure
+# fails the verify as a `deps` check, with the install's tail. Exit 2 means there is nothing to
+# install (no compose file or ecosystem it knows), which is not a failure.
+if [ "$DOCKER_MODE" -eq 1 ] && [ "${CREW_DEPS:-on}" != "off" ] && [ "${CREW_DOCKER_INSTALL:-on}" != "off" ] &&
+   [ -f "$_vw_dep_scripts/docker-install.sh" ]; then
+  _vw_di_args=(--project-root "$WORKTREE_DIR" --main-root "${_VW_MAIN_ROOT:-$WORKTREE_DIR}")
+  _vw_inst="$(_load_cached_command install || true)"
+  [ -z "$_vw_inst" ] || _vw_di_args+=(--install-cmd "$_vw_inst")
+  _vw_cred="$(_load_cached_command credential_target || true)"
+  [ -z "$_vw_cred" ] || _vw_di_args+=(--credential-target "$_vw_cred")
+  _VW_CMD="docker-install.sh ${_vw_di_args[*]}"
+  echo "DEPS: running (install if missing): $_VW_CMD"
+  _exec_and_report "DEPS" bash -c 'bash "$@"; rc=$?; if [ "$rc" -eq 2 ]; then echo "nothing to install"; exit 0; fi; exit "$rc"' \
+    _ "$_vw_dep_scripts/docker-install.sh" "${_vw_di_args[@]}"
+  echo ""
+fi
 
 # Order follows verification.md: type check, then lint, then tests.
 _run_category "TYPECHECK" "$(_discover_typecheck_command "$WORKTREE_DIR")" no

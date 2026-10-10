@@ -13,11 +13,11 @@ set -uo pipefail
 #   DEPS: present            dep dir already there (inherited via .worktreeinclude, or a prior run)
 #   DEPS: installed <cmd>
 #   DEPS: none               no manifest / no install method found — not a failure
-#   DEPS: docker             detect-mode.sh says USE_DOCKER → deferred to the worker's dep-install
-#   DEPS: docker-present     USE_DOCKER, and this sprint's one shared-volume install already ran
+#   DEPS: docker             USE_DOCKER, but docker-install.sh found nothing it can do (exit 2), or
+#                            the MAIN_ROOT call (which only records the mode) → left to the worker's dep-install
+#   DEPS: docker-present     USE_DOCKER, and the volumes this worktree's lockfiles name already hold the install
 #   DEPS: docker-installed <cmd>
-#   DEPS: docker-failed <cmd> (exit N)   the shared-volume install failed — no worktree installs
-#   DEPS: failed <cmd> (exit N)
+#   DEPS: failed <cmd> (exit N) (see <log>)   the install failed — host or docker alike
 #   DEPS: skipped            CREW_DEPS=off
 #
 # Why this is a script and not a step in a worker's skill
@@ -41,9 +41,9 @@ set -uo pipefail
 # Never exits non-zero
 #   A repo with no dependency step must not stall a sprint, and what a failed install
 #   means is not this script's decision: it reports `DEPS: failed` and the orchestrator
-#   acts on it — a per-issue failure stops that issue before its coder is dispatched; the
-#   sprint-level warm-up's host failure stops nothing, since every issue installs again on its
-#   own, but its `docker-failed` stops the run: that volume is the only install there is.
+#   acts on it — a per-issue failure stops that issue before its coder is dispatched, a baseline's
+#   stops the run; the sprint-level warm-up's host failure stops nothing, since every issue
+#   installs again on its own.
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=main-root.sh
@@ -125,7 +125,7 @@ _report() {
   if [ -f "$TRACE_SCRIPT" ]; then
     # From $DIR: trace.sh falls back to its cwd's repo, which must be the one _sprint_dir read.
     local level=info
-    case "$line" in failed*|docker-failed*) level=error ;; esac
+    case "$line" in failed*) level=error ;; esac
     (cd "$DIR" && bash "$TRACE_SCRIPT" ${MARKER_DIR:+--log "$MARKER_DIR/traces/orchestrator.log"} --level "$level" DEPS "dir=$DIR${SLUG:+ slug=$SLUG} $line") 2>/dev/null || true
   fi
   exit 0
@@ -136,8 +136,8 @@ _report() {
 # Only the one DEPS: line above survives into whatever the caller does with this
 # script's output (the orchestrator's own log, the trace log): stderr — the tail printed
 # next to each failure below — is captured by the caller and thrown away (see
-# Sprint.installDeps / runWorker in orchestrator/lib). Without a file on disk, "docker-failed"
-# or "failed npm ci (exit 1)" is all that is ever left to debug from. Reusing the per-issue
+# Sprint.installDeps / runWorker in orchestrator/lib). Without a file on disk, "failed npm ci
+# (exit 1)" is all that is ever left to debug from. Reusing the per-issue
 # marker path when one exists keeps the log beside the .ok/.skip marker it explains;
 # otherwise it falls back to the target directory's own .scratch, so a standalone run
 # (no sprint, no --slug) still leaves something on disk to point at.
@@ -146,6 +146,18 @@ _debug_log_path() {
     printf '%s' "$MARKER.log"
   else
     printf '%s' "$DIR/.scratch/deps-install.log"
+  fi
+}
+
+# _docker_log_path — where a failed docker install's full output is saved: under the sprint dir,
+# beside the other dispatch files, named for the stem it ran for (outside a sprint, the target
+# directory's own .scratch).
+_docker_log_path() {
+  local stem="${STEM:-${SLUG:-install}}"
+  if [ -n "$MARKER_DIR" ]; then
+    printf '%s' "$MARKER_DIR/docker-install-$stem.log"
+  else
+    printf '%s' "$DIR/.scratch/docker-install-$stem.log"
   fi
 }
 
@@ -307,26 +319,16 @@ if [ -z "$DEP_SCRIPTS" ]; then
   _report "none" skip
 fi
 
-# ─── 2b. main-root docker check, ahead of the presence guard ─────────────────
-# The one MAIN_ROOT call's job (see step 4) is to warm the shared *docker volume* once —
-# a store completely separate from whatever host-side dep dir might already sit in
-# MAIN_ROOT (predating .worktreeinclude excluding it, or a contributor's own local
-# install). The presence guard below exists to say "nothing to do", which is true on the
-# host path but not here: a host-side node_modules being present says nothing about
-# whether the docker volume — and docker-compose.override.yml — have ever been generated.
-# Without this check, that stale host copy makes the guard return `present` and the
-# MAIN_ROOT call never reaches step 4 at all, so the override is never written and every
-# worktree this sprint is left reporting bare `docker` (deferred) instead of
-# `docker-present`.
-#
-# Worktree calls (--slug set) are unaffected — there, an inherited dep dir via
-# .worktreeinclude genuinely means there is nothing to do, so the guard stays first.
-MAIN_ROOT_MODE=""
+# ─── 2b. the docker verdict, ahead of the presence guard ─────────────────────
+# A host-side node_modules being present says nothing about the docker volumes: those are named
+# by this directory's own lockfiles and filled by docker-install.sh alone. The presence guard
+# below exists to say "nothing to do", which is true on the host path but not here — a stale host
+# copy (predating .worktreeinclude excluding it, or a contributor's own local install) would make
+# it return `present` and the docker install would never run. So docker mode skips the guard, for
+# the MAIN_ROOT call and every worktree call alike.
+MODE="$(bash "$DEP_SCRIPTS/detect-mode.sh" --project-root "$DIR" 2>/dev/null || echo USE_HOST)"
 SKIP_PRESENCE_GUARD=0
-if [ -z "$SLUG" ]; then
-  MAIN_ROOT_MODE="$(bash "$DEP_SCRIPTS/detect-mode.sh" --project-root "$DIR" 2>/dev/null || echo USE_HOST)"
-  [ "$MAIN_ROOT_MODE" = "USE_DOCKER" ] && SKIP_PRESENCE_GUARD=1
-fi
+[ "$MODE" = "USE_DOCKER" ] && SKIP_PRESENCE_GUARD=1
 
 # ─── 3. the presence guard ───────────────────────────────────────────────────
 # The real guard, and the reason a resumed sprint and a .worktreeinclude repo cost
@@ -414,98 +416,55 @@ if [ -n "$MARKER" ] && [ -f "$MARKER.skip" ]; then
 fi
 fi  # SKIP_PRESENCE_GUARD
 
-# ─── 4. docker mode: warm the shared volume once, then just check it happened ────────────
+# ─── 4. docker mode ──────────────────────────────────────────────────────────
 # The judgement half (env/credential setup, choosing a service or command by hand, and
-# recovering from an install failure) stays with the dep-install skill — that is still
-# the worker's own up-front invocation, unchanged. What is left has no judgement in it:
-# generating the override and running the ecosystem's own install command inside the
-# container are both deterministic, the same way host-install.sh already is on the host
-# path, so docker-install.sh (dep-install's docker-mode sibling of host-install.sh) can do
-# it here.
+# recovering from an install failure) stays with the dep-install skill. What is left has no
+# judgement in it: generating the override and running the ecosystem's own install command inside
+# the container are deterministic, so docker-install.sh (dep-install's docker-mode sibling of
+# host-install.sh) does it here.
 #
-# Docker volumes are shared across every worktree of this MAIN_ROOT *by design* — that is
-# the whole point of caching deps once instead of once per worktree — so the install must
-# run exactly once, not once per worktree. `--slug` is always passed for a worktree call
-# and never for the one MAIN_ROOT call this orchestrator makes before any worktree exists
-# (see sprint.mjs), so its absence is already the signal for "this is the place to do the
-# real work"; a worktree call only ever checks whether that already happened. Already
-# resolved once, at step 1b.
-DOCKER_MARKER="$MAIN_ROOT_EFFECTIVE/.scratch/docker-install.done"
-
-# Reuse the MAIN_ROOT verdict from step 2b when this is that call, instead of running
-# detect-mode.sh a second time for the same directory.
-if [ -n "$MAIN_ROOT_MODE" ]; then
-  MODE="$MAIN_ROOT_MODE"
-else
-  MODE="$(bash "$DEP_SCRIPTS/detect-mode.sh" --project-root "$DIR" 2>/dev/null || echo USE_HOST)"
-fi
+# The dependency volumes are named by a hash of the lockfiles (gen-override.sh), so each worktree
+# has the volumes its own lockfiles describe, and docker-install.sh installs into them only when
+# they lack their completion stamp. Every worktree call therefore runs it: a volume another
+# worktree or sprint already filled costs one container start and reports `docker-present`.
 if [ "$MODE" = "USE_DOCKER" ]; then
-  # Persist the verdict into *this* worktree's local git config — the exact key
+  # Persist the verdict into *this* directory's local git config — the exact key
   # detect-mode.sh checks first and solve-issue Sec.2 already reads. Without this, a
   # verdict reached only via detect-mode.sh's Makefile heuristic (no explicit
-  # agent.install-mode set, no override file yet) is never written anywhere: the
-  # worker's own up-front check sees neither signal, silently concludes host mode, and
-  # skips dep-install entirely — the worktree never gets its deps at all, in any mode.
-  # Writing it here turns an inferred verdict into the explicit one every downstream
-  # reader already trusts.
+  # agent.install-mode set) is never written anywhere: the worker's own up-front check sees
+  # neither signal, silently concludes host mode, and skips dep-install entirely — the worktree
+  # never gets its deps at all, in any mode.
   git -C "$DIR" config --local agent.install-mode docker 2>/dev/null || true
 
-  # Also merge it into .coding-crew/dev-commands.json's "install_mode" field, written once here
-  # (the MAIN_ROOT call, before any worktree exists — nothing to race with) and read by
-  # detect-mode.sh ahead of its own Makefile heuristic. The git-config write above can still
-  # silently lose a lock race against a sibling issue's own ensure-deps.sh call once
-  # worktrees start running concurrently, and it only helps a reader that shares this
-  # checkout's git config in the first place — a worker's independent up-front check may
-  # resolve a completely different install of dep-install (a different platform's skill copy,
-  # a stale global one) and re-derive its own answer from scratch. A committed cache at a
-  # fixed, well-known path is something any copy of detect-mode.sh can agree on regardless of
-  # which one is running — and, unlike a .scratch file, it survives to the next sprint too.
   if [ -z "$SLUG" ]; then
-    # Same Makefile a docker verdict was inferred from may itself name which compose service
-    # its recipes use (`docker compose run --rm node ...`) — a stronger signal than
-    # gen-override.sh's own file-order guess among several declared services. Best-effort:
-    # an empty result here just leaves docker_service unset, and every reader already falls
-    # back to gen-override.sh's default exactly as before this existed.
+    # The one MAIN_ROOT call records the mode and installs nothing. It lands in
+    # .coding-crew/dev-commands.json's "install_mode" field (and the service, when the Makefile that
+    # inferred docker names one — a stronger signal than gen-override.sh's file-order guess among
+    # several declared services), read by detect-mode.sh ahead of its own Makefile heuristic. The
+    # git-config write above can silently lose a lock race against a sibling issue's own call, and
+    # only helps a reader that shares this checkout's git config; a committed cache at a fixed,
+    # well-known path is something any copy of detect-mode.sh can agree on, and — unlike a
+    # .scratch file — survives to the next sprint. Best-effort: an empty service leaves
+    # docker_service unset and every reader falls back to gen-override.sh's default.
     DETECTED_SERVICE=""
     [ -f "$DEP_SCRIPTS/detect-service.sh" ] &&
       DETECTED_SERVICE="$(bash "$DEP_SCRIPTS/detect-service.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" 2>/dev/null || true)"
     _merge_mode_cache docker "$DETECTED_SERVICE"
 
-    # Generate the override as soon as the cache says docker, independent of whatever
-    # docker-install.sh decides below — it can exit 2 for reasons that have nothing to do
-    # with whether an override CAN be generated (no lockfile it recognises in a manifest
-    # dir, an --install-cmd override that itself invokes docker), which would otherwise
-    # leave the cache and Step 0's fast path (dep-install/SKILL.md) disagreeing about
-    # whether docker-compose.override.yml exists. A real compose-file/ecosystem failure
-    # (no compose file, no supported ecosystem) fails this the same way it would fail
-    # docker-install.sh's own attempt, so this is not a second guess — just an earlier one.
-    [ -f "$DEP_SCRIPTS/gen-override.sh" ] &&
-      bash "$DEP_SCRIPTS/gen-override.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" >/dev/null 2>&1 || true
-  fi
-
-  if [ -n "$SLUG" ]; then
-    # A worktree call: the shared install already happened or it did not. Either way
-    # there is nothing for a worktree to install into a volume every other worktree
-    # already shares — a branch that adds its own new dependency is exactly the
-    # "trivial impact" case dep-install's own retry rule already covers reactively
-    # (module-not-found → re-run install), so it is left there rather than duplicated.
-    if [ -f "$DOCKER_MARKER" ]; then
-      # docker-install.md tells a worker that lands on this fast path to skip straight to
-      # "run install" — it never calls gen-override.sh for this worktree, which is the one
-      # place the worktree's own docker-compose.override.yml symlink gets created. Every
-      # mechanical caller (verify-worktree.sh, docker-install.sh) always passes
-      # $MAIN_ROOT/docker-compose.override.yml explicitly via -f and never needed that
-      # symlink, but a bare `docker compose run` a worker or human types by hand does — so
-      # create it here instead of leaving every fast-path worktree without one.
-      [ -f "$DEP_SCRIPTS/gen-override.sh" ] &&
-        bash "$DEP_SCRIPTS/gen-override.sh" --link-only --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" >/dev/null 2>&1 || true
-      _report "docker-present" ok
+    # Remove the shared override an older install generated at the repo root. Compose would
+    # still auto-load it for a bare call, with volume names this version no longer uses. Only a
+    # generated one goes — its volume keys are named wt_<project>_…; a project's own committed
+    # docker-compose.override.yml never has one and is left alone.
+    _proj_slug="$(basename "$MAIN_ROOT_EFFECTIVE" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_*$//')"
+    if [ -f "$MAIN_ROOT_EFFECTIVE/docker-compose.override.yml" ] &&
+       grep -Eq "^[[:space:]]+wt_${_proj_slug}_[A-Za-z0-9_]*:[[:space:]]*\$" "$MAIN_ROOT_EFFECTIVE/docker-compose.override.yml" 2>/dev/null; then
+      rm -f "$MAIN_ROOT_EFFECTIVE/docker-compose.override.yml"
     fi
     _report "docker"
   fi
 
-  # The one MAIN_ROOT call. CREW_DOCKER_INSTALL=off is the rollback lever back to the
-  # old always-deferred behaviour, independent of CREW_DEPS (which also gates host mode).
+  # CREW_DOCKER_INSTALL=off is the rollback lever back to the always-deferred behaviour,
+  # independent of CREW_DEPS (which also gates host mode).
   DOCKER_INSTALL_SCRIPT="$DEP_SCRIPTS/docker-install.sh"
   if [ "${CREW_DOCKER_INSTALL:-on}" = "off" ] || [ ! -f "$DOCKER_INSTALL_SCRIPT" ]; then
     _report "docker"
@@ -513,11 +472,7 @@ if [ "$MODE" = "USE_DOCKER" ]; then
 
   DOCKER_OUT="$(mktemp)"
   trap 'rm -f "$DOCKER_OUT"' EXIT
-  # --force: past docker-install.sh's manifest-fingerprint fast path. That skip suits a repeat
-  # dep-install run; here it is the sprint's one install into a volume every worktree shares,
-  # and a FRESH fingerprint proves only that the lockfiles are unchanged — not that the
-  # volume still holds what they describe.
-  DOCKER_ARGS=(--project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" --timeout "$TIMEOUT" --force)
+  DOCKER_ARGS=(--project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" --timeout "$TIMEOUT")
   # Forward the same discovered override step 5 would otherwise use on the host path —
   # without this, docker-install.sh falls back to its own lockfile table and silently runs
   # a different command than the one a CLAUDE.md/AGENTS.md/Makefile documents.
@@ -538,27 +493,26 @@ if [ "$MODE" = "USE_DOCKER" ]; then
 
   case "$DOCKER_RC" in
     0)
-      mkdir -p "$(dirname "$DOCKER_MARKER")" 2>/dev/null || true
-      printf '%s\n' "$DOCKER_CMD" > "$DOCKER_MARKER" 2>/dev/null || true
-      _report "docker-installed $DOCKER_CMD"
+      if grep -q '^Present: ' "$DOCKER_OUT" 2>/dev/null; then
+        _report "docker-present" ok
+      fi
+      _report "docker-installed $DOCKER_CMD" ok
       ;;
     2)
       # Nothing this mechanism can do — no compose file, no service, no supported
-      # ecosystem. Same outcome as always: defer entirely to the worker.
-      _report "docker"
-      ;;
-    4)
-      # Another install is already in flight (this script, or a worker's own dep-install
-      # invocation) — do not block this round waiting on it, defer instead.
+      # ecosystem. This worktree's override is still wanted by every run.sh call and every bare
+      # `docker compose` the worker types, so make it best-effort, then defer to the worker.
+      [ -f "$DEP_SCRIPTS/gen-override.sh" ] &&
+        bash "$DEP_SCRIPTS/gen-override.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" >/dev/null 2>&1 || true
       _report "docker"
       ;;
     *)
-      DOCKER_LOG="$MAIN_ROOT_EFFECTIVE/.scratch/docker-install.log"
+      DOCKER_LOG="$(_docker_log_path)"
       _persist_log "$DOCKER_LOG" "$DOCKER_OUT"
       echo "--- docker-install.sh output (tail) ---" >&2
       tail -n 20 "$DOCKER_OUT" >&2
       echo "--- end; full output saved to $DOCKER_LOG ---" >&2
-      _report "docker-failed $DOCKER_CMD (exit $DOCKER_RC) (see $DOCKER_LOG)"
+      _report "failed $DOCKER_CMD (exit $DOCKER_RC) (see $DOCKER_LOG)"
       ;;
   esac
 elif [ -z "$SLUG" ]; then
@@ -585,31 +539,18 @@ trap 'rm -f "$OUT_FILE"' EXIT
 
 if [ -n "$CACHED_INSTALL" ]; then
   # $CACHED_INSTALL is a documented override (step 1b) — it can itself be a Makefile
-  # target whose recipe invokes `docker compose run` (this is host mode overall, so
-  # nothing here nests it inside another container, but the recipe's own nested call
-  # still needs $DIR's GIT_DIR/GIT_COMMON_DIR redirect). Exported, not `-e`,
-  # since there is no `docker compose run` of ours here to attach flags to — the shared
-  # override's bare passthrough entries pick these up from process env instead. See
-  # gen-override.sh's "Nested docker calls" header comment.
-  GIT_ENV_LINES=()
-  if [ -n "$DEP_SCRIPTS" ] && [ -f "$DEP_SCRIPTS/gen-override.sh" ]; then
-    while IFS= read -r _git_env_line; do
-      [ -n "$_git_env_line" ] && GIT_ENV_LINES+=("$_git_env_line")
-    done < <(bash "$DEP_SCRIPTS/gen-override.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" --query git-env 2>/dev/null || true)
-  fi
-
+  # target whose recipe invokes `docker compose run`. This is host mode overall, so no crew
+  # override exists and the docker shim on PATH passes such a call through unchanged.
   # Run in $DIR, not $MAIN_ROOT_EFFECTIVE — this call installs into whichever directory
   # was passed as --dir (a worktree, or the main root itself), the same target
   # host-install.sh would have used.
-  # "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}", not "${GIT_ENV_LINES[@]}": bash < 4.4
-  # (macOS's stock /bin/bash is 3.2) treats an empty array under `set -u` as unbound.
   # Streamed live via tee (see the docker path above for why) — $OUT_FILE still gets the
   # full output for the failure diagnostic below.
   if [ -n "$TIMEOUT_BIN" ]; then
-    "$TIMEOUT_BIN" "$TIMEOUT" env "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" \
+    "$TIMEOUT_BIN" "$TIMEOUT" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" \
       2>&1 | tee "$OUT_FILE"
   else
-    env "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" 2>&1 | tee "$OUT_FILE"
+    bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" 2>&1 | tee "$OUT_FILE"
   fi
   RC=${PIPESTATUS[0]}
   CMD="$CACHED_INSTALL"

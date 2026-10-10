@@ -8,8 +8,12 @@ SCRIPTS="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts"
 setup() {
   TEMP_DIR=$(cd "$(mktemp -d)" && pwd -P)
   unset MAIN_ROOT TRACE_LOG CREW_ORCHESTRATED
-  export GIT_CONFIG_COUNT=3 GIT_CONFIG_KEY_0=user.email GIT_CONFIG_VALUE_0=t@test \
-    GIT_CONFIG_KEY_1=user.name GIT_CONFIG_VALUE_1=T GIT_CONFIG_KEY_2=protocol.file.allow GIT_CONFIG_VALUE_2=always
+  # Appended to setup_suite's list (no background maintenance), not replacing it.
+  local n="${GIT_CONFIG_COUNT:-0}"
+  export "GIT_CONFIG_KEY_$n=user.email" "GIT_CONFIG_VALUE_$n=t@test" \
+    "GIT_CONFIG_KEY_$((n + 1))=user.name" "GIT_CONFIG_VALUE_$((n + 1))=T" \
+    "GIT_CONFIG_KEY_$((n + 2))=protocol.file.allow" "GIT_CONFIG_VALUE_$((n + 2))=always" \
+    GIT_CONFIG_COUNT=$((n + 3))
   git init -q -b main "$TEMP_DIR/repo"
   git -C "$TEMP_DIR/repo" commit -q --allow-empty -m init
 }

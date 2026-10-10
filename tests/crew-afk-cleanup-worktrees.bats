@@ -3,7 +3,10 @@
 # Tests for cleanup-worktrees.sh — sprint worktree/branch teardown.
 # Pattern follows tests/verify-worktree.bats: a temp git repo per test.
 
+load helpers/fake-docker
+
 CLEANUP_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/cleanup-worktrees.sh"
+GEN_OVERRIDE="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/gen-override.sh"
 
 setup() {
   export TEMP_DIR=$(mktemp -d)
@@ -222,4 +225,98 @@ make_unmerged_worktree() {
   run bash "$CLEANUP_SCRIPT" --main-root "$(mktemp -d)"
   [ "$status" -eq 1 ]
   [[ "$output" == *"not a git repository"* ]]
+}
+
+# ─── dependency volumes no worktree maps to ──────────────────────────────────
+#
+# docker is a fake that keeps each named volume as a temp dir (helpers/fake-docker.bash).
+
+# _volumes_setup — the fake docker first on PATH, and this repo's owner prefix in $PREFIX
+_volumes_setup() {
+  FAKE="$TEMP_DIR/.fake-docker"
+  STUB="$TEMP_DIR/.fake-stub"
+  export FAKE STUB
+  install_fake_docker "$STUB" "$FAKE"
+  export PATH="$STUB:$PATH"
+  PREFIX="$(bash "$GEN_OVERRIDE" --project-root "$TEMP_DIR" --main-root "$TEMP_DIR" --query owner-prefix)"
+}
+
+# _vol <name> — a volume the fake docker knows
+_vol() { mkdir -p "$FAKE/vols/$1"; }
+_has_vol() { [ -d "$FAKE/vols/$1" ]; }
+
+# _name_in_override <git-dir> <volume> — a live override that maps the volume
+_name_in_override() {
+  printf 'services:\n  app:\n    volumes:\n      - %s:/opt/app/node_modules\nvolumes:\n  %s:\n    name: %s\n' "$2" "$2" "$2" > "$1/crew-compose.override.yml"
+}
+
+@test "cleanup: removes this owner's volumes no live override names, and keeps the referenced ones" {
+  _volumes_setup
+  make_merged_worktree "crew/feat/01-a"
+  make_unmerged_worktree "crew/other/02-b"
+  _vol "${PREFIX}nm_root_00000001"   # the main checkout's override names it
+  _vol "${PREFIX}nm_root_00000002"   # a live worktree's override names it
+  _vol "${PREFIX}nm_root_00000003"   # the removed worktree's: nothing names it any more
+  _vol "${PREFIX}nm_root_00000004"   # nobody's
+  _name_in_override "$TEMP_DIR/.git" "${PREFIX}nm_root_00000001"
+  _name_in_override "$(git -C "$TEMP_DIR/.scratch/worktrees/crew/other/02-b" rev-parse --path-format=absolute --git-dir)" "${PREFIX}nm_root_00000002"
+  _name_in_override "$(git -C "$TEMP_DIR/.scratch/worktrees/crew/feat/01-a" rev-parse --path-format=absolute --git-dir)" "${PREFIX}nm_root_00000003"
+
+  run bash "$CLEANUP_SCRIPT" --main-root "$TEMP_DIR" --merged "crew/feat/01-a"
+  [ "$status" -eq 0 ]
+  _has_vol "${PREFIX}nm_root_00000001"
+  _has_vol "${PREFIX}nm_root_00000002"
+  ! _has_vol "${PREFIX}nm_root_00000003"
+  ! _has_vol "${PREFIX}nm_root_00000004"
+  [[ "$output" == *"removed volume ${PREFIX}nm_root_00000004"* ]]
+  # the summary stays the last line
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "CLEANUP: removed=1 kept=0 failed=0" ]
+}
+
+@test "cleanup: never touches a volume with another owner prefix (B7)" {
+  _volumes_setup
+  proj="${PREFIX%_????_}"               # wt_<proj>
+  _vol "${proj}_ffff_nm_root_00000001"  # same project, another owner (another clone or host)
+  _vol "wt_somebody_else_nm_root_00000001"
+  _vol "${proj}_nm_root"                # an older install's volume, no owner component
+  _vol "${PREFIX}nm_root_00000009"
+
+  run bash "$CLEANUP_SCRIPT" --main-root "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  _has_vol "${proj}_ffff_nm_root_00000001"
+  _has_vol "wt_somebody_else_nm_root_00000001"
+  _has_vol "${proj}_nm_root"
+  ! _has_vol "${PREFIX}nm_root_00000009"
+}
+
+@test "cleanup: skips silently when docker volume rm fails" {
+  _volumes_setup
+  _vol "${PREFIX}nm_root_00000001"
+  export FAKE_DOCKER_RM_FAIL=1
+
+  run bash "$CLEANUP_SCRIPT" --main-root "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  _has_vol "${PREFIX}nm_root_00000001"
+  [[ "$output" != *"volume"* ]]
+  [[ "$output" != *"in use"* ]]
+}
+
+@test "cleanup: skips silently when no docker is on PATH" {
+  _vol_dir="$TEMP_DIR/.nodocker-bin"
+  mkdir -p "$_vol_dir"
+  for t in bash git dirname basename cat rm mkdir date tr sort env uname hostname grep awk cut head tail sed mktemp mv ls find readlink; do
+    command -v "$t" >/dev/null 2>&1 && ln -s "$(command -v "$t")" "$_vol_dir/$t"
+  done
+  run env PATH="$_vol_dir" bash "$CLEANUP_SCRIPT" --main-root "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"removed=0 kept=0 failed=0"* ]]
+}
+
+@test "cleanup: --dry-run leaves the volumes alone" {
+  _volumes_setup
+  _vol "${PREFIX}nm_root_00000001"
+
+  run bash "$CLEANUP_SCRIPT" --main-root "$TEMP_DIR" --dry-run
+  [ "$status" -eq 0 ]
+  _has_vol "${PREFIX}nm_root_00000001"
 }

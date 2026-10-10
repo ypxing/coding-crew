@@ -117,7 +117,7 @@ _makefile_env_command() {
     # target" even though the recipe text we want is right there in the output.
     recipe=$(cd "$dir" && make -n "$target" 2>/dev/null || true)
     [[ -n "$recipe" ]] || continue
-    if printf '%s' "$recipe" | grep -qE 'docker (compose|run|exec)'; then
+    if grep -qE 'docker (compose|run|exec)' <<<"$recipe"; then
       continue
     fi
     printf 'make %s' "$target"

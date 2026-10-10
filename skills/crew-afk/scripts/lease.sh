@@ -55,12 +55,12 @@ cas_push() {
   local out
   if out=$(git push --force-with-lease="$REF:$2" origin "$1:$REF" 2>&1); then return 0; fi
   # A host refusing the namespace outright is not a lost race: it never goes away on retry.
-  if printf '%s' "$out" | grep -Eqi 'remote rejected.*(hook declined|deny|denied|not allowed|refusing|protected|forbidden|invalid|restricted)|deny updating|hidden ref'; then
+  if grep -Eqi 'remote rejected.*(hook declined|deny|denied|not allowed|refusing|protected|forbidden|invalid|restricted)|deny updating|hidden ref' <<<"$out"; then
     echo "lease.sh: origin rejected the lease ref $REF (the host refuses this ref namespace): $out" >&2
     echo "lease.sh: use the fallback namespace: export CREW_LEASE_NAMESPACE=refs/tags/crew-lock" >&2
     return 4
   fi
-  if printf '%s' "$out" | grep -Eqi 'stale info|rejected|already exists|failed to delete'; then return 3; fi
+  if grep -Eqi 'stale info|rejected|already exists|failed to delete' <<<"$out"; then return 3; fi
   echo "lease.sh: git push failed: $out" >&2
   return 1
 }

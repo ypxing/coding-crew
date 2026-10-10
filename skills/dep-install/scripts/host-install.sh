@@ -85,7 +85,7 @@ if [[ -f Makefile ]]; then
     # target" even though the recipe text we want is right there in the output.
     recipe=$(make -n "$target" 2>/dev/null || true)
     if [[ -n "$recipe" ]]; then
-      if echo "$recipe" | grep -qE 'docker (compose|run|exec)'; then
+      if grep -qE 'docker (compose|run|exec)' <<<"$recipe"; then
         echo "Skipping make $target — recipe invokes docker" >&2
       else
         echo "Running: make $target"

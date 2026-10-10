@@ -76,14 +76,14 @@ $COMMIT_BODY
 
 $CO_AUTHOR"
 
-if echo "$FULL_MSG" | grep -q "^\[02-user-profile\] Implement user profile page"; then
+if grep -q "^\[02-user-profile\] Implement user profile page" <<<"$FULL_MSG"; then
     echo "✓ PASS: Commit message has correct header"
 else
     echo "✗ FAIL: Commit message header incorrect"
     exit 1
 fi
 
-if echo "$FULL_MSG" | grep -q "Co-authored-by: Claude"; then
+if grep -q "Co-authored-by: Claude" <<<"$FULL_MSG"; then
     echo "✓ PASS: Commit message has Co-authored-by trailer"
 else
     echo "✗ FAIL: Commit message missing Co-authored-by trailer"

@@ -169,8 +169,10 @@ bullet above.
 bash "$DEP_SCRIPTS/run.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" -- "<command>"
 ```
 
-It runs the command where the INSTALL_MODE from Step 2 says: inside docker (both `-f` flags, this
-worktree's git env, the right service) or on the host. Never hand-build a `docker compose` command.
+It runs the command where the INSTALL_MODE from Step 2 says: inside docker (the right service, with
+this worktree's compose override added by the `docker` shim) or on the host. That holds for any
+ad-hoc command, a one-off `docker compose` one included: send it through `run.sh -- <cmd>`. Never
+hand-build a `docker compose` command.
 
 Run commands in the foreground and wait for them — never in the background. Between edits run only what your change touches (one test file, not the suite). Before committing, run the tests your change affects.
 Other workers share this machine: temp files go under `$PROJECT_ROOT`, never a shared path such as `/tmp/<name>`; never kill a process you did not start.

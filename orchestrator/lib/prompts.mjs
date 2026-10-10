@@ -21,8 +21,10 @@ import { SEVERITY_RANK } from "./report.mjs";
  * cache yet (a direct, non-orchestrated /solve-issue run) means no line, and resolve-mode.sh's
  * own detection is the source of truth.
  *
- * `deps` is this issue's own ensure-deps.sh outcome (`present`, `docker-present`, …), handed
- * over the same way: that install already ran in this worktree, so solve-issue's
+ * `deps` is this issue's own ensure-deps.sh outcome (`present`, `installed <cmd>`, and in docker
+ * mode `docker-present` — the volumes this worktree's lockfiles name already held the install —
+ * or `docker-installed <cmd>`), handed over the same way: that install already ran for this
+ * worktree, so solve-issue's
  * resolve-mode.sh turns it into ACTION=none instead of a second, fingerprint-skipped
  * dep-install run per issue. Absent when the step did not run (--no-deps), so a worker is
  * never told deps are in place when nothing looked.

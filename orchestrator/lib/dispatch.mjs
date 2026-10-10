@@ -28,6 +28,7 @@ import { writeLog } from "./log.mjs";
 import { preflightPaneHost, spawnDispatch } from "./pane-host/index.mjs";
 import { ADAPTERS } from "./adapters/index.mjs";
 import { ARGV_PROMPT_LIMIT_BYTES, EMPTY_RESULT_META, assertArgvFits } from "./adapters/common.mjs";
+import { pathWithShim } from "./install-dir.mjs";
 import { ROLE_POLICY, renderRolePrompt, roleOfAgent } from "./adapters/render.mjs";
 import { formatJsonTraceLine } from "./adapters/trace.mjs";
 
@@ -44,6 +45,8 @@ export function buildDispatch(platform, spec) {
     env: {
     MAIN_ROOT: mainRoot,
     CREW_ORCHESTRATED: "1",
+    // The docker shim first: a bare `docker compose run` the agent types loads its worktree's override.
+    ...(process.env.CREW_INSTALL_DIR ? { PATH: pathWithShim(process.env.CREW_INSTALL_DIR, process.env.PATH) } : {}),
     // The coder defers the full suite to the verify gate, and runs the tests it changed since
     // the feature branch it was cut from (`run-checks.sh --targeted`); reviewer/triage run no checks.
     ...(agent === "crew-coder" ? { CREW_DEFER_FULL_CHECKS: "1", ...(spec.baseRef ? { CREW_BASE_REF: spec.baseRef } : {}) } : {}),

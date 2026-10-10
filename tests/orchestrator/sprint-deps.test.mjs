@@ -87,9 +87,32 @@ test("a failed per-issue install stops the issue before the coder or verify runs
   assert.deepEqual(state(root).completed_slugs ?? [], []);
 });
 
-test("a failed sprint-level docker install stops the run before any worktree or dispatch, even with the baseline on", () => {
-  // In docker mode the sprint-level call is the only install: every worktree call only
-  // checks it happened. Carrying on would send every coder, and the baseline, to an empty volume.
+test("a baseline whose docker install fails ends the run [BASELINE-RED]", () => {
+  // In docker mode each `--slug` call installs into the volumes its own lockfiles name, so the
+  // baseline's failed install is the baseline's failure: red, not a sprint-level stop.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const scripts = privateScripts();
+  const real = join(scripts, "_real-ensure-deps.sh");
+  cpSync(join(scripts, "ensure-deps.sh"), real);
+  writeFileSync(
+    join(scripts, "ensure-deps.sh"),
+    [
+      "#!/usr/bin/env bash",
+      'case " $* " in *" --slug _baseline "*) echo "DEPS: failed make deps (exit 3) (see .scratch/demo/docker-install-_baseline.log)"; exit 0 ;; esac',
+      'exec bash ' + JSON.stringify(real) + ' "$@"',
+      "",
+    ].join("\n"),
+  );
+
+  const { r } = commandLines(root, [], { scripts, baseline: true });
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /\[BASELINE-RED\]/);
+  assert.match(r.stderr, /dependency install failed — failed make deps \(exit 3\)/);
+  assert.deepEqual([state(root).last_exit.reason, state(root).last_exit.code], ["baseline red", 1]);
+});
+
+test("a sprint-level DEPS line is only logged, whatever it says: nothing stops the run before a worktree exists", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   const scripts = privateScripts();
@@ -100,22 +123,15 @@ test("a failed sprint-level docker install stops the run before any worktree or 
     [
       "#!/usr/bin/env bash",
       'case " $* " in *" --slug "*) exec bash ' + JSON.stringify(real) + ' "$@" ;; esac',
-      'echo "make deps runs docker itself, but not through docker-compose.override.yml"',
       'echo "DEPS: docker-failed make deps (exit 5) (see .scratch/docker-install.log)"',
       "",
     ].join("\n"),
   );
 
-  const { r, lines } = commandLines(root, [], { scripts, baseline: true });
-  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
-  assert.match(r.stderr, /not through docker-compose\.override\.yml/);
-  assert.match(r.stderr, /dependencies could not be installed into the docker volume/);
-  assert.match(r.stderr, /^  docker-failed make deps \(exit 5\)/m);
-  assert.match(r.stderr, /--no-deps/);
-  // The log outlives the scrollback: the stop is there too, as the one FATAL line.
-  assert.match(traceLog(root), /^\S+Z FATAL \[ABORT\] .*dependencies could not be installed/m);
-  assert.equal(lines.filter((l) => ISSUE_WORKTREE_ADD.test(l)).length, 0, "a worktree was created");
-  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0, "an agent was dispatched");
+  const { r, lines } = commandLines(root, ["--max-rounds", "1"], { scripts });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /dependencies could not be installed into the docker volume/);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
 });
 
 test("a failed sprint-level host install still stops nothing: every worktree installs again", () => {
@@ -527,4 +543,20 @@ test("recordDispatchCost keeps a cost-unknown dispatch's context size without a 
   assert.ok(calls[1].join(" ").includes("--session-id s1 --context-tokens 7"));
   sprint.recordDispatchCost({ costUsd: 1, contextTokens: 7 }, who);
   assert.ok(!calls[2].includes("--context-tokens"));
+});
+
+test("childEnv() puts the dep-install shim dir first on PATH, ahead of the inherited PATH", () => {
+  const sprint = new Sprint({ mainRoot: "/fake/root", script: (n) => n }, { CREW_INSTALL_DIR: "/opt/proj/.coding-crew" });
+  const prev = process.env.PATH;
+  process.env.PATH = "/usr/local/bin:/usr/bin";
+  try {
+    assert.equal(sprint.childEnv().PATH, "/opt/proj/.coding-crew/dep-install/scripts/shim:/usr/local/bin:/usr/bin");
+  } finally {
+    process.env.PATH = prev;
+  }
+});
+
+test("childEnv() leaves PATH alone for a hand-made sprint.env with no install dir", () => {
+  const sprint = new Sprint({ mainRoot: "/fake/root", script: (n) => n }, {});
+  assert.equal("PATH" in sprint.childEnv(), false);
 });

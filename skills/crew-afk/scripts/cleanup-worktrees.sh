@@ -38,6 +38,13 @@ set -uo pipefail
 #   - Order matters: the worktree goes first, because git refuses to delete a
 #     ref that some worktree still has checked out.
 #
+# Docker dependency volumes (docker mode)
+#   After the worktrees are gone, the volumes this repo's owner prefix names (`wt_<proj>_<owner4>_`,
+#   from dep-install's gen-override.sh --query owner-prefix) that no live worktree's or the main
+#   checkout's crew-compose.override.yml still names are removed. Volumes of another owner (another
+#   clone, host or sandbox) never match the prefix. A volume that cannot be removed (in use), or
+#   no `docker` on PATH, is skipped silently.
+#
 # Exit code: 0 on success (including "nothing to do"); 1 on bad arguments or a
 # git failure that left work behind.
 
@@ -247,6 +254,81 @@ done
 # Safe unconditionally: prune only clears metadata for worktrees whose directory
 # is already gone. It never removes a live, checked-out worktree.
 [ "$DRY_RUN" -eq 1 ] || git -C "$MAIN_ROOT" worktree prune
+
+# ─── dependency volumes no worktree maps to ──────────────────────────────────
+
+# _find_gen_override — dep-install's gen-override.sh, found the way ensure-deps.sh and
+# verify-worktree.sh find the dep-install scripts.
+_find_gen_override() {
+  local root candidate
+  if [ -n "${CREW_DEP_INSTALL_SCRIPTS:-}" ]; then
+    [ -f "$CREW_DEP_INSTALL_SCRIPTS/gen-override.sh" ] && printf '%s' "$CREW_DEP_INSTALL_SCRIPTS/gen-override.sh"
+    return 0
+  fi
+  if [ -n "${CREW_INSTALL_DIR:-}" ] && [ -f "$CREW_INSTALL_DIR/dep-install/scripts/gen-override.sh" ]; then
+    printf '%s' "$CREW_INSTALL_DIR/dep-install/scripts/gen-override.sh"
+    return 0
+  fi
+  for root in "$MAIN_ROOT" "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)" "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" "${HOME:-}"; do
+    [ -n "$root" ] || continue
+    for candidate in \
+      "$root/.coding-crew/dep-install/scripts" \
+      "$root/.claude/skills/dep-install/scripts" \
+      "$root/.pi/skills/dep-install/scripts" \
+      "$root/.agents/skills/dep-install/scripts" \
+      "$root/.github/skills/dep-install/scripts" \
+      "$root/skills/dep-install/scripts"; do
+      if [ -f "$candidate/gen-override.sh" ]; then printf '%s' "$candidate/gen-override.sh"; return 0; fi
+    done
+  done
+}
+
+# _prune_dep_volumes — `docker volume rm` every volume of this owner that no live override names.
+# Prints one `CLEANUP: removed volume <name>` line each; never fails the cleanup.
+_prune_dep_volumes() {
+  command -v docker >/dev/null 2>&1 || return 0
+  local gen prefix common wt_path gitdir f vol removed=0
+  gen="$(_find_gen_override)"
+  [ -n "$gen" ] || return 0
+  prefix="$(bash "$gen" --project-root "$MAIN_ROOT" --main-root "$MAIN_ROOT" --query owner-prefix 2>/dev/null)" || return 0
+  [ -n "$prefix" ] || return 0
+
+  # Every name a live override still maps: the main checkout's, and each worktree's (the git dir
+  # of every `git worktree list` entry, which covers every sprint of this repo).
+  local overrides=()
+  common="$(git -C "$MAIN_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  [ -z "$common" ] || overrides+=("$common/crew-compose.override.yml")
+  while IFS= read -r line; do
+    case "$line" in
+      worktree\ *)
+        wt_path="${line#worktree }"
+        gitdir="$(git -C "$wt_path" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
+        [ -z "$gitdir" ] || overrides+=("$gitdir/crew-compose.override.yml")
+        ;;
+    esac
+  done < <(git -C "$MAIN_ROOT" worktree list --porcelain)
+  local referenced=""
+  for f in "${overrides[@]}"; do
+    [ -f "$f" ] || continue
+    referenced="$referenced
+$(grep -oE 'wt_[A-Za-z0-9_]+' "$f" 2>/dev/null || true)"
+  done
+
+  local listed
+  listed="$(docker volume ls -q --filter "name=^${prefix}" 2>/dev/null)" || return 0
+  while IFS= read -r vol; do
+    [ -n "$vol" ] || continue
+    case "$vol" in "$prefix"*) ;; *) continue ;; esac
+    if grep -qxF -- "$vol" <<<"$referenced"; then continue; fi
+    if docker volume rm "$vol" >/dev/null 2>&1; then
+      echo "CLEANUP: removed volume $vol"
+      removed=$((removed + 1))
+    fi
+  done <<< "$listed"
+  return 0
+}
+
+[ "$DRY_RUN" -eq 1 ] || _prune_dep_volumes
 
 _TRACE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/trace.sh"
 [ -f "$_TRACE_SCRIPT" ] && bash "$_TRACE_SCRIPT" --level "$([ "$FAILED" -eq 0 ] && echo info || echo warn)" CLEANUP "removed=$REMOVED kept=$KEPT failed=$FAILED" 2>/dev/null || true

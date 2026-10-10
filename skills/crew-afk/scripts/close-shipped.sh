@@ -71,7 +71,7 @@ MERGED_PR="$(printf '%s' "$PRS" | jq -r --arg base "$DEFAULT_BRANCH" '[.[] | sel
 if ! ISSUES="$(gh issue list --milestone "$SLUG" --state open --limit 500 \
     --json number,title,labels 2>&1)"; then
   # A milestone not created yet has no issues, and so nothing to close.
-  if printf '%s' "$ISSUES" | grep -qi milestone; then echo "SHIPPED: 0"; exit 0; fi
+  if grep -qi milestone <<<"$ISSUES"; then echo "SHIPPED: 0"; exit 0; fi
   fail "gh issue list failed: $ISSUES"
 fi
 

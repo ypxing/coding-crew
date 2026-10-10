@@ -376,7 +376,7 @@ if ((${#NAMES[@]} > 1)); then
       [[ -n "${FILE_PATHS[$j]}" ]] || continue
       shared=$(comm -12 <(printf '%s\n' "${FILE_PATHS[$i]}") <(printf '%s\n' "${FILE_PATHS[$j]}") | paste -sd, - | sed 's/,/, /g')
       [[ -n "$shared" ]] || continue
-      if printf '%s\n' "$REACH" | grep -q -x -F -e "${NAMES[$i]} ${NAMES[$j]}" -e "${NAMES[$j]} ${NAMES[$i]}"; then
+      if grep -q -x -F -e "${NAMES[$i]} ${NAMES[$j]}" -e "${NAMES[$j]} ${NAMES[$i]}" <<<"$REACH"; then
         continue
       fi
       warn "${PATHS[$i]}" "names the same file as ${PATHS[$j]} with no ## Blocked by between them: $shared (advisory: add a Blocked by only if to-issues' edge rule row 1 or 2 matches)"
@@ -400,7 +400,7 @@ if [[ -n "$PRD_FILE" ]]; then
     done
     while IFS= read -r id; do
       [[ -z "$id" ]] && continue
-      if ! printf '%s\n' "$implemented" | grep -q -E "(^|[^A-Za-z0-9])${id}([^0-9]|\$)"; then
+      if ! grep -q -E "(^|[^A-Za-z0-9])${id}([^0-9]|\$)" <<<"$implemented"; then
         warn "$PRD_FILE" "$id is not named by any issue's ## Implements"
       fi
     done <<< "$ids"

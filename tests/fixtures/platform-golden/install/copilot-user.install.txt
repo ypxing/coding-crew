@@ -78,6 +78,9 @@ HOME/.coding-crew/dep-install/scripts/manifest-fingerprint.sh exec=1
 HOME/.coding-crew/dep-install/scripts/python-install-cmd.sh exec=1
 HOME/.coding-crew/dep-install/scripts/resolve-mode.sh exec=1
 HOME/.coding-crew/dep-install/scripts/run.sh exec=1
+HOME/.coding-crew/dep-install/scripts/shim/ /
+HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
+HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
 HOME/.coding-crew/manifest.json 32a5ec93652b1c45d275880c30470c061cf7d7b1
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
@@ -180,6 +183,9 @@ HOME/.copilot/skills/dep-install/scripts/manifest-fingerprint.sh exec=1
 HOME/.copilot/skills/dep-install/scripts/python-install-cmd.sh exec=1
 HOME/.copilot/skills/dep-install/scripts/resolve-mode.sh exec=1
 HOME/.copilot/skills/dep-install/scripts/run.sh exec=0
+HOME/.copilot/skills/dep-install/scripts/shim/ /
+HOME/.copilot/skills/dep-install/scripts/shim/docker exec=1
+HOME/.copilot/skills/dep-install/scripts/shim/docker-compose exec=1
 HOME/.copilot/skills/domain-modeling/ /
 HOME/.copilot/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 HOME/.copilot/skills/domain-modeling/references/ /

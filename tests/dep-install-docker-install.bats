@@ -10,11 +10,11 @@
 SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts"
 SCRIPT="$SCRIPTS_DIR/docker-install.sh"
 
-# assert_linked_or_copied <worktree-path> <main-root-path> — the fresh-worktree case fed by
-# gen-override.sh's/ensure-env.sh's own symlink-with-fallback: a real symlink where the
-# platform allows it, or (no symlink privilege — the default on Windows without Developer
-# Mode/elevation) an independent file with identical content instead. Either satisfies every
-# mechanical caller, which always also passes the MAIN_ROOT file explicitly via its own `-f`.
+load helpers/fake-docker
+
+# assert_linked_or_copied <worktree-path> <main-root-path> — ensure-env.sh's `.env` link: a real
+# symlink where the platform allows it, or (no symlink privilege — the default on Windows
+# without Developer Mode/elevation) an independent file with identical content instead.
 assert_linked_or_copied() {
   local link="$1" target="$2"
   if [[ -L "$link" ]]; then
@@ -32,9 +32,15 @@ setup() {
   unset MAIN_ROOT
   TEMP_DIR=$(mktemp -d)
   export TEMP_DIR
-  MAIN=$(mktemp -d)
-  WORK=$(mktemp -d)
+  # physical paths: the docker shim reports the override via `git rev-parse`, which resolves
+  # symlinks (macOS's /var -> /private/var), so a logical path would never match its calls
+  MAIN=$(cd "$(mktemp -d)" && pwd -P)
+  WORK=$(cd "$(mktemp -d)" && pwd -P)
   export MAIN WORK
+  git init -q "$MAIN"
+  git init -q "$WORK"
+  # where gen-override.sh writes WORK's override: its own git dir
+  OVERRIDE="$WORK/.git/crew-compose.override.yml"
   cat > "$WORK/docker-compose.yml" <<'YML'
 services:
   app:
@@ -84,7 +90,7 @@ stub_docker() {
   [ "$output" = "/opt/app" ]
   run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --query manifest-dirs
   [ "$output" = "$WORK" ]
-  [ ! -f "$MAIN/docker-compose.override.yml" ]
+  [ ! -f "$OVERRIDE" ]
 }
 
 @test "gen-override.sh --query vendor-paths prints each dep volume's container path" {
@@ -100,50 +106,27 @@ stub_docker() {
   [ "$status" -ne 0 ]
 }
 
-# ─── gen-override.sh: worktree symlink ───────────────────────────────────────
+# ─── gen-override.sh: where the override goes ───────────────────────────────
 #
-# Every mechanical caller still passes the override's absolute MAIN_ROOT path via an
-# explicit second `-f` (see the docker-install.sh tests below) — these tests pin the added
-# safety net: a symlink at PROJECT_ROOT so compose's own same-directory override convention
-# also picks it up if something ever invokes `docker compose run` with no `-f` at all.
+# Into the worktree's own git dir, never the repo tree: every compose call gets it from the
+# docker shim, so nothing named docker-compose.override.yml is written or linked anywhere.
 
-@test "a worktree PROJECT_ROOT gets a symlink to the MAIN_ROOT override" {
+@test "gen-override.sh writes the override into PROJECT_ROOT's git dir and nothing into either tree" {
   run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
-  assert_linked_or_copied "$WORK/docker-compose.override.yml" "$MAIN/docker-compose.override.yml"
+  [ -f "$OVERRIDE" ]
+  [ ! -e "$WORK/docker-compose.override.yml" ]
+  [ ! -e "$MAIN/docker-compose.override.yml" ]
 }
 
-@test "--dry-run prints YAML but writes and links nothing" {
+@test "--dry-run prints YAML but writes nothing" {
   run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --dry-run
   [ "$status" -eq 0 ]
-  [ ! -e "$MAIN/docker-compose.override.yml" ]
+  [ ! -e "$OVERRIDE" ]
   [ ! -e "$WORK/docker-compose.override.yml" ]
 }
 
-@test "the MAIN_ROOT-only call (PROJECT_ROOT == MAIN_ROOT) does not self-link" {
-  cp "$WORK/docker-compose.yml" "$WORK/package.json" "$WORK/package-lock.json" "$MAIN/"
-  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$MAIN" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  [ -f "$MAIN/docker-compose.override.yml" ]
-  [ ! -L "$MAIN/docker-compose.override.yml" ]
-}
-
-@test "a stale symlink pointing at a different MAIN_ROOT is cleared and relinked, not left dangling" {
-  local other_main; other_main=$(mktemp -d)
-  # A real symlink to a target that doesn't exist yet is the whole point of "stale" — but
-  # creating one at all needs symlink privilege, which Windows withholds without Developer
-  # Mode/elevation. gen-override.sh's own writes already fall back to a copy there (see
-  # assert_linked_or_copied above), so a dangling *symlink* specifically can't occur on such
-  # a platform; nothing for this test to exercise.
-  ln -s "$other_main/docker-compose.override.yml" "$WORK/docker-compose.override.yml" 2>/dev/null \
-    || skip "this platform cannot create symlinks; a stale symlink can't occur here"
-  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  assert_linked_or_copied "$WORK/docker-compose.override.yml" "$MAIN/docker-compose.override.yml"
-  rm -rf "$other_main"
-}
-
-@test "a project's own committed docker-compose.override.yml at PROJECT_ROOT is left untouched" {
+@test "a project's own docker-compose.override.yml at PROJECT_ROOT is left untouched" {
   echo "services: {}" > "$WORK/docker-compose.override.yml"
   run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
@@ -152,11 +135,11 @@ stub_docker() {
 }
 
 @test "re-running gen-override.sh against the same worktree is idempotent" {
+  bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  first="$(cat "$OVERRIDE")"
   run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
-  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  assert_linked_or_copied "$WORK/docker-compose.override.yml" "$MAIN/docker-compose.override.yml"
+  [ "$(cat "$OVERRIDE")" = "$first" ]
 }
 
 @test "gen-override.sh falls back to /app when no bind-mount volume line matches" {
@@ -228,19 +211,20 @@ YML
   stub_docker 0
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
-  grep -q "platform: linux/" "$MAIN/docker-compose.override.yml"
+  grep -q "platform: linux/" "$OVERRIDE"
 }
 
 # ─── docker-install.sh: detection and argument construction ─────────────────
 
-@test "installs via docker compose run with both -f flags and the ecosystem's own command" {
+@test "installs via docker compose run through the shim, with the ecosystem's own command" {
   stub_docker 0
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
   [[ "$output" == "Running: docker compose run --rm app sh -c"* ]]
   [[ "$output" == *"npm ci"* ]]
-  [ -f "$MAIN/docker-compose.override.yml" ]
-  assert_linked_or_copied "$WORK/docker-compose.override.yml" "$MAIN/docker-compose.override.yml"
+  [ -f "$OVERRIDE" ]
+  [ ! -e "$MAIN/docker-compose.override.yml" ]
+  [ ! -e "$WORK/docker-compose.override.yml" ]
 }
 
 @test "--service overrides the first-service default" {
@@ -332,11 +316,236 @@ YML
   [[ "$output" == *"make deps"* ]]
 }
 
+# ─── install-if-missing: the stamp, the lock, the volume ──────────────────────
+#
+# `docker` is a fake that keeps each named volume as a temp dir (helpers/fake-docker.bash) and runs
+# the container's script for real against it, so what is pinned here is what the script does to a
+# volume, not just which argv it built.
+
+# use_fake_docker — replaces the exit-code stubs with the volume-playing fake
+use_fake_docker() {
+  FAKE="$TEMP_DIR/fake"
+  export FAKE
+  install_fake_docker "$STUB" "$FAKE"
+}
+
+# vol_dir — the one dependency volume this worktree's override names, as a dir under the fake
+vol_dir() {
+  local n
+  n="$(grep -o 'name: wt_[A-Za-z0-9_]*' "$OVERRIDE" | head -1 | sed 's/^name: //')"
+  [ -n "$n" ] || return 1
+  echo "$FAKE/vols/$n"
+}
+
+# state_dir — the override's state volume (where the install lock lives), as a dir under the fake
+state_dir() {
+  local n
+  n="$(grep -o 'name: wt_[A-Za-z0-9_]*_state_[A-Za-z0-9]*' "$OVERRIDE" | head -1 | sed 's/^name: //')"
+  [ -n "$n" ] || return 1
+  echo "$FAKE/vols/$n"
+}
+
+_installs() { grep -c . "$FAKE/install.calls" || true; }
+
+@test "the first install runs the command, writes the stamp in the volume and releases the lock" {
+  use_fake_docker
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "Running: docker compose run --rm app sh -c 'cd /opt/app && npm ci'"* ]]
+  [[ "$output" != *"Present:"* ]]
+  [ "$(_installs)" -eq 1 ]
+  [ -f "$(vol_dir)/.crew-stamp" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
+}
+
+@test "with the stamp present, no install command runs and it exits 0" {
+  use_fake_docker
+  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Present:"* ]]
+  [ "$(_installs)" -eq 1 ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
+}
+
+@test "a second worktree with the same lockfiles reuses the volume: no install" {
+  use_fake_docker
+  git -C "$MAIN" commit -q --allow-empty -m init -c user.name=t -c user.email=t@t 2>/dev/null || git -C "$MAIN" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+  git -C "$MAIN" worktree add -q "$TEMP_DIR/wt2" -b wt2
+  cp "$WORK/docker-compose.yml" "$WORK/package.json" "$WORK/package-lock.json" "$TEMP_DIR/wt2/"
+  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  run bash "$SCRIPT" --project-root "$TEMP_DIR/wt2" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Present:"* ]]
+  [ "$(_installs)" -eq 1 ]
+}
+
+@test "a changed lockfile names new volumes, which get their own install" {
+  use_fake_docker
+  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  first="$(vol_dir)"
+  echo '{"changed":true}' > "$WORK/package-lock.json"
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "Running: docker compose run"* ]]
+  [ "$(vol_dir)" != "$first" ]
+  [ "$(_installs)" -eq 2 ]
+  [ -f "$first/.crew-stamp" ] && [ -f "$(vol_dir)/.crew-stamp" ]
+}
+
+@test "--force deletes the stamp and reinstalls under the lock" {
+  use_fake_docker
+  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  [ -f "$(vol_dir)/.crew-stamp" ]
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --force
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Present:"* ]]
+  [ "$(_installs)" -eq 2 ]
+  [ -f "$(vol_dir)/.crew-stamp" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
+}
+
+@test "--force waits for a lock someone holds, like any other install" {
+  use_fake_docker
+  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  mkdir "$(state_dir)/.crew-lock"
+  date +%s > "$(state_dir)/.crew-lock/started"
+  SECONDS=0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --force --timeout 2
+  [ "$status" -eq 0 ]
+  [ "$SECONDS" -ge 2 ]
+  [ "$(_installs)" -eq 2 ]
+}
+
+@test "a failed install writes no stamp, removes the lock and is exit 3 with the tail" {
+  use_fake_docker
+  export FAKE_NPM_RC=1
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"npm ERR! boom"* ]]
+  [ ! -e "$(vol_dir)/.crew-stamp" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
+}
+
+# ─── the lock: waiting and taking over ──────────────────────────────────────
+
+# hold_lock <age-seconds> — a lock left in the volume by a holder that started <age> seconds ago
+hold_lock() {
+  bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  mkdir -p "$(state_dir)/.crew-lock"
+  echo $(( $(date +%s) - $1 )) > "$(state_dir)/.crew-lock/started"
+}
+
+@test "a lock younger than --timeout makes the install wait for it" {
+  use_fake_docker
+  hold_lock 0
+  SECONDS=0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --timeout 3
+  [ "$status" -eq 0 ]
+  [ "$SECONDS" -ge 3 ]
+}
+
+@test "a wait ends as soon as the holder's install leaves the stamp" {
+  use_fake_docker
+  hold_lock 0
+  # The fake makes a volume's dir on its first compose run, which under load can come after the
+  # holder's write below; with no dir the write fails, the lock is never released, and the wait
+  # runs out the whole --timeout.
+  mkdir -p "$(vol_dir)"
+  ( sleep 1; : > "$(vol_dir)/.crew-stamp"; rm -f "$(state_dir)/.crew-lock/started"; rmdir "$(state_dir)/.crew-lock" ) &
+  SECONDS=0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --timeout 60
+  wait
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Present:"* ]]
+  [ "$SECONDS" -lt 30 ]
+  [ "$(_installs)" -eq 0 ]
+}
+
+@test "a lock path that cannot be created fails fast with an error naming it, not a busy wait" {
+  use_fake_docker
+  bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  mkdir -p "$(state_dir)"
+  : > "$(state_dir)/.crew-lock"   # a file where the lock dir goes: mkdir fails, and no holder exists
+  SECONDS=0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --timeout 30
+  [ "$status" -eq 3 ]
+  [ "$SECONDS" -lt 15 ]
+  [[ "$output" == *"cannot create the install lock"*".crew-lock"* ]]
+  [ "$(_installs)" -eq 0 ]
+}
+
+@test "the state volume is opened to a non-root service in a root run before the lock is taken" {
+  use_fake_docker
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  prep="$(grep -n -e '--user=0' "$FAKE/docker.calls" | head -1 | cut -d: -f1)"
+  [ -n "$prep" ]
+  [ "$prep" -eq 1 ]
+  [[ "$(sed -n "${prep}p" "$FAKE/docker.calls")" == *"--no-deps"*"--entrypoint sh"* ]]
+  [ -f "$(vol_dir)/.crew-stamp" ]
+}
+
+@test "a lock older than --timeout is taken over, not waited for" {
+  use_fake_docker
+  hold_lock 1000
+  SECONDS=0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --timeout 30
+  [ "$status" -eq 0 ]
+  [ "$SECONDS" -lt 15 ]
+  [ "$(_installs)" -eq 1 ]
+  [ -f "$(vol_dir)/.crew-stamp" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
+}
+
+@test "the override mounts the lock's state volume outside every dependency directory" {
+  bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  grep -Eq '^      - wt_[A-Za-z0-9_]+_state_[0-9a-f]{8}:/crew-state$' "$OVERRIDE"
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --query state-path
+  [ "$output" = "/crew-state" ]
+}
+
+# An install that empties the vendor directory (as `npm ci` does) takes everything in it, the lock
+# included if it lived there: a second run would then find no lock and install again, concurrently.
+@test "two concurrent runs install once, even when the install empties the vendor directory" {
+  use_fake_docker
+  export FAKE_NPM_SLEEP=4
+  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" >"$TEMP_DIR/first.out" 2>&1 &
+  first=$!
+  sleep 2
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --timeout 60
+  wait "$first"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Present:"* ]]
+  [ "$(_installs)" -eq 1 ]
+  [ -f "$(vol_dir)/.crew-stamp" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
+}
+
+@test "two concurrent host-run installs run the command once, even when it empties the vendor directory" {
+  use_fake_docker
+  export FAKE_NPM_SLEEP=4
+  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" \
+    --install-cmd "docker compose run --rm app npm ci" >"$TEMP_DIR/first.out" 2>&1 &
+  first=$!
+  sleep 2
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --timeout 60 \
+    --install-cmd "docker compose run --rm app npm ci"
+  wait "$first"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Present:"* ]]
+  [[ "$output" != *"on the host"* ]]
+  [ "$(_installs)" -eq 1 ]
+  [ -f "$(vol_dir)/.crew-stamp" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
+}
+
 # ─── an --install-cmd that runs docker itself ────────────────────────────────
 #
 # Run on the host, never nested inside the service (whose container has no docker CLI) — and,
 # because its own docker call then reaches the shared volumes only by loading the override,
-# refused when it visibly would not, and probed from the service when it has run.
+# refused when it visibly would not, and probed from the service when it has run. The lock is taken
+# before it and released after it, each in a container run of its own.
 
 # _skip_unless_make_sees_stubs — Windows' native make finds a recipe's `docker` by searching the
 # whole PATH for docker.exe before any other name, so the bash stub never runs and the recipe
@@ -346,93 +555,131 @@ _skip_unless_make_sees_stubs() {
   case "$OSTYPE" in msys*|cygwin*) skip "native Windows make bypasses the PATH docker stub" ;; esac
 }
 
-# stub_logging_docker [probe-exit] — a fake `docker` that appends each call's argv to
-# $TEMP_DIR/docker.calls, exits 0, and exits <probe-exit> (default 0) for the volume probe.
-stub_logging_docker() {
-  local probe_rc="${1:-0}"
-  cat > "$STUB/docker" <<SH
-#!/usr/bin/env bash
-printf '%s\n' "\$*" >> "$TEMP_DIR/docker.calls"
-case " \$* " in *" --entrypoint sh "*) exit $probe_rc ;; esac
-exit 0
-SH
-  chmod +x "$STUB/docker"
+@test "--install-cmd naming docker compose itself runs on the host, between a lock run and an unlock run" {
+  use_fake_docker
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" \
+    --install-cmd "docker compose run --rm app npm ci"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Running: docker compose run --rm app npm ci (on the host"* ]]
+  [ "$(_installs)" -eq 1 ]
+  # The command's own call, with the shim's files added — not wrapped in `docker compose ... run app sh -c`.
+  grep -qx "compose -f $WORK/docker-compose.yml -f $OVERRIDE run --rm app npm ci" "$FAKE/docker.calls"
+  ! grep -q "sh -c cd /opt/app" "$FAKE/docker.calls"
+  # lock → the command → probe → unlock, each its own container run
+  order="$(grep -n -o -E ' _ (lock|unlock-ok) |run --rm app npm ci$|--entrypoint sh app -c for d' "$FAKE/docker.calls" | sed 's/^[0-9]*://' | tr -s ' ' | tr '\n' '|')"
+  [ "$order" = " _ lock |run --rm app npm ci|--entrypoint sh app -c for d| _ unlock-ok |" ]
+  [ -f "$(vol_dir)/.crew-stamp" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
 }
 
-@test "--install-cmd naming docker compose itself runs on the host, not nested in the service" {
-  stub_logging_docker
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" \
-    --install-cmd "docker compose run --rm other-service npm ci"
+@test "a host-run install with the stamp present runs neither the command nor the probe" {
+  use_fake_docker
+  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "docker compose run --rm app npm ci"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Running: docker compose run --rm other-service npm ci (on the host"* ]]
-  # The command's own call, as typed — not wrapped in `docker compose ... run app sh -c`.
-  grep -qx "compose run --rm other-service npm ci" "$TEMP_DIR/docker.calls"
-  ! grep -q "sh -c cd /opt/app" "$TEMP_DIR/docker.calls"
+  [[ "$output" == *"Present:"* ]]
+  [[ "$output" != *"on the host"* ]]
+  [ "$(_installs)" -eq 1 ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
 }
 
 @test "a make target whose recipe runs plain docker compose runs on the host, then the volumes are probed" {
   _skip_unless_make_sees_stubs
+  use_fake_docker
   cat > "$WORK/Makefile" <<'MAKE'
 deps:
 	docker compose run --rm app npm ci
 MAKE
-  stub_logging_docker
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"
   [ "$status" -eq 0 ]
   [[ "$output" == *"Running: make deps (on the host"* ]]
-  grep -qx "compose run --rm app npm ci" "$TEMP_DIR/docker.calls"
+  grep -qx "compose -f $WORK/docker-compose.yml -f $OVERRIDE run --rm app npm ci" "$FAKE/docker.calls"
   # The probe goes through the override, like the checks, at the volume's container path.
-  grep -q -- "-f $MAIN/docker-compose.override.yml run --rm --no-deps --entrypoint sh app .*/opt/app/node_modules" "$TEMP_DIR/docker.calls"
-  [ -f "$MAIN/.scratch/docker-install.fingerprint" ]
+  grep -q -- "-f $OVERRIDE run --rm --no-deps --entrypoint sh app .*/opt/app/node_modules" "$FAKE/docker.calls"
+  [ -f "$(vol_dir)/.crew-stamp" ]
 }
 
-@test "a recipe whose docker call skips the override is refused before anything runs (exit 5)" {
+@test "a recipe using -f, COMPOSE_FILE or -p is run, not refused: the shim adds the override to its call" {
+  _skip_unless_make_sees_stubs
+  use_fake_docker
   cat > "$WORK/Makefile" <<'MAKE'
 deps:
-	docker compose -f docker-compose.yml run --rm app npm ci
+	docker compose -f docker-compose.yml -p other run --rm app npm ci
 MAKE
-  stub_logging_docker
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"
+  [ "$status" -eq 0 ]
+  grep -qx "compose -f docker-compose.yml -p other -f $OVERRIDE run --rm app npm ci" "$FAKE/docker.calls"
+}
+
+@test "a recipe running docker run is refused before anything runs (exit 5)" {
+  use_fake_docker
+  cat > "$WORK/Makefile" <<'MAKE'
+deps:
+	docker run --rm -v $(PWD):/app node:20 npm ci
+MAKE
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"
   [ "$status" -eq 5 ]
-  [[ "$output" == *"not through docker-compose.override.yml"* ]]
-  [[ "$output" == *"-f docker-compose.yml"* ]]
-  [ ! -f "$TEMP_DIR/docker.calls" ]
-  [ ! -d "$MAIN/.scratch/.docker-install.lock" ]
+  [[ "$output" == *"not through docker compose"* ]]
+  [[ "$output" == *"docker run"* ]]
+  [ ! -s "$FAKE/docker.calls" ]
 }
 
-@test "a host-run install that leaves every volume empty is exit 5, with no fingerprint stamp" {
+@test "a host-run install that leaves every volume empty is exit 5, with no stamp and the lock released" {
   _skip_unless_make_sees_stubs
+  use_fake_docker
   cat > "$WORK/Makefile" <<'MAKE'
 deps:
-	docker compose run --rm app npm ci
+	docker compose run --rm app true
 MAKE
-  stub_logging_docker 7
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"
   [ "$status" -eq 5 ]
   [[ "$output" == *"volumes the checks run against are still empty"* ]]
   [[ "$output" == *"/opt/app/node_modules"* ]]
-  [ ! -f "$MAIN/.scratch/docker-install.fingerprint" ]
-  [ ! -d "$MAIN/.scratch/.docker-install.lock" ]
+  [ ! -e "$(vol_dir)/.crew-stamp" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
 }
 
 @test "a probe that itself fails is exit 5 naming the probe, not an empty volume" {
   _skip_unless_make_sees_stubs
+  use_fake_docker
+  export FAKE_PROBE_RC=1
   cat > "$WORK/Makefile" <<'MAKE'
 deps:
 	docker compose run --rm app npm ci
 MAKE
-  stub_logging_docker 1
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"
   [ "$status" -eq 5 ]
   [[ "$output" == *"checking that it reached the dependency volumes failed (exit 1)"* ]]
   [[ "$output" != *"still empty"* ]]
+  [ ! -e "$(vol_dir)/.crew-stamp" ]
+}
+
+@test "--force with a host-run install deletes the stamp first, so a failed reinstall leaves none" {
+  use_fake_docker
+  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  [ -f "$(vol_dir)/.crew-stamp" ]
+  export FAKE_NPM_RC=1
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --force --install-cmd "docker compose run --rm app npm ci"
+  [ "$status" -eq 3 ]
+  [ ! -e "$(vol_dir)/.crew-stamp" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
+}
+
+@test "a host-run install that fails is exit 3: no stamp, lock released" {
+  use_fake_docker
+  export FAKE_NPM_RC=1
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "docker compose run --rm app npm ci"
+  [ "$status" -eq 3 ]
+  [ ! -e "$(vol_dir)/.crew-stamp" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
 }
 
 @test "an install that runs inside the service is not probed" {
-  stub_logging_docker 7
+  use_fake_docker
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
-  ! grep -q -- "--entrypoint" "$TEMP_DIR/docker.calls"
+  # the probe is the one container run that lists the volumes; the state-dir prep is not it
+  ! grep -q -- "ls -A" "$FAKE/docker.calls"
 }
 
 @test "no compose file is exit 2, not a failure" {
@@ -452,31 +699,6 @@ MAKE
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 3 ]
   [[ "$output" == *"npm ERR! boom"* ]]
-}
-
-# ─── the lock ─────────────────────────────────────────────────────────────────
-
-@test "an already-held lock is exit 4 within --lock-timeout, not a hang" {
-  mkdir -p "$MAIN/.scratch/.docker-install.lock"
-  stub_docker 0
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --lock-timeout 1
-  [ "$status" -eq 4 ]
-  # the lock this run did not create is left exactly as it was found
-  [ -d "$MAIN/.scratch/.docker-install.lock" ]
-}
-
-@test "the lock is released after a successful install" {
-  stub_docker 0
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  [ ! -d "$MAIN/.scratch/.docker-install.lock" ]
-}
-
-@test "the lock is released after a failed install" {
-  stub_docker 1 "boom"
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
-  [ "$status" -eq 3 ]
-  [ ! -d "$MAIN/.scratch/.docker-install.lock" ]
 }
 
 # ─── .env: forwards --main-root to ensure-env.sh ──────────────────────────────────────────
@@ -527,57 +749,19 @@ MK
   [ -x "$SCRIPT" ]
 }
 
-# ─── the manifest-fingerprint fast path ──────────────────────────────────────
+# ─── no leftovers of the old fast path ───────────────────────────────────────
 
-@test "a FRESH fingerprint stamp skips install entirely, without touching docker" {
-  stub_docker 1 "docker should never be invoked on a FRESH stamp"
-  bash "$SCRIPTS_DIR/manifest-fingerprint.sh" write --project-root "$WORK" \
-    --stamp "$MAIN/.scratch/docker-install.fingerprint"
-
+@test "nothing is written under MAIN_ROOT's .scratch: the stamp lives in the volume" {
+  use_fake_docker
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"skipped"* ]]
-  [ ! -f "$MAIN/docker-compose.override.yml" ]
+  [ ! -e "$MAIN/.scratch/docker-install.fingerprint" ]
+  [ ! -e "$MAIN/.scratch/.docker-install.lock" ]
 }
 
-@test "changing the lockfile after a successful install makes the next run reinstall" {
-  stub_docker 0
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"skipped"* ]]
-
-  echo '{"changed":true}' > "$WORK/package-lock.json"
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"skipped"* ]]
-  [[ "$output" == "Running: docker compose run"* ]]
-}
-
-@test "--force bypasses a FRESH stamp and reinstalls anyway" {
-  stub_docker 0
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --force
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"skipped"* ]]
-  [[ "$output" == "Running: docker compose run"* ]]
-}
-
-@test "a successful install writes the fingerprint stamp at MAIN_ROOT" {
-  stub_docker 0
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  [ -f "$MAIN/.scratch/docker-install.fingerprint" ]
-  expected="$(bash "$SCRIPTS_DIR/manifest-fingerprint.sh" compute --project-root "$WORK")"
-  [ "$(cat "$MAIN/.scratch/docker-install.fingerprint")" = "$expected" ]
-}
-
-@test "a failed install writes no fingerprint stamp" {
-  stub_docker 1 "boom"
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
-  [ "$status" -eq 3 ]
-  [ ! -f "$MAIN/.scratch/docker-install.fingerprint" ]
+@test "--lock-timeout is gone" {
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --lock-timeout 1
+  [ "$status" -eq 1 ]
 }
 
 # ─── docker-install.md delegates install execution to docker-install.sh's lock ───────────
@@ -594,9 +778,10 @@ MK
   local doc="$SCRIPTS_DIR/../references/docker-install.md"
   [ -f "$doc" ]
   grep -q 'scripts/docker-install.sh' "$doc"
-  grep -q -- '--lock-timeout' "$doc"
+  grep -q -- '--timeout' "$doc"
+  ! grep -q -- '--lock-timeout' "$doc"
   grep -qi 'do not fall back to running .docker compose. yourself' "$doc"
   # No hand-rolled docker compose run for install — only the documented recovery paths
   # (entrypoint override under "Install failures") still construct one directly.
-  ! grep -q 'run --rm "${GIT_ENV_ARGS\[@\]}" <service>' "$doc"
+  ! grep -q 'GIT_ENV_ARGS' "$doc"
 }

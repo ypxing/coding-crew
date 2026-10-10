@@ -174,7 +174,7 @@ _takes_test_files() {
         bundle|poetry|uv|pipenv|pdm|hatch|rye) wrapper=1; prev="$w"; continue ;;
       esac
       at_prog=0
-      if [ "$w" != cd ] && printf '%s\n' "$w" | grep -qE "$NO_FILE_ARGS_RE"; then set +f; return 1; fi
+      if [ "$w" != cd ] && grep -qE "$NO_FILE_ARGS_RE" <<<"$w"; then set +f; return 1; fi
     fi
     prev="$w"
   done
@@ -239,10 +239,10 @@ _targeted_command() {
         case "$w" in /*) abs="$w" ;; *) abs="$cwd/$w" ;; esac
         if [ "$prev" != cd ] && [ -e "$abs" ]; then
           if [ -d "$abs" ]; then keep=0
-          elif printf '%s\n' "$w" | grep -qE "$TEST_FILE_RE"; then
+          elif grep -qE "$TEST_FILE_RE" <<<"$w"; then
             # a shell script that is test-shaped only by its directory (`bash test/run.sh`) is the
             # runner's wrapper, not a suite file
-            case "$w" in *.sh) printf '%s\n' "$w" | grep -qE '(\.bats$|\.(test|spec)\.|(^|/)test_[^/]*$|_test\.[A-Za-z0-9]+$)' && keep=0 ;; *) keep=0 ;; esac
+            case "$w" in *.sh) grep -qE '(\.bats$|\.(test|spec)\.|(^|/)test_[^/]*$|_test\.[A-Za-z0-9]+$)' <<<"$w" && keep=0 ;; *) keep=0 ;; esac
           fi
         fi ;;
     esac

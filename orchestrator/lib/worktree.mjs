@@ -33,11 +33,12 @@ export function featureWorktreePath(mainRoot, featureSlug) {
 
 /**
  * Provisioned into every worktree as if `.worktreeinclude` listed them, without writing that
- * file into the user's repo. Each can be generated in mainRoot after round 1's worktrees exist
- * (the override by ensure-deps.sh, .env by dep-install's ensure-env.sh), so a "does it exist
- * yet" check at creation time would race; an entry whose source is missing is skipped.
+ * file into the user's repo. It can be generated in mainRoot after round 1's worktrees exist
+ * (.env by dep-install's ensure-env.sh), so a "does it exist yet" check at creation time would
+ * race; an entry whose source is missing is skipped. Crew's compose override is not one: it
+ * lives in each worktree's own git dir, never in the repo tree.
  */
-const BUILTIN_ENTRIES = ["docker-compose.override.yml", ".env"];
+const BUILTIN_ENTRIES = [".env"];
 
 /**
  * Entries provisioned as a real copy instead of a symlink. `.env` is the one case where

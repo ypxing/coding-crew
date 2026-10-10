@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { pathWithShim } from "./install-dir.mjs";
 import { depsLine } from "./report.mjs";
 
 // review-rollup.mjs is always this module's sibling one level up (lib/sprint.mjs ->
@@ -135,8 +136,9 @@ export class Sprint {
    * downloads of the same packages; this warms whatever cache the package manager keeps
    * so the per-worktree installs are local copies. On the host this is advisory — every
    * worktree installs again, and verify-worktree.sh is the gate — so the outcome is only
-   * logged. In docker mode it is the one install into the volume every worktree shares, so
-   * the caller stops the run on `DEPS: docker-failed`; hence the returned DEPS: line.
+   * logged. In docker mode it installs nothing either: it records the mode, and each worktree's
+   * own `--slug` call (an issue, `_baseline`, `_integration`) installs into the volumes its
+   * lockfiles name. The returned DEPS: line is for the caller's log.
    *
    * Call this after one-time command discovery (see commands.mjs), not before: discovery
    * may cache a documented install override at `.coding-crew/dev-commands.json`, and
@@ -202,13 +204,15 @@ export class Sprint {
     return this.env.CREW_FIX_FINDINGS || "actionable";
   }
 
-  /** Sprint-scoped env for every child: MAIN_ROOT + STATE_FILE + TRACE_LOG. */
+  /** Sprint-scoped env for every child: MAIN_ROOT + STATE_FILE + TRACE_LOG, and the docker shim first on PATH. */
   childEnv() {
     const { sprintEnvFile, ...rest } = this.env;
     // Only set when unset: a caller (a test, a human debugging by hand) that already
     // pins a different review-rollup.mjs is deliberately overriding it, not being
     // overridden back.
-    return { CREW_REVIEW_ROLLUP: REVIEW_ROLLUP_PATH, ...rest };
+    const env = { CREW_REVIEW_ROLLUP: REVIEW_ROLLUP_PATH, ...rest };
+    if (this.installDir) env.PATH = pathWithShim(this.installDir, rest.PATH ?? process.env.PATH);
+    return env;
   }
 
   state(args) {

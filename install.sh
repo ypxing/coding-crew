@@ -349,7 +349,9 @@ install_assets_tree() {
     status=0
     check_dest_status "$asset_file" "$dest_file" || status=$?
     cp "$asset_file" "$dest_file"
-    [[ "$rel_path" == *.sh ]] && chmod +x "$dest_file"
+    # *.sh, and every file under a shim/ directory: a PATH shim has the name of the command it
+    # stands in for (`docker`), so there is no extension to go by.
+    [[ "$rel_path" == *.sh || "$rel_path" == shim/* || "$rel_path" == */shim/* ]] && chmod +x "$dest_file"
     _WRITTEN["$dest_file"]=1
     if [[ $status -eq 0 ]]; then echo "  $dest_rel/$rel_path"; fi
   done < <(find "$src" -type f -print0)

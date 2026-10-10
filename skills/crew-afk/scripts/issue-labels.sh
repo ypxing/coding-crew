@@ -80,7 +80,7 @@ case "$CMD" in
     if ! OUT="$(gh issue list --milestone "$ARG" --label in-progress --state all \
         --json number --jq '.[].number' 2>&1)"; then
       # A milestone not created yet has no issues, and so nothing to sweep.
-      if printf '%s' "$OUT" | grep -qi milestone; then echo "SWEPT: 0"; exit 0; fi
+      if grep -qi milestone <<<"$OUT"; then echo "SWEPT: 0"; exit 0; fi
       echo "issue-labels.sh: gh issue list failed: $OUT" >&2
       exit 1
     fi

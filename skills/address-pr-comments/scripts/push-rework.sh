@@ -99,7 +99,7 @@ fi
 touched=""
 for f in "${FILES[@]}"; do
   for p in "${PROTECTED_PATTERNS[@]}"; do
-    if printf '%s\n' "$f" | grep -Eiq -e "$p"; then touched="$touched $f"; break; fi
+    if grep -Eiq -e "$p" <<<"$f"; then touched="$touched $f"; break; fi
   done
 done
 [ -z "$touched" ] || refuse 11 "the change touches protected paths:$touched"
@@ -108,7 +108,7 @@ done
 RUN_CHECKS="${RUN_CHECKS:-$SKILL_DIR/../solve-issue/scripts/run-checks.sh}"
 DEP_SCRIPTS="${DEP_SCRIPTS:-$SKILL_DIR/../dep-install/scripts}"
 out=$(bash "$RUN_CHECKS" --project-root "$PROJECT_ROOT" --main-root "${MAIN_ROOT:-}" --dep-scripts "$DEP_SCRIPTS" 2>&1)
-if ! printf '%s\n' "$out" | grep -qx 'CHECKS: pass'; then
+if ! grep -qx 'CHECKS: pass' <<<"$out"; then
   refuse 12 "checks did not pass. Tail of the output:
 
 \`\`\`

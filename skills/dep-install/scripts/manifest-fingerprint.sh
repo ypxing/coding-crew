@@ -15,7 +15,8 @@
 #   manifest-fingerprint.sh write   --project-root <dir> --stamp <path> [--max-depth N]
 #
 #   compute   prints one hash covering every recognised lockfile under --project-root
-#             (bounded depth, common vendor/output dirs excluded).
+#             (bounded depth, common vendor/output dirs excluded, and so is every
+#             dot-directory under it — the same set gen-override.sh's manifest scan skips).
 #   check     prints FRESH if --stamp's saved hash matches the current one, STALE otherwise
 #             (including when --stamp does not exist yet). Always exits 0 — the verdict is
 #             the stdout line, not the exit code.
@@ -84,9 +85,9 @@ PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 # needed, this script only hashes content) so a new ecosystem added to either of those tables
 # should be added here too.
 _LOCKFILE_NAMES=(
-  uv.lock bun.lockb pnpm-lock.yaml package-lock.json yarn.lock poetry.lock
+  package.json uv.lock bun.lockb pnpm-lock.yaml package-lock.json yarn.lock poetry.lock
   go.sum go.mod requirements.txt requirements-dev.txt dev-requirements.txt pyproject.toml
-  Gemfile.lock Cargo.toml
+  Gemfile Gemfile.lock Cargo.toml
   composer.json pom.xml mix.exs
 )
 
@@ -128,6 +129,8 @@ _compute() {
       -not -path '*/vendor/*' \
       -not -path '*/target/*' \
       -not -path '*/.git/*' \
+      -not -path "$PROJECT_ROOT/.*/*" \
+      -not -path "$PROJECT_ROOT/*/.*/*" \
       -not -path '*/dist/*' \
       -not -path '*/build/*' \
       2>/dev/null | sort

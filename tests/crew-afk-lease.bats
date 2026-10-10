@@ -12,8 +12,6 @@ setup() {
   export MAIN_ROOT="$TEMP_DIR/repo"
   git init -q -b main "$MAIN_ROOT"
   cd "$MAIN_ROOT"
-  git config gc.auto 0
-  git config maintenance.auto false
   git config user.email t@test
   git config user.name T
   git commit -q --allow-empty -m init

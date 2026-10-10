@@ -12,7 +12,7 @@
  * repos; tests/install-dir-registry.bats keeps each entry equal to its registry `dest`.
  */
 
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 
 export const ASSET_DIRS = {
   reviewer: "crew-afk/roles/reviewer", // skills.crew-afk.assets.dest + roles/reviewer: the reviewer checklists and scripts
@@ -29,4 +29,15 @@ export function resolveInstallDir(env, orchestratorDir) {
 
 export function assetDir(installDir, kind) {
   return join(installDir, ASSET_DIRS[kind]);
+}
+
+/**
+ * `PATH` with dep-install's `docker`/`docker-compose` shim first, so a bare `docker compose …` any
+ * child makes (a coder's own, a recipe's) loads its worktree's crew override. `path` unchanged
+ * when there is no install dir: a hand-made sprint.env has no installed dep-install to point at.
+ */
+export function pathWithShim(installDir, path) {
+  if (!installDir) return path;
+  const shim = join(assetDir(installDir, "depInstall"), "shim");
+  return path ? `${shim}${delimiter}${path}` : shim;
 }

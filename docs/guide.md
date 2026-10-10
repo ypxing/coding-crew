@@ -458,8 +458,10 @@ run `main.mjs status`, `state.sh`, `trace.sh`, `crew-summary.sh` or `ensure-deps
 
 **Gitignored files in worktrees.** Each coder runs in an isolated worktree, so `.env` and similar
 files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
-them over. `.env` and `docker-compose.override.yml` are always carried over when they exist,
-without being listed; crew-afk never writes `.worktreeinclude` itself.
+them over. `.env` is always carried over when it exists, without being listed; crew-afk never writes
+`.worktreeinclude` itself. In docker mode each worktree's compose override lives in its own git dir
+(`crew-compose.override.yml`) and is added to every `docker compose` call by a shim on `PATH`; no
+`docker-compose.override.yml` is written or linked into your repo.
 
 **Worktree location.** Worktrees live under `.scratch/worktrees/` by default. Set
 `afk.worktreeRoot` in either `config.json` (absolute, or relative to the repo root) to put them
