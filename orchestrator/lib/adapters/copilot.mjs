@@ -25,10 +25,11 @@ export default {
     return { args };
   },
 
-  /** `-i`: copilot's interactive mode, which runs the protocol as its first prompt. */
+  /** `-i`: copilot's interactive mode, which runs the protocol as its first prompt; an `unattended` role gets build()'s --allow-all-tools. */
   interactive({ mainRoot, model, protocol, policy }) {
     const argv = ["copilot", "-i", protocol, "--add-dir", mainRoot];
     if (model && model !== "inherit") argv.push("--model", model);
+    if (policy?.unattended) argv.push("--allow-all-tools");
     if (policy) argv.push(...this.policyArgs(policy));
     return argv;
   },
