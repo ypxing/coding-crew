@@ -20,7 +20,7 @@ const ROLES_DIR = resolve(HERE, "../../roles");
 const FRAGMENT_ROOT = resolve(HERE, "../../..");
 
 /** role → the dispatch's agent label; the plain roles have no protocol. */
-export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", triage: "crew-triage", watcher: "crew-watcher" };
+export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", triage: "crew-triage", watcher: "crew-watcher", followup: "crew-followup" };
 
 /**
  * role → what it may do, declared once; each adapter's `policyArgs` turns it into its CLI's flags.
@@ -33,6 +33,8 @@ export const ROLE_POLICY = {
   triage: { readOnly: true, subagents: true, effort: "high" },
   // The watch agent is interactive, not dispatched: it has no default effort (its CLI's applies unless afk.effort.watcher sets one).
   watcher: { readOnly: true, subagents: false },
+  // A follow-up worker is interactive too, and edits and commits in `_followup`; no sub-agents (one worktree), no default effort.
+  followup: { readOnly: false, subagents: false },
 };
 
 const NAMED_SKILLS = ["solve-issue", "dep-install", "tdd"];

@@ -3,7 +3,7 @@
  * Ambient ids: HERDR_WORKSPACE_ID / HERDR_TAB_ID / HERDR_PANE_ID.
  */
 
-import { failureDetail, paneHostExec, paneHostJson, paneWorkspaceLabel } from "./shared.mjs";
+import { failureDetail, hostFailure, lastMarkerLine, paneHostExec, paneHostJson, paneWorkspaceLabel } from "./shared.mjs";
 
 /** A stalled server must not hang startup. */
 const STATUS_TIMEOUT_MS = 10000;
@@ -105,31 +105,123 @@ export async function watchAlive(effects, paneId) {
 }
 
 /**
+ * A fresh pane with cwd `cwd`: a new tab in the triggering workspace when there is one, else a
+ * workspace of its own, named `label`. Returns `{paneId, container}` (`container` closes it again)
+ * or `{failure}`.
+ */
+async function newPane(effects, { label, cwd }) {
+  const workspaceId = process.env.HERDR_WORKSPACE_ID;
+  const create = workspaceId
+    ? await paneHostExec(effects, ["tab", "create", "--workspace", workspaceId, "--cwd", cwd, "--label", label, "--no-focus"])
+    : await paneHostExec(effects, ["workspace", "create", "--cwd", cwd, "--label", label, "--no-focus"]);
+  const what = workspaceId ? "tab create" : "workspace create";
+  const result = paneHostJson(create)?.result;
+  let paneId = result?.root_pane?.pane_id;
+  if (create.code === 0 && !paneId && result?.workspace?.workspace_id) {
+    const list = await paneHostExec(effects, ["pane", "list", "--workspace", result.workspace.workspace_id], STATUS_TIMEOUT_MS);
+    paneId = paneHostJson(list)?.result?.panes?.[0]?.pane_id;
+  }
+  if (create.code !== 0 || !paneId) return { failure: `herdr ${what} exit=${create.code} ${failureDetail(create)}` };
+  const container = workspaceId ? ["tab", "close", result?.tab?.tab_id] : ["workspace", "close", result?.workspace?.workspace_id];
+  return { paneId, container: container[2] ? container : null };
+}
+
+/**
  * The watch agent: a new tab in the triggering workspace, or outside herdr a `<slug>-watch`
  * workspace on the main checkout (never closed, unlike the sprint's own). The agent is started
  * with `pane run`; herdr detects it as one. Returns `{handle}` (the pane id) or `{failure}`,
  * never throws.
  */
 export async function openWatch(effects, { slug, command }) {
-  const label = `${slug}-watch`;
   try {
-    const workspaceId = process.env.HERDR_WORKSPACE_ID;
-    const create = workspaceId
-      ? await paneHostExec(effects, ["tab", "create", "--workspace", workspaceId, "--cwd", effects.mainRoot, "--label", label, "--no-focus"])
-      : await paneHostExec(effects, ["workspace", "create", "--cwd", effects.mainRoot, "--label", label, "--no-focus"]);
-    const what = workspaceId ? "tab create" : "workspace create";
-    const result = paneHostJson(create)?.result;
-    let paneId = result?.root_pane?.pane_id;
-    if (create.code === 0 && !paneId && result?.workspace?.workspace_id) {
-      const list = await paneHostExec(effects, ["pane", "list", "--workspace", result.workspace.workspace_id], STATUS_TIMEOUT_MS);
-      paneId = paneHostJson(list)?.result?.panes?.[0]?.pane_id;
-    }
-    if (create.code !== 0 || !paneId) return { failure: `herdr ${what} exit=${create.code} ${failureDetail(create)}` };
-    const run = await paneHostExec(effects, ["pane", "run", paneId, command]);
+    const made = await newPane(effects, { label: `${slug}-watch`, cwd: effects.mainRoot });
+    if (made.failure) return { failure: made.failure };
+    const run = await paneHostExec(effects, ["pane", "run", made.paneId, command]);
     if (run.code !== 0) return { failure: `herdr pane run exit=${run.code} ${failureDetail(run)}` };
-    return { handle: paneId };
+    return { handle: made.paneId };
   } catch (err) {
     return { failure: `herdr watch agent threw: ${err.message}` };
+  }
+}
+
+/** How long a fresh agent gets to take its first prompt: it is still starting up. */
+const FOLLOWUP_START_TIMEOUT_MS = 60000;
+
+/**
+ * A follow-up worker (D15): a pane with cwd `worktree` (a new tab beside the watch agent, or a
+ * workspace of its own) running `command`, which herdr detects as an agent, then `spec` as its
+ * first prompt, waited until the agent is `working`. Returns `{handle}` (the pane id) or
+ * `{failure}` (host's own text); a pane made before a call failed is closed again. Never throws.
+ */
+export async function openFollowup(effects, { slug, worktree, command, spec }) {
+  let made = null;
+  const closeMade = async () => {
+    if (!made?.container) return;
+    try {
+      await paneHostExec(effects, made.container, STATUS_TIMEOUT_MS);
+    } catch {
+      /* cosmetic */
+    }
+  };
+  try {
+    made = await newPane(effects, { label: `${slug}-followup`, cwd: worktree });
+    if (made.failure) return { failure: made.failure };
+    const run = await paneHostExec(effects, ["pane", "run", made.paneId, command]);
+    if (run.code !== 0) {
+      await closeMade();
+      return { failure: hostFailure("herdr pane run", run) };
+    }
+    const prompt = await paneHostExec(
+      effects,
+      ["agent", "prompt", made.paneId, spec, "--wait", "--until", "working", "--timeout", String(FOLLOWUP_START_TIMEOUT_MS)],
+      FOLLOWUP_START_TIMEOUT_MS + 5000,
+    );
+    if (prompt.code !== 0) {
+      await closeMade();
+      return { failure: hostFailure("herdr agent prompt", prompt, FOLLOWUP_START_TIMEOUT_MS) };
+    }
+    return { handle: made.paneId };
+  } catch (err) {
+    await closeMade();
+    return { failure: `herdr follow-up threw: ${err.message}` };
+  }
+}
+
+/**
+ * The worker's turn, once it ends (`done`, `idle` or `blocked`, with no timeout of its own): the
+ * last `QUESTION: …` or `DONE: …` line of the pane's recent text. A worker's question also ends
+ * its turn as `done`, so the marker, not the state, tells them apart. Returns
+ * `{kind: "done"|"question", text}` or `{failure}`, never throws.
+ */
+export async function awaitFollowup(effects, rec) {
+  try {
+    const wait = await paneHostExec(effects, ["agent", "wait", rec.handle, "--until", "done", "--until", "idle", "--until", "blocked"]);
+    if (wait.code !== 0) return { failure: hostFailure("herdr agent wait", wait) };
+    const read = await paneHostExec(effects, ["agent", "read", rec.handle, "--source", "recent-unwrapped", "--lines", "400"], STATUS_TIMEOUT_MS);
+    if (read.code !== 0) return { failure: hostFailure("herdr agent read", read, STATUS_TIMEOUT_MS) };
+    const parsed = paneHostJson(read)?.result;
+    const text = typeof parsed?.read?.text === "string" ? parsed.read.text : typeof parsed?.text === "string" ? parsed.text : read.stdout;
+    const marker = lastMarkerLine(text);
+    if (marker) return marker;
+    const tail = String(text ?? "").trim().split("\n").slice(-12).join("\n");
+    return { failure: `the worker's turn ended with no QUESTION:/DONE: line; its pane ends:\n${tail}` };
+  } catch (err) {
+    return { failure: `herdr follow-up wait threw: ${err.message}` };
+  }
+}
+
+/** The answer as a new prompt, waited until the worker is `working` again so the next wait is for its next turn. */
+export async function replyFollowup(effects, rec, answer) {
+  try {
+    const prompt = await paneHostExec(
+      effects,
+      ["agent", "prompt", rec.handle, answer, "--wait", "--until", "working", "--timeout", String(FOLLOWUP_START_TIMEOUT_MS)],
+      FOLLOWUP_START_TIMEOUT_MS + 5000,
+    );
+    if (prompt.code !== 0) return { failure: hostFailure("herdr agent prompt", prompt, FOLLOWUP_START_TIMEOUT_MS) };
+    return {};
+  } catch (err) {
+    return { failure: `herdr agent prompt threw: ${err.message}` };
   }
 }
 
