@@ -339,6 +339,36 @@ test("ensureWorktree (checkout) refuses a dirty worktree at path, listing its un
   assert.equal(existsSync(join(path, "keep.me")), true);
 });
 
+test("ensureWorktree (checkout) refuses a dirty worktree at path on a detached HEAD or another branch, and removes nothing", () => {
+  for (const [label, checkout] of [
+    ["detached HEAD", (git, path) => git("-C", path, "checkout", "-q", "--detach")],
+    ["another branch", (git, path) => git("-C", path, "checkout", "-q", "-b", "scratch/other")],
+  ]) {
+    const { mainRoot, git, effects, branch, path } = featureCheckout();
+    checkout(git, path);
+    writeFileSync(join(path, "work.txt"), "unsaved\n");
+
+    const result = ensureWorktree(effects, { mainRoot, branch, base: "main", mode: "checkout", path });
+
+    assert.equal(result.stale, true, label);
+    assert.equal(result.path, null, label);
+    assert.match(result.reason, /work\.txt/, label);
+    assert.equal(readFileSync(join(path, "work.txt"), "utf8"), "unsaved\n", `${label}: the uncommitted file survives`);
+    assert.equal(existsSync(join(path, "keep.me")), true, `${label}: the worktree was not removed`);
+  }
+});
+
+test("ensureWorktree (checkout) recreates a clean worktree at path that is on a detached HEAD", () => {
+  const { mainRoot, git, effects, branch, path } = featureCheckout();
+  git("-C", path, "checkout", "-q", "--detach");
+
+  const result = ensureWorktree(effects, { mainRoot, branch, base: "main", mode: "checkout", path });
+
+  assert.equal(result.stale, undefined);
+  assert.equal(result.created, true);
+  assert.equal(git("-C", path, "rev-parse", "--abbrev-ref", "HEAD").trim(), branch);
+});
+
 test("ensureWorktree (checkout) creates the worktree when none is at path, from base when the branch is new", () => {
   const { mainRoot, effects } = gitRoot();
   const path = join(mainRoot, ".scratch", "worktrees", "crew", "demo", "_feature");

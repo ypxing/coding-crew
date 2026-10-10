@@ -75,9 +75,11 @@ const COPY_ENTRIES = new Set([".env"]);
  * `mode: "checkout"` is for the sprint's feature branch (at `path`, which names the `_feature`
  * worktree since the branch's own name does not): a branch with commits that must never be
  * discarded or judged stale. A worktree already at `path` on `branch` is reused in place when
- * clean (`created: false`: a live feature agent may be working in it) and refused when dirty
- * (`stale`, the reason lists the files: nothing is removed). Otherwise it checks the existing
- * branch out — or creates it from `base` — and recreates a worktree at `path` on another branch.
+ * clean (`created: false`: a live feature agent may be working in it). A worktree at `path` with
+ * uncommitted changes is refused (`stale`, the reason lists the files: nothing is removed)
+ * whatever it has checked out — another branch or a detached HEAD included. Otherwise (a clean
+ * one on another branch or detached, or none) it checks the existing branch out — or creates it
+ * from `base` — and recreates the worktree at `path`.
  * The branch's other holders are released as for any worktree, but only crew-made
  * ones (under the worktree root): the main checkout or a user's own worktree being on it is a
  * refusal, not a switch.
@@ -170,7 +172,8 @@ function branchAt(listed, path) {
 
 function checkoutWorktree(effects, { mainRoot, branch, base, path, adopt }) {
   let listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
-  if (existsSync(path) && listsWorktree(listed, path) && branchAt(listed, path) === `refs/heads/${branch}`) {
+  if (existsSync(path) && listsWorktree(listed, path)) {
+    // Whatever it has checked out: a developer's work in progress is never removed to make room.
     const status = effects.gitRead(["status", "--porcelain"], { cwd: path });
     const dirty = status.stdout.trim();
     if (status.code !== 0 || dirty) {
@@ -184,8 +187,10 @@ function checkoutWorktree(effects, { mainRoot, branch, base, path, adopt }) {
           `commit or discard them (or 'git worktree remove ${path}'), then re-run`,
       };
     }
-    if (adopt) adoptWorktree(effects, path, adopt);
-    return { path, created: false, reusedBranch: true };
+    if (branchAt(listed, path) === `refs/heads/${branch}`) {
+      if (adopt) adoptWorktree(effects, path, adopt);
+      return { path, created: false, reusedBranch: true };
+    }
   }
   if (listsWorktree(listed, path) || existsSync(path)) {
     removeWorktree(effects, { path });
