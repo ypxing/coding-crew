@@ -165,18 +165,22 @@ const FOLLOWUP_READ_LINES = 400;
 /** How long a fresh agent gets to take its first prompt: it is still starting up. */
 const FOLLOWUP_START_TIMEOUT_MS = 60000;
 
+/** How often openFollowup asks again while herdr has not yet detected the agent `pane run` started. */
+const AGENT_DETECT_POLL_MS = 1000;
+
 /** How long a fresh agent gets to start and finish the turn its initial prompt (the brief) opens. */
 const FOLLOWUP_FIRST_TURN_TIMEOUT_MS = 120000;
 
 /**
  * A follow-up worker (D15): a pane with cwd `worktree` (a new tab beside the watch agent, or a
  * workspace of its own) running `command`, which herdr detects as an agent and which starts a turn
- * on the brief it was launched with. That turn is waited out (`idle` or `done`) before `spec` is
+ * on the brief it was launched with. That turn is waited out (`idle` or `done`; retried while herdr
+ * has not detected the agent yet) before `spec` is
  * prompted, or the spec would land in it and be read as part of the brief's turn; then the spec
  * is waited until the agent is `working`. Returns `{handle}` (the pane id) or
  * `{failure}` (host's own text); a pane made before a call failed is closed again. Never throws.
  */
-export async function openFollowup(effects, { slug, worktree, command, spec }) {
+export async function openFollowup(effects, { slug, worktree, command, spec, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now }) {
   let made = null;
   const closeMade = () => closeContainer(effects, made);
   try {
@@ -187,11 +191,16 @@ export async function openFollowup(effects, { slug, worktree, command, spec }) {
       await closeMade();
       return { failure: hostFailure("herdr pane run", run) };
     }
-    const first = await paneHostExec(
-      effects,
-      ["agent", "wait", made.paneId, "--until", "idle", "--until", "done", "--timeout", String(FOLLOWUP_FIRST_TURN_TIMEOUT_MS)],
-      FOLLOWUP_FIRST_TURN_TIMEOUT_MS + 5000,
-    );
+    // Right after `pane run` herdr has not detected the agent yet, and `agent wait` on it fails
+    // at once with agent_not_found (seen live): retry that until the first turn's deadline.
+    const deadline = now() + FOLLOWUP_FIRST_TURN_TIMEOUT_MS;
+    let first;
+    for (;;) {
+      const left = Math.max(1000, deadline - now());
+      first = await paneHostExec(effects, ["agent", "wait", made.paneId, "--until", "idle", "--until", "done", "--timeout", String(left)], left + 5000);
+      if (first.code === 0 || !/agent_not_found/.test(`${first.stdout}${first.stderr}`) || now() >= deadline) break;
+      await sleep(AGENT_DETECT_POLL_MS);
+    }
     if (first.code !== 0) {
       await closeMade();
       return { failure: hostFailure("herdr agent wait", first, FOLLOWUP_FIRST_TURN_TIMEOUT_MS) };

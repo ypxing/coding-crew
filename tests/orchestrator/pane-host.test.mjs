@@ -1131,6 +1131,26 @@ test("openFollowup (herdr) waits for the started agent's first turn to end befor
   assert.equal(effects._calls[3][4], "BRIEF + TASK");
 });
 
+test("openFollowup (herdr) retries the first-turn wait while herdr has not detected the agent yet (agent_not_found), then prompts the spec", async () => {
+  const notYet = { code: 1, stdout: JSON.stringify({ error: { code: "agent_not_found", message: "agent target w2:p1 not found" } }), stderr: "" };
+  const effects = fakeHerdrEffects([herdrWorkspace("w2", "w2:p1"), json({}), notYet, notYet, json({}), json({})]);
+  const slept = [];
+  const opened = await openFollowup(effects, { ...FOLLOWUP, sleep: async (ms) => slept.push(ms) });
+  assert.deepEqual(opened, { handle: "w2:p1" });
+  assert.deepEqual(effects._calls.map((c) => c.slice(1, 3).join(" ")), ["workspace create", "pane run", "agent wait", "agent wait", "agent wait", "agent prompt"]);
+  assert.equal(slept.length, 2, "one pause per not-yet-detected answer");
+});
+
+test("openFollowup (herdr) gives up on an agent herdr never detects, closing the pane it made", async () => {
+  const notYet = { code: 1, stdout: JSON.stringify({ error: { code: "agent_not_found", message: "agent target w2:p1 not found" } }), stderr: "" };
+  const effects = fakeHerdrEffects([herdrWorkspace("w2", "w2:p1"), json({}), ...Array.from({ length: 500 }, () => notYet), json({})]);
+  let now = 0;
+  const opened = await openFollowup(effects, { ...FOLLOWUP, sleep: async (ms) => (now += ms), now: () => now });
+  assert.match(opened.failure, /herdr agent wait exit=1 .*agent_not_found/);
+  assert.ok(!effects._calls.some((c) => c[2] === "prompt"), "the spec was never sent");
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w2"]);
+});
+
 test("openFollowup (herdr) whose first turn never ends fails with the host's text, never prompts the spec, and closes the pane it made", async () => {
   const effects = fakeHerdrEffects([herdrWorkspace("w2", "w2:p1"), json({}), { code: 124, stdout: "", stderr: "timeout" }, json({})]);
   const opened = await openFollowup(effects, FOLLOWUP);
