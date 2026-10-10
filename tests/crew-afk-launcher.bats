@@ -57,6 +57,18 @@ launcher_body() {
   done
 }
 
+@test "launcher: step 2 is one instruction for every mode, with no pane-host carve-out" {
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    body="$(launcher_body "$p")"
+    step="$(awk '/^2\. /{on=1} /^3\. /{on=0} on' "$body")"
+    [ -n "$step" ] || { echo "$p: no step 2" >&2; return 1; }
+    grep -qi "completion notification" <<<"$step" || { echo "$p: step 2 does not wait for the completion notification" >&2; return 1; }
+    ! grep -qi "orca" <<<"$step" || { echo "$p: step 2 names orca" >&2; return 1; }
+    ! grep -qi "herdr" <<<"$step" || { echo "$p: step 2 names herdr" >&2; return 1; }
+    ! grep -q "PANE-HOST" "$body" || { echo "$p: the launcher still reads PANE-HOST" >&2; return 1; }
+  done
+}
+
 @test "launcher: it stays a launcher - no pipeline, no state, no receipts prose" {
   # Each of these was a step the body used to perform. Naming the pipeline once, as the
   # program's contract, is fine; issuing its commands is not.
