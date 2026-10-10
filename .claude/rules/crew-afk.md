@@ -154,7 +154,20 @@ altogether, use `afk.fixFindings: medium` / `--fix-findings medium`. Its prompt 
 a cross-cutting concern no issue owned findings, while a requirement a later ADR, `CONTEXT.md` entry or commit replaced is not. The
 summary's `## Feature Review` gives the review (range, finding count, promoted or report-only, or why skipped). Not run when nothing merged; skipped (the summary says so) at a drain
 whose integration check is red (that skip gives way to the next green drain's review, and only the last entry is kept), or when the wall-clock cap stopped claims with a claimable issue left (`FEATURE-REVIEW: skipped — …` names the cap);
-a dispatch that leaves no review is recorded not-run as `feature` (and no `reviewed_tip`) and never fails the sprint.
+a dispatch that leaves no review is recorded not-run as `feature` (and no `reviewed_tip`) and never fails the sprint — but
+when the last review dispatched in the run (a skipped one dispatched nothing) left no valid report, `notGreenCauses` adds kind
+`review`, "the feature review did not run (<reason>)": the PR is a draft and `draftMarker` names `review`. No in-place retry
+(7 failures in 45 sprints, none shown transient). Under `/address-pr-comments` the ready hint still prints only when the marker names `findings` alone.
+
+Per-issue notes reach it: a per-branch reviewer writes `notes: [{location, concern}]` in `review.report.json` for a suspected defect outside
+its criteria (never a finding, never a verdict input); `report.mjs` keeps the well-formed ones (string `location` and `concern`), and
+`pipeline/review.mjs` writes them with `reviewed_sha` (the commit it reviewed) into the branch's sprint review block. `foldReview`: a later
+block's notes replace earlier ones, a `not_run` block keeps them. Before dispatch `featureNotes` (`pipeline/feature-review.mjs`) collects
+the folded branch blocks' notes whose `reviewed_sha` is reachable from the range's tip and not from its base (a whole review gets every note
+of the feature, an increment only the branches merged since `reviewed_tip`), and `featureReviewPrompt` lists them under
+`Concerns per-issue reviewers noted outside their criteria:` as data; none, no block. Feature Mode makes each one a Pass 1 candidate, a
+finding or a `### Dropped` line after Pass 2. Likewise a defect a PRD decision prescribes is a finding naming that decision (code matching
+the PRD is no evidence of correctness), and `reviewer.md` no longer downgrades a fix that contradicts a recorded decision.
 
 The closing review (`loop.mjs`, after the drain loop, before `wrapUp`): when this run's feature review completed, one more
 `runFeatureReview` with `promote: false` (`dispatch/feature-d<n>/`) covers what merged after it — the fix issue, integration
@@ -169,7 +182,7 @@ unsure ones included, Pass 2 verifies each and is where the Pre-Report Gate, Com
 Valid" apply. Dropped candidates go under `### Dropped` in the prose after the JSON; nothing parses it.
 
 A not-green PR's crew-afk block carries `<!-- crew-afk:draft <kinds> -->` (`draftMarker` in `loop.mjs`, written into
-`pr-note.md` beside `**Not green:**`), `<kinds>` a comma-separated subset of `findings,blocked,stalled,capped,wall-cap,integration`;
+`pr-note.md` beside `**Not green:**`), `<kinds>` a comma-separated subset of `findings,review,blocked,stalled,capped,wall-cap,integration`;
 a green PR has none. `/address-pr-comments` on a crew-afk PR (body has `<!-- crew-afk:begin -->`; `<slug>` from the block's
 `<!-- crew-afk:slug <slug> -->`, which `open-pr.sh` writes, else a `feature/<slug>` head branch) runs
 `solve-issue`'s `run-checks.sh` after its fix commit and a plain `git push` (never forced) only on `CHECKS: pass`; when the

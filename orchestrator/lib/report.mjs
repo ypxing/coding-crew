@@ -284,6 +284,14 @@ function findingsFromStructured(list) {
     }));
 }
 
+/** The reviewer's notes — suspected defects outside the criteria — that are `{location, concern}` of two strings; anything else is dropped. */
+function notesFromStructured(notes) {
+  if (!Array.isArray(notes)) return [];
+  return notes
+    .filter((n) => n && typeof n.location === "string" && typeof n.concern === "string")
+    .map((n) => ({ location: n.location, concern: n.concern }));
+}
+
 /**
  * One branch's structured verdict, out of a fenced ```json block: `{branch, slug,
  * verdict, detail, cause, findings}`. Both `code_review_summary()` and `promote-findings.sh
@@ -304,6 +312,8 @@ function reviewFromStructured(raw, obj) {
     cause: String(obj.cause ?? "").trim().toLowerCase() === "environment" ? "environment" : null,
     findings: findingsFromStructured(obj.findings),
     criteriaOnly: obj.criteria_only === true,
+    notes: notesFromStructured(obj.notes),
+    reviewedSha: obj.reviewed_sha ? String(obj.reviewed_sha) : null,
     raw,
   };
 }
@@ -361,10 +371,15 @@ export function parseReviewBlocks(text) {
  * (later block wins), except that a `not_run` block says nothing about the code, and a
  * `criteria_only` block (a per-branch review, which raises no findings) says nothing about
  * findings, so the previous record's findings stay, marked carried, under the new verdict.
+ * Notes follow the findings' rule for `not_run` alone: a later review's notes replace the earlier
+ * ones (it re-read the code), a `not_run` block keeps the ones before it with the sha they were
+ * written for.
  */
 export function foldReview(prev, rec) {
-  if (!prev || (rec.verdict !== "not_run" && !rec.criteriaOnly) || !prev.findings?.length) return rec;
-  return { ...rec, findings: prev.findings.map((f) => ({ ...f, carried: true })) };
+  if (!prev) return rec;
+  const kept = rec.verdict === "not_run" ? { notes: prev.notes ?? [], reviewedSha: prev.reviewedSha ?? null } : {};
+  if ((rec.verdict !== "not_run" && !rec.criteriaOnly) || !prev.findings?.length) return { ...rec, ...kept };
+  return { ...rec, ...kept, findings: prev.findings.map((f) => ({ ...f, carried: true })) };
 }
 
 /** What makes two findings the same: severity, path (line dropped), whitespace-normalised case-folded issue (the criterion when a finding has none). */
