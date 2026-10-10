@@ -448,6 +448,10 @@ hold_lock() {
 @test "a wait ends as soon as the holder's install leaves the stamp" {
   use_fake_docker
   hold_lock 0
+  # The fake makes a volume's dir on its first compose run, which under load can come after the
+  # holder's write below; with no dir the write fails, the lock is never released, and the wait
+  # runs out the whole --timeout.
+  mkdir -p "$(vol_dir)"
   ( sleep 1; : > "$(vol_dir)/.crew-stamp"; rm -f "$(state_dir)/.crew-lock/started"; rmdir "$(state_dir)/.crew-lock" ) &
   SECONDS=0
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --timeout 60
