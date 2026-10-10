@@ -707,3 +707,11 @@ test("afk.effort: a non-object, an unknown role or a non-string value is a confi
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("afk.effort: the watcher has no default effort, and takes one from afk.effort.watcher", () => {
+  assert.equal("watcher" in resolveSettings({}).effort, false);
+  const root = tmpRoot({ "config.json": { afk: { effort: { watcher: "low" } } } });
+  const loaded = loadConfig(root, { home: EMPTY_HOME });
+  assert.equal(resolveSettings({ afk: loaded.config.afk, origin: loaded.origin }).effort.watcher, "low");
+  rmSync(root, { recursive: true, force: true });
+});

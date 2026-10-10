@@ -10,10 +10,13 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ADAPTERS, DEFAULT_PARALLEL, PLATFORMS } from "../../orchestrator/lib/adapters/index.mjs";
-import { ROLE_AGENTS, ROLE_POLICY } from "../../orchestrator/lib/adapters/render.mjs";
+import { ROLE_AGENTS, ROLE_POLICY, renderRolePrompt } from "../../orchestrator/lib/adapters/render.mjs";
 
 const PLATFORMS_JSON = JSON.parse(readFileSync(fileURLToPath(new URL("../../orchestrator/platforms.json", import.meta.url)), "utf8"));
 
@@ -27,6 +30,7 @@ const REQUIRED = {
   policyArgs: "function",
   finalText: "function",
   normalize: "function",
+  interactive: "function",
 };
 
 /** Every way `data` (platforms.json) and `adapters` disagree, one message per problem, each naming its platform. */
@@ -70,6 +74,11 @@ test("conformance reports an adapter without normalize", () => {
   assert.deepEqual(problems, ["claude: adapter lacks normalize (function)"]);
 });
 
+test("conformance reports an adapter without interactive", () => {
+  const { interactive, ...noInteractive } = ADAPTERS.pi;
+  assert.deepEqual(conformanceProblems(PLATFORMS_JSON, { ...ADAPTERS, pi: noInteractive }), ["pi: adapter lacks interactive (function)"]);
+});
+
 test("ROLE_POLICY declares a policy for every role with a protocol", () => {
   assert.deepEqual(Object.keys(ROLE_POLICY).sort(), Object.keys(ROLE_AGENTS).sort());
 });
@@ -78,22 +87,35 @@ test("ROLE_POLICY declares a policy for every role with a protocol", () => {
 // Since then: the reviewer and triage may spawn sub-agents, so claude no longer denies them Agent.
 // And claude passes the role's effort (`--effort`), which it used to drop.
 const CLAUDE_READ_ONLY = ["--effort", "high", "--disallowedTools", "Edit", "Write", "NotebookEdit"];
+// The watcher: read-only, no sub-agents, and no effort (its CLI's default applies).
 const EXPECTED_POLICY_ARGS = {
-  claude: { coder: ["--effort", "high", "--disallowedTools", "Agent"], reviewer: CLAUDE_READ_ONLY, triage: CLAUDE_READ_ONLY },
+  claude: {
+    coder: ["--effort", "high", "--disallowedTools", "Agent"],
+    reviewer: CLAUDE_READ_ONLY,
+    triage: CLAUDE_READ_ONLY,
+    watcher: ["--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent"],
+    followup: ["--disallowedTools", "Agent"],
+  },
   copilot: {
     coder: ["--reasoning-effort", "high"],
     reviewer: ["--reasoning-effort", "high", "--deny-tool", "write"],
     triage: ["--reasoning-effort", "high", "--deny-tool", "write"],
+    watcher: ["--deny-tool", "write"],
+    followup: [],
   },
   pi: {
     coder: ["--thinking", "high", "--tools", "read,bash,edit,write"],
     reviewer: ["--thinking", "high", "--tools", "read,bash"],
     triage: ["--thinking", "high", "--tools", "read,bash"],
+    watcher: ["--tools", "read,bash"],
+    followup: ["--tools", "read,bash,edit,write"],
   },
   codex: {
     coder: ["-c", 'model_reasoning_effort="high"'],
     reviewer: ["-c", 'model_reasoning_effort="high"'],
     triage: ["-c", 'model_reasoning_effort="high"'],
+    watcher: [],
+    followup: [],
   },
 };
 
@@ -107,4 +129,128 @@ for (const platform of Object.keys(EXPECTED_POLICY_ARGS)) {
 
 test("every platform's expected policy flags are pinned", () => {
   assert.deepEqual(Object.keys(EXPECTED_POLICY_ARGS).sort(), [...PLATFORMS].sort());
+});
+
+test("watcher is a read-only role without sub-agents or a default effort, and renders its protocol on every platform", () => {
+  assert.equal(ROLE_AGENTS.watcher, "crew-watcher");
+  assert.deepEqual(ROLE_POLICY.watcher, { readOnly: true, subagents: false });
+  for (const platform of PLATFORMS) {
+    const text = renderRolePrompt("watcher", platform);
+    assert.match(text, /watch/i, platform);
+    assert.doesNotMatch(text, /\{\{/, platform);
+  }
+});
+
+test("followup is an interactive role that may edit, without sub-agents or a default effort, and renders for every platform", () => {
+  assert.equal(ROLE_AGENTS.followup, "crew-followup");
+  assert.deepEqual(ROLE_POLICY.followup, { readOnly: false, subagents: false, unattended: true });
+  for (const platform of PLATFORMS) {
+    const text = renderRolePrompt("followup", platform);
+    assert.match(text, /QUESTION:/, platform);
+    assert.match(text, /DONE:/, platform);
+    assert.match(text, /orchestration ask/, platform);
+    assert.match(text, /worker_done/, platform);
+    assert.doesNotMatch(text, /\{\{/, platform);
+    for (const line of text.split("\n")) {
+      assert.doesNotMatch(line, /^\s*(QUESTION|DONE):/, `${platform}: no line of the brief may look like an answer line`);
+    }
+  }
+});
+
+test("watcher names crew-afk followup as the only way to start follow-up work", () => {
+  for (const platform of PLATFORMS) {
+    const text = renderRolePrompt("watcher", platform);
+    assert.match(text, /`crew-afk followup` is the only way to start follow-up work/, platform);
+    assert.match(text, new RegExp(`followup start <slug> "<task>" --platform ${platform}`), platform);
+  }
+});
+
+// interactive({cwd, mainRoot, model, protocol, policy}) → argv, `cmd` first: the CLI's own
+// interactive mode with the protocol as its initial prompt, then the policy's flags.
+const WATCHER = ROLE_POLICY.watcher;
+const INTERACTIVE = { cwd: "/main", mainRoot: "/main", protocol: "BRIEF", policy: WATCHER };
+const EXPECTED_INTERACTIVE = {
+  claude: ["claude", "BRIEF", "--add-dir", "/main", "--model", "sonnet", "--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent"],
+  codex: ["codex", "--cd", "/main", "--sandbox", "read-only", "--model", "gpt-5", "BRIEF"],
+  pi: ["pi", "--model", "m1", "--tools", "read,bash", "BRIEF"],
+  copilot: ["copilot", "-i", "BRIEF", "--add-dir", "/main", "--model", "m1", "--deny-tool", "write"],
+};
+const MODELS = { claude: "sonnet", codex: "gpt-5", pi: "m1", copilot: "m1" };
+
+for (const platform of Object.keys(EXPECTED_INTERACTIVE)) {
+  test(`${platform}: interactive() is the CLI's interactive argv with the protocol as the initial prompt and the policy's flags`, () => {
+    const argv = ADAPTERS[platform].interactive({ ...INTERACTIVE, model: MODELS[platform] });
+    assert.deepEqual(argv, EXPECTED_INTERACTIVE[platform]);
+    assert.equal(argv[0], ADAPTERS[platform].cmd);
+    assert.ok(!argv.includes("-p") && !argv.includes("exec") && !argv.includes("--mode"), "interactive, not a headless run");
+  });
+
+  test(`${platform}: interactive() leaves the model flag out for no model or "inherit", and applies a set effort`, () => {
+    for (const model of [undefined, "inherit"]) {
+      assert.ok(!ADAPTERS[platform].interactive({ ...INTERACTIVE, model }).includes("--model"), `${platform} model=${model}`);
+    }
+    const effort = ADAPTERS[platform].interactive({ ...INTERACTIVE, policy: { ...WATCHER, effort: "low" } });
+    assert.ok(effort.join(" ").includes("low"), effort.join(" "));
+  });
+}
+
+test("every platform's interactive argv is pinned", () => {
+  assert.deepEqual(Object.keys(EXPECTED_INTERACTIVE).sort(), [...PLATFORMS].sort());
+});
+
+// A follow-up worker has no human at its terminal: its argv must not stop at a permission prompt,
+// and must let it commit from a linked worktree. The watcher's (a human is in that pane) is pinned above.
+function linkedWorktree() {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "crew-platforms-")));
+  const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@example.com");
+  git("config", "user.name", "T");
+  writeFileSync(join(root, "a"), "a\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "seed");
+  const wt = join(root, "wt");
+  git("worktree", "add", "-q", "-b", "feature", wt);
+  return { root, wt, common: join(root, ".git"), own: join(root, ".git", "worktrees", "wt") };
+}
+
+test("followup's unattended policy: claude bypasses permission prompts (and the one-time bypass-mode warning), copilot allows all tools, the watcher's argv is unchanged", () => {
+  const FOLLOWUP = ROLE_POLICY.followup;
+  const claude = ADAPTERS.claude.interactive({ ...INTERACTIVE, model: "sonnet", policy: FOLLOWUP });
+  assert.deepEqual(claude, ["claude", "BRIEF", "--add-dir", "/main", "--model", "sonnet", "--permission-mode", "bypassPermissions", "--settings", '{"skipDangerousModePermissionPrompt":true}', "--disallowedTools", "Agent"]);
+  const copilot = ADAPTERS.copilot.interactive({ ...INTERACTIVE, model: "m1", policy: FOLLOWUP });
+  assert.deepEqual(copilot, ["copilot", "-i", "BRIEF", "--add-dir", "/main", "--model", "m1", "--allow-all-tools"]);
+  for (const platform of ["claude", "copilot"]) {
+    const argv = ADAPTERS[platform].interactive({ ...INTERACTIVE, model: MODELS[platform] });
+    assert.deepEqual(argv, EXPECTED_INTERACTIVE[platform], `${platform}: the watcher's argv is unchanged`);
+  }
+});
+
+test("codex: a follow-up worker runs workspace-write with network, the git dirs writable and no approval prompts, the watcher read-only as before", () => {
+  const { root, wt, common, own } = linkedWorktree();
+  const argv = ADAPTERS.codex.interactive({ cwd: wt, mainRoot: root, model: "gpt-5", protocol: "BRIEF", policy: ROLE_POLICY.followup });
+  assert.deepEqual(argv, [
+    "codex",
+    "--cd",
+    wt,
+    "--sandbox",
+    "workspace-write",
+    "-c",
+    "sandbox_workspace_write.network_access=true",
+    "-c",
+    `sandbox_workspace_write.writable_roots=[${JSON.stringify(common)},${JSON.stringify(own)}]`,
+    "--add-dir",
+    root,
+    "--ask-for-approval",
+    "never",
+    "--model",
+    "gpt-5",
+    "BRIEF",
+  ]);
+  const built = ADAPTERS.codex.build({ cwd: wt, mainRoot: root, model: "gpt-5", policy: ROLE_POLICY.followup, protocol: "P", prompt: "T" });
+  for (const flag of ["sandbox_workspace_write.network_access=true", `sandbox_workspace_write.writable_roots=[${JSON.stringify(common)},${JSON.stringify(own)}]`]) {
+    assert.ok(built.args.includes(flag) && argv.includes(flag), `build() and interactive() agree on ${flag}`);
+  }
+  const watcher = ADAPTERS.codex.interactive({ ...INTERACTIVE, model: "gpt-5" });
+  assert.deepEqual(watcher, EXPECTED_INTERACTIVE.codex);
 });

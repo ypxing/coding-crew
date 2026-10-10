@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 import {
   applyWorktreeInclude,
   ensureWorktree,
+  listsWorktree,
   mergeFeatureBranch,
   worktreePath,
 } from "../../orchestrator/lib/worktree.mjs";
@@ -708,4 +709,13 @@ test("an auto-resolved sync keeps the feature branch's CHANGELOG entries first, 
   assert.equal(result.autoResolved, true);
   assert.equal(readFileSync(join(worktree, "CHANGELOG.md"), "utf8"), "# Changelog\n\n- old\n- feature entry\n- issue entry\n");
   assert.deepEqual(result.decisions, ["CHANGELOG.md: kept 1 entry from the feature side and 1 from the branch side"]);
+});
+
+test("listsWorktree matches a path git lists by its real path when the given one goes through a symlink (macOS /var)", () => {
+  const root = tmpRoot();
+  mkdirSync(join(root, "real", "wt"), { recursive: true });
+  symlinkSync(join(root, "real"), join(root, "link"));
+  const listed = `worktree ${join(root, "main")}\nHEAD abc\n\nworktree ${join(root, "real", "wt")}\nbranch refs/heads/f\n`;
+  assert.equal(listsWorktree(listed, join(root, "link", "wt")), true);
+  assert.equal(listsWorktree(listed, join(root, "link", "other")), false);
 });

@@ -13,10 +13,10 @@ role herdr (https://herdr.dev) already played. The pane host is one setting, res
 5. none
 
 `auto` picks orca when `ORCA_TERMINAL_HANDLE` is set, else herdr when `HERDR_PANE_ID` is,
-else none. `run` prints `PANE-HOST: <host|none>` before any sprint output, which is what the
-launcher skills read. Nothing else in the pipeline needs to know which
-backend is active — `effects.paneHost` is the one seam, consistent with this repo's
-control-flow ownership rule for `orchestrator/`.
+else none. `run` prints `PANE-HOST: <host|none>` before any sprint output, for a human or
+script that wants the resolved host; the launcher skills no longer read it. Nothing else in the
+pipeline needs to know which backend is active — `effects.paneHost` is the one seam, consistent
+with this repo's control-flow ownership rule for `orchestrator/`.
 
 ## What orca is
 
@@ -29,8 +29,8 @@ terminals, and agent sessions, and can also run headless (`orca serve`).
 
 Every coder/reviewer/triage dispatch is headless — neither backend is ever asked to report
 on anything load-bearing. A pane host is asked to open one tab/terminal that runs
-`tail -f orchestrator.log`, and to push a best-effort outcome message into the pane that
-triggered the run. orca additionally hosts each dispatch in a terminal of its own (see
+`tail -f orchestrator.log`, to open (or reuse) one interactive [watch agent](#the-watch-agent)
+for the slug, and to push best-effort milestone and outcome messages into that agent. orca additionally hosts each dispatch in a terminal of its own (see
 [Worker terminals](#worker-terminals)), but only as a place to run it. That shrunk surface
 is why orca support didn't need `worktree create`, `repo add`, or any env injection scheme —
 confirmed with a live spike against a running orca runtime (not just the CLI reference doc):
@@ -63,9 +63,93 @@ confirmed with a live spike against a running orca runtime (not just the CLI ref
 | close log tab                      | `tab close <tabId>`                                          | `terminal close --terminal <handle> --json`                                |
 | close workspace                    | `workspace close <id>` (no-op if reused)                     | no-op always — no workspace object exists                                  |
 | rename triggering tab              | `tab rename <tabId> <slug>`                                  | `terminal rename --terminal <handle> --title <slug> --json`                |
-| notify triggering pane             | `agent prompt <paneId> <msg> --wait --until working --timeout-ms 2000` | `terminal send --terminal <handle> --text <msg> --enter --json`  |
+| open watch agent                   | inside herdr: `tab create --workspace $HERDR_WORKSPACE_ID --cwd <mainRoot> --label <slug>-watch --no-focus`; outside: `workspace create --cwd <mainRoot> --label <slug>-watch --no-focus`; then `pane run <pane> "bash '<launch.sh>'"` | `terminal create --worktree path:<mainRoot> --title <slug>-watch --command "bash '<launch.sh>'" --json` |
+| watch agent still live             | `pane list` has the pane with an `agent_status` other than `unknown` | `terminal show --terminal <handle> --json` has `agentIdentity`             |
+| notify watch agent                 | `agent prompt <paneId> <msg> --wait --until working --timeout-ms 2000` | `terminal send --terminal <handle> --text <msg> --enter --json`  |
+| open follow-up worker              | inside herdr: `tab create --workspace $HERDR_WORKSPACE_ID --cwd <_followup> --label <slug>-followup --no-focus`; outside: `workspace create --cwd <_followup> …`; then `pane run <pane> "bash '<launch.sh>'"`, `agent wait <pane> --until idle --until done` (the brief's first turn; retried while herdr answers `agent_not_found`, as it does right after `pane run`), and `agent prompt <pane> <brief + task> --wait --until working` | `orchestration run-create --objective … --from <watch handle>`, `terminal create --worktree path:<_followup> --title <slug>-followup --command "bash '<launch.sh>'"`, then `orchestration worker-start --run <id> --worktree path:<_followup> --terminal <handle> --spec <brief + task> --from <watch handle>` |
+| await follow-up response           | `agent wait <pane> --until done --until idle --until blocked`, then `agent read <pane> --source recent-unwrapped`: the last `QUESTION: …` / `DONE: …` line below the echo of the last answer sent (`followup.json`'s `lastAnswer`; an echo the TUI wrapped over several lines counts, and a full read with no echo is all this turn's) | poll `orchestration inbox`: the `worker_done` to `run:<id>`, else the latest unanswered `type: question` |
+| reply to a follow-up question      | `agent prompt <pane> <answer> --wait --until working`        | `orchestration reply --id <msg> --body <answer> --run <id> --from <watch handle>` |
 | reuse signal (ambient env)         | `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`       | `ORCA_WORKTREE_ID` (implicit — every create already lands there) / `ORCA_TAB_ID` / `ORCA_TERMINAL_HANDLE` |
 | preflight readiness check          | `herdr status` (text: `status: running`)                     | `orca status --json` → `result.runtime.reachable`                          |
+
+## The watch agent
+
+Under orca or herdr, every sprint opens (or reuses) one long-lived interactive agent for its
+slug, in the **main checkout** (`crew/<slug>/_feature` is removed on every ending). It is the
+sprint's own `--platform` CLI in interactive mode on the coder's resolved model, briefed by
+`orchestrator/roles/watcher.md` as its initial prompt (each adapter's `interactive()`; the
+read-only `ROLE_POLICY.watcher` flags apply). It is for the human: every milestone push
+and the final push go to it, and it answers questions from the trace log, the summary file and
+the tracker. It never edits, merges, closes or dispatches.
+
+- **Handle.** `.scratch/<slug>/watch.json` holds `{host, handle}` (an orca terminal handle, a
+  herdr pane id). A run reuses it while the host still reports a live agent there (table above);
+  a dead or missing one is replaced and the file rewritten. The title `<slug>-watch` is only a
+  display name — an agent rewrites its own terminal title, so a lookup by title cannot work.
+- **Env.** An agent a host starts gets the host's shell env, not crew-afk's (a live probe failed
+  with "There's an issue with the selected model" until the launch carried
+  `CLAUDE_CODE_USE_BEDROCK=1`). So the host is given `bash .scratch/<slug>/watch/launch.sh`,
+  which sources the 0600 `env.sh` [worker terminals](#worker-terminals) use (`envScript`, deleted
+  once sourced), `cd`s to the checkout and `exec`s the argv. The briefing is on the argv rather
+  than sent as a first push, because orca reports a pi pane's `agentIdentity` only after its
+  first prompt has run. The env carries `CREW_PANE_HOST=<the host this run resolved>`, so a
+  `followup` command the agent runs resolves the host a `--pane-host` flag chose (its own shell
+  has neither the flag nor `ORCA_ENV`). A host call that fails deletes the `env.sh` again.
+- **Never closed.** No ending closes it, a signal and a thrown error included: orca's handle is
+  never tracked, so the terminal sweep skips it, and herdr's `<slug>-watch` workspace (outside
+  herdr) is not the sprint workspace `closeWorkspace` closes.
+- **Pushes are advisory.** No pushes ever go to `ORCA_TERMINAL_HANDLE` or `HERDR_PANE_ID`. A
+  create that fails, or a platform CLI missing from `PATH`, logs `WARN`; each later push then logs
+  `MILESTONE-PUSH-SKIPPED` (once at warn, then debug) and the run's exit code is what it would be
+  with no host. A setup failure before the log tab has no watch agent. The final push names
+  `.scratch/<slug>/traces/summary-<runId>.md` (everything the run printed to stdout, `:` in the run
+  id replaced by `-`), or carries the failure's first line when the run never reached it.
+- **herdr.** Pushes use `agent prompt --wait --until working --timeout 2000`; herdrdev/herdr#4537
+  is still open upstream and a long-running agent was not reproduced, so a push stays advisory:
+  the log tab, the summary file and the exit code carry the same information.
+- **None.** `--dry-run`, `CREW_PANE_HOST=none` or no host open no watch agent and write no
+  `watch.json`.
+
+## Follow-ups
+
+`crew-afk followup start <slug> "<task>" --platform <p>` (the watch agent runs it; `watcher.md`) opens a
+**follow-up worker**: the sprint's platform CLI, interactive, in `<worktreeRoot>/crew/<slug>/_followup`
+on the feature branch, briefed by `orchestrator/roles/followup.md` (`ROLE_POLICY.followup`: may edit,
+no sub-agents, no default effort). It runs `/crew-address-findings`, `/address-pr-comments` or the task
+it is given, commits, and answers over the host's own agent channel. `followup wait <id>` blocks for
+the answer and prints one line, `DONE: …` or `QUESTION: …`; `followup reply <id> "<answer>"` answers a
+question. With no pane host every subcommand exits 1.
+
+- **Worktree.** Made with git (`ensureWorktree`'s `checkout` mode) and, under orca, adopted for display
+  (`orca worktree set`). `start` refuses, naming why and creating nothing, while `lease.sh owner --slug`
+  reports a holder (`tracker: github`), a live run's `.scratch/<slug>/.crew-afk.lock` names a running
+  pid, or the slug's follow-up is still open. A later `crew-afk run` takes the branch back through
+  `releaseBranch`: a clean `_followup` is removed, a dirty one is refused with "commit or discard
+  them". `start` refuses the same way, naming the path, when a finished follow-up's `_followup` still
+  has uncommitted changes (replacing it would delete them). `cleanup-worktrees.sh` does not touch it
+  (it sweeps only `crew/<slug>/*` branches).
+- **No human at the terminal.** The worker's argv runs without permission prompts, as a dispatched
+  coder does (`ROLE_POLICY.followup.unattended`): claude `--permission-mode bypassPermissions` (with `--settings` skipping its one-time accept dialog), copilot
+  `--allow-all-tools`, codex `workspace-write` with network, the git dirs and the main checkout
+  writable (as `build()`) and `--ask-for-approval never`. The watch agent keeps its prompts.
+- **Record.** `.scratch/<slug>/followup.json` holds the id, host, run/terminal or pane handle, the
+  pending question and the result. It is written only after the host has started the worker, so a
+  failed call leaves nothing recorded (and `_followup` is removed again). It is open until `wait` has
+  returned a final result, or until a later run's checkout of the feature branch removed a clean
+  `_followup` (the record is then `released`); a worker that is gone otherwise needs the file deleted by hand.
+- **orca.** The Run is created with `--from <watch handle>` (the Run's coordinator is the terminal that
+  creates it), then the terminal, then `worker-start` with `--worktree` (without it orca refuses the
+  terminal as belonging to the coordinator's worktree) and `--from <watch handle>` (without it orca
+  refuses, `consumer_fenced`, any caller but the coordinator's own terminal). `worker-start --agent` is not used: that agent
+  would lack crew-afk's env. A worker question is `orchestration ask`, a `type: question` message to
+  `run:<id>`; the response is its `worker_done`, which `orchestration inbox` lists and `check` does not.
+- **herdr.** No message queue: a worker's question also ends its turn as `done`, so `followup.md` makes
+  every turn end with one `QUESTION: …` or `DONE: …` line and `wait` returns the last such line it reads.
+  A turn that ends with neither is an error showing the pane's tail.
+- **Host calls** are each bounded (orca 10s, herdr's agent calls 60s to start); `wait` itself has no
+  timeout. A failing or timed-out call exits non-zero with the host's own text.
+- **Live.** Both transports passed one live cross-worktree round trip (question, answer, final result)
+  on 2026-10-10; the `followup` command itself has not been run live yet.
 
 ## Worker terminals
 
@@ -119,7 +203,7 @@ agent definition.
 - `terminal send`'s delivery confidence is provider-dependent: a plain shell terminal (what
   the log tab runs) reports `observation: "unsupported"`; a live claude pane reports
   `provider: "claude"`, `observation: "supported"`, but can still warn that no turn start was
-  seen even when the prompt did land. `notifyTriggeringPane`'s orca path treats
+  seen even when the prompt did land. `notifyWatchSession`'s orca path treats
   `accepted: true` as success either way, matching the advisory nature this push has always
   had under herdr too.
 - `terminal send` types into any terminal, agent or plain shell alike (herdr's `agent prompt`
@@ -134,8 +218,8 @@ agent definition.
   and codex panes, each launching a sprint through its crew-afk skill. pi reports
   `agentIdentity` only once its first prompt has fired orca's status extension
   (`~/.pi/agent/extensions/orca-agent-status.ts`), which a skill invocation already is.
-  copilot pane detection is untested. All four skills stop polling on `PANE-HOST: orca`. If
-  orca doesn't identify a pane, the push is skipped rather than typed in blind.
+  copilot pane detection is untested. If orca doesn't identify the watch agent's pane, the push
+  is skipped rather than typed in blind.
 - orca must be chosen, not detected by default: orca injects `ORCA_WORKTREE_ID`/`ORCA_TAB_ID`/
   `ORCA_TERMINAL_HANDLE` into its terminals, which `auto` uses, but no opt-in of its own.
 - `terminal send` into a live claude pane takes ~8s to return (it watches for turn start),
@@ -144,7 +228,7 @@ agent definition.
   queued rather than awaited, so that delay never holds an issue's pipeline. The queue sends
   one at a time, in order, and is drained before the end-of-run push.
 - `ORCA_TAB_ID` is read by nothing: every create is already scoped by `--worktree`, and the
-  rename and push go by `ORCA_TERMINAL_HANDLE`.
+  rename goes by `ORCA_TERMINAL_HANDLE`; pushes go by the watch agent's recorded handle.
 - `--worktree path:<mainRoot>`, not `active`: `active` isn't documented as cwd-relative and
   may resolve to whatever worktree orca's GUI has focused. `--command` is typed into the
   terminal's shell rather than passed as argv, so the log path is shell-quoted.

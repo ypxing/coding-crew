@@ -6,7 +6,7 @@
  * or on a Copilot worker obeying a "Working directory:" line in its prompt.
  */
 
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, symlinkSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 
 import { adoptWorktree } from "./pane-host/index.mjs";
@@ -29,6 +29,15 @@ export function worktreePath(mainRoot, branch) {
 /** The sprint's feature-branch checkout: `<worktreeRoot>/crew/<slug>/_feature`, on `feature/<slug>`. */
 export function featureWorktreePath(mainRoot, featureSlug) {
   return worktreePath(mainRoot, `crew/${featureSlug}/_feature`);
+}
+
+/**
+ * A follow-up worker's checkout (`crew-afk followup`): `<worktreeRoot>/crew/<slug>/_followup`, on
+ * the feature branch `_feature` holds during a run. A later run's checkout of that branch releases
+ * it like any crew-made holder: clean is removed, dirty is refused (releaseBranch).
+ */
+export function followupWorktreePath(mainRoot, featureSlug) {
+  return worktreePath(mainRoot, `crew/${featureSlug}/_followup`);
 }
 
 /**
@@ -126,15 +135,34 @@ export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expec
   return { path, created: true, reusedBranch: exists };
 }
 
+/**
+ * A path with its symlinks resolved, or as given when it does not exist. git lists worktrees by
+ * their real path, which differs from one built on `mainRoot` when that goes through a symlink
+ * (macOS's `/var` → `/private/var`).
+ */
+const realPath = (path) => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+};
+
+/** Whether `git worktree list --porcelain` output `listed` registers `path`, compared by real path. */
+export function listsWorktree(listed, path) {
+  const want = realPath(path);
+  return listed.split("\n").some((line) => line.startsWith("worktree ") && realPath(line.slice("worktree ".length)) === want);
+}
+
 function checkoutWorktree(effects, { mainRoot, branch, base, path, adopt }) {
   let listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
-  if (listed.includes(`worktree ${path}\n`) || existsSync(path)) {
+  if (listsWorktree(listed, path) || existsSync(path)) {
     removeWorktree(effects, { path });
     effects.git(["worktree", "prune"]);
     listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
   }
-  const crewRoot = join(worktreeRoot(mainRoot), "/");
-  const blocker = releaseBranch(effects, listed, branch, { onlyCrewMade: (holder) => join(holder).startsWith(crewRoot) });
+  const crewRoot = join(realPath(worktreeRoot(mainRoot)), "/");
+  const blocker = releaseBranch(effects, listed, branch, { onlyCrewMade: (holder) => join(realPath(holder), "/").startsWith(crewRoot) });
   if (blocker) return { path: null, created: false, stale: true, reason: blocker };
 
   const exists = effects.gitRead(["rev-parse", "--verify", "--quiet", `${branch}^{commit}`]).code === 0;

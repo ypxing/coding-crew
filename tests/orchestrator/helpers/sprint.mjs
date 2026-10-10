@@ -66,8 +66,8 @@ export const FAKE = join(HERE, "../fixtures/fake-dispatch.sh");
 // Every call site below spreads process.env into its own `env` (or omits `env` and gets
 // it by default); this test's own process inherits CREW_PANE_HOST, HERDR_ENV/HERDR_PANE_ID (or
 // ORCA_ENV/ORCA_TERMINAL_HANDLE) whenever it runs inside a real herdr/orca pane, and
-// main.mjs's notifyTriggeringPane sends the fixture sprint's outcome straight to that real
-// pane if those leak through — stripped here, once, so no call site has to remember to.
+// main.mjs's ensureWatchSession opens a watch agent in that real
+// host (and pushes the fixture sprint's outcome to it) if those leak through — stripped here, once, so no call site has to remember to.
 //
 // HOME likewise: a real ~/.coding-crew/config.json would retarget every fixture sprint's roles,
 // so an inherited HOME is swapped for an empty one. A test that sets its own HOME keeps it.

@@ -7,6 +7,14 @@
  *   crew-afk plan   [options]   print what a sprint would do, change nothing
  *   crew-afk status             print the current sprint's state
  *   crew-afk doctor [options]   check this platform can dispatch at all
+ *   crew-afk followup start <slug> "<task>" | wait <id> | reply <id> "<answer>"
+ *                               (orca or herdr only; --platform required) a feature-level worker
+ *                               agent in crew/<slug>/_followup on the feature branch, asked by the
+ *                               watch agent and reached over the host's native agent channel:
+ *                               start prints a follow-up id, wait blocks for the worker's
+ *                               `DONE: …` result or `QUESTION: …`, reply answers a question.
+ *                               Refused while a run or the feature lease holds the branch.
+ *                               See lib/followup.mjs.
  *
  * Options:
  *   --platform <name>                      required (not for status): one of lib/adapters/index.mjs's PLATFORMS
@@ -14,10 +22,13 @@
  *                                           none] or $CREW_PANE_HOST, which beats the file, as
  *                                           do the legacy $ORCA_ENV=1 / $HERDR_ENV=1 (orca
  *                                           first). Opens one tab tailing the trace log and
- *                                           pushes the outcome to the launching pane at the
- *                                           end; nothing load-bearing runs through it. Needs
+ *                                           one watch agent for the slug (reused across runs,
+ *                                           never closed) that every milestone and the outcome
+ *                                           are pushed to; nothing load-bearing runs through it. Needs
  *                                           `herdr server` / `orca open` running. `run` prints
- *                                           `PANE-HOST: <host|none>` first, for the launcher.
+ *                                           `PANE-HOST: <host|none>` first, for a human or script
+ *                                           that wants the resolved host (the launcher skills do
+ *                                           not read it).
  *                                           See lib/pane-host/index.mjs, docs/orca-support.md.
  *   --model <alias|inherit>                coder model; every role on the same runtime
  *                                           matches it unless .coding-crew/config.json's
@@ -81,7 +92,7 @@
  * Exit codes: 0 clean · 2 stalled · 3 nothing to do · 1 setup error
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -106,7 +117,8 @@ import {
   retiredNotice,
   validateFlags,
 } from "./lib/crew-config.mjs";
-import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, notifyTriggeringPane } from "./lib/pane-host/index.mjs";
+import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, notifyWatchSession } from "./lib/pane-host/index.mjs";
+import { releaseStaleFollowup, runFollowup } from "./lib/followup.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktree, featureWorktreePath, removeWorktree, worktreeRoot } from "./lib/worktree.mjs";
@@ -149,6 +161,8 @@ function parseArgs(argv) {
     syncMain: true,
     reclaim: false,
     dryRun: false,
+    // `followup <action> <words…>`: the action and its positional arguments (slug, task, id, answer).
+    followup: null,
     passthrough: [],
     unknown: [],
     retired: [], // flags still accepted that no longer do anything (crew-config.mjs's retiredNotice)
@@ -157,6 +171,7 @@ function parseArgs(argv) {
   // A setting flag with no value is "", which fails validation, rather than no flag at all.
   const value = () => args.shift() ?? "";
   if (args[0] && !args[0].startsWith("-")) o.command = args.shift();
+  if (o.command === "followup") o.followup = { action: args[0] && !args[0].startsWith("-") ? args.shift() : null, words: [] };
   while (args.length) {
     const a = args.shift();
     switch (a) {
@@ -195,7 +210,10 @@ function parseArgs(argv) {
       case "--jira": o.passthrough.push("--jira", value()); break;
       case "-h": case "--help": o.command = "help"; break;
       default:
-        if (a.startsWith(".scratch/")) {
+        if (o.followup && !a.startsWith("--")) {
+          // A task or an answer is free text: never a path or a typo to suggest a slug for.
+          o.followup.words.push(a);
+        } else if (a.startsWith(".scratch/")) {
           // A path argument names the sprint: derive the slug from it, exactly once.
           o.featureSlug ??= a.replace(/^\.scratch\//, "").split("/")[0] || null;
         } else {
@@ -441,7 +459,9 @@ async function main() {
         "  and paneHost (none; ~/.coding-crew/config.json only, and $CREW_PANE_HOST beats it).\n" +
         "  A new feature branch is <branchPrefix><KEY>-<slug>: config.json's afk.branchPrefix\n" +
         "  (default feature/, \"\" for none; no flag) and --jira KEY (e.g. PROJ-12; omitted, no KEY-).\n" +
-        "  No flag: limits.<role>.usd caps one dispatch of that role in dollars (off), on a runtime that supports a cap.",
+        "  No flag: limits.<role>.usd caps one dispatch of that role in dollars (off), on a runtime that supports a cap.\n" +
+        '  crew-afk followup start <slug> "<task>" | wait <id> | reply <id> "<answer>" --platform X\n' +
+        "  (orca or herdr: a worker agent on the feature branch, asked by the watch agent; start prints its id)",
     );
     return 0;
   }
@@ -548,6 +568,30 @@ async function main() {
       console.error(`crew-afk: WARNING: worktree root ${rel} is inside the repo but not gitignored — add "${rel}/" to .gitignore.`);
     }
   }
+
+  // --- followup: the watch agent's request for follow-up work, over the host's agent channel ----
+  if (options.command === "followup") {
+    const [first, second] = options.followup.words;
+    const io = { out: (line) => console.log(line), err: (line) => console.error(line) };
+    const forSlug = options.followup.action === "start";
+    return runFollowup(effects, {
+      action: options.followup.action,
+      slug: forSlug ? first : undefined,
+      task: forSlug ? second : undefined,
+      id: forSlug ? undefined : first,
+      answer: forSlug ? undefined : second,
+      platform: options.platform,
+      // The coder's resolved model, when the coder runs on this platform (else the CLI's own).
+      model: options.crew.coder.runtime === options.platform ? options.model : undefined,
+      effort: settings.effort?.followup,
+      // The recorded one when the sprint ran here; else what session-init.sh would name (afk.branchPrefix, --jira).
+      resolveBranch: (slug) =>
+        Sprint.attach(effects, slug)?.featureBranch ?? Sprint.resolveBranch(effects, { featureSlug: slug, branchPrefix: options.branchPrefix, passthrough: options.passthrough }).branch,
+      useLease: readTrackerConfig(mainRoot).tracker === "github",
+      io,
+    });
+  }
+
   options.parallel = settings.maxParallel ?? DEFAULT_PARALLEL[crew.roles.coder.runtime] ?? 2;
   options.effort = settings.effort;
   options.timeoutMs = Object.fromEntries(Object.entries(settings.timeouts).map(([k, min]) => [k, min * 60 * 1000]));
@@ -616,12 +660,15 @@ async function main() {
 
   // --- run -----------------------------------------------------------------
   // The try starts here, not around runSprint, so a setup failure also reaches the
-  // end-of-run push in `finally` — the only nudge the triggering pane gets. State is
+  // end-of-run push in `finally` — the watch agent's only notice that the run ended. State is
   // declared outside it so `finally` sees whatever got assigned.
   let sprint;
-  // A run-stopping failure once the sprint exists: stderr for the launcher, and the log,
-  // which outlives the scrollback.
+  // A run-stopping failure once the sprint exists: stderr for whoever launched the run, and the
+  // log, which outlives the scrollback.
+  // The first line of what stopped the run, for the final push when no summary file was written.
+  let failureLine;
   const fatal = (message) => {
+    failureLine ??= String(message).split("\n")[0];
     console.error(message);
     if (sprint?.traceLog) writeLog(sprint.traceLog, `[ABORT] ${message}`, "fatal");
   };
@@ -640,6 +687,8 @@ async function main() {
   // Set where a run ends early after run-start; the others are read off stalled/wallCapped/attemptCapped.
   let endReason;
   let runStarted = false;
+  // `.scratch/<slug>/traces/summary-<runId>.md`, set once ctx exists: all ctx.out printed.
+  let summaryFile;
   let lockPath;
   let lease;
   // The sprint's `crew/<slug>/_feature` worktree, once made. Removed on every ending; the branch stays.
@@ -671,10 +720,10 @@ async function main() {
   };
   for (const signal of Object.keys(SIGNAL_EXIT)) process.once(signal, onSignal);
   try {
-    // Before any sprint output, so a launcher knows the resolved host without re-deriving it
-    // from env and config.
+    // Before any sprint output, so a human or script reading stderr knows the resolved host
+    // without re-deriving it from env and config.
     console.error(`PANE-HOST: ${options.paneHost ?? "none"}`);
-    // After PANE-HOST, which a launcher reads as stderr's first line.
+    // After PANE-HOST, which stays stderr's first line.
     if (stderrLevel.warning) console.error(`crew-afk: ${stderrLevel.warning}`);
     const problems = preflightCrew();
     if (problems.length) {
@@ -761,6 +810,13 @@ async function main() {
       }
       featureWorktree = wt.path;
       effects.featureRoot = wt.path;
+      try {
+        // Taking the branch removed a clean _followup: its record must stop blocking `followup start`.
+        const released = releaseStaleFollowup(effects, named.slug);
+        if (released) console.error(`crew-afk: follow-up ${released.id} was still open; this run took the feature branch back from its checkout, so it is marked released.`);
+      } catch (err) {
+        console.error(`crew-afk: WARNING: could not update .scratch/${named.slug}/followup.json: ${err.message}`);
+      }
       if (!wt.reusedBranch) warnDefaultBehindOrigin(effects, named.defaultBranch, (line) => console.error(line));
     }
 
@@ -796,6 +852,14 @@ async function main() {
       } catch (err) {
         console.error(`crew-afk: could not open the ${options.paneHost} log tab: ${err.message} — continuing without one.`);
       }
+      // Best-effort too (it logs its own WARN): the milestone pushes it receives are advisory.
+      await ensureWatchSession(effects, {
+        slug: sprint.featureSlug,
+        platform: options.platform,
+        // The coder's resolved model, when the coder runs on this platform (else the CLI's own).
+        model: options.crew.coder.runtime === options.platform ? options.model : undefined,
+        effort: options.effort?.watcher,
+      });
     }
 
     // Before anything reads the feature branch: a resumed branch whose earlier work was
@@ -843,6 +907,7 @@ async function main() {
       });
     }
 
+    summaryFile = join(dirname(sprint.traceLog), `summary-${runId.replaceAll(":", "-")}.md`);
     const ctx = {
       sprint,
       effects,
@@ -854,7 +919,14 @@ async function main() {
       heartbeat: (line) => {
         if (shows("debug")) console.error(line);
       },
-      out: (text) => console.log(text),
+      out: (text) => {
+        console.log(text);
+        try {
+          appendFileSync(summaryFile, `${text}\n`);
+        } catch {
+          /* the file is a convenience; stdout is the summary's primary home */
+        }
+      },
     };
 
     // Once, before any dispatch, and only when there is something to dispatch. It runs alongside
@@ -890,6 +962,7 @@ async function main() {
     return exitCode;
   } catch (err) {
     runError = err;
+    failureLine ??= String(err?.message ?? err).split("\n")[0];
     exitCode = 1;
     if (sprint?.traceLog) writeLog(sprint.traceLog, `[CRASH] ${err?.stack || err}`, "fatal");
     throw err;
@@ -916,7 +989,9 @@ async function main() {
       await drainPaneNotices(effects);
       const outcome = runError ? "errored" : exitCode === 1 ? "setup failed" : wallCapped ? "stopped at the wall-clock cap — re-run to continue" : stalled ? "stalled — blockers need a human" : "finished";
       const label = resolved?.slug ? `crew-afk (${resolved.slug})` : "crew-afk";
-      await notifyTriggeringPane(effects, `${label}: sprint ${outcome}. Check this pane's scrollback for the summary.`);
+      // The summary file names itself; a run that never reached ctx has only the failure's first line.
+      const detail = summaryFile && existsSync(summaryFile) ? `Summary: ${summaryFile}` : failureLine ?? "no summary was written";
+      await notifyWatchSession(effects, `${label}: sprint ${outcome}. ${detail}`);
     }
     removeFeatureWorktree();
     if (lease) {

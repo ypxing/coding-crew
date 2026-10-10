@@ -503,7 +503,9 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
   }
   const effort = {};
   for (const role of effortRoles()) {
-    effort[role] = afk.effort?.[role] ?? ROLE_POLICY[role].effort;
+    // A role with no default and no afk.effort has no entry: its CLI's own default applies.
+    const level = afk.effort?.[role] ?? ROLE_POLICY[role].effort;
+    if (level !== undefined) effort[role] = level;
   }
   return {
     effort,
