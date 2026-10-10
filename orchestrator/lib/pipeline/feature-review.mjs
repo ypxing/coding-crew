@@ -87,7 +87,8 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
   const outFile = join(dir, "review.md");
   const sidecarFile = join(dir, "review.report.json");
   rmSync(sidecarFile, { force: true });
-  writeFileSync(promptFile, featureReviewPrompt({ featureBranch: sprint.featureBranch, base, exclude, reportPath: sidecarFile, reviewAssets, reviewContext, prdPath: prdPath(ctx) }));
+  const notes = featureNotes(ctx, range);
+  writeFileSync(promptFile, featureReviewPrompt({ featureBranch: sprint.featureBranch, base, exclude, reportPath: sidecarFile, reviewAssets, reviewContext, prdPath: prdPath(ctx), notes }));
   const reviewer = roleBinding(ctx, "reviewer");
   ctx.log(`[STEP] step=feature-review slug=${FEATURE_REVIEW} model=${reviewer.model ?? "inherit"} runtime=${reviewer.runtime}`);
   const run = await reviewOnce(ctx, { reviewer, promptFile, outFile, sidecarFile });
@@ -132,19 +133,41 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
   return { report: reportFile, findings, mode: range.mode, ...promotion };
 }
 
+/** Every branch's review blocks in the sprint review reports, each branch's folded into one record (report.mjs's foldReview), in first-seen order. */
+function foldedBlocks(reviewDir) {
+  if (!existsSync(reviewDir)) return [];
+  const byBranch = new Map();
+  for (const rec of readdirSync(reviewDir)
+    .filter((n) => /^sprint-review-.*\.md$/.test(n))
+    .sort()
+    .flatMap((n) => parseReviewBlocks(readFileSync(join(reviewDir, n), "utf8")))) {
+    if (!rec.branch) continue;
+    byBranch.set(rec.branch, foldReview(byBranch.get(rec.branch), rec));
+  }
+  return [...byBranch.values()];
+}
+
+/**
+ * The notes per-issue reviewers left outside their criteria that this review's range covers: each
+ * folded branch block's, when its `reviewed_sha` is reachable from the tip and not from the range's
+ * base — the whole feature in `whole` mode, only the branches merged since `reviewed_tip` in
+ * `increment`. A block with no recorded sha (an older report) or a sha git does not know is out.
+ */
+export function featureNotes(ctx, range) {
+  const { sprint, effects } = ctx;
+  const reaches = (sha, to) => effects.gitRead(["merge-base", "--is-ancestor", sha, to]).code === 0;
+  return foldedBlocks(sprint.reviewDir)
+    .filter((rec) => rec.branch !== FEATURE_REVIEW && rec.notes?.length && rec.reviewedSha)
+    .filter((rec) => reaches(rec.reviewedSha, range.tip) && !reaches(rec.reviewedSha, range.base))
+    .flatMap((rec) => rec.notes);
+}
+
 /**
  * The findings the sprint review reports last held under `feature` (earlier runs'), verdicts kept;
  * a not-run stub after them keeps them (report.mjs's foldReview).
  */
 function earlierFeatureFindings(reviewDir) {
-  if (!existsSync(reviewDir)) return [];
-  const folded = readdirSync(reviewDir)
-    .filter((n) => /^sprint-review-.*\.md$/.test(n))
-    .sort()
-    .flatMap((n) => parseReviewBlocks(readFileSync(join(reviewDir, n), "utf8")))
-    .filter((rec) => rec.branch === FEATURE_REVIEW)
-    .reduce(foldReview, undefined);
-  return folded?.findings ?? [];
+  return foldedBlocks(reviewDir).find((rec) => rec.branch === FEATURE_REVIEW)?.findings ?? [];
 }
 
 /**

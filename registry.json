@@ -31,7 +31,7 @@
   ],
   "skills": {
     "crew-afk": {
-      "version": "2.36.0",
+      "version": "2.37.0",
       "source-dir": "crew-afk",
       "description": "Run an unattended sprint: implement, review and merge every ready-for-agent issue into one feature branch.",
       "assets": {

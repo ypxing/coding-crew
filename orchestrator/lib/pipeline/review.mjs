@@ -154,7 +154,15 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   mkdirSync(sprint.reviewDir, { recursive: true });
   const reviewedBranch = sidecar.branch ?? branch;
   parsed.findings = [];
-  const written = { ...sidecar, findings: carryFindings(earlierBranchReviews(sprint.reviewDir, reviewedBranch), [], { keepVerdicts: true }).map(({ explicit, ...f }) => f), criteria_only: true };
+  // `notes` (the valid ones) and `reviewed_sha` ride in the block for the feature review: it lists the
+  // notes whose sha lies in its range (feature-review.mjs's featureNotes).
+  const written = {
+    ...sidecar,
+    findings: carryFindings(earlierBranchReviews(sprint.reviewDir, reviewedBranch), [], { keepVerdicts: true }).map(({ explicit, ...f }) => f),
+    notes: parsed.notes,
+    reviewed_sha: reviewedSha,
+    criteria_only: true,
+  };
   const heading = `## Branch: ${reviewedBranch} (${sidecar.slug ?? issue.slug})`;
   const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(written)}\n\`\`\``;
   const prefix = existsSync(reportFile) ? "\n\n" : "";

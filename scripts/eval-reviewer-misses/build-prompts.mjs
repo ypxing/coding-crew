@@ -3,9 +3,10 @@
 //
 // eval-reviewer-misses.mjs runs this once per ref with <tree> = that ref's checkout, so the prompt
 // builders (orchestrator/lib/prompts.mjs) and the rendered reviewer role are the ref's, never the
-// head's. stdin: JSON {mode, base, tip, branch, slug, issue, criteria, prdPath?, prdText, reportPath};
+// head's. stdin: JSON {mode, base, tip, branch, slug, issue, criteria, notes?, prdPath?, prdText, reportPath};
 // stdout: JSON {role, reviews: [{name, prompt}]}. A feature case is one whole-feature reviewer given
-// the PRD's path (`prdPath`, else `prdText` written to a temp file); a branch case is the
+// the PRD's path (`prdPath`, else `prdText` written to a temp file) and the case's `notes` (a ref whose
+// featureReviewPrompt predates them ignores them); a branch case is the
 // criteria-only branch review.
 
 import fs from "node:fs";
@@ -42,7 +43,7 @@ if (inp.mode === "branch") {
   }
   out.reviews.push({
     name: prompts.FEATURE_REVIEW ?? "feature",
-    prompt: prompts.featureReviewPrompt({ featureBranch: inp.tip, base: inp.base, reportPath: inp.reportPath, reviewAssets, prdPath }),
+    prompt: prompts.featureReviewPrompt({ featureBranch: inp.tip, base: inp.base, reportPath: inp.reportPath, reviewAssets, prdPath, notes: inp.notes ?? [] }),
   });
 }
 process.stdout.write(JSON.stringify(out));
