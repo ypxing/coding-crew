@@ -164,7 +164,7 @@ its criteria (never a finding, never a verdict input); `report.mjs` keeps the we
 `pipeline/review.mjs` writes them with `reviewed_sha` (the commit it reviewed) into the branch's sprint review block. `foldReview`: a later
 block's notes replace earlier ones, a `not_run` block keeps them. Before dispatch `featureNotes` (`pipeline/feature-review.mjs`) collects
 the folded branch blocks' notes whose `reviewed_sha` is reachable from the range's tip and not from its base (a whole review gets every note
-of the feature, an increment only the branches merged since `reviewed_tip`; known limit: `afk.squashCommits` rewrites a run's merge commits into one, so a later run's whole review no longer reaches that run's `reviewed_sha`s and lists none of its notes), and `featureReviewPrompt` lists them under
+of the feature, an increment only the branches merged since `reviewed_tip`; known limit: `afk.squashCommits` rewrites a run's merge commits into one, so a later run's whole review no longer reaches that run's `reviewed_sha`s and lists none of its notes. It bites when an earlier run squashed and its own feature review had not consumed those notes (failed or skipped); notes that review already listed are unaffected. Documented, not fixed), and `featureReviewPrompt` lists them under
 `Concerns per-issue reviewers noted outside their criteria:` as data; none, no block. Feature Mode makes each one a Pass 1 candidate, a
 finding or a `### Dropped` line after Pass 2. Likewise a defect a PRD decision prescribes is a finding naming that decision (code matching
 the PRD is no evidence of correctness), and `reviewer.md` no longer downgrades a fix that contradicts a recorded decision.
