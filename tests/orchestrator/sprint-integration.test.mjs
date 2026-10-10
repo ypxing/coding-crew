@@ -587,6 +587,18 @@ test("a whole-feature review lists every branch's notes under the concerns headi
   assert.ok(!reviewPrompt(quiet, 1).includes(CONCERNS));
 });
 
+test("a note still holding the template placeholder never reaches the feature prompt", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", branchReview("alpha", { notes: [{ location: "<path>:<line>", concern: "<input or state → bad outcome>" }, { location: "src/alpha.txt:1", concern: "<input or state → bad outcome>" }, { location: "<path>:<line>", concern: "real concern" }] }));
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const prompt = reviewPrompt(root, 1);
+  assert.ok(!prompt.includes("<input or state"), prompt);
+  assert.ok(!prompt.includes(CONCERNS), prompt);
+  assert.deepEqual(blocksFor(root, "crew/demo/alpha")[0].notes, []);
+});
+
 test("an increment review lists only the notes of branches merged since the reviewed tip", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

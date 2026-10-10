@@ -169,6 +169,7 @@ setup() {
     grep -qF '"notes": []' "$f"
     grep -qF '`{"location": "<path>:<line>", "concern": "<input or state → bad outcome>"}`' "$f"
     grep -qF 'a concern written only in prose reaches nobody, so in a per-branch review it goes in' "$f"
+    grep -qF 'In a per-branch review such a defect goes in `notes`, naming the decision or criterion it amends, and is never written to `findings`.' "$f"
     # Feature Mode: every listed concern is a Pass 1 candidate that ends as a finding or a Dropped line
     grep -qF 'Concerns per-issue reviewers noted outside their criteria:' <<<"$mode"
     grep -qF 'every listed' <<<"$mode"

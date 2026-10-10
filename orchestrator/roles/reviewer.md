@@ -52,6 +52,7 @@ No such line means the feature has no PRD — never derive its path from the bra
 Conventions and PRD decisions define what counts as a style or approach violation, and never excuse a
 defect: code that fails on an input or state it can receive, because it does what a decision or a
 criterion prescribes, is a finding at its normal severity, and its `issue` names the decision it amends.
+In a per-branch review such a defect goes in `notes`, naming the decision or criterion it amends, and is never written to `findings`.
 
 ### Step 2 — Per-branch review
 
