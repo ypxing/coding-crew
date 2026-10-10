@@ -42,6 +42,18 @@ export default {
     return { args };
   },
 
+  /**
+   * The watch agent (and a follow-up worker): claude's own interactive mode, the protocol as its
+   * first prompt. The prompt comes first because `--add-dir` and `--disallowedTools` are variadic
+   * and would swallow one that followed. Permission prompts stay on: a human is in this pane.
+   */
+  interactive({ mainRoot, model, protocol, policy }) {
+    const argv = ["claude", protocol, "--add-dir", mainRoot];
+    if (model && model !== "inherit") argv.push("--model", model);
+    if (policy) argv.push(...this.policyArgs(policy));
+    return argv;
+  },
+
   /** The role's effort; read-only removes the edit tools; no sub-agents removes Agent. */
   policyArgs({ readOnly, subagents, effort }) {
     const denied = [...(readOnly ? ["Edit", "Write", "NotebookEdit"] : []), ...(subagents ? [] : ["Agent"])];

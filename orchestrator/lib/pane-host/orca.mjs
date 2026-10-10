@@ -177,16 +177,50 @@ export async function openWorkerTerminal(effects, { title, command, worktree }) 
 export const closeWorkerTerminal = closeTerminal;
 
 /**
+ * Whether `handle` still reports a live agent: `terminal show` has an `agentIdentity` (set for
+ * an agent pane, absent for a shell, and missing once the terminal is closed or orca is gone).
+ */
+export async function watchAlive(effects, handle) {
+  try {
+    const show = await paneHostExec(effects, ["terminal", "show", "--terminal", handle, "--json"], CALL_TIMEOUT_MS);
+    return show.code === 0 && Boolean(paneHostJson(show)?.result?.terminal?.agentIdentity);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The watch agent: a terminal in the main checkout running `command`. Its handle is deliberately
+ * never `track`ed, so no sweep (closeTerminals) can close it. Returns `{handle}` or `{failure}`,
+ * never throws.
+ */
+export async function openWatch(effects, { slug, command }) {
+  try {
+    const create = await paneHostExec(effects, [
+      "terminal",
+      "create",
+      "--worktree",
+      `path:${effects.mainRoot}`,
+      "--title",
+      `${slug}-watch`,
+      "--command",
+      command,
+      "--json",
+    ], CALL_TIMEOUT_MS);
+    const handle = paneHostJson(create)?.result?.terminal?.handle;
+    if (create.code !== 0 || !handle) return { failure: `orca terminal create exit=${create.code} ${failureDetail(create)}` };
+    return { handle };
+  } catch (err) {
+    return { failure: `orca terminal create threw: ${err.message}` };
+  }
+}
+
+/**
  * `terminal send` types into any terminal, and in a plain shell the message plus Enter
  * runs as a command. So send only when `terminal show` reports an `agentIdentity` (set for
  * an agent pane, including mid-tool-call; absent for a shell). No identity, no send.
  */
-export async function notify(effects, message) {
-  const handle = process.env.ORCA_TERMINAL_HANDLE;
-  if (!handle) {
-    effects.log?.("NOTIFY-SKIP no ORCA_TERMINAL_HANDLE in env");
-    return { sent: false, reason: "no ORCA_TERMINAL_HANDLE in env" };
-  }
+export async function notify(effects, handle, message) {
   let show;
   try {
     show = await paneHostExec(effects, ["terminal", "show", "--terminal", handle, "--json"], 5000);
@@ -204,7 +238,7 @@ export async function notify(effects, message) {
   try {
     const agentIdentity = paneHostJson(show)?.result?.terminal?.agentIdentity;
     if (!agentIdentity) {
-      const reason = "triggering terminal is not running an agent orca recognises";
+      const reason = "watch terminal is not running an agent orca recognises";
       effects.log?.(`NOTIFY-SKIP ${reason}`);
       return { sent: false, reason };
     }

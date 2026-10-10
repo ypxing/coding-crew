@@ -54,13 +54,12 @@ A dead run's feature lease needs `--reclaim`.
    run up to 60 minutes — with `--dry-run` first only if the user asked what it would do.
    Use your tool's own background tracking (Claude Code: `run_in_background: true`), not a
    shell `&`/`disown` — that bypasses the completion notification, so no summary reaches you.
-2. **Don't poll and don't relay.** Every line you read or echo costs tokens; the human
-   watches the pane host or `orchestrator.log`. Read stderr once, for its first line
-   (`PANE-HOST: …`), then wait for the completion notification. If asked for progress,
-   answer in one sentence from the latest `[STEP]` lines on **stderr** — never echo them.
-   No notification yet? Check at most every few minutes — not at all under
-   `PANE-HOST: orca`, which also prompts this pane once the sprint finishes or stalls. On
-   exit, print the stdout summary as-is — it is the report; don't rewrite it.
+2. **Don't poll and don't relay.** Wait for the completion notification, however the run
+   was started: every line you read or echo costs tokens, and the human watches
+   `orchestrator.log` (or the sprint's watch agent, when the run has one). If asked for
+   progress, answer in one sentence from the latest `[STEP]` lines on **stderr** — never echo
+   them. On exit, print the stdout summary as-is — it is the report; don't rewrite it. The
+   same text is saved to `.scratch/<feature-slug>/traces/summary-<run-id>.md`.
 3. If asked, the log is `.scratch/<feature-slug>/traces/orchestrator.log`.
 4. Report the exit code and stop: `0` finished, `2` stalled or capped (needs a human), `3` no
    ready issues, `1` setup problem — print its stderr verbatim.

@@ -34,7 +34,7 @@ const FOLLOWER = fileURLToPath(new URL("./follow-output.mjs", import.meta.url));
  * own geometry and cwd, and the ambient ids that must keep naming the worker's terminal
  * rather than the triggering one.
  */
-const ENV_SKIP = /^(TERM|COLUMNS|LINES|PWD|OLDPWD|SHLVL|_|ORCA_TERMINAL_HANDLE|ORCA_TAB_ID|ORCA_WORKTREE_ID)$/;
+const ENV_SKIP = /^(TERM|COLUMNS|LINES|PWD|OLDPWD|SHLVL|_|ORCA_TERMINAL_HANDLE|ORCA_TAB_ID|ORCA_WORKTREE_ID|HERDR_PANE_ID|HERDR_TAB_ID|HERDR_WORKSPACE_ID)$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
@@ -137,6 +137,33 @@ export async function spawnInWorkerTerminal(
   if (result.code === 0) rmSync(dir, { recursive: true, force: true });
   else rmSync(f("env.sh"), { force: true });
   return { code: result.code, stdout: out.text(), stderr, timedOut: result.timedOut };
+}
+
+/**
+ * An interactive agent a host starts (the watch agent, a follow-up worker) gets that host's shell
+ * env, not crew-afk's, so it runs through the same `env.sh` a worker terminal does. Writes
+ * `<dir>/env.sh` (0600, sourced then deleted by the script) and `<dir>/launch.sh`: source it, cd to
+ * `cwd`, then `exec` the argv, so the agent is the terminal's process. The argv (a protocol in it,
+ * so too long to type) stays in the file; the host is given `command`, which just runs it.
+ * @param {string[]} o.argv  the CLI and its arguments, `cmd` first
+ * @param {object} [o.env]   per-launch additions to crew-afk's env (an adapter's `env`)
+ */
+export function writeLaunchScript(effects, { dir, cwd, argv, env = {} }) {
+  mkdirSync(dir, { recursive: true });
+  const envFile = join(dir, "env.sh");
+  const script = join(dir, "launch.sh");
+  writeFileSync(envFile, envScript({ ...process.env, ...effects.env, ...env }), { mode: 0o600 });
+  writeFileSync(
+    script,
+    [
+      "#!/usr/bin/env bash",
+      `. ${shellQuote(envFile)}; rm -f ${shellQuote(envFile)}`,
+      `cd -P ${shellQuote(cwd)} || exit 127`,
+      `exec ${argv.map(shellQuote).join(" ")}`,
+      "",
+    ].join("\n"),
+  );
+  return { command: `bash ${shellQuote(script)}`, script, envFile };
 }
 
 function envScript(env) {

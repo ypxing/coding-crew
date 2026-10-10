@@ -199,11 +199,32 @@ recorded. A change the orchestrator's own concurrent effects could have made is 
 ran, a crew branch while its worktree was busy (its worker dispatch, a git run there). The AC receipt is written with `receipts.sh write ac --branch <b> --sha <reviewed sha>`, so a
 branch that moved during review fails `check ac --at-tip` as stale.
 
+## The watch agent (`orchestrator/lib/pane-host/`)
+
+Under orca or herdr, `main.mjs` calls `ensureWatchSession` (`pane-host/index.mjs`) right after
+`ensurePaneWorkspace`, inside `if (options.paneHost && !options.dryRun)`. One interactive agent per slug, in the
+main checkout, on `--platform` and the coder's resolved model: each adapter's `interactive({cwd, mainRoot, model,
+protocol, policy})` returns its argv with the rendered `orchestrator/roles/watcher.md` (`ROLE_POLICY.watcher`:
+read-only, no sub-agents, no default effort) as the initial prompt, and `worker-terminal.mjs`'s `writeLaunchScript`
+(the `envScript` a worker terminal uses, not a copy) gives the host a `bash <launch.sh>` that sources crew-afk's 0600
+`env.sh` first. The handle is `.scratch/<slug>/watch.json` `{host, handle}`, reused while the host reports a live agent
+(orca `terminal show` `agentIdentity`; herdr `pane list` `agent_status` ≠ `unknown`), else replaced. The pane-host
+adapters implement `openWatch`, `watchAlive` and `notify(effects, handle, message)`.
+
+- Every push (`queuePaneNotice` → `notifyWatchSession`, and `main.mjs`'s final one) targets `effects._paneWatch.handle`;
+  nothing reads `ORCA_TERMINAL_HANDLE` / `HERDR_PANE_ID` for a push. A failed create or a missing CLI is a `WARN` and
+  `_paneWatch = null`, so pushes log `MILESTONE-PUSH-SKIPPED` and the exit code is unchanged.
+- Nothing closes it, a signal and a thrown error included: orca's handle is never added to `_paneTerminals`, and
+  herdr's watch workspace is not `_paneWorkspace`.
+- `ctx.out` also appends to `.scratch/<slug>/traces/summary-<runId>.md` (`:` → `-`); the final push names it, or
+  carries the first line of the failure when the run never reached `ctx`.
+
 ## Adding a new crew-afk role
 
 1. `orchestrator/roles/<role>.md` — the protocol (whole-line `{{FRAGMENT:<key>}}` and `{{PLATFORM}}` expand at dispatch).
 2. Map it in `ROLE_AGENTS` (`orchestrator/lib/adapters/render.mjs`) and give it a `ROLE_POLICY` entry next to it
-   (`readOnly`, `subagents`, `effort`); each adapter's `policyArgs` turns that into its CLI's flags.
+   (`readOnly`, `subagents`, `effort`); each adapter's `policyArgs` turns that into its CLI's flags. A role that is not
+   dispatched but started interactively (the `watcher`) goes through the adapter's `interactive()` instead of `build()`.
 3. Bump crew-afk's `version` in `registry.json`; `TARGET_REPO=/tmp/test-repo ./install.sh claude --skill crew-afk` and inspect `.coding-crew/crew-afk/roles/`.
 
 ## Adding a platform
@@ -217,11 +238,12 @@ skill lookup, capability checks, the squash trailer) is derived from those two.
    the contract: `cmd`, `defaultParallel`, `defaultModel`, `coAuthor` (the squash commit's trailer line), `requiredFlags`,
    `helpArgs?` (doctor), `build(spec) -> { args, input? }` (spec: `cwd`, `mainRoot`, `model`, `policy`, `protocol` and
    `protocolFile` — the rendered protocol as text and as `<outFile>.protocol.md` — `prompt`, `outFile`, `label`),
-   `policyArgs(policy)` (a `ROLE_POLICY` entry → flags), `finalText(lines)`, `normalize(evt)` (a raw event → the
+   `policyArgs(policy)` (a `ROLE_POLICY` entry → flags), `interactive({cwd, mainRoot, model, protocol, policy})`
+   (the CLI's interactive argv, `cmd` first, the protocol as its initial prompt: the watch agent), `finalText(lines)`, `normalize(evt)` (a raw event → the
    one shape trace, pane text and deviation detection read; an array when one raw event holds several tool calls); optional
    capabilities `liveText`, `resume(id)`, `budget(usd)`, `resultMeta(lines)`, `env`, `modelTiers`, `modelAliasEnv`. A capability the
    adapter lacks is off for that runtime (no resume, `afk.limits` reported ignored), never a name check elsewhere.
 3. **Conformance test** — `node --test tests/orchestrator/platforms.test.mjs` fails, naming the platform, until both exist
-   and the adapter has every required field; pin its `policyArgs` per role there, and add its dispatch golden
+   and the adapter has every required field; pin its `policyArgs` per role and its `interactive` argv there, and add its dispatch golden
    (`UPDATE_GOLDEN=1 node --test tests/orchestrator/platform-golden-dispatch.test.mjs`).
 4. **Smoke run** — `scripts/smoke-sprint.sh <platform>`: one real sprint on the CLI.

@@ -3,9 +3,11 @@
  * `effects.paneHost` ("herdr" | "orca" | null; resolvePaneHost in crew-config.mjs).
  *
  * Every coder/reviewer/triage dispatch is headless regardless of host. A host is asked for
- * one tab/terminal tailing the sprint's trace log, and one best-effort outcome push into the
- * pane that launched the run. Each adapter (herdr.mjs, orca.mjs) implements the same five
- * operations for those: preflight, ensureWorkspace, closeWorkspace, closeLogTab, notify.
+ * one tab/terminal tailing the sprint's trace log, one long-lived interactive watch agent for
+ * the sprint's slug (ensureWatchSession), and best-effort pushes into that agent: each
+ * milestone and the outcome. Never into the pane that launched the run. Each adapter (herdr.mjs,
+ * orca.mjs) implements the same operations for those: preflight, ensureWorkspace, closeWorkspace,
+ * closeLogTab, openWatch, watchAlive, notify.
  * An adapter may also have adoptWorktree (orca only): told of each worktree the orchestrator
  * creates, so the host can show it by name under its parent. See adoptWorktree below.
  *
@@ -15,12 +17,19 @@
  *
  * Run-scoped state lives on `effects`: `_paneWorkspace` (cached promise),
  * `_paneWorkspaceReused` (never close a workspace this run didn't create),
- * `_paneLogTabId` and `_paneNotices` (the queued-push chain).
+ * `_paneLogTabId`, `_paneNotices` (the queued-push chain) and `_paneWatch` (`{host, handle}` of
+ * the watch agent, null when none opened). The watch agent is never closed by anything here.
  */
 
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { ADAPTERS as PLATFORM_ADAPTERS } from "../adapters/index.mjs";
+import { ROLE_POLICY, renderRolePrompt } from "../adapters/render.mjs";
 import * as herdr from "./herdr.mjs";
 import * as orca from "./orca.mjs";
-import { spawnInWorkerTerminal } from "./worker-terminal.mjs";
+import { shellQuote } from "./shared.mjs";
+import { spawnInWorkerTerminal, writeLaunchScript } from "./worker-terminal.mjs";
 
 const ADAPTERS = { herdr, orca };
 
@@ -104,26 +113,107 @@ export function spawnDispatch(effects, cmd, args, opts) {
   return spawnInWorkerTerminal(effects, adapter, cmd, args, opts);
 }
 
+/** `.scratch/<slug>/watch.json`: `{host, handle}` of the slug's watch agent. */
+export const watchFile = (mainRoot, slug) => join(mainRoot, ".scratch", slug, "watch.json");
+
+/** The recorded `{host, handle}` when it is usable under `host`; null for a missing, unparseable or another host's. */
+function recordedWatch(file, host) {
+  try {
+    const rec = JSON.parse(readFileSync(file, "utf8"));
+    return rec?.host === host && typeof rec.handle === "string" && rec.handle ? { host, handle: rec.handle } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * One advisory push into the triggering pane, so a caller waiting in it can stop polling.
+ * The sprint's watch agent: its platform CLI, interactive, in the main checkout, briefed by the
+ * `watcher` role as its initial prompt and started with crew-afk's env (worker-terminal.mjs's
+ * writeLaunchScript). One per slug: the handle recorded in `watch.json` is reused while the host
+ * still reports a live agent there; a dead or missing one is replaced and the file rewritten.
+ * Best-effort, never throws: a failure is a WARN and a null `_paneWatch`, so later pushes are
+ * skipped and the run's exit code is what it would be with no host. No-op under --dry-run or
+ * with no host. Returns `{host, handle}` or null.
+ */
+export async function ensureWatchSession(effects, { slug, platform, model, effort } = {}) {
+  effects._paneWatch = null;
+  const adapter = adapterFor(effects);
+  if (!adapter?.openWatch || effects.dryRun || !slug) return null;
+  const fail = (reason) => {
+    effects.log?.(`WARN watch session (${effects.paneHost}): ${reason} — no watch agent, pushes are skipped`);
+    return null;
+  };
+  try {
+    const file = watchFile(effects.mainRoot, slug);
+    const recorded = recordedWatch(file, effects.paneHost);
+    if (recorded && (await adapter.watchAlive(effects, recorded.handle))) {
+      effects.log?.(`WATCH-SESSION reused host=${recorded.host} handle=${recorded.handle}`);
+      return (effects._paneWatch = recorded);
+    }
+
+    const agent = PLATFORM_ADAPTERS[platform];
+    if (!agent?.interactive) return fail(`platform ${platform} has no interactive mode`);
+    const found = effects.exec?.("sh", ["-c", `command -v ${shellQuote(agent.cmd)}`], { mutating: false });
+    if (found && found.code !== 0) return fail(`the ${agent.cmd} CLI was not found on PATH`);
+
+    const policy = { ...ROLE_POLICY.watcher, ...(effort ? { effort } : {}) };
+    const argv = agent.interactive({
+      cwd: effects.mainRoot,
+      mainRoot: effects.mainRoot,
+      model,
+      protocol: renderRolePrompt("watcher", platform, { mainRoot: effects.mainRoot }),
+      policy,
+    });
+    const { command } = writeLaunchScript(effects, {
+      dir: join(effects.mainRoot, ".scratch", slug, "watch"),
+      cwd: effects.mainRoot,
+      argv,
+      env: agent.env,
+    });
+    const opened = await adapter.openWatch(effects, { slug, command });
+    if (!opened.handle) return fail(opened.failure);
+
+    const watch = { host: effects.paneHost, handle: opened.handle };
+    try {
+      mkdirSync(join(effects.mainRoot, ".scratch", slug), { recursive: true });
+      writeFileSync(file, `${JSON.stringify(watch)}\n`);
+    } catch (err) {
+      effects.log?.(`WARN watch session: could not record ${file} — ${err.message}; a later run opens a new agent`);
+    }
+    effects.log?.(`WATCH-SESSION opened host=${watch.host} handle=${watch.handle}`);
+    return (effects._paneWatch = watch);
+  } catch (err) {
+    effects._paneWatch = null;
+    return fail(err.message);
+  }
+}
+
+/**
+ * One advisory push into the sprint's watch agent, so a caller waiting in it can stop polling.
  * Never throws. Returns `{sent, reason?}` so a caller with a durable log (notifyMilestone
  * in pipeline.mjs) can record a skip or failure — `effects.log` alone goes nowhere durable.
+ * The target is always `_paneWatch`'s handle: never ORCA_TERMINAL_HANDLE or HERDR_PANE_ID.
  */
-export async function notifyTriggeringPane(effects, message) {
+export async function notifyWatchSession(effects, message) {
   const adapter = adapterFor(effects);
   if (!adapter) return { sent: false, reason: "no pane host" };
-  return adapter.notify(effects, message);
+  const handle = effects._paneWatch?.handle;
+  if (!handle) {
+    effects.log?.("NOTIFY-SKIP no watch session");
+    return { sent: false, reason: "no watch session" };
+  }
+  return adapter.notify(effects, handle, message);
 }
 
 /**
  * A mid-run push: queued, not awaited. An orca push takes ~8s (terminal show + send), and
  * awaited inline it held each issue's pipeline that long. The chain keeps pushes into the one
- * pane in order and never overlapping. `onResult` gets notifyTriggeringPane's `{sent, reason?}`.
+ * agent in order and never overlapping. `onResult` gets notifyWatchSession's `{sent, reason?}`.
  */
 export function queuePaneNotice(effects, message, onResult) {
   const prior = effects._paneNotices ?? Promise.resolve();
   effects._paneNotices = prior.then(async () => {
-    const result = await notifyTriggeringPane(effects, message);
+    const result = await notifyWatchSession(effects, message);
     try {
       onResult?.(result);
     } catch {

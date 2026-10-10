@@ -20,17 +20,19 @@ const ROLES_DIR = resolve(HERE, "../../roles");
 const FRAGMENT_ROOT = resolve(HERE, "../../..");
 
 /** role → the dispatch's agent label; the plain roles have no protocol. */
-export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", triage: "crew-triage" };
+export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", triage: "crew-triage", watcher: "crew-watcher" };
 
 /**
  * role → what it may do, declared once; each adapter's `policyArgs` turns it into its CLI's flags.
  * The reviewer and triage are read-only and may spawn sub-agents (whether to is their call); the coder
- * may not, since sub-agents would edit one worktree at once. Effort: `high` for all three; afk.effort overrides it per role. A plain role (no protocol: command finder, PR writer) has none, so it runs at its CLI's default.
+ * may not, since sub-agents would edit one worktree at once; the watcher is read-only too, with none. Effort: `high` for the three dispatched roles; afk.effort overrides it per role. A plain role (no protocol: command finder, PR writer) has none, so it runs at its CLI's default.
  */
 export const ROLE_POLICY = {
   coder: { readOnly: false, subagents: false, effort: "high" },
   reviewer: { readOnly: true, subagents: true, effort: "high" },
   triage: { readOnly: true, subagents: true, effort: "high" },
+  // The watch agent is interactive, not dispatched: it has no default effort (its CLI's applies unless afk.effort.watcher sets one).
+  watcher: { readOnly: true, subagents: false },
 };
 
 const NAMED_SKILLS = ["solve-issue", "dep-install", "tdd"];

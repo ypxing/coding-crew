@@ -152,7 +152,7 @@ load helpers/orchestrator-suite
   # CREW_FAKE_DISPATCH short-circuits preflight()'s CLI/agent-file checks (this repo has
   # neither `pi` nor any agent definitions installed), so the run reaches the lock check on
   # its own merits. CREW_PANE_HOST=none (this suite may itself be running inside a herdr- or
-  # orca-managed pane) so a real notifyTriggeringPane call never fires into it. Unsetting it is
+  # orca-managed pane) so a real notifyWatchSession call never opens or prompts one. Unsetting it is
   # not enough: the user-level config's afk.paneHost, or "auto" with the pane's own
   # ORCA_TERMINAL_HANDLE, would still pick a host; only an explicit none outranks the file.
   run env CREW_PANE_HOST=none CREW_FAKE_DISPATCH=1 node "$REPO_ROOT/orchestrator/main.mjs" run --platform pi --feature-slug feat-a

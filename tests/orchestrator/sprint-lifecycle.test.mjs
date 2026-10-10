@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { REPO, MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, EMPTY_HOME, sh, sprintEnv, FIXTURE_ROOTS, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, privateScripts, failFirstCall, commandLines, sprintReport, test } from "./helpers/sprint.mjs";
 
@@ -88,6 +88,94 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   // Nor the coder for the project's config, which its worktree does not hold.
   const coderPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
   assert.ok(coderPromptText.includes(`Project config: ${join(root, ".coding-crew")} `), coderPromptText);
+});
+
+// A run under a pane host: `herdr` and `pi` stubs on PATH, the first logging every call and
+// answering what crew-afk reads from it. Spawned directly, since sh() strips the pane-host env.
+function herdrRun(root, extraArgs = []) {
+  const bin = mkdtempSync(join(TMPDIR, "crew-fake-herdr-"));
+  FIXTURE_ROOTS.push(bin);
+  const log = join(bin, "calls.log");
+  const reply = (obj) => `printf '%s\\n' '${JSON.stringify(obj)}'`;
+  writeFileSync(
+    join(bin, "herdr"),
+    [
+      "#!/bin/sh",
+      `printf '%s\\n' "$*" >> '${log}'`,
+      'case "$1 $2" in',
+      `  "workspace create") ${reply({ result: { workspace: { workspace_id: "w9" }, root_pane: { pane_id: "w9:p1" } } })};;`,
+      `  "worktree open") ${reply({ result: { workspace: { workspace_id: "w5" }, root_pane: { pane_id: "w5:p1" } } })};;`,
+      `  "tab create") ${reply({ result: { tab: { tab_id: "w9:t" }, root_pane: { pane_id: "w9:pl" } } })};;`,
+      `  "pane list") ${reply({ result: { panes: [{ pane_id: "w9:p1", agent_status: "idle" }] } })};;`,
+      "esac",
+      '[ "$1" = status ] && echo "status: running"',
+      "exit 0",
+      "",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  writeFileSync(join(bin, "pi"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const env = sprintEnv({
+    ...process.env,
+    PATH: `${bin}:${process.env.PATH}`,
+    CREW_SCRIPTS: SCRIPTS,
+    CREW_FAKE_DISPATCH: FAKE,
+    CREW_FAKE_DIR: join(root, ".scratch/fake"),
+    MAIN_ROOT: root,
+    HERDR_PANE_ID: "trigger:p9",
+  });
+  env.CREW_PANE_HOST = "herdr";
+  const r = spawnSync("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check", ...extraArgs], { cwd: root, encoding: "utf8", env });
+  return { code: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", calls: existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean) : [] };
+}
+
+test("under a pane host the run opens the slug's watch agent, writes the summary file, and the final push names it", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = herdrRun(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(JSON.parse(readFileSync(join(root, ".scratch/demo/watch.json"), "utf8")), { host: "herdr", handle: "w9:p1" });
+  const run = r.calls.find((c) => c.startsWith("pane run w9:p1 "));
+  assert.ok(run, r.calls.join("\n"));
+  // The summary: everything ctx.out printed, under the run id with its colons replaced.
+  const traces = join(root, ".scratch/demo/traces");
+  const [summary] = readdirSync(traces).filter((f) => /^summary-.*\.md$/.test(f));
+  assert.ok(summary, readdirSync(traces).join(", "));
+  assert.doesNotMatch(summary, /:/);
+  assert.match(summary, /^summary-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z\.md$/);
+  assert.equal(readFileSync(join(traces, summary), "utf8").trim(), r.stdout.trim());
+  assert.match(r.stdout, /NO MORE TASKS/);
+  // Every push, the last one included, went to the watch agent: never HERDR_PANE_ID.
+  const prompts = r.calls.filter((c) => c.startsWith("agent prompt "));
+  assert.ok(prompts.length >= 2, r.calls.join("\n"));
+  assert.ok(prompts.every((c) => c.startsWith("agent prompt w9:p1 ")), prompts.join("\n"));
+  assert.equal(r.calls.filter((c) => c.includes("trigger:p9")).length, 0, "nothing targets the triggering pane");
+  assert.ok(prompts.at(-1).includes(join(traces, summary)), prompts.at(-1));
+  // The sprint's own workspace closed; the watch agent's did not.
+  assert.deepEqual(r.calls.filter((c) => c.startsWith("workspace close")), ["workspace close w5"]);
+});
+
+test("a run that ends before ctx has no summary file, and its final push carries the error's first line", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md", { blockedBy: ["02-beta.md"] });
+  addIssue(root, "02-beta.md", { blockedBy: ["01-alpha.md"] });
+  const r = herdrRun(root);
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  const traces = join(root, ".scratch/demo/traces");
+  assert.deepEqual(readdirSync(traces).filter((f) => f.startsWith("summary-")), []);
+  const last = r.calls.filter((c) => c.startsWith("agent prompt w9:p1 ")).at(-1);
+  assert.ok(last, r.calls.join("\n"));
+  assert.doesNotMatch(last, /summary-/);
+  assert.match(last, /sprint setup failed/);
+  assert.match(last, /structural errors/);
+});
+
+test("--dry-run opens no watch agent and writes no watch.json", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = herdrRun(root, ["--dry-run"]);
+  assert.equal(existsSync(join(root, ".scratch/demo/watch.json")), false, r.stderr);
+  assert.deepEqual(r.calls.filter((c) => /^(workspace create|tab create|pane run|agent prompt)/.test(c)), []);
 });
 
 test("a run that stops at its per-issue attempt cap records `attempt cap` as why it ended, not `finished`", () => {

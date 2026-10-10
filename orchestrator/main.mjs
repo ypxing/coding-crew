@@ -14,8 +14,9 @@
  *                                           none] or $CREW_PANE_HOST, which beats the file, as
  *                                           do the legacy $ORCA_ENV=1 / $HERDR_ENV=1 (orca
  *                                           first). Opens one tab tailing the trace log and
- *                                           pushes the outcome to the launching pane at the
- *                                           end; nothing load-bearing runs through it. Needs
+ *                                           one watch agent for the slug (reused across runs,
+ *                                           never closed) that every milestone and the outcome
+ *                                           are pushed to; nothing load-bearing runs through it. Needs
  *                                           `herdr server` / `orca open` running. `run` prints
  *                                           `PANE-HOST: <host|none>` first, for the launcher.
  *                                           See lib/pane-host/index.mjs, docs/orca-support.md.
@@ -81,7 +82,7 @@
  * Exit codes: 0 clean · 2 stalled · 3 nothing to do · 1 setup error
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -106,7 +107,7 @@ import {
   retiredNotice,
   validateFlags,
 } from "./lib/crew-config.mjs";
-import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, notifyTriggeringPane } from "./lib/pane-host/index.mjs";
+import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, notifyWatchSession } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktree, featureWorktreePath, removeWorktree, worktreeRoot } from "./lib/worktree.mjs";
@@ -621,7 +622,10 @@ async function main() {
   let sprint;
   // A run-stopping failure once the sprint exists: stderr for the launcher, and the log,
   // which outlives the scrollback.
+  // The first line of what stopped the run, for the final push when no summary file was written.
+  let failureLine;
   const fatal = (message) => {
+    failureLine ??= String(message).split("\n")[0];
     console.error(message);
     if (sprint?.traceLog) writeLog(sprint.traceLog, `[ABORT] ${message}`, "fatal");
   };
@@ -640,6 +644,8 @@ async function main() {
   // Set where a run ends early after run-start; the others are read off stalled/wallCapped/attemptCapped.
   let endReason;
   let runStarted = false;
+  // `.scratch/<slug>/traces/summary-<runId>.md`, set once ctx exists: all ctx.out printed.
+  let summaryFile;
   let lockPath;
   let lease;
   // The sprint's `crew/<slug>/_feature` worktree, once made. Removed on every ending; the branch stays.
@@ -796,6 +802,14 @@ async function main() {
       } catch (err) {
         console.error(`crew-afk: could not open the ${options.paneHost} log tab: ${err.message} — continuing without one.`);
       }
+      // Best-effort too (it logs its own WARN): the milestone pushes it receives are advisory.
+      await ensureWatchSession(effects, {
+        slug: sprint.featureSlug,
+        platform: options.platform,
+        // The coder's resolved model, when the coder runs on this platform (else the CLI's own).
+        model: options.crew.coder.runtime === options.platform ? options.model : undefined,
+        effort: options.effort?.watcher,
+      });
     }
 
     // Before anything reads the feature branch: a resumed branch whose earlier work was
@@ -843,6 +857,7 @@ async function main() {
       });
     }
 
+    summaryFile = join(dirname(sprint.traceLog), `summary-${runId.replaceAll(":", "-")}.md`);
     const ctx = {
       sprint,
       effects,
@@ -854,7 +869,14 @@ async function main() {
       heartbeat: (line) => {
         if (shows("debug")) console.error(line);
       },
-      out: (text) => console.log(text),
+      out: (text) => {
+        console.log(text);
+        try {
+          appendFileSync(summaryFile, `${text}\n`);
+        } catch {
+          /* the file is a convenience; stdout is the summary's primary home */
+        }
+      },
     };
 
     // Once, before any dispatch, and only when there is something to dispatch. It runs alongside
@@ -890,6 +912,7 @@ async function main() {
     return exitCode;
   } catch (err) {
     runError = err;
+    failureLine ??= String(err?.message ?? err).split("\n")[0];
     exitCode = 1;
     if (sprint?.traceLog) writeLog(sprint.traceLog, `[CRASH] ${err?.stack || err}`, "fatal");
     throw err;
@@ -916,7 +939,9 @@ async function main() {
       await drainPaneNotices(effects);
       const outcome = runError ? "errored" : exitCode === 1 ? "setup failed" : wallCapped ? "stopped at the wall-clock cap — re-run to continue" : stalled ? "stalled — blockers need a human" : "finished";
       const label = resolved?.slug ? `crew-afk (${resolved.slug})` : "crew-afk";
-      await notifyTriggeringPane(effects, `${label}: sprint ${outcome}. Check this pane's scrollback for the summary.`);
+      // The summary file names itself; a run that never reached ctx has only the failure's first line.
+      const detail = summaryFile && existsSync(summaryFile) ? `Summary: ${summaryFile}` : failureLine ?? "no summary was written";
+      await notifyWatchSession(effects, `${label}: sprint ${outcome}. ${detail}`);
     }
     removeFeatureWorktree();
     if (lease) {

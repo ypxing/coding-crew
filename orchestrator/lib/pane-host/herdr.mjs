@@ -91,12 +91,49 @@ export async function closeLogTab(effects, tabId) {
   await paneHostExec(effects, ["tab", "close", tabId]);
 }
 
-export async function notify(effects, message) {
-  const paneId = process.env.HERDR_PANE_ID;
-  if (!paneId) {
-    effects.log?.("NOTIFY-SKIP no HERDR_PANE_ID in env");
-    return { sent: false, reason: "no HERDR_PANE_ID in env" };
+/** Whether `paneId` is listed with an `agent_status` other than `unknown` (herdr detected an agent in it). */
+export async function watchAlive(effects, paneId) {
+  try {
+    const list = await paneHostExec(effects, ["pane", "list"], STATUS_TIMEOUT_MS);
+    if (list.code !== 0) return false;
+    const pane = (paneHostJson(list)?.result?.panes ?? []).find((p) => p?.pane_id === paneId);
+    const status = pane?.agent_status;
+    return typeof status === "string" && status !== "" && status !== "unknown";
+  } catch {
+    return false;
   }
+}
+
+/**
+ * The watch agent: a new tab in the triggering workspace, or outside herdr a `<slug>-watch`
+ * workspace on the main checkout (never closed, unlike the sprint's own). The agent is started
+ * with `pane run`; herdr detects it as one. Returns `{handle}` (the pane id) or `{failure}`,
+ * never throws.
+ */
+export async function openWatch(effects, { slug, command }) {
+  const label = `${slug}-watch`;
+  try {
+    const workspaceId = process.env.HERDR_WORKSPACE_ID;
+    const create = workspaceId
+      ? await paneHostExec(effects, ["tab", "create", "--workspace", workspaceId, "--cwd", effects.mainRoot, "--label", label, "--no-focus"])
+      : await paneHostExec(effects, ["workspace", "create", "--cwd", effects.mainRoot, "--label", label, "--no-focus"]);
+    const what = workspaceId ? "tab create" : "workspace create";
+    const result = paneHostJson(create)?.result;
+    let paneId = result?.root_pane?.pane_id;
+    if (create.code === 0 && !paneId && result?.workspace?.workspace_id) {
+      const list = await paneHostExec(effects, ["pane", "list", "--workspace", result.workspace.workspace_id], STATUS_TIMEOUT_MS);
+      paneId = paneHostJson(list)?.result?.panes?.[0]?.pane_id;
+    }
+    if (create.code !== 0 || !paneId) return { failure: `herdr ${what} exit=${create.code} ${failureDetail(create)}` };
+    const run = await paneHostExec(effects, ["pane", "run", paneId, command]);
+    if (run.code !== 0) return { failure: `herdr pane run exit=${run.code} ${failureDetail(run)}` };
+    return { handle: paneId };
+  } catch (err) {
+    return { failure: `herdr watch agent threw: ${err.message}` };
+  }
+}
+
+export async function notify(effects, paneId, message) {
   try {
     // --wait --until working is load-bearing: plain `agent prompt` exits 0 even when an
     // unattended pane never receives the message. --wait makes a stall a nonzero exit.

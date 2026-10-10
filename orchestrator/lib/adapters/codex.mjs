@@ -70,8 +70,17 @@ export default {
     return { args, input: protocol ? `${protocol}\n\n---\n\n# Task\n\n${task}` : task };
   },
 
-  // The sandbox is set by build(); the flag here is the role's reasoning effort.
-  policyArgs: ({ effort }) => ["-c", `model_reasoning_effort="${effort}"`],
+  // The sandbox is set by build(); the flag here is the role's reasoning effort (none: codex's default).
+  policyArgs: ({ effort }) => (effort ? ["-c", `model_reasoning_effort="${effort}"`] : []),
+
+  /** The TUI with the protocol as its initial prompt (the last argument), in the role's sandbox. */
+  interactive({ cwd, model, protocol, policy }) {
+    const argv = ["codex", "--cd", cwd, "--sandbox", sandboxFor(policy)];
+    if (model && model !== "inherit") argv.push("--model", model);
+    if (policy) argv.push(...this.policyArgs(policy));
+    argv.push(protocol);
+    return argv;
+  },
 
   /**
    * An item's start (its command or path), a command that completed with a non-zero exit, a
