@@ -47,7 +47,7 @@ export function refusalMessage(slug, owner, raw, now = Date.now()) {
   return `crew-afk: feature ${slug} is leased by ${who} — if that run is dead: crew-afk --reclaim`;
 }
 
-/** `{ sha, message } | null` (no lease), or throws with lease.sh's stderr. Also read by `crew-afk followup start`. */
+/** `{ sha, message } | null` (no lease), or throws with lease.sh's stderr. */
 export function readOwner(effects, slug) {
   const r = effects.bash("lease.sh", ["owner", "--slug", slug], { mutating: false });
   if (r.code !== 0) throw new Error(r.stderr.trim() || `lease.sh owner exited ${r.code}`);

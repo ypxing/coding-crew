@@ -96,7 +96,7 @@ flowchart LR
 - 🔍 **A reviewer that sees the whole feature.** It reviews against the plan, not one diff at a time.
 - 🔁 **Fixes itself without looping.** One fix round, one closing check, then it stops.
 - 💸 **You see what it cost.** Every sprint ends with a cost summary by role.
-- 💬 **You can ask the crew what happened.** Under [orca](https://www.onorca.dev) or [herdr](https://herdr.dev), every sprint gets its own watch agent. Ask it what finished or what's blocked. Or ask for follow-up work on the feature branch, like fixing the review findings or answering PR comments.
+- 💬 **You can ask the crew what happened.** Under [orca](https://www.onorca.dev) or [herdr](https://herdr.dev), every sprint gets its own watch agent. Ask it what finished or what's blocked. It only reads: to act on the findings or the PR comments, run `/crew-address-findings` or `/address-pr-comments` yourself.
 - 🔒 **You stay in control.** Nothing is pushed unless you ask.
 - 🧩 **Fits what you already use.** It works with four coding CLIs, and keeps issues as local markdown or in GitHub Issues.
 

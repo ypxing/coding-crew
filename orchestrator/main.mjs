@@ -7,14 +7,6 @@
  *   crew-afk plan   [options]   print what a sprint would do, change nothing
  *   crew-afk status             print the current sprint's state
  *   crew-afk doctor [options]   check this platform can dispatch at all
- *   crew-afk followup start <slug> "<task>" | wait <id> | reply <id> "<answer>"
- *                               (orca or herdr only; --platform required) a feature-level worker
- *                               agent in crew/<slug>/_followup on the feature branch, asked by the
- *                               watch agent and reached over the host's native agent channel:
- *                               start prints a follow-up id, wait blocks for the worker's
- *                               `DONE: …` result or `QUESTION: …`, reply answers a question.
- *                               Refused while a run or the feature lease holds the branch.
- *                               See lib/followup.mjs.
  *
  * Options:
  *   --platform <name>                      required (not for status): one of lib/adapters/index.mjs's PLATFORMS
@@ -118,7 +110,6 @@ import {
   validateFlags,
 } from "./lib/crew-config.mjs";
 import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, notifyWatchSession } from "./lib/pane-host/index.mjs";
-import { releaseStaleFollowup, runFollowup } from "./lib/followup.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktree, featureWorktreePath, removeWorktree, worktreeRoot } from "./lib/worktree.mjs";
@@ -143,6 +134,8 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+const COMMANDS = ["run", "plan", "status", "doctor"];
+
 function parseArgs(argv) {
   const o = {
     command: "run",
@@ -161,8 +154,6 @@ function parseArgs(argv) {
     syncMain: true,
     reclaim: false,
     dryRun: false,
-    // `followup <action> <words…>`: the action and its positional arguments (slug, task, id, answer).
-    followup: null,
     passthrough: [],
     unknown: [],
     retired: [], // flags still accepted that no longer do anything (crew-config.mjs's retiredNotice)
@@ -171,7 +162,6 @@ function parseArgs(argv) {
   // A setting flag with no value is "", which fails validation, rather than no flag at all.
   const value = () => args.shift() ?? "";
   if (args[0] && !args[0].startsWith("-")) o.command = args.shift();
-  if (o.command === "followup") o.followup = { action: args[0] && !args[0].startsWith("-") ? args.shift() : null, words: [] };
   while (args.length) {
     const a = args.shift();
     switch (a) {
@@ -210,10 +200,7 @@ function parseArgs(argv) {
       case "--jira": o.passthrough.push("--jira", value()); break;
       case "-h": case "--help": o.command = "help"; break;
       default:
-        if (o.followup && !a.startsWith("--")) {
-          // A task or an answer is free text: never a path or a typo to suggest a slug for.
-          o.followup.words.push(a);
-        } else if (a.startsWith(".scratch/")) {
+        if (a.startsWith(".scratch/")) {
           // A path argument names the sprint: derive the slug from it, exactly once.
           o.featureSlug ??= a.replace(/^\.scratch\//, "").split("/")[0] || null;
         } else {
@@ -459,11 +446,13 @@ async function main() {
         "  and paneHost (none; ~/.coding-crew/config.json only, and $CREW_PANE_HOST beats it).\n" +
         "  A new feature branch is <branchPrefix><KEY>-<slug>: config.json's afk.branchPrefix\n" +
         "  (default feature/, \"\" for none; no flag) and --jira KEY (e.g. PROJ-12; omitted, no KEY-).\n" +
-        "  No flag: limits.<role>.usd caps one dispatch of that role in dollars (off), on a runtime that supports a cap.\n" +
-        '  crew-afk followup start <slug> "<task>" | wait <id> | reply <id> "<answer>" --platform X\n' +
-        "  (orca or herdr: a worker agent on the feature branch, asked by the watch agent; start prints its id)",
+        "  No flag: limits.<role>.usd caps one dispatch of that role in dollars (off), on a runtime that supports a cap.\n",
     );
     return 0;
+  }
+  if (!COMMANDS.includes(options.command)) {
+    console.error(`crew-afk: unknown command ${options.command} (expected ${COMMANDS.join(", ")})`);
+    return 2;
   }
   // `status` only reads the sprint's state, so it dispatches nothing and needs no platform.
   if (!options.platform && options.command !== "status") {
@@ -567,29 +556,6 @@ async function main() {
     if (inside && spawnSync("git", ["-C", mainRoot, "check-ignore", "-q", `${rel}/`]).status !== 0) {
       console.error(`crew-afk: WARNING: worktree root ${rel} is inside the repo but not gitignored — add "${rel}/" to .gitignore.`);
     }
-  }
-
-  // --- followup: the watch agent's request for follow-up work, over the host's agent channel ----
-  if (options.command === "followup") {
-    const [first, second] = options.followup.words;
-    const io = { out: (line) => console.log(line), err: (line) => console.error(line) };
-    const forSlug = options.followup.action === "start";
-    return runFollowup(effects, {
-      action: options.followup.action,
-      slug: forSlug ? first : undefined,
-      task: forSlug ? second : undefined,
-      id: forSlug ? undefined : first,
-      answer: forSlug ? undefined : second,
-      platform: options.platform,
-      // The coder's resolved model, when the coder runs on this platform (else the CLI's own).
-      model: options.crew.coder.runtime === options.platform ? options.model : undefined,
-      effort: settings.effort?.followup,
-      // The recorded one when the sprint ran here; else what session-init.sh would name (afk.branchPrefix, --jira).
-      resolveBranch: (slug) =>
-        Sprint.attach(effects, slug)?.featureBranch ?? Sprint.resolveBranch(effects, { featureSlug: slug, branchPrefix: options.branchPrefix, passthrough: options.passthrough }).branch,
-      useLease: readTrackerConfig(mainRoot).tracker === "github",
-      io,
-    });
   }
 
   options.parallel = settings.maxParallel ?? DEFAULT_PARALLEL[crew.roles.coder.runtime] ?? 2;
@@ -810,13 +776,6 @@ async function main() {
       }
       featureWorktree = wt.path;
       effects.featureRoot = wt.path;
-      try {
-        // Taking the branch removed a clean _followup: its record must stop blocking `followup start`.
-        const released = releaseStaleFollowup(effects, named.slug);
-        if (released) console.error(`crew-afk: follow-up ${released.id} was still open; this run took the feature branch back from its checkout, so it is marked released.`);
-      } catch (err) {
-        console.error(`crew-afk: WARNING: could not update .scratch/${named.slug}/followup.json: ${err.message}`);
-      }
       if (!wt.reusedBranch) warnDefaultBehindOrigin(effects, named.defaultBranch, (line) => console.error(line));
     }
 

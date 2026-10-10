@@ -16,12 +16,8 @@ import {
   ensurePaneWorkspace,
   ensureWatchSession,
   notifyWatchSession,
-  awaitFollowup,
-  openFollowup,
   preflightPaneHost,
   queuePaneNotice,
-  replyFollowup,
-  supportsFollowups,
 } from "../../orchestrator/lib/pane-host/index.mjs";
 import { levelFor } from "../../orchestrator/lib/log.mjs";
 import { notifyMilestone } from "../../orchestrator/lib/pipeline/shared.mjs";
@@ -843,7 +839,7 @@ test("ensureWatchSession gives the host a command that sources crew-afk's env.sh
   }
 });
 
-test("ensureWatchSession puts CREW_PANE_HOST=<effects.paneHost> in the launch env, so `followup start` run from the watch agent resolves the host `run --pane-host` chose", async () => {
+test("ensureWatchSession puts CREW_PANE_HOST=<effects.paneHost> in the launch env, so a crew-afk command run from the watch agent resolves the host `run --pane-host` chose", async () => {
   // `run --pane-host orca` sets effects.paneHost; the agent's own shell has neither the flag nor the legacy ORCA_ENV.
   const { effects } = watchFixture("orca", [orcaCreated()], { env: {} });
   await ensureWatchSession(effects, WATCH);
@@ -1050,167 +1046,4 @@ test("ensureWatchSession never throws: a host call that throws is a WARN", async
   };
   assert.equal(await ensureWatchSession(effects, WATCH), null);
   assert.match(effects._logs.join("\n"), /^WARN .*ENOENT/m);
-});
-
-// ─── follow-up workers: openFollowup / awaitFollowup / replyFollowup ─────────────────────────
-//
-// The command (`crew-afk followup`) over a fake host is followup.test.mjs; these pin each
-// adapter's ops and the dispatch through index.mjs.
-
-const FOLLOWUP = { slug: "alpha", worktree: "/root/.scratch/worktrees/crew/alpha/_followup", command: "bash '/launch.sh'", spec: "BRIEF + TASK", coordinator: "term_watch" };
-
-test("supportsFollowups is true for orca and herdr and false with no host", () => {
-  assert.equal(supportsFollowups({ paneHost: "orca" }), true);
-  assert.equal(supportsFollowups({ paneHost: "herdr" }), true);
-  assert.equal(supportsFollowups({ paneHost: null }), false);
-});
-
-test("openFollowup (orca) creates a Run from the watch handle, a terminal in the follow-up worktree, then starts it as the Run's worker", async () => {
-  const effects = fakeOrcaEffects([json({ result: { run: { id: "run_9" } } }), orcaCreated("term_f"), json({ result: {} })]);
-  const opened = await openFollowup(effects, FOLLOWUP);
-  assert.deepEqual(opened, { runId: "run_9", terminal: "term_f", coordinator: "term_watch" });
-  assert.deepEqual(effects._calls.map((c) => c.slice(0, 3)), [
-    ["orca", "orchestration", "run-create"],
-    ["orca", "terminal", "create"],
-    ["orca", "orchestration", "worker-start"],
-  ]);
-  assert.ok(effects._calls[0].join(" ").includes("--from term_watch"));
-  assert.ok(effects._calls[1].join(" ").includes(`--worktree path:${FOLLOWUP.worktree}`));
-  assert.ok(effects._calls[2].join(" ").includes(`--run run_9 --worktree path:${FOLLOWUP.worktree} --terminal term_f --spec BRIEF + TASK --from term_watch`));
-  assert.ok(effects._timeouts.every((t) => t === 10000), "every call is bounded");
-  assert.equal(effects._paneTerminals?.has("term_f") ?? false, false, "the follow-up terminal is not swept by the run's own close");
-});
-
-test("openFollowup (orca) reports the host's JSON error, not its stderr banner", async () => {
-  const fenced = { code: 1, stdout: JSON.stringify({ ok: false, error: { code: "consumer_fenced", message: "worker-start requires the coordinator terminal" } }), stderr: "[relay-connect] Handshake OK" };
-  const effects = fakeOrcaEffects([json({ result: { run: { id: "run_9" } } }), orcaCreated("term_f"), fenced, json({ result: {} })]);
-  const opened = await openFollowup(effects, FOLLOWUP);
-  assert.match(opened.failure, /worker-start exit=1 consumer_fenced: worker-start requires the coordinator terminal/);
-});
-
-test("openFollowup (orca) with no coordinator handle fails before any host call", async () => {
-  const effects = fakeOrcaEffects([]);
-  const opened = await openFollowup(effects, { ...FOLLOWUP, coordinator: undefined });
-  assert.match(opened.failure, /no watch agent handle/);
-  assert.equal(effects._calls.length, 0);
-});
-
-test("awaitFollowup (orca) prefers the worker_done over an unanswered question, and skips answered ones", async () => {
-  const msg = (m) => ({ to_handle: "run:run_9", ...m });
-  const effects = fakeOrcaEffects([
-    json({ result: { messages: [msg({ id: "q1", type: "question", sequence: 2, body: "old?" }), msg({ id: "q2", type: "question", sequence: 4, body: "new?" })] } }),
-    json({ result: { messages: [msg({ id: "q1", type: "question", sequence: 2, body: "old?" }), msg({ id: "d", type: "worker_done", sequence: 6, body: "done" })] } }),
-  ]);
-  const rec = { runId: "run_9", answered: ["q1"] };
-  assert.deepEqual(await awaitFollowup(effects, rec, { pollMs: 1 }), { kind: "question", text: "new?", messageId: "q2" });
-  assert.deepEqual(await awaitFollowup(effects, rec, { pollMs: 1 }), { kind: "done", text: "done", messageId: "d" });
-});
-
-test("replyFollowup (orca) is orchestration reply --id of the pending question; with none it fails without a host call", async () => {
-  const effects = fakeOrcaEffects([json({ result: {} })]);
-  assert.match((await replyFollowup(effects, { runId: "run_9" }, "x")).failure, /no open question/);
-  assert.equal(effects._calls.length, 0);
-  const sent = await replyFollowup(effects, { runId: "run_9", coordinator: "term_watch", pending: { messageId: "q2" } }, "yes");
-  assert.deepEqual(sent, { messageId: "q2" });
-  assert.deepEqual(effects._calls[0], ["orca", "orchestration", "reply", "--id", "q2", "--body", "yes", "--run", "run_9", "--from", "term_watch", "--json"]);
-});
-
-test("openFollowup (herdr) never throws: a host call that throws is a failure with its text", async () => {
-  const effects = fakeHerdrEffects([]);
-  const opened = await openFollowup(effects, FOLLOWUP);
-  assert.match(opened.failure, /no more canned herdr responses/);
-});
-
-test("openFollowup (herdr) waits for the started agent's first turn to end before prompting the spec", async () => {
-  const effects = fakeHerdrEffects([herdrWorkspace("w2", "w2:p1"), json({}), json({}), json({})]);
-  const opened = await openFollowup(effects, FOLLOWUP);
-  assert.deepEqual(opened, { handle: "w2:p1" });
-  assert.deepEqual(effects._calls.map((c) => c.slice(0, 4)), [
-    ["herdr", "workspace", "create", "--cwd"],
-    ["herdr", "pane", "run", "w2:p1"],
-    ["herdr", "agent", "wait", "w2:p1"],
-    ["herdr", "agent", "prompt", "w2:p1"],
-  ]);
-  const wait = effects._calls[2];
-  assert.ok(wait.includes("--until") && wait.includes("idle") && wait.includes("done"), `the first turn ends as idle or done: ${wait}`);
-  assert.ok(!wait.includes("working"), "not the state the first prompt is already in");
-  assert.ok(wait.includes("--timeout"), "a stalled start fails rather than hanging");
-  assert.equal(effects._calls[3][4], "BRIEF + TASK");
-});
-
-test("openFollowup (herdr) retries the first-turn wait while herdr has not detected the agent yet (agent_not_found), then prompts the spec", async () => {
-  const notYet = { code: 1, stdout: JSON.stringify({ error: { code: "agent_not_found", message: "agent target w2:p1 not found" } }), stderr: "" };
-  const effects = fakeHerdrEffects([herdrWorkspace("w2", "w2:p1"), json({}), notYet, notYet, json({}), json({})]);
-  const slept = [];
-  const opened = await openFollowup(effects, { ...FOLLOWUP, sleep: async (ms) => slept.push(ms) });
-  assert.deepEqual(opened, { handle: "w2:p1" });
-  assert.deepEqual(effects._calls.map((c) => c.slice(1, 3).join(" ")), ["workspace create", "pane run", "agent wait", "agent wait", "agent wait", "agent prompt"]);
-  assert.equal(slept.length, 2, "one pause per not-yet-detected answer");
-});
-
-test("openFollowup (herdr) gives up on an agent herdr never detects, closing the pane it made", async () => {
-  const notYet = { code: 1, stdout: JSON.stringify({ error: { code: "agent_not_found", message: "agent target w2:p1 not found" } }), stderr: "" };
-  const effects = fakeHerdrEffects([herdrWorkspace("w2", "w2:p1"), json({}), ...Array.from({ length: 500 }, () => notYet), json({})]);
-  let now = 0;
-  const opened = await openFollowup(effects, { ...FOLLOWUP, sleep: async (ms) => (now += ms), now: () => now });
-  assert.match(opened.failure, /herdr agent wait exit=1 .*agent_not_found/);
-  assert.ok(!effects._calls.some((c) => c[2] === "prompt"), "the spec was never sent");
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w2"]);
-});
-
-test("openFollowup (herdr) whose first turn never ends fails with the host's text, never prompts the spec, and closes the pane it made", async () => {
-  const effects = fakeHerdrEffects([herdrWorkspace("w2", "w2:p1"), json({}), { code: 124, stdout: "", stderr: "timeout" }, json({})]);
-  const opened = await openFollowup(effects, FOLLOWUP);
-  assert.match(opened.failure, /herdr agent wait exit=124 \(timed out/);
-  assert.ok(!effects._calls.some((c) => c[2] === "prompt"), "the spec was never sent");
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w2"]);
-});
-
-// What herdr's pane shows after each turn: the echoed prompt, then the worker's output.
-const read = (text) => json({ result: { read: { text } } });
-const turnEnded = () => json({});
-
-test("awaitFollowup (herdr) takes only a marker after the last answer crew-afk sent: a second turn with no marker is the no-marker failure, not the earlier question", async () => {
-  const pane = "⏺ Looking.\nQUESTION: keep the old API?\n\n> yes\n⏺ Working on it, tests pass.\n";
-  const effects = fakeHerdrEffects([turnEnded(), read(pane)]);
-  const answer = await awaitFollowup(effects, { handle: "w2:p1", lastAnswer: "yes" });
-  assert.match(answer.failure, /ended with no QUESTION:\/DONE: line/);
-  assert.match(answer.failure, /Working on it/);
-});
-
-test("awaitFollowup (herdr) returns a marker the worker wrote after the echoed answer, and one before it is ignored", async () => {
-  const pane = "QUESTION: keep the old API?\n\n> yes\n⏺ Kept it.\n⏺ DONE: kept the old API; committed 9f2e\n";
-  const effects = fakeHerdrEffects([turnEnded(), read(pane)]);
-  assert.deepEqual(await awaitFollowup(effects, { handle: "w2:p1", lastAnswer: "yes" }), { kind: "done", text: "kept the old API; committed 9f2e" });
-});
-
-test("awaitFollowup (herdr) fails, rather than guess, when the answer it sent is not in the pane's recent text", async () => {
-  const effects = fakeHerdrEffects([turnEnded(), read("QUESTION: keep the old API?\nsome other output\n")]);
-  const answer = await awaitFollowup(effects, { handle: "w2:p1", lastAnswer: "yes" });
-  assert.match(answer.failure, /answer crew-afk sent is not in the pane/);
-});
-
-test("awaitFollowup (herdr) finds an answer the worker's TUI hard-wrapped across several pane lines", async () => {
-  const lastAnswer = "keep the old API but deprecate it, and move every caller in orchestrator/lib to the new one";
-  const pane = "QUESTION: keep the old API?\n\n> keep the old API but deprecate it, and move every caller in\n  orchestrator/lib to the new one\n⏺ DONE: deprecated it; committed 9f2e\n";
-  const effects = fakeHerdrEffects([turnEnded(), read(pane)]);
-  assert.deepEqual(await awaitFollowup(effects, { handle: "w2:p1", lastAnswer }), { kind: "done", text: "deprecated it; committed 9f2e" });
-});
-
-test("awaitFollowup (herdr) whose answer's echo scrolled out of a full read takes the whole read as this turn", async () => {
-  const pane = [...Array.from({ length: 399 }, (_, i) => `⏺ step ${i}`), "⏺ QUESTION: also drop the shim?"].join("\n");
-  const effects = fakeHerdrEffects([turnEnded(), read(pane)]);
-  assert.deepEqual(await awaitFollowup(effects, { handle: "w2:p1", lastAnswer: "yes" }), { kind: "question", text: "also drop the shim?" });
-});
-
-test("awaitFollowup (herdr) with a wrapped echo and no marker after it is still the no-marker failure", async () => {
-  const lastAnswer = "keep the old API but deprecate it, and move every caller in orchestrator/lib to the new one";
-  const pane = "QUESTION: keep the old API?\n\n> keep the old API but deprecate it, and move every caller in\n  orchestrator/lib to the new one\n⏺ Working on it.\n";
-  const effects = fakeHerdrEffects([turnEnded(), read(pane)]);
-  assert.match((await awaitFollowup(effects, { handle: "w2:p1", lastAnswer })).failure, /ended with no QUESTION:\/DONE: line/);
-});
-
-test("awaitFollowup (herdr) with no answer sent yet (the first turn) takes the last marker in the pane", async () => {
-  const effects = fakeHerdrEffects([turnEnded(), read("⏺ working\nQUESTION: which branch?\n")]);
-  assert.deepEqual(await awaitFollowup(effects, { handle: "w2:p1" }), { kind: "question", text: "which branch?" });
 });

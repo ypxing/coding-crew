@@ -229,6 +229,17 @@ load helpers/orchestrator-suite
   done
 }
 
+@test "orchestrator CLI: followup start|wait|reply is an unknown command (exit 2), and --help no longer lists it" {
+  for action in start wait reply; do
+    run node orchestrator/main.mjs followup "$action" alpha "task" --platform pi
+    [ "$status" -eq 2 ] || { echo "followup $action: status $status: $output"; return 1; }
+    [[ "$output" == *"unknown command followup"* ]] || { echo "followup $action: $output"; return 1; }
+  done
+  run node orchestrator/main.mjs --help
+  [ "$status" -eq 0 ]
+  [[ "$output" != *followup* ]] || { echo "help names followup"; return 1; }
+}
+
 @test "orchestrator: doctor reports a PROBLEM when the CLI's --help omits a required flag" {
   command -v node >/dev/null 2>&1 || skip "node not installed"
   local bin="$BATS_TEST_TMPDIR/bin"; mkdir -p "$bin"
