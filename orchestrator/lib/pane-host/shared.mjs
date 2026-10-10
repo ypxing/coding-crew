@@ -57,17 +57,31 @@ const undecorated = (line) => line.replace(/^[\s⏺●•·*>❯│|-]+/, "").re
  * The part of an agent's terminal `text` after the last line that echoes `prompt` (its last
  * non-blank line, undecorated), or null when no line does. herdr has no message queue, so an
  * earlier turn's `QUESTION:` / `DONE:` line sits in the same text as this turn's: only what comes
- * after the prompt crew-afk sent can be this turn's.
+ * after the prompt crew-afk sent can be this turn's. The echo may be hard-wrapped by the agent's
+ * TUI over several lines (`> <first part>` / `  <rest>`), so lines are compared with whitespace
+ * removed and a run of consecutive lines that together spell the anchor counts as its echo.
  */
 export function textAfterPrompt(text, prompt) {
+  const squash = (line) => undecorated(line).replace(/\s+/g, "");
   const anchor = String(prompt ?? "")
     .split("\n")
-    .map(undecorated)
+    .map(squash)
     .filter(Boolean)
     .at(-1);
   if (!anchor) return null;
   const lines = String(text ?? "").split("\n");
-  const at = lines.findLastIndex((line) => undecorated(line) === anchor);
+  const endsEcho = (end) => {
+    let spelled = "";
+    for (let k = end; k >= 0; k--) {
+      const piece = squash(lines[k]);
+      if (!piece) return false;
+      spelled = piece + spelled;
+      if (spelled === anchor) return true;
+      if (!anchor.endsWith(spelled)) return false;
+    }
+    return false;
+  };
+  const at = lines.findLastIndex((_, i) => endsEcho(i));
   return at === -1 ? null : lines.slice(at + 1).join("\n");
 }
 

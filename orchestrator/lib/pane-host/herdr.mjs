@@ -144,6 +144,9 @@ export async function openWatch(effects, { slug, command }) {
   }
 }
 
+/** How many lines of a follow-up worker's pane `awaitFollowup` reads. */
+const FOLLOWUP_READ_LINES = 400;
+
 /** How long a fresh agent gets to take its first prompt: it is still starting up. */
 const FOLLOWUP_START_TIMEOUT_MS = 60000;
 
@@ -207,13 +210,13 @@ export async function openFollowup(effects, { slug, worktree, command, spec }) {
  * its turn as `done`, so the marker, not the state, tells them apart. After an answer
  * (`rec.lastAnswer`, what crew-afk last sent) only a marker below that answer's echo counts: the
  * text still holds the earlier turns, and a turn that wrote no marker must not be read as the
- * question before it. Returns `{kind: "done"|"question", text}` or `{failure}`, never throws.
+ * question before it. A full read with no echo is a turn that scrolled it out, read whole. Returns `{kind: "done"|"question", text}` or `{failure}`, never throws.
  */
 export async function awaitFollowup(effects, rec) {
   try {
     const wait = await paneHostExec(effects, ["agent", "wait", rec.handle, "--until", "done", "--until", "idle", "--until", "blocked"]);
     if (wait.code !== 0) return { failure: hostFailure("herdr agent wait", wait) };
-    const read = await paneHostExec(effects, ["agent", "read", rec.handle, "--source", "recent-unwrapped", "--lines", "400"], STATUS_TIMEOUT_MS);
+    const read = await paneHostExec(effects, ["agent", "read", rec.handle, "--source", "recent-unwrapped", "--lines", String(FOLLOWUP_READ_LINES)], STATUS_TIMEOUT_MS);
     if (read.code !== 0) return { failure: hostFailure("herdr agent read", read, STATUS_TIMEOUT_MS) };
     const parsed = paneHostJson(read)?.result;
     const text = typeof parsed?.read?.text === "string" ? parsed.read.text : typeof parsed?.text === "string" ? parsed.text : read.stdout;
@@ -221,6 +224,8 @@ export async function awaitFollowup(effects, rec) {
     let turn = text;
     if (rec.lastAnswer) {
       turn = textAfterPrompt(text, rec.lastAnswer);
+      // A full read with no echo: the turn outgrew the read and scrolled the answer out, so all of it is this turn's.
+      if (turn === null && String(text ?? "").replace(/\n+$/, "").split("\n").length >= FOLLOWUP_READ_LINES) turn = text;
       if (turn === null) {
         return { failure: `the answer crew-afk sent is not in the pane's recent text, so the worker's response cannot be told from an earlier turn's; its pane ends:\n${tail}` };
       }

@@ -240,7 +240,7 @@ host without all three has no follow-ups, and `supportsFollowups` is the gate ev
   exists removes it again. Open until `wait` returns a final result. One writer: `followup.mjs`.
 - orca: Run → terminal → `worker-start` (D14); the response is `orchestration inbox`'s `worker_done` to `run:<id>`.
   herdr: `agent prompt` / `wait` / `read`, the last `QUESTION:` / `DONE:` line (D15) below the echo of `rec.lastAnswer`
-  (the pane text keeps earlier turns); `openFollowup` waits out the brief's first turn before prompting the spec. `followup.md` (`ROLE_POLICY.followup`)
+  (the pane text keeps earlier turns; a hard-wrapped echo still matches, and a full 400-line read with no echo is taken whole); `openFollowup` waits out the brief's first turn before prompting the spec. `followup.md` (`ROLE_POLICY.followup`)
   must never start a line with those markers, or the brief's own echo reads as an answer.
 
 ## Adding a new crew-afk role

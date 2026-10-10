@@ -1152,6 +1152,26 @@ test("awaitFollowup (herdr) fails, rather than guess, when the answer it sent is
   assert.match(answer.failure, /answer crew-afk sent is not in the pane/);
 });
 
+test("awaitFollowup (herdr) finds an answer the worker's TUI hard-wrapped across several pane lines", async () => {
+  const lastAnswer = "keep the old API but deprecate it, and move every caller in orchestrator/lib to the new one";
+  const pane = "QUESTION: keep the old API?\n\n> keep the old API but deprecate it, and move every caller in\n  orchestrator/lib to the new one\n⏺ DONE: deprecated it; committed 9f2e\n";
+  const effects = fakeHerdrEffects([turnEnded(), read(pane)]);
+  assert.deepEqual(await awaitFollowup(effects, { handle: "w2:p1", lastAnswer }), { kind: "done", text: "deprecated it; committed 9f2e" });
+});
+
+test("awaitFollowup (herdr) whose answer's echo scrolled out of a full read takes the whole read as this turn", async () => {
+  const pane = [...Array.from({ length: 399 }, (_, i) => `⏺ step ${i}`), "⏺ QUESTION: also drop the shim?"].join("\n");
+  const effects = fakeHerdrEffects([turnEnded(), read(pane)]);
+  assert.deepEqual(await awaitFollowup(effects, { handle: "w2:p1", lastAnswer: "yes" }), { kind: "question", text: "also drop the shim?" });
+});
+
+test("awaitFollowup (herdr) with a wrapped echo and no marker after it is still the no-marker failure", async () => {
+  const lastAnswer = "keep the old API but deprecate it, and move every caller in orchestrator/lib to the new one";
+  const pane = "QUESTION: keep the old API?\n\n> keep the old API but deprecate it, and move every caller in\n  orchestrator/lib to the new one\n⏺ Working on it.\n";
+  const effects = fakeHerdrEffects([turnEnded(), read(pane)]);
+  assert.match((await awaitFollowup(effects, { handle: "w2:p1", lastAnswer })).failure, /ended with no QUESTION:\/DONE: line/);
+});
+
 test("awaitFollowup (herdr) with no answer sent yet (the first turn) takes the last marker in the pane", async () => {
   const effects = fakeHerdrEffects([turnEnded(), read("⏺ working\nQUESTION: which branch?\n")]);
   assert.deepEqual(await awaitFollowup(effects, { handle: "w2:p1" }), { kind: "question", text: "which branch?" });
