@@ -64,6 +64,7 @@ HOME/.coding-crew/crew-afk/roles/reviewer/scripts/ /
 HOME/.coding-crew/crew-afk/roles/reviewer/scripts/dependency-audit.sh exec=1
 HOME/.coding-crew/crew-afk/roles/reviewer/scripts/review-context.sh exec=1
 HOME/.coding-crew/crew-afk/roles/triage.md exec=0
+HOME/.coding-crew/crew-afk/roles/watcher.md exec=0
 HOME/.coding-crew/dep-install/ /
 HOME/.coding-crew/dep-install/scripts/ /
 HOME/.coding-crew/dep-install/scripts/detect-compose-bypass.sh exec=1
