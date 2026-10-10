@@ -18,6 +18,7 @@ import {
   notifyWatchSession,
   preflightPaneHost,
   queuePaneNotice,
+  queueRunStartNotice,
 } from "../../orchestrator/lib/pane-host/index.mjs";
 import { levelFor } from "../../orchestrator/lib/log.mjs";
 import { notifyMilestone } from "../../orchestrator/lib/pipeline/shared.mjs";
@@ -1150,4 +1151,33 @@ test("an adopted launching pane is never closed by an ending, and its workspace 
   await closePaneWorkspace(effects);
   await closePaneLogTab(effects);
   assert.deepEqual(effects._calls.filter((c) => c[2] === "close").map((c) => c[3]), ["w1:log"]);
+});
+
+// A reused or adopted agent may have been handed the checkout at an earlier run's end notice, so
+// a new run tells it that the sprint is merging into the checkout again (followup.md).
+test("a run that reuses or adopts the feature agent pushes it a run-start notice; one that opens a new agent does not", async () => {
+  const reused = watchFixture("orca", [orcaAgent("term_rec"), orcaAgent("term_rec"), json({ result: { send: { accepted: true } } })]);
+  reused.record({ host: "orca", handle: "term_rec" });
+  await ensureWatchSession(reused.effects, WATCH);
+  queueRunStartNotice(reused.effects, "alpha");
+  await drainPaneNotices(reused.effects);
+  const send = reused.effects._calls.at(-1);
+  assert.equal(send[2], "send");
+  assert.equal(send[send.indexOf("--terminal") + 1], "term_rec");
+  const text = send[send.indexOf("--text") + 1];
+  assert.match(text, /^\[alpha\] .*run started/, text);
+  assert.match(text, /until the end notice/, text);
+
+  const adopted = watchFixture("herdr", [herdrPanes({ pane_id: "w1:pl", agent_status: "idle" }), json({ result: { type: "ok" } })]);
+  await withHerdrPaneId("w1:pl", () => inDir(adopted.featureRoot, () => ensureWatchSession(adopted.effects, WATCH)));
+  queueRunStartNotice(adopted.effects, "alpha");
+  await drainPaneNotices(adopted.effects);
+  assert.deepEqual(adopted.effects._calls.at(-1).slice(0, 4), ["herdr", "agent", "prompt", "w1:pl"]);
+  assert.match(adopted.effects._calls.at(-1)[4], /^\[alpha\] .*run started/);
+
+  const opened = watchFixture("orca", [orcaCreated("term_new")]);
+  await ensureWatchSession(opened.effects, WATCH);
+  queueRunStartNotice(opened.effects, "alpha");
+  await drainPaneNotices(opened.effects);
+  assert.equal(opened.effects._calls.length, 1, "a new agent's brief is its start: only the create");
 });

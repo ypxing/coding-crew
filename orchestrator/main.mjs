@@ -111,7 +111,7 @@ import {
   retiredNotice,
   validateFlags,
 } from "./lib/crew-config.mjs";
-import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, hasPaneAgent, notifyWatchSession } from "./lib/pane-host/index.mjs";
+import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, hasPaneAgent, notifyWatchSession, queueRunStartNotice } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktree, featureSlugOfPath, featureWorktreePath, removeWorktree, worktreeRoot } from "./lib/worktree.mjs";
@@ -840,6 +840,10 @@ async function main() {
         effort: options.effort?.followup,
         // A failed open is a WARN that must outlive the scrollback, not a debug-level effects line.
         log: (line) => emit(line.replace(/^WARN /, ""), /^WARN /.test(line) ? "warn" : "info"),
+      });
+      // A reused or adopted agent may hold the checkout from an earlier run's end notice.
+      queueRunStartNotice(effects, sprint.featureSlug, (result) => {
+        if (!result.sent) emit(`[RUN-START-PUSH-SKIPPED] ${result.reason}`, "debug");
       });
     }
 

@@ -17,8 +17,9 @@
  * still comes from the child's pid and exit code on disk, never from the host.
  *
  * Run-scoped state lives on `effects`: `_paneWorkspace` (cached promise),
- * `_paneLogTabId`, `_paneNotices` (the queued-push chain) and `_paneWatch` (`{host, handle}` of
- * the feature agent, null when none is live). The agent is never closed by anything here, and
+ * `_paneLogTabId`, `_paneNotices` (the queued-push chain), `_paneWatch` (`{host, handle}` of
+ * the feature agent, null when none is live) and `_paneWatchReused` (that agent was reused or
+ * adopted, not opened by this run: it may hold the checkout from an earlier run's end notice). The agent is never closed by anything here, and
  * neither is a workspace holding it.
  */
 
@@ -165,6 +166,7 @@ function realpathOr(path) {
  */
 export async function ensureWatchSession(effects, { slug, platform, model, effort, log = effects.log?.bind(effects) } = {}) {
   effects._paneWatch = null;
+  effects._paneWatchReused = false;
   const adapter = adapterFor(effects);
   if (!adapter?.openWatch || effects.dryRun || !slug) return null;
   const cwd = effects.featureRoot ?? effects.mainRoot;
@@ -188,6 +190,7 @@ export async function ensureWatchSession(effects, { slug, platform, model, effor
     const recorded = recordedWatch(file, effects.paneHost);
     if (recorded && (await adapter.watchAlive(effects, recorded.handle))) {
       log?.(`WATCH-SESSION reused host=${recorded.host} handle=${recorded.handle}`);
+      effects._paneWatchReused = true;
       return (effects._paneWatch = recorded);
     }
 
@@ -197,6 +200,7 @@ export async function ensureWatchSession(effects, { slug, platform, model, effor
       const watch = { host: effects.paneHost, handle: launcher };
       record(file, watch);
       log?.(`WATCH-SESSION adopted host=${watch.host} handle=${watch.handle}`);
+      effects._paneWatchReused = true;
       return (effects._paneWatch = watch);
     }
 
@@ -266,6 +270,20 @@ export function queuePaneNotice(effects, message, onResult) {
       /* a logging callback must not break the chain */
     }
   });
+}
+
+/**
+ * The first push of a run, to an agent it reused or adopted (a new one is briefed as it starts):
+ * the sprint is merging into `_feature` again, so followup.md's "until the end notice" rules apply
+ * again to an agent an earlier run's end notice handed the checkout. Queued like a milestone.
+ */
+export function queueRunStartNotice(effects, slug, onResult) {
+  if (!effects._paneWatchReused || !effects._paneWatch?.handle) return;
+  queuePaneNotice(
+    effects,
+    `[${slug}] crew-afk run started — the sprint is merging into this checkout again: leave it unchanged until the end notice.`,
+    onResult,
+  );
 }
 
 /** Before the end-of-run push, so it lands last and none is cut off by exit. */
