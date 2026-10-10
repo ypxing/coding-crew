@@ -32,15 +32,6 @@ export function featureWorktreePath(mainRoot, featureSlug) {
 }
 
 /**
- * A follow-up worker's checkout (`crew-afk followup`): `<worktreeRoot>/crew/<slug>/_followup`, on
- * the feature branch `_feature` holds during a run. A later run's checkout of that branch releases
- * it like any crew-made holder: clean is removed, dirty is refused (releaseBranch).
- */
-export function followupWorktreePath(mainRoot, featureSlug) {
-  return worktreePath(mainRoot, `crew/${featureSlug}/_followup`);
-}
-
-/**
  * Provisioned into every worktree as if `.worktreeinclude` listed them, without writing that
  * file into the user's repo. It can be generated in mainRoot after round 1's worktrees exist
  * (.env by dep-install's ensure-env.sh), so a "does it exist yet" check at creation time would

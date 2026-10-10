@@ -66,9 +66,6 @@ confirmed with a live spike against a running orca runtime (not just the CLI ref
 | open watch agent                   | inside herdr: `tab create --workspace $HERDR_WORKSPACE_ID --cwd <mainRoot> --label <slug>-watch --no-focus`; outside: `workspace create --cwd <mainRoot> --label <slug>-watch --no-focus`; then `pane run <pane> "bash '<launch.sh>'"` | `terminal create --worktree path:<mainRoot> --title <slug>-watch --command "bash '<launch.sh>'" --json` |
 | watch agent still live             | `pane list` has the pane with an `agent_status` other than `unknown` | `terminal show --terminal <handle> --json` has `agentIdentity`             |
 | notify watch agent                 | `agent prompt <paneId> <msg> --wait --until working --timeout-ms 2000` | `terminal send --terminal <handle> --text <msg> --enter --json`  |
-| open follow-up worker              | inside herdr: `tab create --workspace $HERDR_WORKSPACE_ID --cwd <_followup> --label <slug>-followup --no-focus`; outside: `workspace create --cwd <_followup> …`; then `pane run <pane> "bash '<launch.sh>'"`, `agent wait <pane> --until idle --until done` (the brief's first turn; retried while herdr answers `agent_not_found`, as it does right after `pane run`), and `agent prompt <pane> <brief + task> --wait --until working` | `orchestration run-create --objective … --from <watch handle>`, `terminal create --worktree path:<_followup> --title <slug>-followup --command "bash '<launch.sh>'"`, then `orchestration worker-start --run <id> --worktree path:<_followup> --terminal <handle> --spec <brief + task> --from <watch handle>` |
-| await follow-up response           | `agent wait <pane> --until done --until idle --until blocked`, then `agent read <pane> --source recent-unwrapped`: the last `QUESTION: …` / `DONE: …` line below the echo of the last answer sent (`followup.json`'s `lastAnswer`; an echo the TUI wrapped over several lines counts, and a full read with no echo is all this turn's) | poll `orchestration inbox`: the `worker_done` to `run:<id>`, else the latest unanswered `type: question` |
-| reply to a follow-up question      | `agent prompt <pane> <answer> --wait --until working`        | `orchestration reply --id <msg> --body <answer> --run <id> --from <watch handle>` |
 | reuse signal (ambient env)         | `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`       | `ORCA_WORKTREE_ID` (implicit — every create already lands there) / `ORCA_TAB_ID` / `ORCA_TERMINAL_HANDLE` |
 | preflight readiness check          | `herdr status` (text: `status: running`)                     | `orca status --json` → `result.runtime.reachable`                          |
 
@@ -93,7 +90,7 @@ the tracker. It never edits, merges, closes or dispatches.
   once sourced), `cd`s to the checkout and `exec`s the argv. The briefing is on the argv rather
   than sent as a first push, because orca reports a pi pane's `agentIdentity` only after its
   first prompt has run. The env carries `CREW_PANE_HOST=<the host this run resolved>`, so a
-  `followup` command the agent runs resolves the host a `--pane-host` flag chose (its own shell
+  crew-afk command the agent runs resolves the host a `--pane-host` flag chose (its own shell
   has neither the flag nor `ORCA_ENV`). A host call that fails deletes the `env.sh` again.
 - **Never closed.** No ending closes it, a signal and a thrown error included: orca's handle is
   never tracked, so the terminal sweep skips it, and herdr's `<slug>-watch` workspace (outside
@@ -109,47 +106,6 @@ the tracker. It never edits, merges, closes or dispatches.
   the log tab, the summary file and the exit code carry the same information.
 - **None.** `--dry-run`, `CREW_PANE_HOST=none` or no host open no watch agent and write no
   `watch.json`.
-
-## Follow-ups
-
-`crew-afk followup start <slug> "<task>" --platform <p>` (the watch agent runs it; `watcher.md`) opens a
-**follow-up worker**: the sprint's platform CLI, interactive, in `<worktreeRoot>/crew/<slug>/_followup`
-on the feature branch, briefed by `orchestrator/roles/followup.md` (`ROLE_POLICY.followup`: may edit,
-no sub-agents, no default effort). It runs `/crew-address-findings`, `/address-pr-comments` or the task
-it is given, commits, and answers over the host's own agent channel. `followup wait <id>` blocks for
-the answer and prints one line, `DONE: …` or `QUESTION: …`; `followup reply <id> "<answer>"` answers a
-question. With no pane host every subcommand exits 1.
-
-- **Worktree.** Made with git (`ensureWorktree`'s `checkout` mode) and, under orca, adopted for display
-  (`orca worktree set`). `start` refuses, naming why and creating nothing, while `lease.sh owner --slug`
-  reports a holder (`tracker: github`), a live run's `.scratch/<slug>/.crew-afk.lock` names a running
-  pid, or the slug's follow-up is still open. A later `crew-afk run` takes the branch back through
-  `releaseBranch`: a clean `_followup` is removed, a dirty one is refused with "commit or discard
-  them". `start` refuses the same way, naming the path, when a finished follow-up's `_followup` still
-  has uncommitted changes (replacing it would delete them). `cleanup-worktrees.sh` does not touch it
-  (it sweeps only `crew/<slug>/*` branches).
-- **No human at the terminal.** The worker's argv runs without permission prompts, as a dispatched
-  coder does (`ROLE_POLICY.followup.unattended`): claude `--permission-mode bypassPermissions` (with `--settings` skipping its one-time accept dialog), copilot
-  `--allow-all-tools`, codex `workspace-write` with network, the git dirs and the main checkout
-  writable (as `build()`) and `--ask-for-approval never`. The watch agent keeps its prompts.
-- **Record.** `.scratch/<slug>/followup.json` holds the id, host, run/terminal or pane handle, the
-  pending question and the result. It is written only after the host has started the worker, so a
-  failed call leaves nothing recorded (and `_followup` is removed again). It is open until `wait` has
-  returned a final result, or until a later run's checkout of the feature branch removed a clean
-  `_followup` (the record is then `released`); a worker that is gone otherwise needs the file deleted by hand.
-- **orca.** The Run is created with `--from <watch handle>` (the Run's coordinator is the terminal that
-  creates it), then the terminal, then `worker-start` with `--worktree` (without it orca refuses the
-  terminal as belonging to the coordinator's worktree) and `--from <watch handle>` (without it orca
-  refuses, `consumer_fenced`, any caller but the coordinator's own terminal). `worker-start --agent` is not used: that agent
-  would lack crew-afk's env. A worker question is `orchestration ask`, a `type: question` message to
-  `run:<id>`; the response is its `worker_done`, which `orchestration inbox` lists and `check` does not.
-- **herdr.** No message queue: a worker's question also ends its turn as `done`, so `followup.md` makes
-  every turn end with one `QUESTION: …` or `DONE: …` line and `wait` returns the last such line it reads.
-  A turn that ends with neither is an error showing the pane's tail.
-- **Host calls** are each bounded (orca 10s, herdr's agent calls 60s to start); `wait` itself has no
-  timeout. A failing or timed-out call exits non-zero with the host's own text.
-- **Live.** Both transports passed one live cross-worktree round trip (question, answer, final result)
-  on 2026-10-10; the `followup` command itself has not been run live yet.
 
 ## Worker terminals
 

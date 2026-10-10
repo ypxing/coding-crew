@@ -43,17 +43,13 @@ export default {
   },
 
   /**
-   * The watch agent (and a follow-up worker): claude's own interactive mode, the protocol as its
-   * first prompt. The prompt comes first because `--add-dir` and `--disallowedTools` are variadic
-   * and would swallow one that followed. Permission prompts stay on for a human's pane (the watch
-   * agent); an `unattended` role (a follow-up worker) gets build()'s bypassPermissions. Interactive
-   * claude asks once per account to accept bypass mode (`-p` never does), and nobody is there to
-   * answer, so the flag settings skip that dialog.
+   * The watch agent: claude's own interactive mode, the protocol as its first prompt. The prompt
+   * comes first because `--add-dir` and `--disallowedTools` are variadic and would swallow one that
+   * followed. Permission prompts stay on: a human is in the pane.
    */
   interactive({ mainRoot, model, protocol, policy }) {
     const argv = ["claude", protocol, "--add-dir", mainRoot];
     if (model && model !== "inherit") argv.push("--model", model);
-    if (policy?.unattended) argv.push("--permission-mode", "bypassPermissions", "--settings", JSON.stringify({ skipDangerousModePermissionPrompt: true }));
     if (policy) argv.push(...this.policyArgs(policy));
     return argv;
   },

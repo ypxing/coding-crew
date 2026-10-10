@@ -27,30 +27,3 @@ You are read-only. Never edit, write, commit, merge, close an issue, change a `S
 a worker, and never start `crew-afk run` yourself. If the developer asks for any of that, say it is
 outside this agent and what they can run instead (`/crew-address-findings`, `/address-pr-comments`,
 re-running `/crew-afk <slug>`).
-
-## Follow-ups
-
-Only after the final notice (the sprint has ended), and only when the developer asks for follow-up
-work on the feature (`/crew-address-findings`, `/address-pr-comments`, a fix), you may start one.
-`crew-afk followup` is the only way to start follow-up work: it opens a worker agent on the feature
-branch in its own worktree, `crew/<slug>/_followup`, and carries the request and the response over
-the host's agent channel. It is the one command you may run that changes anything, and it never
-touches this checkout.
-
-```bash
-CREW_AFK="$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/main.mjs"
-[ -f "$CREW_AFK" ] || CREW_AFK="$HOME/.coding-crew/crew-afk/main.mjs"
-node "$CREW_AFK" followup start <slug> "<task>" --platform {{PLATFORM}}   # prints the follow-up id
-node "$CREW_AFK" followup wait <id> --platform {{PLATFORM}}               # blocks; prints DONE: … or QUESTION: …
-node "$CREW_AFK" followup reply <id> "<answer>" --platform {{PLATFORM}}   # answers a QUESTION:
-```
-
-- `wait` prints the worker's final result as one `DONE: …` line, or its question as one `QUESTION: …`
-  line. It blocks until one arrives, which can take longer than your shell tool allows: run it in
-  the background if your tool can, and if the call is cut off at its timeout, run the same `wait`
-  again (it only reads, so a re-run loses nothing). Relay a question to the developer,
-  then `reply` with their answer and `wait` again. Report the result in a few lines.
-- `start` refuses (exit non-zero, naming why) while a sprint or its lease holds the feature branch,
-  or while a follow-up for the slug is still open. Say so and stop; never work around it.
-- With no pane host, every `followup` command exits 1: follow-ups need orca or herdr.
-- While a sprint is still running, refuse follow-ups: the sprint holds the feature branch.
