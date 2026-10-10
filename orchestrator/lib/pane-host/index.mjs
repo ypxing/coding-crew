@@ -3,11 +3,12 @@
  * `effects.paneHost` ("herdr" | "orca" | null; resolvePaneHost in crew-config.mjs).
  *
  * Every coder/reviewer/triage dispatch is headless regardless of host. A host is asked for
- * one tab/terminal tailing the sprint's trace log, one long-lived interactive watch agent for
- * the sprint's slug (ensureWatchSession), and best-effort pushes into that agent: each
- * milestone and the outcome. Never into the pane that launched the run. Each adapter (herdr.mjs,
- * orca.mjs) implements the same operations for those: preflight, ensureWorkspace, closeWorkspace,
- * closeLogTab, openWatch, watchAlive, notify.
+ * one tab/terminal tailing the sprint's trace log and one long-lived interactive feature agent
+ * for the sprint's slug (ensureWatchSession), both in the sprint's own `_feature` worktree
+ * (`effects.featureRoot`), and best-effort pushes into that agent: each milestone and the
+ * outcome. Each adapter (herdr.mjs, orca.mjs) implements the same operations for those:
+ * preflight, ensureWorkspace, closeWorkspace, closeLogTab, openWatch, watchAlive, notify,
+ * launcherHandle.
  * An adapter may also implement adoptWorktree (orca only): told of each worktree the orchestrator
  * creates, so the host can show it by name under its parent. See adoptWorktree below.
  *
@@ -16,13 +17,13 @@
  * still comes from the child's pid and exit code on disk, never from the host.
  *
  * Run-scoped state lives on `effects`: `_paneWorkspace` (cached promise),
- * `_paneWorkspaceReused` (never close a workspace this run didn't create),
  * `_paneLogTabId`, `_paneNotices` (the queued-push chain) and `_paneWatch` (`{host, handle}` of
- * the watch agent, null when none opened). The watch agent is never closed by anything here.
+ * the feature agent, null when none is live). The agent is never closed by anything here, and
+ * neither is a workspace holding it.
  */
 
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 
 import { ADAPTERS as PLATFORM_ADAPTERS } from "../adapters/index.mjs";
 import { ROLE_POLICY, renderRolePrompt } from "../adapters/render.mjs";
@@ -71,11 +72,12 @@ export function ensurePaneWorkspace(effects, { featureSlug, logFile } = {}) {
 }
 
 /**
- * End of run. A no-op when nothing was created or the workspace was reused. Swallows
- * failures: the run's exit code is already decided, and a stray workspace is cosmetic.
+ * End of run. A no-op when nothing was created, or while the feature agent lives in it (it is
+ * the developer's terminal now). Swallows failures: the run's exit code is already decided, and
+ * a stray workspace is cosmetic.
  */
 export async function closePaneWorkspace(effects) {
-  if (!effects._paneWorkspace || effects._paneWorkspaceReused) return;
+  if (!effects._paneWorkspace || hasPaneAgent(effects)) return;
   try {
     await adapterFor(effects).closeWorkspace(effects, await effects._paneWorkspace);
   } catch {
@@ -127,32 +129,75 @@ export function recordedWatch(file, host) {
 }
 
 /**
- * The sprint's watch agent: its platform CLI, interactive, in the main checkout, briefed by the
- * `watcher` role as its initial prompt and started with crew-afk's env (worker-terminal.mjs's
- * writeLaunchScript), plus `CREW_PANE_HOST=<the host this run resolved>`, so a crew-afk command the
- * agent runs resolves the same host as this run. One per slug: the handle recorded in `watch.json` is reused while the host
- * still reports a live agent there; a dead or missing one is replaced and the file rewritten.
+ * Whether this run has a feature agent: one reused, adopted or opened at its start, and not
+ * dropped since (a failed open leaves none). It decides what outlives the run (`_feature`, the
+ * agent's workspace), so a push that later finds the agent closed is only a skipped push.
+ */
+export const hasPaneAgent = (effects) => Boolean(effects._paneWatch?.handle);
+
+/** Whether `dir` is `root` or inside it, by real path. */
+function insideDir(root, dir) {
+  const rel = relative(realpathOr(root), realpathOr(dir));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function realpathOr(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
+ * The sprint's feature agent: its platform CLI, interactive, in `crew/<slug>/_feature`
+ * (`effects.featureRoot`), briefed by the `followup` role as its initial prompt and started with
+ * crew-afk's env (worker-terminal.mjs's writeLaunchScript), plus `CREW_PANE_HOST=<the host this
+ * run resolved>`, so a crew-afk command the agent runs resolves the same host as this run. One
+ * per slug, in this order:
+ *   1. the handle recorded in `watch.json`, while the host still reports a live agent there;
+ *   2. the pane that launched this run (ORCA_TERMINAL_HANDLE / HERDR_PANE_ID), when cwd is inside
+ *      `_feature` and the host reports a live agent there: recorded in `watch.json`, no agent opens;
+ *   3. a new agent, its handle recorded (a dead or missing one is replaced).
  * Best-effort, never throws: a failure is a WARN and a null `_paneWatch`, so later pushes are
  * skipped and the run's exit code is what it would be with no host. No-op under --dry-run or
- * with no host. Returns `{host, handle}` or null.
+ * with no host. Returns `{host, handle}` or null. `log` receives its lines (default `effects.log`).
  */
-export async function ensureWatchSession(effects, { slug, platform, model, effort } = {}) {
+export async function ensureWatchSession(effects, { slug, platform, model, effort, log = effects.log?.bind(effects) } = {}) {
   effects._paneWatch = null;
   const adapter = adapterFor(effects);
   if (!adapter?.openWatch || effects.dryRun || !slug) return null;
+  const cwd = effects.featureRoot ?? effects.mainRoot;
   // The launch env file holds credentials and is only deleted by a script a host actually ran.
   let envFile = null;
   const fail = (reason) => {
     if (envFile) rmSync(envFile, { force: true });
-    effects.log?.(`WARN watch session (${effects.paneHost}): ${reason} — no watch agent, pushes are skipped`);
+    log?.(`WARN watch session (${effects.paneHost}): ${reason} — no watch agent, pushes are skipped`);
     return null;
+  };
+  const record = (file, watch) => {
+    try {
+      mkdirSync(join(effects.mainRoot, ".scratch", slug), { recursive: true });
+      writeFileSync(file, `${JSON.stringify(watch)}\n`);
+    } catch (err) {
+      log?.(`WARN watch session: could not record ${file} — ${err.message}; a later run opens a new agent`);
+    }
   };
   try {
     const file = watchFile(effects.mainRoot, slug);
     const recorded = recordedWatch(file, effects.paneHost);
     if (recorded && (await adapter.watchAlive(effects, recorded.handle))) {
-      effects.log?.(`WATCH-SESSION reused host=${recorded.host} handle=${recorded.handle}`);
+      log?.(`WATCH-SESSION reused host=${recorded.host} handle=${recorded.handle}`);
       return (effects._paneWatch = recorded);
+    }
+
+    // Launched from an agent pane inside `_feature`: that pane is the agent.
+    const launcher = adapter.launcherHandle?.();
+    if (launcher && effects.featureRoot && insideDir(effects.featureRoot, process.cwd()) && (await adapter.watchAlive(effects, launcher))) {
+      const watch = { host: effects.paneHost, handle: launcher };
+      record(file, watch);
+      log?.(`WATCH-SESSION adopted host=${watch.host} handle=${watch.handle}`);
+      return (effects._paneWatch = watch);
     }
 
     const agent = PLATFORM_ADAPTERS[platform];
@@ -160,17 +205,17 @@ export async function ensureWatchSession(effects, { slug, platform, model, effor
     const found = effects.exec?.("sh", ["-c", `command -v ${shellQuote(agent.cmd)}`], { mutating: false });
     if (found && found.code !== 0) return fail(`the ${agent.cmd} CLI was not found on PATH`);
 
-    const policy = { ...ROLE_POLICY.watcher, ...(effort ? { effort } : {}) };
+    const policy = { ...ROLE_POLICY.followup, ...(effort ? { effort } : {}) };
     const argv = agent.interactive({
-      cwd: effects.mainRoot,
+      cwd,
       mainRoot: effects.mainRoot,
       model,
-      protocol: renderRolePrompt("watcher", platform, { mainRoot: effects.mainRoot }),
+      protocol: renderRolePrompt("followup", platform, { mainRoot: effects.mainRoot }),
       policy,
     });
     const launch = writeLaunchScript(effects, {
       dir: join(effects.mainRoot, ".scratch", slug, "watch"),
-      cwd: effects.mainRoot,
+      cwd,
       argv,
       env: { ...agent.env, CREW_PANE_HOST: effects.paneHost },
     });
@@ -180,13 +225,8 @@ export async function ensureWatchSession(effects, { slug, platform, model, effor
     if (!opened.handle) return fail(opened.failure);
 
     const watch = { host: effects.paneHost, handle: opened.handle };
-    try {
-      mkdirSync(join(effects.mainRoot, ".scratch", slug), { recursive: true });
-      writeFileSync(file, `${JSON.stringify(watch)}\n`);
-    } catch (err) {
-      effects.log?.(`WARN watch session: could not record ${file} — ${err.message}; a later run opens a new agent`);
-    }
-    effects.log?.(`WATCH-SESSION opened host=${watch.host} handle=${watch.handle}`);
+    record(file, watch);
+    log?.(`WATCH-SESSION opened host=${watch.host} handle=${watch.handle}`);
     return (effects._paneWatch = watch);
   } catch (err) {
     effects._paneWatch = null;
@@ -195,10 +235,10 @@ export async function ensureWatchSession(effects, { slug, platform, model, effor
 }
 
 /**
- * One advisory push into the sprint's watch agent, so a caller waiting in it can stop polling.
+ * One advisory push into the sprint's feature agent, so a caller waiting in it can stop polling.
  * Never throws. Returns `{sent, reason?}` so a caller with a durable log (notifyMilestone
  * in pipeline.mjs) can record a skip or failure — `effects.log` alone goes nowhere durable.
- * The target is always `_paneWatch`'s handle: never ORCA_TERMINAL_HANDLE or HERDR_PANE_ID.
+ * The target is always `_paneWatch`'s handle: the launching pane only when ensureWatchSession adopted it.
  */
 export async function notifyWatchSession(effects, message) {
   const adapter = adapterFor(effects);

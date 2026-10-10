@@ -83,16 +83,30 @@ test("with the main checkout on feature/<slug> the run exits 1 telling the user 
   assert.equal(git(root, "rev-parse", "--abbrev-ref", "HEAD"), "feature/demo", "and it was not switched for the user");
 });
 
-test("a _feature worktree with uncommitted changes left by a crashed run is recreated and the run continues", () => {
+test("a _feature worktree with uncommitted changes left by a crashed run is refused, listing the files, and nothing is removed", () => {
   const root = userOnMain();
   addIssue(root, "01-alpha.md");
   git(root, "worktree", "add", "-q", featureWt(root), "feature/demo");
   writeFileSync(join(featureWt(root), "Makefile"), "dirty\n");
   writeFileSync(join(featureWt(root), "stray.txt"), "x\n");
   const r = runSprint(root);
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /uncommitted changes/);
+  assert.match(r.stderr, /Makefile/);
+  assert.match(r.stderr, /stray\.txt/);
+  assert.equal(readFileSync(join(featureWt(root), "stray.txt"), "utf8"), "x\n", "the leftovers are still there for the developer");
+  assert.equal(readFileSync(join(featureWt(root), "Makefile"), "utf8"), "dirty\n");
+});
+
+test("a clean _feature worktree already on the branch is reused in place and the run continues", () => {
+  const root = userOnMain();
+  addIssue(root, "01-alpha.md");
+  git(root, "worktree", "add", "-q", featureWt(root), "feature/demo");
+  const marker = join(featureWt(root), ".git");
+  const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.deepEqual(state(root).completed_slugs, ["alpha"]);
-  assert.equal(sh("git", ["-C", root, "cat-file", "-e", "feature/demo:stray.txt"]).code, 128, "the crashed run's leftovers did not reach the branch");
+  assert.equal(existsSync(marker), false, "with no pane host, _feature is removed at the end as before");
 });
 
 test("uncommitted changes in the main checkout never reach, or are touched by, the sprint", () => {

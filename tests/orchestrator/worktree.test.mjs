@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 import {
   applyWorktreeInclude,
   ensureWorktree,
+  featureSlugOfPath,
   listsWorktree,
   mergeFeatureBranch,
   worktreePath,
@@ -295,6 +296,70 @@ test("ensureWorktree creates a fresh worktree when no branch exists yet", () => 
   assert.equal(result.reusedBranch, false);
   assert.equal(result.stale, undefined);
   assert.ok(existsSync(result.path));
+});
+
+// --- ensureWorktree: checkout mode (the sprint's `_feature`) -----------------
+
+/** A repo with `feature/demo` checked out at its `_feature` path, which also holds an ignored file. */
+function featureCheckout() {
+  const { mainRoot, git, effects } = gitRoot();
+  const branch = "feature/demo";
+  const path = join(mainRoot, ".scratch", "worktrees", "crew", "demo", "_feature");
+  git("branch", branch);
+  mkdirSync(join(path, ".."), { recursive: true });
+  git("worktree", "add", "-q", path, branch);
+  writeFileSync(join(mainRoot, ".git", "info", "exclude"), "keep.me\n");
+  writeFileSync(join(path, "keep.me"), "survives a removal only if none happened\n");
+  return { mainRoot, git, effects, branch, path };
+}
+
+test("ensureWorktree (checkout) reuses a clean worktree already at path on branch, removing nothing", () => {
+  const { mainRoot, effects, branch, path } = featureCheckout();
+
+  const result = ensureWorktree(effects, { mainRoot, branch, base: "main", mode: "checkout", path });
+
+  assert.equal(result.created, false);
+  assert.equal(result.path, path);
+  assert.equal(result.stale, undefined);
+  assert.equal(existsSync(join(path, "keep.me")), true, "the worktree was not removed and recreated");
+});
+
+test("ensureWorktree (checkout) refuses a dirty worktree at path, listing its uncommitted files, and removes nothing", () => {
+  const { mainRoot, effects, branch, path } = featureCheckout();
+  writeFileSync(join(path, "README.md"), "edited\n");
+  writeFileSync(join(path, "stray.txt"), "x\n");
+
+  const result = ensureWorktree(effects, { mainRoot, branch, base: "main", mode: "checkout", path });
+
+  assert.equal(result.stale, true);
+  assert.equal(result.path, null);
+  assert.match(result.reason, /README\.md/);
+  assert.match(result.reason, /stray\.txt/);
+  assert.equal(readFileSync(join(path, "stray.txt"), "utf8"), "x\n");
+  assert.equal(existsSync(join(path, "keep.me")), true);
+});
+
+test("ensureWorktree (checkout) creates the worktree when none is at path, from base when the branch is new", () => {
+  const { mainRoot, effects } = gitRoot();
+  const path = join(mainRoot, ".scratch", "worktrees", "crew", "demo", "_feature");
+
+  const result = ensureWorktree(effects, { mainRoot, branch: "feature/demo", base: "main", mode: "checkout", path });
+
+  assert.equal(result.created, true);
+  assert.equal(result.reusedBranch, false);
+  assert.ok(existsSync(path));
+});
+
+test("featureSlugOfPath names the slug of a directory inside <root>/crew/<slug>/_feature, else null", () => {
+  const root = tmpRoot();
+  const inside = join(root, "crew", "demo", "_feature", "src", "lib");
+  mkdirSync(inside, { recursive: true });
+  mkdirSync(join(root, "crew", "demo", "01-alpha"), { recursive: true });
+  assert.equal(featureSlugOfPath(root, join(root, "crew", "demo", "_feature")), "demo");
+  assert.equal(featureSlugOfPath(root, inside), "demo");
+  assert.equal(featureSlugOfPath(root, join(root, "crew", "demo", "01-alpha")), null, "an issue worktree is not a feature checkout");
+  assert.equal(featureSlugOfPath(root, root), null);
+  assert.equal(featureSlugOfPath(root, tmpRoot()), null, "outside the worktree root");
 });
 
 // A worktree for the branch left somewhere other than worktreePath() — by a crashed run or

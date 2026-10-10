@@ -1,6 +1,7 @@
 /**
- * herdr (https://herdr.dev): a workspace container holding tabs, each with panes.
- * Ambient ids: HERDR_WORKSPACE_ID / HERDR_TAB_ID / HERDR_PANE_ID.
+ * herdr (https://herdr.dev): a workspace container holding tabs, each with panes. The sprint's
+ * workspace is its `_feature` worktree's, holding the log tab and the feature agent's tab.
+ * Ambient id: HERDR_PANE_ID (the launching pane, adopted as the agent when it is inside `_feature`).
  */
 
 import { failureDetail, paneHostExec, paneHostJson, paneWorkspaceLabel } from "./shared.mjs";
@@ -19,20 +20,15 @@ export function preflight(effects) {
   return [];
 }
 
+/** The pane that launched this run, for D6's adoption: herdr's ambient pane id. */
+export const launcherHandle = () => process.env.HERDR_PANE_ID || null;
+
 /**
- * Inside a herdr pane already, reuse that pane's workspace (marked _paneWorkspaceReused so
- * it is never closed out from under the human using it); otherwise create one.
+ * The sprint's workspace is its feature-branch worktree (`worktree open` returns the workspace
+ * already open on it, so a re-run reuses the one a live agent sits in, whatever pane launched this
+ * run); with none (a dry run) the main checkout. Never the triggering workspace.
  */
-export async function ensureWorkspace(effects, { featureSlug, logFile }) {
-  const label = paneWorkspaceLabel(featureSlug);
-  const triggeringWorkspaceId = process.env.HERDR_WORKSPACE_ID;
-  if (triggeringWorkspaceId) {
-    effects._paneWorkspaceReused = true;
-    await renameTriggeringTab(effects, featureSlug);
-    if (logFile) await openLogTab(effects, triggeringWorkspaceId, label, logFile);
-    return triggeringWorkspaceId;
-  }
-  // The sprint's workspace is its feature-branch worktree; with none (a dry run) the main checkout.
+async function openFeatureWorkspace(effects, label) {
   const inWorktree = Boolean(effects.featureRoot) && effects.featureRoot !== effects.mainRoot;
   const create = inWorktree
     ? await paneHostExec(effects, ["worktree", "open", "--path", effects.featureRoot, "--label", label, "--no-focus"])
@@ -41,23 +37,18 @@ export async function ensureWorkspace(effects, { featureSlug, logFile }) {
   if (create.code !== 0 || !workspaceId) {
     throw new Error(`herdr ${inWorktree ? "worktree open" : "workspace create"} failed: ${failureDetail(create)}`);
   }
+  return workspaceId;
+}
+
+export async function ensureWorkspace(effects, { featureSlug, logFile }) {
+  const label = paneWorkspaceLabel(featureSlug);
+  const workspaceId = await openFeatureWorkspace(effects, label);
   if (logFile) await openLogTab(effects, workspaceId, label, logFile);
   return workspaceId;
 }
 
 export async function closeWorkspace(effects, workspaceId) {
   await paneHostExec(effects, ["workspace", "close", workspaceId]);
-}
-
-/** Cosmetic: a failed rename never fails the run. Skipped with no slug to rename to. */
-async function renameTriggeringTab(effects, featureSlug) {
-  const tabId = process.env.HERDR_TAB_ID;
-  if (!featureSlug || !tabId) return;
-  try {
-    await paneHostExec(effects, ["tab", "rename", tabId, featureSlug]);
-  } catch {
-    /* cosmetic */
-  }
 }
 
 /**
@@ -72,7 +63,7 @@ async function openLogTab(effects, workspaceId, label, logFile) {
       "--workspace",
       workspaceId,
       "--cwd",
-      effects.mainRoot,
+      effects.featureRoot ?? effects.mainRoot,
       "--label",
       `${label}-log`,
       "--no-focus",
@@ -105,57 +96,60 @@ export async function watchAlive(effects, paneId) {
 }
 
 /**
- * A fresh pane with cwd `cwd`: a new tab in the triggering workspace when there is one, else a
- * workspace of its own, named `label`. Returns `{paneId, container}` (`container` closes it again)
- * or `{failure}`.
- */
-async function newPane(effects, { label, cwd }) {
-  const workspaceId = process.env.HERDR_WORKSPACE_ID;
-  const create = workspaceId
-    ? await paneHostExec(effects, ["tab", "create", "--workspace", workspaceId, "--cwd", cwd, "--label", label, "--no-focus"])
-    : await paneHostExec(effects, ["workspace", "create", "--cwd", cwd, "--label", label, "--no-focus"]);
-  const what = workspaceId ? "tab create" : "workspace create";
-  const result = paneHostJson(create)?.result;
-  let paneId = result?.root_pane?.pane_id;
-  if (create.code === 0 && !paneId && result?.workspace?.workspace_id) {
-    const list = await paneHostExec(effects, ["pane", "list", "--workspace", result.workspace.workspace_id], STATUS_TIMEOUT_MS);
-    paneId = paneHostJson(list)?.result?.panes?.[0]?.pane_id;
-  }
-  if (create.code !== 0 || !paneId) return { failure: `herdr ${what} exit=${create.code} ${failureDetail(create)}` };
-  const container = workspaceId ? ["tab", "close", result?.tab?.tab_id] : ["workspace", "close", result?.workspace?.workspace_id];
-  return { paneId, container: container[2] ? container : null };
-}
-
-/** Closes the tab or workspace newPane made, when a later call failed. Cosmetic: never throws. */
-async function closeContainer(effects, made) {
-  if (!made?.container) return;
-  try {
-    await paneHostExec(effects, made.container, STATUS_TIMEOUT_MS);
-  } catch {
-    /* cosmetic */
-  }
-}
-
-/**
- * The watch agent: a new tab in the triggering workspace, or outside herdr a `<slug>-watch`
- * workspace on the main checkout (never closed, unlike the sprint's own). The agent is started
- * with `pane run`; herdr detects it as one. Returns `{handle}` (the pane id) or `{failure}`;
- * a pane made before `pane run` failed is closed again. Never throws.
+ * The feature agent: a tab in the feature worktree's workspace (the one ensureWorkspace opened,
+ * else `worktree open` again, which returns it), cwd `_feature`. Its workspace is not closed while
+ * the agent lives (closePaneWorkspace). The agent is started with `pane run`; herdr detects it as
+ * one. Returns `{handle}` (the pane id) or `{failure}`; a tab made before `pane run` failed is
+ * closed again. Never throws.
  */
 export async function openWatch(effects, { slug, command }) {
-  let made = null;
+  let tabId = null;
   try {
-    made = await newPane(effects, { label: `${slug}-watch`, cwd: effects.mainRoot });
-    if (made.failure) return { failure: made.failure };
-    const run = await paneHostExec(effects, ["pane", "run", made.paneId, command]);
+    let workspaceId = null;
+    try {
+      workspaceId = (await effects._paneWorkspace) ?? null;
+    } catch {
+      /* the log tab's create failed: open the workspace again below */
+    }
+    workspaceId ??= await openFeatureWorkspace(effects, paneWorkspaceLabel(slug));
+    const create = await paneHostExec(effects, [
+      "tab",
+      "create",
+      "--workspace",
+      workspaceId,
+      "--cwd",
+      effects.featureRoot ?? effects.mainRoot,
+      "--label",
+      `${slug}-watch`,
+      "--no-focus",
+    ]);
+    const result = paneHostJson(create)?.result;
+    tabId = result?.tab?.tab_id ?? null;
+    let paneId = result?.root_pane?.pane_id;
+    if (create.code === 0 && !paneId) {
+      const list = await paneHostExec(effects, ["pane", "list", "--workspace", workspaceId], STATUS_TIMEOUT_MS);
+      paneId = paneHostJson(list)?.result?.panes?.[0]?.pane_id;
+    }
+    if (create.code !== 0 || !paneId) return { failure: `herdr tab create exit=${create.code} ${failureDetail(create)}` };
+    const run = await paneHostExec(effects, ["pane", "run", paneId, command]);
     if (run.code !== 0) {
-      await closeContainer(effects, made);
+      await closeTab(effects, tabId);
       return { failure: `herdr pane run exit=${run.code} ${failureDetail(run)}` };
     }
-    return { handle: made.paneId };
+    return { handle: paneId };
   } catch (err) {
-    await closeContainer(effects, made);
-    return { failure: `herdr watch agent threw: ${err.message}` };
+    await closeTab(effects, tabId);
+    return { failure: `herdr feature agent threw: ${err.message}` };
+  }
+}
+
+/** Closes a tab made for the agent when a later call failed. Cosmetic: never throws. */
+async function closeTab(effects, tabId) {
+  if (!tabId) return;
+  try {
+    await paneHostExec(effects, ["tab", "close", tabId], STATUS_TIMEOUT_MS);
+  } catch {
+    /* cosmetic */
   }
 }
 

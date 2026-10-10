@@ -7,7 +7,7 @@
  */
 
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, symlinkSync, rmSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
 import { adoptWorktree } from "./pane-host/index.mjs";
 
@@ -74,9 +74,11 @@ const COPY_ENTRIES = new Set([".env"]);
  *
  * `mode: "checkout"` is for the sprint's feature branch (at `path`, which names the `_feature`
  * worktree since the branch's own name does not): a branch with commits that must never be
- * discarded or judged stale. It checks the existing branch out — or creates it from `base` —
- * and recreates a worktree already at `path` (a crashed run's, possibly dirty: the commits live
- * on the branch). The branch's other holders are released as for any worktree, but only crew-made
+ * discarded or judged stale. A worktree already at `path` on `branch` is reused in place when
+ * clean (`created: false`: a live feature agent may be working in it) and refused when dirty
+ * (`stale`, the reason lists the files: nothing is removed). Otherwise it checks the existing
+ * branch out — or creates it from `base` — and recreates a worktree at `path` on another branch.
+ * The branch's other holders are released as for any worktree, but only crew-made
  * ones (under the worktree root): the main checkout or a user's own worktree being on it is a
  * refusal, not a switch.
  *
@@ -145,8 +147,46 @@ export function listsWorktree(listed, path) {
   return listed.split("\n").some((line) => line.startsWith("worktree ") && realPath(line.slice("worktree ".length)) === want);
 }
 
+/**
+ * The feature slug of a directory inside `<worktreeRoot>/crew/<slug>/_feature`, else null. Both
+ * paths are compared by real path, so a root reached through a symlink still matches.
+ */
+export function featureSlugOfPath(root, dir) {
+  const rel = relative(realPath(root), realPath(dir));
+  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
+  const m = /^crew[\\/]([^\\/]+)[\\/]_feature(?:[\\/]|$)/.exec(rel);
+  return m ? m[1] : null;
+}
+
+/** The branch a worktree listed by `git worktree list --porcelain` has checked out, for the one at `path`. */
+function branchAt(listed, path) {
+  const want = realPath(path);
+  const block = listed.split("\n\n").find((b) => {
+    const line = b.split("\n").find((l) => l.startsWith("worktree "));
+    return line && realPath(line.slice("worktree ".length)) === want;
+  });
+  return block?.split("\n").find((l) => l.startsWith("branch "))?.slice("branch ".length) ?? null;
+}
+
 function checkoutWorktree(effects, { mainRoot, branch, base, path, adopt }) {
   let listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
+  if (existsSync(path) && listsWorktree(listed, path) && branchAt(listed, path) === `refs/heads/${branch}`) {
+    const status = effects.gitRead(["status", "--porcelain"], { cwd: path });
+    const dirty = status.stdout.trim();
+    if (status.code !== 0 || dirty) {
+      const files = dirty ? `:\n${dirty}` : ` (git status exit ${status.code}: ${(status.stderr ?? "").trim()})`;
+      return {
+        path: null,
+        created: false,
+        stale: true,
+        reason:
+          `the feature worktree '${path}' has uncommitted changes${files}\n` +
+          `commit or discard them (or 'git worktree remove ${path}'), then re-run`,
+      };
+    }
+    if (adopt) adoptWorktree(effects, path, adopt);
+    return { path, created: false, reusedBranch: true };
+  }
   if (listsWorktree(listed, path) || existsSync(path)) {
     removeWorktree(effects, { path });
     effects.git(["worktree", "prune"]);

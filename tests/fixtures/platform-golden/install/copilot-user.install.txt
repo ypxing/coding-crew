@@ -53,6 +53,7 @@ HOME/.coding-crew/crew-afk/platforms.json exec=0
 HOME/.coding-crew/crew-afk/review-rollup.mjs exec=0
 HOME/.coding-crew/crew-afk/roles/ /
 HOME/.coding-crew/crew-afk/roles/coder.md exec=0
+HOME/.coding-crew/crew-afk/roles/followup.md exec=0
 HOME/.coding-crew/crew-afk/roles/reviewer.md exec=0
 HOME/.coding-crew/crew-afk/roles/reviewer/ /
 HOME/.coding-crew/crew-afk/roles/reviewer/references/ /
@@ -64,7 +65,6 @@ HOME/.coding-crew/crew-afk/roles/reviewer/scripts/ /
 HOME/.coding-crew/crew-afk/roles/reviewer/scripts/dependency-audit.sh exec=1
 HOME/.coding-crew/crew-afk/roles/reviewer/scripts/review-context.sh exec=1
 HOME/.coding-crew/crew-afk/roles/triage.md exec=0
-HOME/.coding-crew/crew-afk/roles/watcher.md exec=0
 HOME/.coding-crew/dep-install/ /
 HOME/.coding-crew/dep-install/scripts/ /
 HOME/.coding-crew/dep-install/scripts/detect-compose-bypass.sh exec=1

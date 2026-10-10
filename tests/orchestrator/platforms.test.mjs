@@ -10,11 +10,13 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ADAPTERS, DEFAULT_PARALLEL, PLATFORMS } from "../../orchestrator/lib/adapters/index.mjs";
 import { ROLE_AGENTS, ROLE_POLICY, renderRolePrompt } from "../../orchestrator/lib/adapters/render.mjs";
 
+const ROLES_DIR = fileURLToPath(new URL("../../orchestrator/roles", import.meta.url));
 const PLATFORMS_JSON = JSON.parse(readFileSync(fileURLToPath(new URL("../../orchestrator/platforms.json", import.meta.url)), "utf8"));
 
 /** The adapter contract's required fields, and the type each must have. */
@@ -84,31 +86,31 @@ test("ROLE_POLICY declares a policy for every role with a protocol", () => {
 // Since then: the reviewer and triage may spawn sub-agents, so claude no longer denies them Agent.
 // And claude passes the role's effort (`--effort`), which it used to drop.
 const CLAUDE_READ_ONLY = ["--effort", "high", "--disallowedTools", "Edit", "Write", "NotebookEdit"];
-// The watcher: read-only, no sub-agents, and no effort (its CLI's default applies).
+// The feature agent (followup): it edits, takes no sub-agents, and has no effort (its CLI's default applies).
 const EXPECTED_POLICY_ARGS = {
   claude: {
     coder: ["--effort", "high", "--disallowedTools", "Agent"],
     reviewer: CLAUDE_READ_ONLY,
     triage: CLAUDE_READ_ONLY,
-    watcher: ["--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent"],
+    followup: ["--disallowedTools", "Agent"],
   },
   copilot: {
     coder: ["--reasoning-effort", "high"],
     reviewer: ["--reasoning-effort", "high", "--deny-tool", "write"],
     triage: ["--reasoning-effort", "high", "--deny-tool", "write"],
-    watcher: ["--deny-tool", "write"],
+    followup: [],
   },
   pi: {
     coder: ["--thinking", "high", "--tools", "read,bash,edit,write"],
     reviewer: ["--thinking", "high", "--tools", "read,bash"],
     triage: ["--thinking", "high", "--tools", "read,bash"],
-    watcher: ["--tools", "read,bash"],
+    followup: ["--tools", "read,bash,edit,write"],
   },
   codex: {
     coder: ["-c", 'model_reasoning_effort="high"'],
     reviewer: ["-c", 'model_reasoning_effort="high"'],
     triage: ["-c", 'model_reasoning_effort="high"'],
-    watcher: [],
+    followup: [],
   },
 };
 
@@ -124,36 +126,42 @@ test("every platform's expected policy flags are pinned", () => {
   assert.deepEqual(Object.keys(EXPECTED_POLICY_ARGS).sort(), [...PLATFORMS].sort());
 });
 
-test("watcher is a read-only role without sub-agents or a default effort, and renders its protocol on every platform", () => {
-  assert.equal(ROLE_AGENTS.watcher, "crew-watcher");
-  assert.deepEqual(ROLE_POLICY.watcher, { readOnly: true, subagents: false });
+test("followup is the feature agent: it may edit, takes no sub-agents or default effort, and renders its protocol on every platform", () => {
+  assert.equal(ROLE_AGENTS.followup, "crew-followup");
+  assert.deepEqual(ROLE_POLICY.followup, { readOnly: false });
   for (const platform of PLATFORMS) {
-    const text = renderRolePrompt("watcher", platform);
-    assert.match(text, /watch/i, platform);
+    const text = renderRolePrompt("followup", platform);
+    assert.match(text, /feature agent/i, platform);
     assert.doesNotMatch(text, /\{\{/, platform);
   }
 });
 
-test("watcher's brief starts no follow-up work and names no `crew-afk followup` command", () => {
+test("the feature agent's brief: checkout unchanged until the end notice, follow-up work in place after it, commit everything, never an issue's Status or criteria", () => {
   for (const platform of PLATFORMS) {
-    assert.doesNotMatch(renderRolePrompt("watcher", platform), /crew-afk followup|followup (start|wait|reply)|_followup/, platform);
+    const text = renderRolePrompt("followup", platform);
+    assert.match(text, /Until the end notice[\s\S]*leave the checkout unchanged/, platform);
+    assert.match(text, /After the end notice[\s\S]*follow-up work in place/, platform);
+    assert.match(text, /Commit everything before you stop/, platform);
+    assert.match(text, /Never edit an issue's `Status:` line or tick its criteria boxes/, platform);
+    assert.doesNotMatch(text, /crew-afk followup|followup (start|wait|reply)|_followup/, platform);
   }
 });
 
-test("there is no followup role", () => {
-  assert.equal(ROLE_AGENTS.followup, undefined);
-  assert.equal(ROLE_POLICY.followup, undefined);
+test("there is no watcher role", () => {
+  assert.equal(ROLE_AGENTS.watcher, undefined);
+  assert.equal(ROLE_POLICY.watcher, undefined);
+  assert.equal(existsSync(join(ROLES_DIR, "watcher.md")), false);
 });
 
 // interactive({cwd, mainRoot, model, protocol, policy}) → argv, `cmd` first: the CLI's own
 // interactive mode with the protocol as its initial prompt, then the policy's flags.
-const WATCHER = ROLE_POLICY.watcher;
+const WATCHER = ROLE_POLICY.followup;
 const INTERACTIVE = { cwd: "/main", mainRoot: "/main", protocol: "BRIEF", policy: WATCHER };
 const EXPECTED_INTERACTIVE = {
-  claude: ["claude", "BRIEF", "--add-dir", "/main", "--model", "sonnet", "--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent"],
-  codex: ["codex", "--cd", "/main", "--sandbox", "read-only", "--model", "gpt-5", "BRIEF"],
-  pi: ["pi", "--model", "m1", "--tools", "read,bash", "BRIEF"],
-  copilot: ["copilot", "-i", "BRIEF", "--add-dir", "/main", "--model", "m1", "--deny-tool", "write"],
+  claude: ["claude", "BRIEF", "--add-dir", "/main", "--model", "sonnet", "--disallowedTools", "Agent"],
+  codex: ["codex", "--cd", "/main", "--sandbox", "workspace-write", "--model", "gpt-5", "BRIEF"],
+  pi: ["pi", "--model", "m1", "--tools", "read,bash,edit,write", "BRIEF"],
+  copilot: ["copilot", "-i", "BRIEF", "--add-dir", "/main", "--model", "m1"],
 };
 const MODELS = { claude: "sonnet", codex: "gpt-5", pi: "m1", copilot: "m1" };
 
@@ -179,7 +187,7 @@ test("every platform's interactive argv is pinned", () => {
 });
 
 // A human is in every interactive pane, so no role's argv may turn off its CLI's permission or
-// approval prompts: the relay that needed it (an unattended follow-up worker) is gone.
+// approval prompts, and the feature agent's argv has its edit tools on.
 const NO_PROMPT_FLAGS = ["--permission-mode", "bypassPermissions", "--dangerously-skip-permissions", "--allow-all-tools", "--allow-all", "--yolo", "--ask-for-approval", "never"];
 
 for (const platform of Object.keys(EXPECTED_INTERACTIVE)) {
