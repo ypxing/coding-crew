@@ -22,7 +22,7 @@
  * the watch agent, null when none opened). The watch agent is never closed by anything here.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { ADAPTERS as PLATFORM_ADAPTERS } from "../adapters/index.mjs";
@@ -130,7 +130,9 @@ export function recordedWatch(file, host) {
 /**
  * The sprint's watch agent: its platform CLI, interactive, in the main checkout, briefed by the
  * `watcher` role as its initial prompt and started with crew-afk's env (worker-terminal.mjs's
- * writeLaunchScript). One per slug: the handle recorded in `watch.json` is reused while the host
+ * writeLaunchScript), plus `CREW_PANE_HOST=<the host this run resolved>`: a `followup` command the
+ * agent runs would otherwise resolve the host again from a shell that has neither this run's
+ * `--pane-host` nor the legacy ORCA_ENV. One per slug: the handle recorded in `watch.json` is reused while the host
  * still reports a live agent there; a dead or missing one is replaced and the file rewritten.
  * Best-effort, never throws: a failure is a WARN and a null `_paneWatch`, so later pushes are
  * skipped and the run's exit code is what it would be with no host. No-op under --dry-run or
@@ -140,7 +142,10 @@ export async function ensureWatchSession(effects, { slug, platform, model, effor
   effects._paneWatch = null;
   const adapter = adapterFor(effects);
   if (!adapter?.openWatch || effects.dryRun || !slug) return null;
+  // The launch env file holds credentials and is only deleted by a script a host actually ran.
+  let envFile = null;
   const fail = (reason) => {
+    if (envFile) rmSync(envFile, { force: true });
     effects.log?.(`WARN watch session (${effects.paneHost}): ${reason} — no watch agent, pushes are skipped`);
     return null;
   };
@@ -165,12 +170,14 @@ export async function ensureWatchSession(effects, { slug, platform, model, effor
       protocol: renderRolePrompt("watcher", platform, { mainRoot: effects.mainRoot }),
       policy,
     });
-    const { command } = writeLaunchScript(effects, {
+    const launch = writeLaunchScript(effects, {
       dir: join(effects.mainRoot, ".scratch", slug, "watch"),
       cwd: effects.mainRoot,
       argv,
-      env: agent.env,
+      env: { ...agent.env, CREW_PANE_HOST: effects.paneHost },
     });
+    envFile = launch.envFile;
+    const { command } = launch;
     const opened = await adapter.openWatch(effects, { slug, command });
     if (!opened.handle) return fail(opened.failure);
 

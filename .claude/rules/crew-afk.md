@@ -229,11 +229,18 @@ host without all three has no follow-ups, and `supportsFollowups` is the gate ev
 - The worktree is `followupWorktreePath` (`crew/<slug>/_followup`) on the feature branch, made by `ensureWorktree`'s
   `checkout` mode. `_feature` and `_followup` are never both on the branch: `start` refuses while a live
   `.crew-afk.lock` pid or (github tracker) `lease.sh owner` holds it, and a later run's `checkoutWorktree` releases
-  a clean `_followup` or refuses a dirty one through `releaseBranch`.
+  a clean `_followup` or refuses a dirty one through `releaseBranch`; `start` itself refuses a dirty `_followup`
+  (`commit or discard them`) rather than let `checkoutWorktree` force-remove it.
+- The worker has nobody at its terminal: `ROLE_POLICY.followup.unattended` makes each adapter's `interactive()` add
+  its no-prompt flags (claude `--permission-mode bypassPermissions`, copilot `--allow-all-tools`, codex the
+  `workspace-write` network/git-dir roots shared with `build()` and `--ask-for-approval never`). The watcher's argv has none.
+- A host call that fails deletes the `env.sh` `writeLaunchScript` wrote (`ensureWatchSession`, `start`): only a script a
+  host ran deletes it. The watch agent's env carries `CREW_PANE_HOST=<effects.paneHost>`.
 - `.scratch/<slug>/followup.json` is written only after the host call succeeded; any failure after the worktree
   exists removes it again. Open until `wait` returns a final result. One writer: `followup.mjs`.
 - orca: Run → terminal → `worker-start` (D14); the response is `orchestration inbox`'s `worker_done` to `run:<id>`.
-  herdr: `agent prompt` / `wait` / `read`, the last `QUESTION:` / `DONE:` line (D15). `followup.md` (`ROLE_POLICY.followup`)
+  herdr: `agent prompt` / `wait` / `read`, the last `QUESTION:` / `DONE:` line (D15) below the echo of `rec.lastAnswer`
+  (the pane text keeps earlier turns); `openFollowup` waits out the brief's first turn before prompting the spec. `followup.md` (`ROLE_POLICY.followup`)
   must never start a line with those markers, or the brief's own echo reads as an answer.
 
 ## Adding a new crew-afk role

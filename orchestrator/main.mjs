@@ -26,7 +26,9 @@
  *                                           never closed) that every milestone and the outcome
  *                                           are pushed to; nothing load-bearing runs through it. Needs
  *                                           `herdr server` / `orca open` running. `run` prints
- *                                           `PANE-HOST: <host|none>` first, for the launcher.
+ *                                           `PANE-HOST: <host|none>` first, for a human or script
+ *                                           that wants the resolved host (the launcher skills do
+ *                                           not read it).
  *                                           See lib/pane-host/index.mjs, docs/orca-support.md.
  *   --model <alias|inherit>                coder model; every role on the same runtime
  *                                           matches it unless .coding-crew/config.json's
@@ -658,11 +660,11 @@ async function main() {
 
   // --- run -----------------------------------------------------------------
   // The try starts here, not around runSprint, so a setup failure also reaches the
-  // end-of-run push in `finally` — the only nudge the triggering pane gets. State is
+  // end-of-run push in `finally` — the watch agent's only notice that the run ended. State is
   // declared outside it so `finally` sees whatever got assigned.
   let sprint;
-  // A run-stopping failure once the sprint exists: stderr for the launcher, and the log,
-  // which outlives the scrollback.
+  // A run-stopping failure once the sprint exists: stderr for whoever launched the run, and the
+  // log, which outlives the scrollback.
   // The first line of what stopped the run, for the final push when no summary file was written.
   let failureLine;
   const fatal = (message) => {
@@ -718,10 +720,10 @@ async function main() {
   };
   for (const signal of Object.keys(SIGNAL_EXIT)) process.once(signal, onSignal);
   try {
-    // Before any sprint output, so a launcher knows the resolved host without re-deriving it
-    // from env and config.
+    // Before any sprint output, so a human or script reading stderr knows the resolved host
+    // without re-deriving it from env and config.
     console.error(`PANE-HOST: ${options.paneHost ?? "none"}`);
-    // After PANE-HOST, which a launcher reads as stderr's first line.
+    // After PANE-HOST, which stays stderr's first line.
     if (stderrLevel.warning) console.error(`crew-afk: ${stderrLevel.warning}`);
     const problems = preflightCrew();
     if (problems.length) {

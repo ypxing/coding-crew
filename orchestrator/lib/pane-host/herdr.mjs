@@ -3,7 +3,7 @@
  * Ambient ids: HERDR_WORKSPACE_ID / HERDR_TAB_ID / HERDR_PANE_ID.
  */
 
-import { failureDetail, hostFailure, lastMarkerLine, paneHostExec, paneHostJson, paneWorkspaceLabel } from "./shared.mjs";
+import { failureDetail, hostFailure, lastMarkerLine, paneHostExec, paneHostJson, paneWorkspaceLabel, textAfterPrompt } from "./shared.mjs";
 
 /** A stalled server must not hang startup. */
 const STATUS_TIMEOUT_MS = 10000;
@@ -147,10 +147,15 @@ export async function openWatch(effects, { slug, command }) {
 /** How long a fresh agent gets to take its first prompt: it is still starting up. */
 const FOLLOWUP_START_TIMEOUT_MS = 60000;
 
+/** How long a fresh agent gets to start and finish the turn its initial prompt (the brief) opens. */
+const FOLLOWUP_FIRST_TURN_TIMEOUT_MS = 120000;
+
 /**
  * A follow-up worker (D15): a pane with cwd `worktree` (a new tab beside the watch agent, or a
- * workspace of its own) running `command`, which herdr detects as an agent, then `spec` as its
- * first prompt, waited until the agent is `working`. Returns `{handle}` (the pane id) or
+ * workspace of its own) running `command`, which herdr detects as an agent and which starts a turn
+ * on the brief it was launched with. That turn is waited out (`idle` or `done`) before `spec` is
+ * prompted, or the spec would land in it and be read as part of the brief's turn; then the spec
+ * is waited until the agent is `working`. Returns `{handle}` (the pane id) or
  * `{failure}` (host's own text); a pane made before a call failed is closed again. Never throws.
  */
 export async function openFollowup(effects, { slug, worktree, command, spec }) {
@@ -171,6 +176,15 @@ export async function openFollowup(effects, { slug, worktree, command, spec }) {
       await closeMade();
       return { failure: hostFailure("herdr pane run", run) };
     }
+    const first = await paneHostExec(
+      effects,
+      ["agent", "wait", made.paneId, "--until", "idle", "--until", "done", "--timeout", String(FOLLOWUP_FIRST_TURN_TIMEOUT_MS)],
+      FOLLOWUP_FIRST_TURN_TIMEOUT_MS + 5000,
+    );
+    if (first.code !== 0) {
+      await closeMade();
+      return { failure: hostFailure("herdr agent wait", first, FOLLOWUP_FIRST_TURN_TIMEOUT_MS) };
+    }
     const prompt = await paneHostExec(
       effects,
       ["agent", "prompt", made.paneId, spec, "--wait", "--until", "working", "--timeout", String(FOLLOWUP_START_TIMEOUT_MS)],
@@ -190,8 +204,10 @@ export async function openFollowup(effects, { slug, worktree, command, spec }) {
 /**
  * The worker's turn, once it ends (`done`, `idle` or `blocked`, with no timeout of its own): the
  * last `QUESTION: …` or `DONE: …` line of the pane's recent text. A worker's question also ends
- * its turn as `done`, so the marker, not the state, tells them apart. Returns
- * `{kind: "done"|"question", text}` or `{failure}`, never throws.
+ * its turn as `done`, so the marker, not the state, tells them apart. After an answer
+ * (`rec.lastAnswer`, what crew-afk last sent) only a marker below that answer's echo counts: the
+ * text still holds the earlier turns, and a turn that wrote no marker must not be read as the
+ * question before it. Returns `{kind: "done"|"question", text}` or `{failure}`, never throws.
  */
 export async function awaitFollowup(effects, rec) {
   try {
@@ -201,9 +217,16 @@ export async function awaitFollowup(effects, rec) {
     if (read.code !== 0) return { failure: hostFailure("herdr agent read", read, STATUS_TIMEOUT_MS) };
     const parsed = paneHostJson(read)?.result;
     const text = typeof parsed?.read?.text === "string" ? parsed.read.text : typeof parsed?.text === "string" ? parsed.text : read.stdout;
-    const marker = lastMarkerLine(text);
-    if (marker) return marker;
     const tail = String(text ?? "").trim().split("\n").slice(-12).join("\n");
+    let turn = text;
+    if (rec.lastAnswer) {
+      turn = textAfterPrompt(text, rec.lastAnswer);
+      if (turn === null) {
+        return { failure: `the answer crew-afk sent is not in the pane's recent text, so the worker's response cannot be told from an earlier turn's; its pane ends:\n${tail}` };
+      }
+    }
+    const marker = lastMarkerLine(turn);
+    if (marker) return marker;
     return { failure: `the worker's turn ended with no QUESTION:/DONE: line; its pane ends:\n${tail}` };
   } catch (err) {
     return { failure: `herdr follow-up wait threw: ${err.message}` };
