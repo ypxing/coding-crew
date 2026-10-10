@@ -94,7 +94,8 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
 // answering what crew-afk reads from it. Spawned directly, since sh() strips the pane-host env.
 // The sprint's workspace is w5 (`worktree open`); the log tab and the agent's tab are made in it,
 // the agent's pane being w9:pl. `agentPromptExit` / `paneRunExit` make the end push or the agent's
-// start fail; `agentStatus: "unknown"` makes the host report no agent in its pane (a dead one).
+// start fail; `agentStatus: "gone"` drops the agent's pane from the host's list (a dead one), "unknown"
+// lists it with no agent detected yet (a CLI still starting, which a run's end keeps).
 function herdrEnv(root, { agentPromptExit = 0, paneRunExit = 0, agentStatus = "idle" } = {}) {
   const bin = mkdtempSync(join(TMPDIR, "crew-fake-herdr-"));
   FIXTURE_ROOTS.push(bin);
@@ -109,7 +110,7 @@ function herdrEnv(root, { agentPromptExit = 0, paneRunExit = 0, agentStatus = "i
       `  "workspace create") ${reply({ result: { workspace: { workspace_id: "w9" }, root_pane: { pane_id: "w9:p1" } } })};;`,
       `  "worktree open") ${reply({ result: { already_open: false, workspace: { workspace_id: "w5" }, root_pane: { pane_id: "w5:p1" } } })};;`,
       `  "tab create") ${reply({ result: { tab: { tab_id: "w5:t" }, root_pane: { pane_id: "w9:pl" } } })};;`,
-      `  "pane list") ${reply({ result: { panes: [{ pane_id: "w9:p1", agent_status: "idle" }, { pane_id: "w9:pl", agent_status: agentStatus }] } })};;`,
+      `  "pane list") ${reply({ result: { panes: [{ pane_id: "w9:p1", agent_status: "idle" }, ...(agentStatus === "gone" ? [] : [{ pane_id: "w9:pl", agent_status: agentStatus }])] } })};;`,
       `  "pane run") [ "$3" = "w9:pl" ] && case "$4" in tail) ;; *) exit ${paneRunExit};; esac;;`,
       `  "agent prompt") exit ${agentPromptExit};;`,
       "esac",
@@ -278,7 +279,7 @@ test("a run ended by SIGTERM with a live agent leaves _feature registered and on
 test("an agent the host no longer reports at the end of the run is dead: _feature is removed and its workspace closed, stdout is the whole summary", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  const r = herdrRun(root, [], { agentStatus: "unknown" });
+  const r = herdrRun(root, [], { agentStatus: "gone" });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(worktreeListed(root, featureWt(root)), false);
   assert.equal(existsSync(featureWt(root)), false);
@@ -291,7 +292,7 @@ test("a run ended by SIGTERM whose agent is dead removes _feature", async () => 
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "alpha.worker-sleep", "30");
-  const host = herdrEnv(root, { agentStatus: "unknown" });
+  const host = herdrEnv(root, { agentStatus: "gone" });
   const { spawn } = await import("node:child_process");
   const child = spawn("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], { cwd: root, env: host.env, stdio: "ignore" });
   const exited = new Promise((res) => child.on("exit", (code) => res(code)));

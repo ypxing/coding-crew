@@ -236,7 +236,7 @@ path:<featureRoot>`; herdr the feature worktree's workspace, never `HERDR_WORKSP
 - Nothing closes the agent, a signal and a thrown error included: orca's handle is never added to `_paneTerminals`,
   and `closePaneWorkspace` is a no-op while `hasPaneAgent(effects)`. At the end (`finally` and the signal handler)
   `settlePaneAgent` first asks the adapter whether the recorded agent still passes `watchAlive` (its blocking twin
-  `watchAliveSync`, so the handler need not yield); a dead one is dropped (`_paneWatch` null). `main.mjs` then keeps
+  `watchAliveSync`, so the handler need not yield); a dead one is dropped (`_paneWatch` null). An agent this run opened is dropped only when the host no longer lists its pane or terminal (`watchPresentSync`), since a run can end before the host identifies the starting CLI. `main.mjs` then keeps
   `_feature` and the workspace only for a live one; with none it removes `_feature` as before and closes the
   workspace. herdr's `closeWorkspace` closes only a workspace this run made (`worktree open`'s `already_open` is
   `false`; `workspace create` always). `ensureWorktree` in checkout mode reuses a clean worktree already at `path`

@@ -113,6 +113,21 @@ export function watchAliveSync(effects, paneId) {
   }
 }
 
+/** Whether `list` shows `paneId` at all, identified as an agent yet or not. */
+function paneListed(list, paneId) {
+  if (list.code !== 0) return false;
+  return (paneHostJson(list)?.result?.panes ?? []).some((p) => p?.pane_id === paneId);
+}
+
+/** watchAliveSync's looser twin: the pane exists. A CLI still starting has no `agent_status` yet. */
+export function watchPresentSync(effects, paneId) {
+  try {
+    return paneListed(effects.exec("herdr", ["pane", "list"], { mutating: false, timeoutMs: STATUS_TIMEOUT_MS }), paneId);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The feature agent: a tab in the feature worktree's workspace (the one ensureWorkspace opened,
  * else `worktree open` again, which returns it), cwd `_feature`. Its workspace is not closed while

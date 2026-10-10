@@ -1211,6 +1211,7 @@ test("settlePaneAgent keeps a live agent and drops one the host no longer report
   for (const [name, terminal] of [["a closed terminal", null], ["a shell, no agentIdentity", { handle: "term_w" }]]) {
     const dead = watchFixture("orca", []);
     dead.effects._paneWatch = { host: "orca", handle: "term_w" };
+    dead.effects._paneWatchReused = true; // a reused agent was identified once; an opened one is judged by presence
     dead.effects.exec = orcaExec(terminal);
     assert.equal(settlePaneAgent(dead.effects), false, name);
     assert.equal(dead.effects._paneWatch, null, name);
@@ -1222,8 +1223,38 @@ test("settlePaneAgent keeps a live agent and drops one the host no longer report
   const herdr = watchFixture("herdr", [json({ result: { workspace: { workspace_id: "w9" }, already_open: false } }), json({ result: { type: "ok" } })]);
   await ensurePaneWorkspace(herdr.effects, { featureSlug: "alpha" });
   herdr.effects._paneWatch = { host: "herdr", handle: "w9:p1" };
+  herdr.effects._paneWatchReused = true;
   herdr.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { panes: [{ pane_id: "w9:p1", agent_status: "unknown" }] } }), stderr: "" });
   assert.equal(settlePaneAgent(herdr.effects), false);
   await closePaneWorkspace(herdr.effects);
   assert.deepEqual(herdr.effects._calls.at(-1), ["herdr", "workspace", "close", "w9"], "a dead agent's workspace is closed like any other");
+});
+
+// A run can end seconds after it opened the agent (lint errors, sync conflict), before the host has
+// identified the starting CLI as an agent: only a pane or terminal the host no longer lists is gone.
+test("settlePaneAgent keeps an agent this run just opened while the host lists it but has not yet identified it", async () => {
+  const herdr = watchFixture("herdr", [json({ result: { workspace: { workspace_id: "w9" }, already_open: false } })]);
+  await ensurePaneWorkspace(herdr.effects, { featureSlug: "alpha" });
+  herdr.effects._paneWatch = { host: "herdr", handle: "w9:p1" };
+  herdr.effects._paneWatchReused = false;
+  herdr.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { panes: [{ pane_id: "w9:p1", agent_status: "unknown" }] } }), stderr: "" });
+  assert.equal(settlePaneAgent(herdr.effects), true, "listed pane, agent_status unknown");
+  const before = herdr.effects._calls.length;
+  await closePaneWorkspace(herdr.effects);
+  assert.equal(herdr.effects._calls.length, before, "no workspace close while the agent lives");
+
+  const gone = watchFixture("herdr", []);
+  gone.effects._paneWatch = { host: "herdr", handle: "w9:p1" };
+  gone.effects._paneWatchReused = false;
+  gone.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { panes: [] } }), stderr: "" });
+  assert.equal(settlePaneAgent(gone.effects), false, "a pane the host no longer lists is gone");
+
+  const orca = watchFixture("orca", []);
+  orca.effects._paneWatch = { host: "orca", handle: "term_w" };
+  orca.effects._paneWatchReused = false;
+  orca.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { terminal: { handle: "term_w" } } }), stderr: "" });
+  assert.equal(settlePaneAgent(orca.effects), true, "orca terminal present, no agentIdentity yet");
+  orca.effects.exec = () => ({ code: 1, stdout: "", stderr: "" });
+  orca.effects._paneWatch = { host: "orca", handle: "term_w" };
+  assert.equal(settlePaneAgent(orca.effects), false, "orca terminal show fails");
 });

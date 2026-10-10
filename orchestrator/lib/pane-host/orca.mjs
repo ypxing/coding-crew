@@ -206,6 +206,16 @@ export function watchAliveSync(effects, handle) {
   }
 }
 
+/** watchAliveSync's looser twin: the terminal exists. A CLI still starting has no `agentIdentity` yet. */
+export function watchPresentSync(effects, handle) {
+  try {
+    const show = effects.exec("orca", ["terminal", "show", "--terminal", handle, "--json"], { mutating: false, timeoutMs: CALL_TIMEOUT_MS });
+    return show.code === 0 && Boolean(paneHostJson(show)?.result?.terminal);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The feature agent: a terminal in the `_feature` worktree running `command`. Its handle is
  * deliberately never `track`ed, so no sweep (closeTerminals) can close it. Returns `{handle}` or

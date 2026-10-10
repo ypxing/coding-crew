@@ -7,7 +7,7 @@
  * for the sprint's slug (ensureWatchSession), both in the sprint's own `_feature` worktree
  * (`effects.featureRoot`), and best-effort pushes into that agent: each milestone and the
  * outcome. Each adapter (herdr.mjs, orca.mjs) implements the same operations for those:
- * preflight, ensureWorkspace, closeWorkspace, closeLogTab, openWatch, watchAlive, watchAliveSync
+ * preflight, ensureWorkspace, closeWorkspace, closeLogTab, openWatch, watchAlive, watchAliveSync, watchPresentSync
  * (the blocking twin the end of a run uses), notify, launcherHandle.
  * An adapter may also implement adoptWorktree (orca only): told of each worktree the orchestrator
  * creates, so the host can show it by name under its parent. See adoptWorktree below.
@@ -140,15 +140,19 @@ export const hasPaneAgent = (effects) => Boolean(effects._paneWatch?.handle);
  * End of run, before anything decides what outlives it (`_feature`, the agent's workspace): whether
  * the recorded agent still passes the adapter's watchAlive. A dead one (its pane closed, its CLI
  * exited) is dropped (`_paneWatch` null), so nothing is kept for it, no push goes to it and its
- * workspace is closed like any other. Blocking, so a signal handler can call it: the adapter's
- * `watchAliveSync`. Returns whether a live agent remains; never throws.
+ * workspace is closed like any other. An agent this run opened is dropped only when the host no
+ * longer lists its pane or terminal (`watchPresentSync`): a run can end seconds after opening it,
+ * before the host identifies the starting CLI as an agent. Blocking, so a signal handler can call
+ * it: the adapter's `watchAliveSync`. Returns whether a live agent remains; never throws.
  */
 export function settlePaneAgent(effects) {
   if (!hasPaneAgent(effects)) return false;
   const { handle } = effects._paneWatch;
   let alive = false;
   try {
-    alive = Boolean(adapterFor(effects)?.watchAliveSync?.(effects, handle));
+    const adapter = adapterFor(effects);
+    alive = Boolean(adapter?.watchAliveSync?.(effects, handle));
+    if (!alive && !effects._paneWatchReused) alive = Boolean(adapter?.watchPresentSync?.(effects, handle));
   } catch {
     /* an unreachable host reads as no agent */
   }
