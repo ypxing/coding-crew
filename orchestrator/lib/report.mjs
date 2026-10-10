@@ -284,11 +284,15 @@ function findingsFromStructured(list) {
     }));
 }
 
+/** A note field still holding the protocol's `<path>:<line>` / `<input or state → bad outcome>` template text. */
+const NOTE_PLACEHOLDER = /^\s*<[^<>]*>(:<[^<>]*>)?\s*$/;
+
 /** The reviewer's notes — suspected defects outside the criteria — that are `{location, concern}` of two strings; anything else is dropped. */
 function notesFromStructured(notes) {
   if (!Array.isArray(notes)) return [];
   return notes
     .filter((n) => n && typeof n.location === "string" && typeof n.concern === "string")
+    .filter((n) => !NOTE_PLACEHOLDER.test(n.location) && !NOTE_PLACEHOLDER.test(n.concern))
     .map((n) => ({ location: n.location, concern: n.concern }));
 }
 
