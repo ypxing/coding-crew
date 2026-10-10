@@ -867,6 +867,37 @@ test("parseReviewAggregate: a criteria_only block keeps the previous findings, c
   assert.deepEqual(parseReviewAggregate(legacy + blk({ verdict: "all-met", findings: [] }))[0].findings, []);
 });
 
+test("parseReviewReport keeps notes with string location and concern, and reviewed_sha; drops a malformed note", () => {
+  const notes = [
+    { location: "a.sh:3", concern: "--force keeps the stamp" },
+    { location: "b.sh:1" },
+    { concern: "no location" },
+    { location: 4, concern: "numeric location" },
+    { location: "c.sh:2", concern: ["not", "a string"] },
+    "stray",
+    null,
+  ];
+  const rec = parseReviewReport("", { verdict: "all-met", notes, reviewed_sha: "abc123" });
+  assert.deepEqual(rec.notes, [{ location: "a.sh:3", concern: "--force keeps the stamp" }]);
+  assert.equal(rec.reviewedSha, "abc123");
+  assert.deepEqual(parseReviewReport("", { verdict: "all-met", notes: "prose" }).notes, []);
+  assert.deepEqual(parseReviewReport("", { verdict: "all-met" }).notes, []);
+});
+
+test("parseReviewAggregate: a later block's notes replace earlier ones; a not_run block keeps the notes before it", () => {
+  const blk = (o) => `\`\`\`json\n${JSON.stringify({ branch: "b", slug: "s", findings: [], ...o })}\n\`\`\`\n`;
+  const n = (c) => [{ location: "a:1", concern: c }];
+  const [replaced] = parseReviewAggregate(blk({ verdict: "all-met", notes: n("old"), reviewed_sha: "s1" }) + blk({ verdict: "all-met", notes: n("new"), reviewed_sha: "s2" }));
+  assert.deepEqual(replaced.notes, n("new"));
+  assert.equal(replaced.reviewedSha, "s2");
+  const [cleared] = parseReviewAggregate(blk({ verdict: "all-met", notes: n("old"), reviewed_sha: "s1" }) + blk({ verdict: "all-met", notes: [], reviewed_sha: "s2" }));
+  assert.deepEqual(cleared.notes, []);
+  const [kept] = parseReviewAggregate(blk({ verdict: "all-met", notes: n("old"), reviewed_sha: "s1" }) + blk({ verdict: "not_run" }));
+  assert.equal(kept.verdict, "not_run");
+  assert.deepEqual(kept.notes, n("old"));
+  assert.equal(kept.reviewedSha, "s1");
+});
+
 test("foldDuplicates: a duplicate whose target is not promotable stays promotable itself", () => {
   const judged = [
     { severity: "MEDIUM", location: "a.ts:1", criterion: "x", verdict: "debatable" },

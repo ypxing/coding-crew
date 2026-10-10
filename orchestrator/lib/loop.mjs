@@ -481,7 +481,9 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, u
 
   // --- summary (rendered from disk, never from recollection) -----------------
   // The PR comes first: the summary points at it when the findings were posted there.
-  const pr = await pullRequest(ctx, tracker, integration, { stalled, capped, wallCap, unfixedFindings: unfixedFeatureFindings(sprint) });
+  // The last review dispatched in the run decides: a skipped one (nothing new, a red check) dispatched nothing.
+  const featureReviewFailed = featureReviews.findLast((r) => !r.skipped)?.failed ?? null;
+  const pr = await pullRequest(ctx, tracker, integration, { stalled, capped, wallCap, unfixedFindings: unfixedFeatureFindings(sprint), featureReviewFailed });
   const summaryArgs = ["--promoted", promoteSeverities(sprint.fixFindings)];
   if (stalled) summaryArgs.push("--stalled");
   if (wallCap) summaryArgs.push("--capped");
@@ -546,9 +548,11 @@ function featureReviewLine(sprint, r, n, total) {
  * Why a run is not green, one line per cause, for the PR block and the summary — none when it
  * is: exited 0 (not stalled, not capped by the wall clock), no issue blocked, not cut short by the
  * attempt cap (CREW_MAX_ROUNDS), and the integration check passed or was cached. A check that
- * could not run (`skipped`) is not green; one the user switched off is not held against it.
+ * could not run (`skipped`) is not green; one the user switched off is not held against it. Neither
+ * is a feature review that was dispatched last and left no valid report (`featureReviewFailed`, its
+ * reason): the PR would otherwise look reviewed.
  */
-function notGreenCauses({ exitCode = 0, blocked = [], integration = null, capped = false, integrationEnabled = true, wallCap = null, unfixedFindings = [] }) {
+function notGreenCauses({ exitCode = 0, blocked = [], integration = null, capped = false, integrationEnabled = true, wallCap = null, unfixedFindings = [], featureReviewFailed = null }) {
   const causes = [];
   const add = (kind, text) => causes.push({ kind, text });
   if (wallCap) add("wall-cap", `the ${wallCap.minutes}-minute wall-clock cap was hit (${wallCap.unclaimed.length ? `${wallCap.unclaimed.length} issue(s) unclaimed` : "Phase 2 fix issues stayed parked"})`);
@@ -558,6 +562,7 @@ function notGreenCauses({ exitCode = 0, blocked = [], integration = null, capped
   if (integration?.status === "skipped") add("integration", `the integration check was skipped (${integration.reason})`);
   else if (!integration && integrationEnabled) add("integration", "the integration check did not run");
   else if (integration && !["pass", "cached"].includes(integration.status)) add("integration", `the integration check ${integration.status}`);
+  if (featureReviewFailed) add("review", `the feature review did not run (${featureReviewFailed})`);
   if (unfixedFindings.length) {
     const names = unfixedFindings.slice(0, 5).map((f) => `${f.location} (${f.severity})`).join(", ");
     add("findings", `${unfixedFindings.length} feature review finding(s) past the promotion cap or the fix issue's limit were reported, not fixed: ${names}${unfixedFindings.length > 5 ? ", …" : ""}`);
@@ -588,7 +593,7 @@ export const isGreen = (state) => notGreenReasons(state).length === 0;
  * (post-findings.sh) its URL and their count — or null when there is nothing to say. A posting
  * failure is reported in the text and never fails the sprint.
  */
-async function pullRequest(ctx, tracker, integration, { stalled = false, capped = false, wallCap = null, unfixedFindings = [] } = {}) {
+async function pullRequest(ctx, tracker, integration, { stalled = false, capped = false, wallCap = null, unfixedFindings = [], featureReviewFailed = null } = {}) {
   const { sprint, effects, options } = ctx;
   let refs = [];
   let refsError = null;
@@ -622,7 +627,7 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
   // marker is rewritten so it names `integration`, not just what the earlier run saw.
   if (integration?.status === "fail") {
     const notOpened = `**Not opened:** the integration check failed on ${sprint.featureBranch} — see ## Integration check above.`;
-    const marker = draftMarker({ exitCode: stalled ? 2 : 0, blocked: sprint.getList("blocked"), integration, capped, wallCap, unfixedFindings });
+    const marker = draftMarker({ exitCode: stalled ? 2 : 0, blocked: sprint.getList("blocked"), integration, capped, wallCap, unfixedFindings, featureReviewFailed });
     const r = effects.bash("open-pr.sh", ["--no-push", "--draft", "--draft-marker", marker], { env: sprint.childEnv() });
     const url = /^PR: (.*)$/m.exec(r.stdout ?? "")?.[1]?.trim();
     if (r.dryRun || r.code !== 0 || !url || url === "none") return { text: notOpened };
@@ -636,7 +641,7 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
   const body = await writePrBody(ctx, { integration });
   const blockedSlugs = sprint.getList("blocked");
   const { retention = {}, blocked_reasons: blockedReasons = {} } = sprint.readState();
-  const state = { exitCode: stalled ? 2 : 0, blocked: blockedSlugs, integration, capped, wallCap, integrationEnabled: options.integrationCheck !== false, unfixedFindings };
+  const state = { exitCode: stalled ? 2 : 0, blocked: blockedSlugs, integration, capped, wallCap, integrationEnabled: options.integrationCheck !== false, unfixedFindings, featureReviewFailed };
   const reasons = notGreenReasons(state);
   const green = reasons.length === 0;
   const args = ["--closes-file", closesFile];
