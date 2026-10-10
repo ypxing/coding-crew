@@ -269,10 +269,37 @@ test("closePaneWorkspace (herdr) closes the workspace ensurePaneWorkspace create
   assert.deepEqual(untouched._calls, [], "nothing to close — no run ever created a workspace on this effects instance");
 
   const { root } = fixture();
-  const effects = fakeHerdrEffects([json({ result: { workspace: { workspace_id: "w1" } } }), json({ result: { type: "ok" } })], { mainRoot: root });
+  const effects = fakeHerdrEffects([json({ result: { already_open: false, workspace: { workspace_id: "w1" } } }), json({ result: { type: "ok" } })], { mainRoot: root });
   await ensurePaneWorkspace(effects, { featureSlug: "alpha" });
   await closePaneWorkspace(effects);
   assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w1"]);
+});
+
+// `worktree open` returns the workspace already open on `_feature` (a developer's own, or one a
+// previous run's agent died in), flagged `already_open: true`: not this run's to close.
+test("closePaneWorkspace (herdr) never closes a workspace `worktree open` returned already open, even when the agent's open fails", async () => {
+  const { root } = fixture();
+  const effects = fakeHerdrEffects([json({ result: { already_open: true, workspace: { workspace_id: "w3" } } }), { code: 1, stdout: "", stderr: "tab create failed" }], { mainRoot: root });
+  effects.featureRoot = join(root, ".scratch/worktrees/crew/alpha/_feature");
+  effects.log = () => {};
+  effects.exec = () => ({ code: 0, stdout: "", stderr: "" });
+  effects.env = {};
+
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha" });
+  assert.equal(await ensureWatchSession(effects, { slug: "alpha", platform: "claude" }), null, "the agent did not open");
+  await closePaneWorkspace(effects);
+
+  assert.ok(!effects._calls.some((c) => c[1] === "workspace" && c[2] === "close"), JSON.stringify(effects._calls));
+});
+
+test("closePaneWorkspace (herdr) closes a workspace it made itself when there is no feature worktree to open", async () => {
+  const { root } = fixture();
+  const effects = fakeHerdrEffects([json({ result: { workspace: { workspace_id: "w2" } } }), json({ result: { type: "ok" } })], { mainRoot: root });
+
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha" });
+  await closePaneWorkspace(effects);
+
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w2"]);
 });
 
 test("closePaneWorkspace (herdr) leaves the workspace open while the feature agent lives in it", async () => {
