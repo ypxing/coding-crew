@@ -16,7 +16,7 @@
  * the worker's `QUESTION: …` / `DONE: …` line) and `io.err`.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { ADAPTERS as PLATFORM_ADAPTERS } from "./adapters/index.mjs";
@@ -130,7 +130,16 @@ async function start(effects, { slug, task, platform, model, effort, resolveBran
   const watch = recordedWatch(watchFile(mainRoot, slug), effects.paneHost);
   const coordinator = watch?.handle ?? (effects.paneHost === "orca" ? process.env.ORCA_TERMINAL_HANDLE : undefined);
 
+  // A finished follow-up's checkout is replaced below (`ensureWorktree` force-removes it): not
+  // when its worker left changes uncommitted, which would be lost.
   const path = followupWorktreePath(mainRoot, slug);
+  if (effects.gitRead(["worktree", "list", "--porcelain"]).stdout.includes(`worktree ${path}\n`) && existsSync(path)) {
+    const status = effects.gitRead(["status", "--porcelain"], { cwd: path });
+    if (status.code !== 0 || status.stdout.trim()) {
+      io.err(`crew-afk: ${path} has uncommitted changes from an earlier follow-up; commit or discard them, then start again — nothing was started`);
+      return 1;
+    }
+  }
   const wt = ensureWorktree(effects, { mainRoot, branch, base: branch, mode: "checkout", path, adopt: { title: `${slug}-followup` } });
   if (wt.stale) {
     io.err(`crew-afk: ${wt.reason}`);
@@ -155,7 +164,7 @@ async function start(effects, { slug, task, platform, model, effort, resolveBran
     protocol: brief,
     policy: { ...ROLE_POLICY.followup, ...(effort ? { effort } : {}) },
   });
-  const { command } = writeLaunchScript(effects, {
+  const { command, envFile } = writeLaunchScript(effects, {
     dir: join(mainRoot, ".scratch", slug, "followup", id),
     cwd: wt.path,
     argv,
@@ -165,6 +174,8 @@ async function start(effects, { slug, task, platform, model, effort, resolveBran
 
   const opened = await openFollowup(effects, { slug, worktree: wt.path, command, spec, coordinator });
   if (opened.failure) {
+    // The launch script is never run, so nothing else deletes the env file (it holds credentials).
+    rmSync(envFile, { force: true });
     discard();
     io.err(`crew-afk: follow-up not started: ${opened.failure}`);
     return 1;
@@ -183,6 +194,7 @@ async function start(effects, { slug, task, platform, model, effort, resolveBran
     handle: opened.terminal ?? opened.handle ?? null,
     answered: [],
     pending: null,
+    lastAnswer: null,
   };
   try {
     writeRecord(rec, mainRoot);
@@ -257,6 +269,8 @@ async function reply(effects, { id, answer, io }) {
   }
   if (rec.pending?.messageId) rec.answered.push(rec.pending.messageId);
   rec.pending = null;
+  // What the worker's next turn answers: a host with no message queue (herdr) reads only below it.
+  rec.lastAnswer = answer;
   try {
     writeRecord(rec, effects.mainRoot);
   } catch (err) {

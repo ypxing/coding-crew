@@ -7,7 +7,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -166,15 +166,16 @@ test("followup start gives the host a launch script that sources crew-afk's env 
   assert.ok(!text.includes("'Edit'"), "a follow-up worker edits: no read-only policy");
 });
 
-test("followup start (herdr) opens a pane with cwd _followup, runs the argv with pane run, and prompts the brief and task with --wait --until working", async () => {
-  const t = setup({ host: "herdr", responses: [herdrWorkspace("w2:p1"), ok(), ok()] });
+test("followup start (herdr) opens a pane with cwd _followup, runs the argv with pane run, waits out the first turn, then prompts the brief and task with --wait --until working", async () => {
+  const t = setup({ host: "herdr", responses: [herdrWorkspace("w2:p1"), ok(), ok(), ok()] });
   const code = await t.run(START);
   assert.equal(code, 0, t.err.join("\n"));
-  assert.equal(t.calls.length, 3);
+  assert.equal(t.calls.length, 4);
   assert.deepEqual(t.calls[0], ["herdr", "workspace", "create", "--cwd", t.worktree, "--label", "demo-followup", "--no-focus"]);
   assert.deepEqual(t.calls[1].slice(0, 4), ["herdr", "pane", "run", "w2:p1"]);
   assert.match(t.calls[1][4], /^bash '.*launch\.sh'$/);
-  const prompt = t.calls[2];
+  assert.deepEqual(t.calls[2].slice(0, 4), ["herdr", "agent", "wait", "w2:p1"]);
+  const prompt = t.calls[3];
   assert.deepEqual(prompt.slice(0, 4), ["herdr", "agent", "prompt", "w2:p1"]);
   assert.ok(prompt[4].includes(renderRolePrompt("followup", "claude", { mainRoot: t.mainRoot })));
   assert.ok(prompt[4].includes("/crew-address-findings"));
@@ -186,7 +187,7 @@ test("followup start (herdr) opens a pane with cwd _followup, runs the argv with
 test("followup start (herdr) inside herdr opens a new tab in the watch workspace", async () => {
   process.env.HERDR_WORKSPACE_ID = "w1";
   try {
-    const t = setup({ host: "herdr", responses: [herdrTab("w1:pf"), ok(), ok()] });
+    const t = setup({ host: "herdr", responses: [herdrTab("w1:pf"), ok(), ok(), ok()] });
     assert.equal(await t.run(START), 0, t.err.join("\n"));
     assert.deepEqual(t.calls[0], ["herdr", "tab", "create", "--workspace", "w1", "--cwd", t.worktree, "--label", "demo-followup", "--no-focus"]);
   } finally {
@@ -283,8 +284,16 @@ test("a failing host call fails start with the host's own text and leaves no rec
     },
     {
       host: "herdr",
-      responses: [herdrWorkspace(), ok(), { code: 124, stdout: "", stderr: "timeout" }, ok()],
+      responses: [herdrWorkspace(), ok(), ok(), { code: 124, stdout: "", stderr: "timeout" }, ok()],
       text: /herdr agent prompt exit=124 \(timed out after 60s\) timeout/,
+      calls: 5,
+      closed: "w2",
+    },
+    {
+      host: "herdr",
+      // the first turn never ends: the spec is not sent, the pane is closed again
+      responses: [herdrWorkspace(), ok(), { code: 124, stdout: "", stderr: "" }, ok()],
+      text: /herdr agent wait exit=124 \(timed out after 120s\)/,
       calls: 4,
       closed: "w2",
     },
@@ -298,6 +307,47 @@ test("a failing host call fails start with the host's own text and leaves no rec
     assert.equal(existsSync(t.recordFile), false, "no half-recorded follow-up");
     assert.equal(existsSync(t.worktree), false, "the worktree is removed again");
     assert.equal(t.out.length, 0, "no id printed");
+  }
+});
+
+test("followup start refuses an existing _followup with uncommitted changes, naming it and the commit-or-discard remedy, and keeps its work", async () => {
+  const t = setup({ responses: [orcaRun(), orcaTerminal(), ok()] });
+  assert.equal(await t.run(START), 0, t.err.join("\n"));
+  writeFileSync(join(t.worktree, "wip.txt"), "uncommitted\n");
+  // the first follow-up finished, so nothing but the worktree's own state stops a second start
+  writeFileSync(t.recordFile, JSON.stringify({ ...t.record(), state: "done" }));
+  t.calls.length = 0;
+  t.err.length = 0;
+  t.out.length = 0;
+
+  assert.equal(await t.run(START), 1);
+  const text = t.err.join("\n");
+  assert.ok(text.includes(t.worktree), `names the path: ${text}`);
+  assert.match(text, /commit or discard them/);
+  assert.equal(readFileSync(join(t.worktree, "wip.txt"), "utf8"), "uncommitted\n", "the follow-up's work is untouched");
+  assert.equal(t.calls.length, 0, "no host call");
+  assert.equal(t.out.length, 0);
+  assert.equal(t.record().state, "done", "the record is unchanged");
+});
+
+test("followup start replaces a clean _followup left by a finished follow-up", async () => {
+  const t = setup({ responses: [orcaRun("run_1"), orcaTerminal(), ok(), orcaRun("run_2"), orcaTerminal(), ok()] });
+  assert.equal(await t.run(START), 0, t.err.join("\n"));
+  writeFileSync(t.recordFile, JSON.stringify({ ...t.record(), state: "done" }));
+  assert.equal(await t.run(START), 0, t.err.join("\n"));
+  assert.equal(t.record().runId, "run_2");
+});
+
+test("a failed host call leaves no env.sh behind: the launch script stays, the credentials file is deleted", async () => {
+  for (const [host, responses] of [
+    ["orca", [orcaRun(), { code: 1, stdout: "", stderr: "selector_not_found" }]],
+    ["herdr", [herdrWorkspace(), { code: 1, stdout: "", stderr: "pane not found" }, ok()]],
+  ]) {
+    const t = setup({ host, responses });
+    assert.equal(await t.run(START), 1);
+    const dir = join(t.mainRoot, ".scratch", "demo", "followup");
+    const files = readdirSync(dir).flatMap((id) => readdirSync(join(dir, id)));
+    assert.deepEqual(files, ["launch.sh"], `${host}: only the script remains`);
   }
 });
 
@@ -387,13 +437,14 @@ test("followup wait (herdr) waits for done, idle or blocked, then returns the la
     host: "herdr",
     responses: [
       herdrWorkspace("w2:p1"),
-      ok(),
-      ok(),
+      ok(), // pane run
+      ok(), // agent wait: the first turn ends
+      ok(), // agent prompt: the spec
       ok(), // agent wait
       { code: 0, stdout: "⏺ Looking at the findings.\nDONE: old result\nmore work\n⏺ QUESTION: keep the old API?\n\n  ⏵⏵ bypass permissions on\n", stderr: "" },
       ok(), // agent prompt (reply)
       ok(), // agent wait
-      { code: 0, stdout: "QUESTION: keep the old API?\nyes, kept\nDONE: kept the old API; committed 9f2e\n", stderr: "" },
+      { code: 0, stdout: "QUESTION: keep the old API?\n> yes\n⏺ DONE: kept the old API; committed 9f2e\n", stderr: "" },
     ],
   });
   assert.equal(await t.run(START), 0, t.err.join("\n"));
@@ -416,7 +467,7 @@ test("followup wait (herdr) waits for done, idle or blocked, then returns the la
 });
 
 test("followup wait (herdr) exits non-zero showing the pane's tail when a turn ended with neither marker", async () => {
-  const t = setup({ host: "herdr", responses: [herdrWorkspace(), ok(), ok(), ok(), { code: 0, stdout: "I did some things.\n", stderr: "" }] });
+  const t = setup({ host: "herdr", responses: [herdrWorkspace(), ok(), ok(), ok(), ok(), { code: 0, stdout: "I did some things.\n", stderr: "" }] });
   assert.equal(await t.run(START), 0, t.err.join("\n"));
   const id = t.out.shift();
   assert.equal(await t.run({ action: "wait", id }), 1);

@@ -50,6 +50,27 @@ export function hostFailure(what, result, timeoutMs) {
   return `${what} exit=${result.code}${timedOut}${detail ? ` ${detail}` : ""}`;
 }
 
+/** A terminal line without the decoration a TUI puts around a message (`> `, `⏺ `, a box edge). */
+const undecorated = (line) => line.replace(/^[\s⏺●•·*>❯│|-]+/, "").replace(/[\s│|]+$/, "");
+
+/**
+ * The part of an agent's terminal `text` after the last line that echoes `prompt` (its last
+ * non-blank line, undecorated), or null when no line does. herdr has no message queue, so an
+ * earlier turn's `QUESTION:` / `DONE:` line sits in the same text as this turn's: only what comes
+ * after the prompt crew-afk sent can be this turn's.
+ */
+export function textAfterPrompt(text, prompt) {
+  const anchor = String(prompt ?? "")
+    .split("\n")
+    .map(undecorated)
+    .filter(Boolean)
+    .at(-1);
+  if (!anchor) return null;
+  const lines = String(text ?? "").split("\n");
+  const at = lines.findLastIndex((line) => undecorated(line) === anchor);
+  return at === -1 ? null : lines.slice(at + 1).join("\n");
+}
+
 /** The last `QUESTION: …` or `DONE: …` line of an agent's terminal text (herdr has no message queue). */
 export function lastMarkerLine(text) {
   const marks = String(text ?? "")

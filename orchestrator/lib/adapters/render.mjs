@@ -34,7 +34,8 @@ export const ROLE_POLICY = {
   // The watch agent is interactive, not dispatched: it has no default effort (its CLI's applies unless afk.effort.watcher sets one).
   watcher: { readOnly: true, subagents: false },
   // A follow-up worker is interactive too, and edits and commits in `_followup`; no sub-agents (one worktree), no default effort.
-  followup: { readOnly: false, subagents: false },
+  // `unattended`: nobody is at its terminal, so its argv must not stop at a permission prompt (the watcher's, with a human in the pane, keeps them).
+  followup: { readOnly: false, subagents: false, unattended: true },
 };
 
 const NAMED_SKILLS = ["solve-issue", "dep-install", "tdd"];

@@ -10,7 +10,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ADAPTERS, DEFAULT_PARALLEL, PLATFORMS } from "../../orchestrator/lib/adapters/index.mjs";
 import { ROLE_AGENTS, ROLE_POLICY, renderRolePrompt } from "../../orchestrator/lib/adapters/render.mjs";
@@ -140,7 +143,7 @@ test("watcher is a read-only role without sub-agents or a default effort, and re
 
 test("followup is an interactive role that may edit, without sub-agents or a default effort, and renders for every platform", () => {
   assert.equal(ROLE_AGENTS.followup, "crew-followup");
-  assert.deepEqual(ROLE_POLICY.followup, { readOnly: false, subagents: false });
+  assert.deepEqual(ROLE_POLICY.followup, { readOnly: false, subagents: false, unattended: true });
   for (const platform of PLATFORMS) {
     const text = renderRolePrompt("followup", platform);
     assert.match(text, /QUESTION:/, platform);
@@ -193,4 +196,61 @@ for (const platform of Object.keys(EXPECTED_INTERACTIVE)) {
 
 test("every platform's interactive argv is pinned", () => {
   assert.deepEqual(Object.keys(EXPECTED_INTERACTIVE).sort(), [...PLATFORMS].sort());
+});
+
+// A follow-up worker has no human at its terminal: its argv must not stop at a permission prompt,
+// and must let it commit from a linked worktree. The watcher's (a human is in that pane) is pinned above.
+function linkedWorktree() {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "crew-platforms-")));
+  const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@example.com");
+  git("config", "user.name", "T");
+  writeFileSync(join(root, "a"), "a\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "seed");
+  const wt = join(root, "wt");
+  git("worktree", "add", "-q", "-b", "feature", wt);
+  return { root, wt, common: join(root, ".git"), own: join(root, ".git", "worktrees", "wt") };
+}
+
+test("followup's unattended policy: claude bypasses permission prompts, copilot allows all tools, the watcher's argv is unchanged", () => {
+  const FOLLOWUP = ROLE_POLICY.followup;
+  const claude = ADAPTERS.claude.interactive({ ...INTERACTIVE, model: "sonnet", policy: FOLLOWUP });
+  assert.deepEqual(claude, ["claude", "BRIEF", "--add-dir", "/main", "--model", "sonnet", "--permission-mode", "bypassPermissions", "--disallowedTools", "Agent"]);
+  const copilot = ADAPTERS.copilot.interactive({ ...INTERACTIVE, model: "m1", policy: FOLLOWUP });
+  assert.deepEqual(copilot, ["copilot", "-i", "BRIEF", "--add-dir", "/main", "--model", "m1", "--allow-all-tools"]);
+  for (const platform of ["claude", "copilot"]) {
+    const argv = ADAPTERS[platform].interactive({ ...INTERACTIVE, model: MODELS[platform] });
+    assert.deepEqual(argv, EXPECTED_INTERACTIVE[platform], `${platform}: the watcher's argv is unchanged`);
+  }
+});
+
+test("codex: a follow-up worker runs workspace-write with network, the git dirs writable and no approval prompts, the watcher read-only as before", () => {
+  const { root, wt, common, own } = linkedWorktree();
+  const argv = ADAPTERS.codex.interactive({ cwd: wt, mainRoot: root, model: "gpt-5", protocol: "BRIEF", policy: ROLE_POLICY.followup });
+  assert.deepEqual(argv, [
+    "codex",
+    "--cd",
+    wt,
+    "--sandbox",
+    "workspace-write",
+    "-c",
+    "sandbox_workspace_write.network_access=true",
+    "-c",
+    `sandbox_workspace_write.writable_roots=[${JSON.stringify(common)},${JSON.stringify(own)}]`,
+    "--add-dir",
+    root,
+    "--ask-for-approval",
+    "never",
+    "--model",
+    "gpt-5",
+    "BRIEF",
+  ]);
+  const built = ADAPTERS.codex.build({ cwd: wt, mainRoot: root, model: "gpt-5", policy: ROLE_POLICY.followup, protocol: "P", prompt: "T" });
+  for (const flag of ["sandbox_workspace_write.network_access=true", `sandbox_workspace_write.writable_roots=[${JSON.stringify(common)},${JSON.stringify(own)}]`]) {
+    assert.ok(built.args.includes(flag) && argv.includes(flag), `build() and interactive() agree on ${flag}`);
+  }
+  const watcher = ADAPTERS.codex.interactive({ ...INTERACTIVE, model: "gpt-5" });
+  assert.deepEqual(watcher, EXPECTED_INTERACTIVE.codex);
 });

@@ -21,6 +21,24 @@ function sandboxFor(policy) {
   return !policy || policy.readOnly ? "read-only" : "workspace-write";
 }
 
+/**
+ * What a workspace-write run needs beyond the sandbox itself: network on (dep-install), the git
+ * dirs writable (a linked worktree's index lives in the main repo's git dir), the main checkout
+ * added (traces, prompts and reports live under .scratch). Shared by build() and an unattended
+ * interactive() run.
+ */
+function workspaceWriteArgs(cwd, mainRoot) {
+  const args = ["-c", "sandbox_workspace_write.network_access=true"];
+  const common = gitPath(cwd, "--git-common-dir");
+  const own = gitPath(cwd, "--git-dir");
+  if (common) {
+    const roots = [common, ...(own && own !== common ? [own] : [])].map((p) => JSON.stringify(p));
+    args.push("-c", `sandbox_workspace_write.writable_roots=[${roots.join(",")}]`);
+  }
+  if (mainRoot !== cwd) args.push("--add-dir", mainRoot);
+  return args;
+}
+
 /** A tool item's name: `shell` for a command, else codex's item type (file_change, mcp_tool_call, …). */
 const toolOf = (item) => (item?.type === "command_execution" ? "shell" : (item?.type ?? "?"));
 
@@ -51,16 +69,7 @@ export default {
     }
     const args = ["exec", "--cd", resultDir ?? cwd, "--sandbox", sandbox, "--json"];
     if (resultDir) args.push("-c", "sandbox_workspace_write.exclude_slash_tmp=true", "-c", "sandbox_workspace_write.exclude_tmpdir_env_var=true");
-    if (sandbox === "workspace-write" && !resultDir) {
-      args.push("-c", "sandbox_workspace_write.network_access=true");
-      const common = gitPath(cwd, "--git-common-dir");
-      const own = gitPath(cwd, "--git-dir");
-      if (common) {
-        const roots = [common, ...(own && own !== common ? [own] : [])].map((p) => JSON.stringify(p));
-        args.push("-c", `sandbox_workspace_write.writable_roots=[${roots.join(",")}]`);
-      }
-      if (mainRoot !== cwd) args.push("--add-dir", mainRoot);
-    }
+    if (sandbox === "workspace-write" && !resultDir) args.push(...workspaceWriteArgs(cwd, mainRoot));
     if (model && model !== "inherit") args.push("--model", model);
     if (policy) args.push(...this.policyArgs(policy));
     args.push("-");
@@ -73,9 +82,15 @@ export default {
   // The sandbox is set by build(); the flag here is the role's reasoning effort (none: codex's default).
   policyArgs: ({ effort }) => (effort ? ["-c", `model_reasoning_effort="${effort}"`] : []),
 
-  /** The TUI with the protocol as its initial prompt (the last argument), in the role's sandbox. */
-  interactive({ cwd, model, protocol, policy }) {
-    const argv = ["codex", "--cd", cwd, "--sandbox", sandboxFor(policy)];
+  /**
+   * The TUI with the protocol as its initial prompt (the last argument), in the role's sandbox. An
+   * `unattended` role that may write (a follow-up worker) gets build()'s network and git dirs, and
+   * never asks for approval: nobody is at its terminal.
+   */
+  interactive({ cwd, mainRoot, model, protocol, policy }) {
+    const sandbox = sandboxFor(policy);
+    const argv = ["codex", "--cd", cwd, "--sandbox", sandbox];
+    if (policy?.unattended && sandbox === "workspace-write") argv.push(...workspaceWriteArgs(cwd, mainRoot), "--ask-for-approval", "never");
     if (model && model !== "inherit") argv.push("--model", model);
     if (policy) argv.push(...this.policyArgs(policy));
     argv.push(protocol);
