@@ -36,7 +36,13 @@ export function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
+/**
+ * A failed call's own words: the JSON error when the host printed one (orca puts it on stdout,
+ * behind a stderr banner such as `[relay-connect] Handshake OK`), else stderr, else stdout.
+ */
 export function failureDetail(result) {
+  const error = paneHostJson(result)?.error;
+  if (error?.message) return error.code ? `${error.code}: ${error.message}` : error.message;
   return (result.stderr || result.stdout || "").trim();
 }
 

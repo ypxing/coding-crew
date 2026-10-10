@@ -277,7 +277,8 @@ function runIdOf(result) {
  * A follow-up worker (D14): a Run bound to the watch agent as coordinator, a terminal in the
  * follow-up worktree running `command` (crew-afk's env, the interactive argv), and that terminal
  * started as the Run's supervised worker with `spec`. `--worktree` on worker-start is required,
- * or orca refuses the terminal as belonging to the coordinator's worktree. Returns
+ * or orca refuses the terminal as belonging to the coordinator's worktree; so is `--from`, or orca
+ * refuses (`consumer_fenced`) any caller but the coordinator's own terminal. Returns
  * `{runId, terminal}` or `{failure}` (host's own text), never throws; a terminal made before a
  * later call failed is closed again.
  * @param {string} o.coordinator  the watch agent's terminal handle
@@ -326,6 +327,8 @@ export async function openFollowup(effects, { slug, worktree, command, spec, coo
       terminal,
       "--spec",
       spec,
+      "--from",
+      coordinator,
       "--json",
     ], CALL_TIMEOUT_MS);
     if (start.code !== 0) {

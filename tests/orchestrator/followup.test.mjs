@@ -142,7 +142,8 @@ test("followup start (orca) makes _followup on the feature branch, adopts it, an
   const brief = renderRolePrompt("followup", "claude", { mainRoot: t.mainRoot });
   assert.ok(start[10].includes(brief), "the spec carries the follow-up brief");
   assert.ok(start[10].includes("/crew-address-findings"), "and the task");
-  assert.equal(start[11], "--json");
+  const coordinator = t.calls[0][t.calls[0].indexOf("--from") + 1];
+  assert.deepEqual(start.slice(11), ["--from", coordinator, "--json"], "started as the Run's coordinator, whoever calls");
 
   assert.equal(t.out.length, 1);
   const rec = t.record();

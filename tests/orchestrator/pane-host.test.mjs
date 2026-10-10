@@ -1076,9 +1076,16 @@ test("openFollowup (orca) creates a Run from the watch handle, a terminal in the
   ]);
   assert.ok(effects._calls[0].join(" ").includes("--from term_watch"));
   assert.ok(effects._calls[1].join(" ").includes(`--worktree path:${FOLLOWUP.worktree}`));
-  assert.ok(effects._calls[2].join(" ").includes(`--run run_9 --worktree path:${FOLLOWUP.worktree} --terminal term_f --spec BRIEF + TASK`));
+  assert.ok(effects._calls[2].join(" ").includes(`--run run_9 --worktree path:${FOLLOWUP.worktree} --terminal term_f --spec BRIEF + TASK --from term_watch`));
   assert.ok(effects._timeouts.every((t) => t === 10000), "every call is bounded");
   assert.equal(effects._paneTerminals?.has("term_f") ?? false, false, "the follow-up terminal is not swept by the run's own close");
+});
+
+test("openFollowup (orca) reports the host's JSON error, not its stderr banner", async () => {
+  const fenced = { code: 1, stdout: JSON.stringify({ ok: false, error: { code: "consumer_fenced", message: "worker-start requires the coordinator terminal" } }), stderr: "[relay-connect] Handshake OK" };
+  const effects = fakeOrcaEffects([json({ result: { run: { id: "run_9" } } }), orcaCreated("term_f"), fenced, json({ result: {} })]);
+  const opened = await openFollowup(effects, FOLLOWUP);
+  assert.match(opened.failure, /worker-start exit=1 consumer_fenced: worker-start requires the coordinator terminal/);
 });
 
 test("openFollowup (orca) with no coordinator handle fails before any host call", async () => {
