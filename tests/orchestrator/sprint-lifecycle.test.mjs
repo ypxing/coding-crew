@@ -288,7 +288,7 @@ test("an agent the host no longer reports at the end of the run is dead: _featur
   assert.doesNotMatch(r.stdout, /crew-afk: summary sent/);
 });
 
-test("a run ended by SIGTERM whose agent is dead removes _feature", async () => {
+test("a run ended by SIGTERM whose agent is dead removes _feature and closes the workspace this run made", async () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "alpha.worker-sleep", "30");
@@ -303,6 +303,7 @@ test("a run ended by SIGTERM whose agent is dead removes _feature", async () => 
   assert.equal(await exited, 143);
   assert.equal(worktreeListed(root, featureWt(root)), false);
   assert.equal(existsSync(featureWt(root)), false);
+  assert.ok(host.calls().includes("workspace close w5"), host.calls().join("\n"));
 });
 
 test("--dry-run opens no watch agent and writes no watch.json", () => {

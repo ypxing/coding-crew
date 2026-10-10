@@ -77,9 +77,10 @@ const COPY_ENTRIES = new Set([".env"]);
  * discarded or judged stale. A worktree already at `path` on `branch` is reused in place when
  * clean (`created: false`: a live feature agent may be working in it). A worktree at `path` with
  * uncommitted changes is refused (`stale`, the reason lists the files: nothing is removed)
- * whatever it has checked out — another branch or a detached HEAD included. Otherwise (a clean
- * one on another branch or detached, or none) it checks the existing branch out — or creates it
- * from `base` — and recreates the worktree at `path`.
+ * whatever it has checked out — another branch or a detached HEAD included. A clean one on
+ * another branch or detached is switched to `branch` in place (`created: false`), never removed:
+ * a live agent's cwd may be in it. With none at `path`, it checks the existing branch out — or
+ * creates it from `base` — into a new worktree there.
  * The branch's other holders are released as for any worktree, but only crew-made
  * ones (under the worktree root): the main checkout or a user's own worktree being on it is a
  * refusal, not a switch.
@@ -191,6 +192,16 @@ function checkoutWorktree(effects, { mainRoot, branch, base, path, adopt }) {
       if (adopt) adoptWorktree(effects, path, adopt);
       return { path, created: false, reusedBranch: true };
     }
+    // Clean, on another branch or detached: switched in place, never removed — a live feature
+    // agent (or the process that launched this run) may have its cwd in it.
+    const crewRoot = join(realPath(worktreeRoot(mainRoot)), "/");
+    const blocker = releaseBranch(effects, listed, branch, { onlyCrewMade: (holder) => join(realPath(holder), "/").startsWith(crewRoot) });
+    if (blocker) return { path: null, created: false, stale: true, reason: blocker };
+    const exists = effects.gitRead(["rev-parse", "--verify", "--quiet", `${branch}^{commit}`]).code === 0;
+    const r = effects.git(exists ? ["checkout", "-q", branch] : ["checkout", "-q", "-b", branch, base], { cwd: path });
+    if (r.code !== 0) throw new Error(`git checkout ${branch} failed in ${path}: ${r.stderr.trim()}`);
+    if (adopt) adoptWorktree(effects, path, adopt);
+    return { path, created: false, reusedBranch: exists };
   }
   if (listsWorktree(listed, path) || existsSync(path)) {
     removeWorktree(effects, { path });

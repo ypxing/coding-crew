@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, existsSync, lstatSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -358,15 +358,22 @@ test("ensureWorktree (checkout) refuses a dirty worktree at path on a detached H
   }
 });
 
-test("ensureWorktree (checkout) recreates a clean worktree at path that is on a detached HEAD", () => {
-  const { mainRoot, git, effects, branch, path } = featureCheckout();
-  git("-C", path, "checkout", "-q", "--detach");
+test("ensureWorktree (checkout) switches a clean worktree at path on a detached HEAD or another branch in place, never recreating it", () => {
+  for (const [label, move] of [
+    ["detached HEAD", (git, path) => git("-C", path, "checkout", "-q", "--detach")],
+    ["another branch", (git, path) => git("-C", path, "checkout", "-q", "-b", "scratch/other")],
+  ]) {
+    const { mainRoot, git, effects, branch, path } = featureCheckout();
+    move(git, path);
+    const inode = statSync(path).ino;
 
-  const result = ensureWorktree(effects, { mainRoot, branch, base: "main", mode: "checkout", path });
+    const result = ensureWorktree(effects, { mainRoot, branch, base: "main", mode: "checkout", path });
 
-  assert.equal(result.stale, undefined);
-  assert.equal(result.created, true);
-  assert.equal(git("-C", path, "rev-parse", "--abbrev-ref", "HEAD").trim(), branch);
+    assert.equal(result.stale, undefined, label);
+    assert.equal(result.created, false, label);
+    assert.equal(git("-C", path, "rev-parse", "--abbrev-ref", "HEAD").trim(), branch, label);
+    assert.equal(statSync(path).ino, inode, `${label}: the directory is the same one`);
+  }
 });
 
 test("ensureWorktree (checkout) creates the worktree when none is at path, from base when the branch is new", () => {

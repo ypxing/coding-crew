@@ -57,8 +57,13 @@ export function adoptWorktree(effects, path, { title, issue, parent }) {
   (effects._paneAdopted ??= new Set()).add(path);
 }
 
-/** The worktree the sprint's own terminals open in: `_feature`, or the main checkout when the run has none (a dry run). */
-const featureWorktree = (effects) => effects.featureRoot ?? effects.mainRoot;
+/**
+ * The worktree the sprint's own terminals are scoped to: `_feature` once adoptWorktree named it to
+ * orca, else the main checkout (no `_feature`, as in a dry run, or a `worktree set` that failed:
+ * orca refuses a terminal in a worktree it does not know). The agent's cwd is `_feature` either
+ * way: its launch script cds there.
+ */
+const featureWorktree = (effects) => (effects.featureRoot && effects._paneAdopted?.has(effects.featureRoot) ? effects.featureRoot : effects.mainRoot);
 
 /** The pane that launched this run, for D6's adoption: orca's ambient terminal handle. */
 export const launcherHandle = () => process.env.ORCA_TERMINAL_HANDLE || null;

@@ -88,7 +88,8 @@ never edits an issue's `Status:` or criteria boxes.
   (`ORCA_TERMINAL_HANDLE` / `HERDR_PANE_ID`) passes the same liveness check, that pane, recorded
   and adopted with no new agent; else a new one, recorded. The title `<slug>-watch` is only a
   display name — an agent rewrites its own terminal title, so a lookup by title cannot work.
-- **Where.** orca creates the log terminal and the agent with `--worktree path:<_feature>`. herdr
+- **Where.** orca creates the log terminal and the agent with `--worktree path:<_feature>` (`path:<mainRoot>`
+  when `orca worktree set` never named `_feature` to orca; the agent's launch script still starts it in `_feature`). herdr
   opens both as tabs of the feature worktree's workspace (`worktree open` returns the one already
   open), never the triggering workspace (`HERDR_WORKSPACE_ID` is not read).
 - **`_feature` is kept.** While the agent still passes the host's liveness check at the end of
@@ -96,7 +97,10 @@ never edits an issue's `Status:` or criteria boxes.
   workspace holding the agent is not closed. A run with no host, under `--dry-run`, or whose agent
   failed to open or is gone by the end removes `_feature` as before; herdr's workspace is closed
   only when this run made it (`worktree open`'s `already_open` is false), never one a developer
-  already had open. The next run reuses a clean `_feature` in place and refuses a dirty one
+  already had open (a signal ending closes it too). An agent this run opened that the host lists but has
+  not yet identified counts as live only in its first two minutes: herdr's pane outlives a CLI that exited.
+  The next run reuses a clean `_feature` in place (switching it back to the feature branch if it is on
+  another branch or detached, never recreating it) and refuses a dirty one
   (whatever branch or detached HEAD it is on), listing its files. A run that reuses or adopts the
   agent pushes it a run-start notice, which returns it to "leave the checkout alone until the end
   notice". A run from inside `_feature` takes `<slug>` from the path; `--feature-slug` naming
@@ -206,7 +210,7 @@ agent definition.
   one at a time, in order, and is drained before the end-of-run push.
 - `ORCA_TAB_ID` is read by nothing: every create is already scoped by `--worktree`, and the
   rename goes by `ORCA_TERMINAL_HANDLE`; pushes go by the feature agent's recorded handle.
-- `--worktree path:<_feature>` (`<mainRoot>` for a worker terminal with no worktree), not `active`: `active` isn't documented as cwd-relative and
+- `--worktree path:<_feature>` (`<mainRoot>` for a worker terminal with no worktree, or when `_feature` was not adopted), not `active`: `active` isn't documented as cwd-relative and
   may resolve to whatever worktree orca's GUI has focused. `--command` is typed into the
   terminal's shell rather than passed as argv, so the log path is shell-quoted.
 - Orca's own orchestration layer (`orchestration run-create`/`task-create`/`worker-start`,

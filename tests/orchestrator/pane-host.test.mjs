@@ -20,6 +20,7 @@ import {
   queuePaneNotice,
   queueRunStartNotice,
   settlePaneAgent,
+  AGENT_START_GRACE_MS,
 } from "../../orchestrator/lib/pane-host/index.mjs";
 import { levelFor } from "../../orchestrator/lib/log.mjs";
 import { notifyMilestone } from "../../orchestrator/lib/pipeline/shared.mjs";
@@ -801,6 +802,8 @@ function watchFixture(host, responses, { cliOnPath = true, env = { CREW_WATCH_PR
   const { root } = fixture();
   const effects = fakePaneHostEffects(host, responses, { mainRoot: root, ...opts });
   effects.featureRoot = join(root, ".scratch", "worktrees", "crew", "alpha", "_feature");
+  // main.mjs's ensureWorktree names `_feature` to orca (adoptWorktree) before any terminal opens.
+  effects._paneAdopted = new Set([effects.featureRoot]);
   effects.env = env;
   effects.log = (line) => (effects._logs ??= []).push(line);
   effects.exec = (cmd, args) => {
@@ -854,6 +857,17 @@ test("the log terminal and the agent terminal are both created with --worktree p
   });
   const worktrees = effects._calls.filter((c) => c[2] === "create").map((c) => c[c.indexOf("--worktree") + 1]);
   assert.deepEqual(worktrees, [`path:${featureRoot}`, `path:${featureRoot}`]);
+});
+
+test("orca: when `_feature` was never adopted (worktree set failed), both terminals are scoped to the main checkout and the agent still starts in _feature", async () => {
+  const { featureRoot, root, effects } = watchFixture("orca", [orcaCreated("term_log"), orcaCreated("term_w")]);
+  effects._paneAdopted = new Set();
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile: join(root, "trace.log") });
+  await ensureWatchSession(effects, WATCH);
+  const creates = effects._calls.filter((c) => c[2] === "create");
+  assert.deepEqual(creates.map((c) => c[c.indexOf("--worktree") + 1]), [`path:${root}`, `path:${root}`]);
+  const { text } = launchScriptOf(creates[1][creates[1].indexOf("--command") + 1]);
+  assert.ok(text.includes(`cd -P '${featureRoot}'`), "the agent's cwd is _feature");
 });
 
 test("ensureWatchSession gives the host a command that sources crew-afk's env.sh before the interactive argv, then deletes it", async () => {
@@ -1237,6 +1251,7 @@ test("settlePaneAgent keeps an agent this run just opened while the host lists i
   await ensurePaneWorkspace(herdr.effects, { featureSlug: "alpha" });
   herdr.effects._paneWatch = { host: "herdr", handle: "w9:p1" };
   herdr.effects._paneWatchReused = false;
+  herdr.effects._paneWatchOpenedAt = Date.now();
   herdr.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { panes: [{ pane_id: "w9:p1", agent_status: "unknown" }] } }), stderr: "" });
   assert.equal(settlePaneAgent(herdr.effects), true, "listed pane, agent_status unknown");
   const before = herdr.effects._calls.length;
@@ -1246,15 +1261,29 @@ test("settlePaneAgent keeps an agent this run just opened while the host lists i
   const gone = watchFixture("herdr", []);
   gone.effects._paneWatch = { host: "herdr", handle: "w9:p1" };
   gone.effects._paneWatchReused = false;
+  gone.effects._paneWatchOpenedAt = Date.now();
   gone.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { panes: [] } }), stderr: "" });
   assert.equal(settlePaneAgent(gone.effects), false, "a pane the host no longer lists is gone");
 
   const orca = watchFixture("orca", []);
   orca.effects._paneWatch = { host: "orca", handle: "term_w" };
   orca.effects._paneWatchReused = false;
+  orca.effects._paneWatchOpenedAt = Date.now();
   orca.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { terminal: { handle: "term_w" } } }), stderr: "" });
   assert.equal(settlePaneAgent(orca.effects), true, "orca terminal present, no agentIdentity yet");
   orca.effects.exec = () => ({ code: 1, stdout: "", stderr: "" });
   orca.effects._paneWatch = { host: "orca", handle: "term_w" };
   assert.equal(settlePaneAgent(orca.effects), false, "orca terminal show fails");
+});
+
+// herdr's pane (and the shell `pane run` typed into) outlives a CLI that exited, so past the start-up
+// grace a listed pane with no agent in it is a dead agent, as for a reused one.
+test("settlePaneAgent drops an agent this run opened that the host still lists but no longer identifies, once past the start-up grace", () => {
+  const herdr = watchFixture("herdr", []);
+  herdr.effects._paneWatch = { host: "herdr", handle: "w9:p1" };
+  herdr.effects._paneWatchReused = false;
+  herdr.effects._paneWatchOpenedAt = Date.now() - AGENT_START_GRACE_MS - 1;
+  herdr.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { panes: [{ pane_id: "w9:p1", agent_status: "unknown" }] } }), stderr: "" });
+  assert.equal(settlePaneAgent(herdr.effects), false);
+  assert.equal(herdr.effects._paneWatch, null);
 });

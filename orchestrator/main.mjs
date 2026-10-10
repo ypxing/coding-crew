@@ -111,7 +111,7 @@ import {
   retiredNotice,
   validateFlags,
 } from "./lib/crew-config.mjs";
-import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, notifyWatchSession, queueRunStartNotice, settlePaneAgent } from "./lib/pane-host/index.mjs";
+import { closePaneLogTab, closePaneWorkspace, closePaneWorkspaceSync, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, notifyWatchSession, queueRunStartNotice, settlePaneAgent } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktree, featureSlugOfPath, featureWorktreePath, removeWorktree, worktreeRoot } from "./lib/worktree.mjs";
@@ -701,7 +701,10 @@ async function main() {
     }
     // A live feature agent keeps its worktree, as at a normal ending (the probe blocks: this
     // handler must not yield to the pipeline its children's exits would resume).
-    removeFeatureWorktree({ keep: settlePaneAgent(effects) });
+    const agentLive = settlePaneAgent(effects);
+    // Not the `_feature` workspace this run made, left open on a removed path.
+    if (!agentLive) closePaneWorkspaceSync(effects);
+    removeFeatureWorktree({ keep: agentLive });
     if (lease) releaseLease(effects, lease);
     process.exit(SIGNAL_EXIT[signal]);
   };

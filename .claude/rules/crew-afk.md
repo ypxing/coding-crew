@@ -227,7 +227,7 @@ CLI's own permission prompts stay on) as the initial prompt, and `worker-termina
 (`adapter.launcherHandle()`: `ORCA_TERMINAL_HANDLE` / `HERDR_PANE_ID`) when cwd is inside `_feature` and it passes
 `watchAlive`, else a new agent. The pane-host adapters implement `openWatch`, `watchAlive`, `notify(effects, handle,
 message)` and `launcherHandle`. Both hosts open the log tab and the agent in `_feature` (orca `--worktree
-path:<featureRoot>`; herdr the feature worktree's workspace, never `HERDR_WORKSPACE_ID`).
+path:<featureRoot>` once `_feature` is adopted, else `path:<mainRoot>` with the agent still started in `_feature`; herdr the feature worktree's workspace, never `HERDR_WORKSPACE_ID`).
 
 - Every push (`queuePaneNotice` → `notifyWatchSession`, and `main.mjs`'s final one) targets `effects._paneWatch.handle`;
   nothing else reads `ORCA_TERMINAL_HANDLE` / `HERDR_PANE_ID` for a push. A failed create or a missing CLI is a `WARN`
@@ -236,12 +236,13 @@ path:<featureRoot>`; herdr the feature worktree's workspace, never `HERDR_WORKSP
 - Nothing closes the agent, a signal and a thrown error included: orca's handle is never added to `_paneTerminals`,
   and `closePaneWorkspace` is a no-op while `hasPaneAgent(effects)`. At the end (`finally` and the signal handler)
   `settlePaneAgent` first asks the adapter whether the recorded agent still passes `watchAlive` (its blocking twin
-  `watchAliveSync`, so the handler need not yield); a dead one is dropped (`_paneWatch` null). An agent this run opened is dropped only when the host no longer lists its pane or terminal (`watchPresentSync`), since a run can end before the host identifies the starting CLI. `main.mjs` then keeps
+  `watchAliveSync`, so the handler need not yield); a dead one is dropped (`_paneWatch` null). Within `AGENT_START_GRACE_MS` (2 min) of this run opening it, an agent is dropped only when the host no longer lists its pane or terminal (`watchPresentSync`), since a run can end before the host identifies the starting CLI; past it presence is not enough (herdr's pane outlives an exited CLI). `main.mjs` then keeps
   `_feature` and the workspace only for a live one; with none it removes `_feature` as before and closes the
-  workspace. herdr's `closeWorkspace` closes only a workspace this run made (`worktree open`'s `already_open` is
+  workspace (the signal handler through herdr's blocking `closeWorkspaceSync`). herdr's `closeWorkspace` closes only a workspace this run made (`worktree open`'s `already_open` is
   `false`; `workspace create` always). `ensureWorktree` in checkout mode reuses a clean worktree already at `path`
   on `branch` (`created: false`) and refuses a dirty one (`stale`, listing its files) whatever branch or detached
-  HEAD it has checked out; a clean one on another branch is recreated.
+  HEAD it has checked out; a clean one on another branch or detached is switched to `branch` in place, never
+  removed (a live agent's cwd may be in it).
 - A run that reused or adopted the agent (`_paneWatchReused`) pushes it a run-start notice
   (`queueRunStartNotice`, right after `ensureWatchSession`); `followup.md` says that notice returns it to the
   "until the end notice" rules. The brief names every sprint source under the main checkout (`<main>`, the git

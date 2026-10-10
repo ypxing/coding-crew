@@ -47,6 +47,7 @@ export async function ensureWorkspace(effects, { featureSlug, logFile }) {
   const label = paneWorkspaceLabel(featureSlug);
   const { workspaceId, created } = await openFeatureWorkspace(effects, label);
   effects._paneWorkspaceCreated = created;
+  effects._paneWorkspaceId = workspaceId;
   if (logFile) await openLogTab(effects, workspaceId, label, logFile);
   return workspaceId;
 }
@@ -55,6 +56,12 @@ export async function ensureWorkspace(effects, { featureSlug, logFile }) {
 export async function closeWorkspace(effects, workspaceId) {
   if (!effects._paneWorkspaceCreated) return;
   await paneHostExec(effects, ["workspace", "close", workspaceId]);
+}
+
+/** closeWorkspace, blocking: for a signal handler, which cannot await the cached workspace promise. */
+export function closeWorkspaceSync(effects) {
+  if (!effects._paneWorkspaceCreated || !effects._paneWorkspaceId) return;
+  effects.exec("herdr", ["workspace", "close", effects._paneWorkspaceId], { timeoutMs: STATUS_TIMEOUT_MS });
 }
 
 /**

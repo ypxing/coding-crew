@@ -7,7 +7,7 @@
  * for the sprint's slug (ensureWatchSession), both in the sprint's own `_feature` worktree
  * (`effects.featureRoot`), and best-effort pushes into that agent: each milestone and the
  * outcome. Each adapter (herdr.mjs, orca.mjs) implements the same operations for those:
- * preflight, ensureWorkspace, closeWorkspace, closeLogTab, openWatch, watchAlive, watchAliveSync, watchPresentSync
+ * preflight, ensureWorkspace, closeWorkspace (and closeWorkspaceSync, herdr only), closeLogTab, openWatch, watchAlive, watchAliveSync, watchPresentSync
  * (the blocking twin the end of a run uses), notify, launcherHandle.
  * An adapter may also implement adoptWorktree (orca only): told of each worktree the orchestrator
  * creates, so the host can show it by name under its parent. See adoptWorktree below.
@@ -19,7 +19,7 @@
  * Run-scoped state lives on `effects`: `_paneWorkspace` (cached promise),
  * `_paneLogTabId`, `_paneNotices` (the queued-push chain), `_paneWatch` (`{host, handle}` of
  * the feature agent, null when none is live; settlePaneAgent drops a dead one at the run's end) and `_paneWatchReused` (that agent was reused or
- * adopted, not opened by this run: it may hold the checkout from an earlier run's end notice). The agent is never closed by anything here, and
+ * adopted, not opened by this run: it may hold the checkout from an earlier run's end notice), `_paneWatchOpenedAt` (when this run opened it). The agent is never closed by anything here, and
  * neither is a workspace holding it.
  */
 
@@ -87,6 +87,20 @@ export async function closePaneWorkspace(effects) {
 }
 
 /**
+ * closePaneWorkspace for a signal handler, which must not yield: blocking, on an adapter with
+ * `closeWorkspaceSync` (herdr; orca has no workspace). Same rule, after settlePaneAgent: nothing
+ * while the agent lives. Swallows failures.
+ */
+export function closePaneWorkspaceSync(effects) {
+  if (hasPaneAgent(effects)) return;
+  try {
+    adapterFor(effects)?.closeWorkspaceSync?.(effects);
+  } catch {
+    /* cosmetic */
+  }
+}
+
+/**
  * End of run, alongside closePaneWorkspace: the log tab is this run's own even when the
  * workspace it lives in is not. Swallows failures (an already-closed tab, for one).
  */
@@ -140,11 +154,14 @@ export const hasPaneAgent = (effects) => Boolean(effects._paneWatch?.handle);
  * End of run, before anything decides what outlives it (`_feature`, the agent's workspace): whether
  * the recorded agent still passes the adapter's watchAlive. A dead one (its pane closed, its CLI
  * exited) is dropped (`_paneWatch` null), so nothing is kept for it, no push goes to it and its
- * workspace is closed like any other. An agent this run opened is dropped only when the host no
- * longer lists its pane or terminal (`watchPresentSync`): a run can end seconds after opening it,
- * before the host identifies the starting CLI as an agent. Blocking, so a signal handler can call
+ * workspace is closed like any other. Within AGENT_START_GRACE_MS of this run opening it, an agent
+ * is dropped only when the host no longer lists its pane or terminal (`watchPresentSync`): a run can
+ * end seconds after opening it, before the host identifies the starting CLI as an agent. Blocking, so a signal handler can call
  * it: the adapter's `watchAliveSync`. Returns whether a live agent remains; never throws.
  */
+/** How long after opening an agent the host may not yet identify it as one. */
+export const AGENT_START_GRACE_MS = 120_000;
+
 export function settlePaneAgent(effects) {
   if (!hasPaneAgent(effects)) return false;
   const { handle } = effects._paneWatch;
@@ -152,7 +169,10 @@ export function settlePaneAgent(effects) {
   try {
     const adapter = adapterFor(effects);
     alive = Boolean(adapter?.watchAliveSync?.(effects, handle));
-    if (!alive && !effects._paneWatchReused) alive = Boolean(adapter?.watchPresentSync?.(effects, handle));
+    // Presence alone stands in only while the CLI may still be starting: herdr's pane (and its shell)
+    // outlives an agent that exited, so later a listed pane is no sign of one.
+    const starting = !effects._paneWatchReused && Date.now() - (effects._paneWatchOpenedAt ?? 0) < AGENT_START_GRACE_MS;
+    if (!alive && starting) alive = Boolean(adapter?.watchPresentSync?.(effects, handle));
   } catch {
     /* an unreachable host reads as no agent */
   }
@@ -256,6 +276,7 @@ export async function ensureWatchSession(effects, { slug, platform, model, effor
     if (!opened.handle) return fail(opened.failure);
 
     const watch = { host: effects.paneHost, handle: opened.handle };
+    effects._paneWatchOpenedAt = Date.now();
     record(file, watch);
     log?.(`WATCH-SESSION opened host=${watch.host} handle=${watch.handle}`);
     return (effects._paneWatch = watch);
