@@ -27,6 +27,15 @@ export default {
     return { args };
   },
 
+  /** pi's interactive mode: the protocol is the initial message, as its last argument. */
+  interactive({ model, protocol, policy }) {
+    const argv = ["pi"];
+    if (model && model !== "inherit") argv.push("--model", model);
+    if (policy) argv.push(...this.policyArgs(policy));
+    argv.push(protocol);
+    return argv;
+  },
+
   // The role's thinking level; pi names an allowlist and ignores tool names it does not know, so these are pi's own.
   policyArgs: ({ readOnly, effort }) => [...(effort ? ["--thinking", effort] : []), "--tools", readOnly ? "read,bash" : "read,bash,edit,write"],
 
