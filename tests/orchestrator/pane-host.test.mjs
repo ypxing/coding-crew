@@ -18,6 +18,8 @@ import {
   notifyWatchSession,
   preflightPaneHost,
   queuePaneNotice,
+  queueRunStartNotice,
+  settlePaneAgent,
 } from "../../orchestrator/lib/pane-host/index.mjs";
 import { levelFor } from "../../orchestrator/lib/log.mjs";
 import { notifyMilestone } from "../../orchestrator/lib/pipeline/shared.mjs";
@@ -269,10 +271,37 @@ test("closePaneWorkspace (herdr) closes the workspace ensurePaneWorkspace create
   assert.deepEqual(untouched._calls, [], "nothing to close — no run ever created a workspace on this effects instance");
 
   const { root } = fixture();
-  const effects = fakeHerdrEffects([json({ result: { workspace: { workspace_id: "w1" } } }), json({ result: { type: "ok" } })], { mainRoot: root });
+  const effects = fakeHerdrEffects([json({ result: { already_open: false, workspace: { workspace_id: "w1" } } }), json({ result: { type: "ok" } })], { mainRoot: root });
   await ensurePaneWorkspace(effects, { featureSlug: "alpha" });
   await closePaneWorkspace(effects);
   assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w1"]);
+});
+
+// `worktree open` returns the workspace already open on `_feature` (a developer's own, or one a
+// previous run's agent died in), flagged `already_open: true`: not this run's to close.
+test("closePaneWorkspace (herdr) never closes a workspace `worktree open` returned already open, even when the agent's open fails", async () => {
+  const { root } = fixture();
+  const effects = fakeHerdrEffects([json({ result: { already_open: true, workspace: { workspace_id: "w3" } } }), { code: 1, stdout: "", stderr: "tab create failed" }], { mainRoot: root });
+  effects.featureRoot = join(root, ".scratch/worktrees/crew/alpha/_feature");
+  effects.log = () => {};
+  effects.exec = () => ({ code: 0, stdout: "", stderr: "" });
+  effects.env = {};
+
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha" });
+  assert.equal(await ensureWatchSession(effects, { slug: "alpha", platform: "claude" }), null, "the agent did not open");
+  await closePaneWorkspace(effects);
+
+  assert.ok(!effects._calls.some((c) => c[1] === "workspace" && c[2] === "close"), JSON.stringify(effects._calls));
+});
+
+test("closePaneWorkspace (herdr) closes a workspace it made itself when there is no feature worktree to open", async () => {
+  const { root } = fixture();
+  const effects = fakeHerdrEffects([json({ result: { workspace: { workspace_id: "w2" } } }), json({ result: { type: "ok" } })], { mainRoot: root });
+
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha" });
+  await closePaneWorkspace(effects);
+
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w2"]);
 });
 
 test("closePaneWorkspace (herdr) leaves the workspace open while the feature agent lives in it", async () => {
@@ -1123,4 +1152,78 @@ test("an adopted launching pane is never closed by an ending, and its workspace 
   await closePaneWorkspace(effects);
   await closePaneLogTab(effects);
   assert.deepEqual(effects._calls.filter((c) => c[2] === "close").map((c) => c[3]), ["w1:log"]);
+});
+
+// A reused or adopted agent may have been handed the checkout at an earlier run's end notice, so
+// a new run tells it that the sprint is merging into the checkout again (followup.md).
+test("a run that reuses or adopts the feature agent pushes it a run-start notice; one that opens a new agent does not", async () => {
+  const reused = watchFixture("orca", [orcaAgent("term_rec"), orcaAgent("term_rec"), json({ result: { send: { accepted: true } } })]);
+  reused.record({ host: "orca", handle: "term_rec" });
+  await ensureWatchSession(reused.effects, WATCH);
+  queueRunStartNotice(reused.effects, "alpha");
+  await drainPaneNotices(reused.effects);
+  const send = reused.effects._calls.at(-1);
+  assert.equal(send[2], "send");
+  assert.equal(send[send.indexOf("--terminal") + 1], "term_rec");
+  const text = send[send.indexOf("--text") + 1];
+  assert.match(text, /^\[alpha\] .*run started/, text);
+  assert.match(text, /until the end notice/, text);
+
+  const adopted = watchFixture("herdr", [herdrPanes({ pane_id: "w1:pl", agent_status: "idle" }), json({ result: { type: "ok" } })]);
+  await withHerdrPaneId("w1:pl", () => inDir(adopted.featureRoot, () => ensureWatchSession(adopted.effects, WATCH)));
+  queueRunStartNotice(adopted.effects, "alpha");
+  await drainPaneNotices(adopted.effects);
+  assert.deepEqual(adopted.effects._calls.at(-1).slice(0, 4), ["herdr", "agent", "prompt", "w1:pl"]);
+  assert.match(adopted.effects._calls.at(-1)[4], /^\[alpha\] .*run started/);
+
+  const opened = watchFixture("orca", [orcaCreated("term_new")]);
+  await ensureWatchSession(opened.effects, WATCH);
+  queueRunStartNotice(opened.effects, "alpha");
+  await drainPaneNotices(opened.effects);
+  assert.equal(opened.effects._calls.length, 1, "a new agent's brief is its start: only the create");
+});
+
+// The agent's cwd is `_feature`, where `.scratch/` and (when gitignored) `.coding-crew/` are not:
+// the brief names every sprint source under the main checkout and says how to find it.
+test("the feature agent's brief names sprint sources under the main checkout, found from _feature by the git common dir", () => {
+  const brief = renderRolePrompt("followup", "claude", { mainRoot: "/main" });
+  const common = '$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")';
+  assert.ok(brief.includes(common), "how to find the main checkout from _feature");
+  assert.ok(brief.includes(`${common}/.coding-crew/tracker/cli.mjs`), "the tracker CLI resolves under the main checkout");
+  assert.match(brief, /run-start notice/i, "a run-start notice returns the agent to the until-the-end-notice rules");
+  // A source path is `.scratch/<x>` or `.coding-crew/<x>`; the bare directory names in the prose are not.
+  for (const line of brief.split("\n")) {
+    assert.ok(!/(^|[\s`(])\.scratch\/[^\s`]/.test(line), `a source path resolving inside _feature: ${line}`);
+    assert.ok(!/(^|[\s`(])(node )?\.coding-crew\/[^\s`]/.test(line), `a source path resolving inside _feature: ${line}`);
+  }
+});
+
+// At the run's end `_feature` and the agent's workspace are kept only for an agent that still lives:
+// a dead one (its pane closed, its CLI exited) leaves nothing to keep them for.
+test("settlePaneAgent keeps a live agent and drops one the host no longer reports, so its workspace closes", async () => {
+  const orcaExec = (terminal) => (_cmd, args) => (args.includes("show") ? { code: terminal ? 0 : 1, stdout: JSON.stringify({ result: { terminal } }), stderr: "" } : { code: 0, stdout: "", stderr: "" });
+  const live = watchFixture("orca", []);
+  live.effects._paneWatch = { host: "orca", handle: "term_w" };
+  live.effects.exec = orcaExec({ handle: "term_w", agentIdentity: "claude" });
+  assert.equal(settlePaneAgent(live.effects), true);
+  assert.deepEqual(live.effects._paneWatch, { host: "orca", handle: "term_w" });
+
+  for (const [name, terminal] of [["a closed terminal", null], ["a shell, no agentIdentity", { handle: "term_w" }]]) {
+    const dead = watchFixture("orca", []);
+    dead.effects._paneWatch = { host: "orca", handle: "term_w" };
+    dead.effects.exec = orcaExec(terminal);
+    assert.equal(settlePaneAgent(dead.effects), false, name);
+    assert.equal(dead.effects._paneWatch, null, name);
+  }
+
+  const none = watchFixture("herdr", []);
+  assert.equal(settlePaneAgent(none.effects), false, "no agent was ever opened");
+
+  const herdr = watchFixture("herdr", [json({ result: { workspace: { workspace_id: "w9" }, already_open: false } }), json({ result: { type: "ok" } })]);
+  await ensurePaneWorkspace(herdr.effects, { featureSlug: "alpha" });
+  herdr.effects._paneWatch = { host: "herdr", handle: "w9:p1" };
+  herdr.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { panes: [{ pane_id: "w9:p1", agent_status: "unknown" }] } }), stderr: "" });
+  assert.equal(settlePaneAgent(herdr.effects), false);
+  await closePaneWorkspace(herdr.effects);
+  assert.deepEqual(herdr.effects._calls.at(-1), ["herdr", "workspace", "close", "w9"], "a dead agent's workspace is closed like any other");
 });

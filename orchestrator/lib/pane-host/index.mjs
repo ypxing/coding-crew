@@ -7,8 +7,8 @@
  * for the sprint's slug (ensureWatchSession), both in the sprint's own `_feature` worktree
  * (`effects.featureRoot`), and best-effort pushes into that agent: each milestone and the
  * outcome. Each adapter (herdr.mjs, orca.mjs) implements the same operations for those:
- * preflight, ensureWorkspace, closeWorkspace, closeLogTab, openWatch, watchAlive, notify,
- * launcherHandle.
+ * preflight, ensureWorkspace, closeWorkspace, closeLogTab, openWatch, watchAlive, watchAliveSync
+ * (the blocking twin the end of a run uses), notify, launcherHandle.
  * An adapter may also implement adoptWorktree (orca only): told of each worktree the orchestrator
  * creates, so the host can show it by name under its parent. See adoptWorktree below.
  *
@@ -17,8 +17,9 @@
  * still comes from the child's pid and exit code on disk, never from the host.
  *
  * Run-scoped state lives on `effects`: `_paneWorkspace` (cached promise),
- * `_paneLogTabId`, `_paneNotices` (the queued-push chain) and `_paneWatch` (`{host, handle}` of
- * the feature agent, null when none is live). The agent is never closed by anything here, and
+ * `_paneLogTabId`, `_paneNotices` (the queued-push chain), `_paneWatch` (`{host, handle}` of
+ * the feature agent, null when none is live; settlePaneAgent drops a dead one at the run's end) and `_paneWatchReused` (that agent was reused or
+ * adopted, not opened by this run: it may hold the checkout from an earlier run's end notice). The agent is never closed by anything here, and
  * neither is a workspace holding it.
  */
 
@@ -135,6 +136,29 @@ export function recordedWatch(file, host) {
  */
 export const hasPaneAgent = (effects) => Boolean(effects._paneWatch?.handle);
 
+/**
+ * End of run, before anything decides what outlives it (`_feature`, the agent's workspace): whether
+ * the recorded agent still passes the adapter's watchAlive. A dead one (its pane closed, its CLI
+ * exited) is dropped (`_paneWatch` null), so nothing is kept for it, no push goes to it and its
+ * workspace is closed like any other. Blocking, so a signal handler can call it: the adapter's
+ * `watchAliveSync`. Returns whether a live agent remains; never throws.
+ */
+export function settlePaneAgent(effects) {
+  if (!hasPaneAgent(effects)) return false;
+  const { handle } = effects._paneWatch;
+  let alive = false;
+  try {
+    alive = Boolean(adapterFor(effects)?.watchAliveSync?.(effects, handle));
+  } catch {
+    /* an unreachable host reads as no agent */
+  }
+  if (!alive) {
+    effects.log?.(`WATCH-SESSION gone host=${effects._paneWatch.host} handle=${handle} — nothing is kept for it`);
+    effects._paneWatch = null;
+  }
+  return alive;
+}
+
 /** Whether `dir` is `root` or inside it, by real path. */
 function insideDir(root, dir) {
   const rel = relative(realpathOr(root), realpathOr(dir));
@@ -165,6 +189,7 @@ function realpathOr(path) {
  */
 export async function ensureWatchSession(effects, { slug, platform, model, effort, log = effects.log?.bind(effects) } = {}) {
   effects._paneWatch = null;
+  effects._paneWatchReused = false;
   const adapter = adapterFor(effects);
   if (!adapter?.openWatch || effects.dryRun || !slug) return null;
   const cwd = effects.featureRoot ?? effects.mainRoot;
@@ -188,6 +213,7 @@ export async function ensureWatchSession(effects, { slug, platform, model, effor
     const recorded = recordedWatch(file, effects.paneHost);
     if (recorded && (await adapter.watchAlive(effects, recorded.handle))) {
       log?.(`WATCH-SESSION reused host=${recorded.host} handle=${recorded.handle}`);
+      effects._paneWatchReused = true;
       return (effects._paneWatch = recorded);
     }
 
@@ -197,6 +223,7 @@ export async function ensureWatchSession(effects, { slug, platform, model, effor
       const watch = { host: effects.paneHost, handle: launcher };
       record(file, watch);
       log?.(`WATCH-SESSION adopted host=${watch.host} handle=${watch.handle}`);
+      effects._paneWatchReused = true;
       return (effects._paneWatch = watch);
     }
 
@@ -266,6 +293,20 @@ export function queuePaneNotice(effects, message, onResult) {
       /* a logging callback must not break the chain */
     }
   });
+}
+
+/**
+ * The first push of a run, to an agent it reused or adopted (a new one is briefed as it starts):
+ * the sprint is merging into `_feature` again, so followup.md's "until the end notice" rules apply
+ * again to an agent an earlier run's end notice handed the checkout. Queued like a milestone.
+ */
+export function queueRunStartNotice(effects, slug, onResult) {
+  if (!effects._paneWatchReused || !effects._paneWatch?.handle) return;
+  queuePaneNotice(
+    effects,
+    `[${slug}] crew-afk run started — the sprint is merging into this checkout again: leave it unchanged until the end notice.`,
+    onResult,
+  );
 }
 
 /** Before the end-of-run push, so it lands last and none is cut off by exit. */

@@ -10,7 +10,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ADAPTERS, DEFAULT_PARALLEL, PLATFORMS } from "../../orchestrator/lib/adapters/index.mjs";
@@ -159,7 +161,8 @@ const WATCHER = ROLE_POLICY.followup;
 const INTERACTIVE = { cwd: "/main", mainRoot: "/main", protocol: "BRIEF", policy: WATCHER };
 const EXPECTED_INTERACTIVE = {
   claude: ["claude", "BRIEF", "--add-dir", "/main", "--model", "sonnet", "--disallowedTools", "Agent"],
-  codex: ["codex", "--cd", "/main", "--sandbox", "workspace-write", "--model", "gpt-5", "BRIEF"],
+  // "/main" is no git repo here, so no writable roots; the full set is pinned by the test below.
+  codex: ["codex", "--cd", "/main", "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", "gpt-5", "BRIEF"],
   pi: ["pi", "--model", "m1", "--tools", "read,bash,edit,write", "BRIEF"],
   copilot: ["copilot", "-i", "BRIEF", "--add-dir", "/main", "--model", "m1"],
 };
@@ -200,3 +203,45 @@ for (const platform of Object.keys(EXPECTED_INTERACTIVE)) {
     }
   });
 }
+
+// The codex feature agent works in `_feature`, a linked worktree: its sandbox must be able to write
+// the git dirs (the index lives in the main repo's), the main checkout's `.scratch/` and use the
+// network, as a codex worker's does. Its approval prompts stay on.
+test("codex: interactive() for the feature agent makes the git dirs and the main checkout writable, without disabling approvals", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "crew-codex-interactive-")));
+  const main = join(dir, "main");
+  const feature = join(dir, "main", ".scratch", "worktrees", "crew", "demo", "_feature");
+  const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" } });
+  mkdirSync(main);
+  git(main, "init", "-q", "-b", "main");
+  git(main, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init");
+  mkdirSync(join(feature, ".."), { recursive: true });
+  git(main, "worktree", "add", "-q", "-b", "feature/demo", feature);
+  const commonDir = join(main, ".git");
+  const ownDir = join(commonDir, "worktrees", "_feature");
+
+  const argv = ADAPTERS.codex.interactive({ cwd: feature, mainRoot: main, model: "gpt-5", protocol: "BRIEF", policy: WATCHER });
+
+  assert.deepEqual(argv, [
+    "codex",
+    "--cd",
+    feature,
+    "--sandbox",
+    "workspace-write",
+    "-c",
+    "sandbox_workspace_write.network_access=true",
+    "-c",
+    `sandbox_workspace_write.writable_roots=[${JSON.stringify(commonDir)},${JSON.stringify(ownDir)}]`,
+    "--add-dir",
+    main,
+    "--model",
+    "gpt-5",
+    "BRIEF",
+  ]);
+  assert.ok(!argv.includes("--ask-for-approval") && !argv.includes("never"), "approval prompts stay on");
+});
+
+test("codex: interactive() for a read-only policy keeps the read-only sandbox and adds no writable roots", () => {
+  const argv = ADAPTERS.codex.interactive({ ...INTERACTIVE, policy: { ...WATCHER, readOnly: true } });
+  assert.deepEqual(argv, ["codex", "--cd", "/main", "--sandbox", "read-only", "BRIEF"]);
+});

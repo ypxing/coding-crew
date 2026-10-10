@@ -24,7 +24,7 @@ function sandboxFor(policy) {
 /**
  * What a workspace-write run needs beyond the sandbox itself: network on (dep-install), the git
  * dirs writable (a linked worktree's index lives in the main repo's git dir), the main checkout
- * added (traces, prompts and reports live under .scratch). Used by build().
+ * added (traces, prompts and reports live under .scratch). Used by build() and interactive().
  */
 function workspaceWriteArgs(cwd, mainRoot) {
   const args = ["-c", "sandbox_workspace_write.network_access=true"];
@@ -81,9 +81,16 @@ export default {
   // The sandbox is set by build(); the flag here is the role's reasoning effort (none: codex's default).
   policyArgs: ({ effort }) => (effort ? ["-c", `model_reasoning_effort="${effort}"`] : []),
 
-  /** The TUI with the protocol as its initial prompt (the last argument), in the role's sandbox; approval prompts stay on for the human in the pane. */
-  interactive({ cwd, model, protocol, policy }) {
-    const argv = ["codex", "--cd", cwd, "--sandbox", sandboxFor(policy)];
+  /**
+   * The TUI with the protocol as its initial prompt (the last argument), in the role's sandbox;
+   * approval prompts stay on for the human in the pane. A role that writes (the feature agent, in
+   * a linked worktree) gets what a workspace-write dispatch gets: network, the git dirs and the
+   * main checkout writable.
+   */
+  interactive({ cwd, mainRoot, model, protocol, policy }) {
+    const sandbox = sandboxFor(policy);
+    const argv = ["codex", "--cd", cwd, "--sandbox", sandbox];
+    if (sandbox === "workspace-write") argv.push(...workspaceWriteArgs(cwd, mainRoot));
     if (model && model !== "inherit") argv.push("--model", model);
     if (policy) argv.push(...this.policyArgs(policy));
     argv.push(protocol);

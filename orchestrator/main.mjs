@@ -111,7 +111,7 @@ import {
   retiredNotice,
   validateFlags,
 } from "./lib/crew-config.mjs";
-import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, hasPaneAgent, notifyWatchSession } from "./lib/pane-host/index.mjs";
+import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, notifyWatchSession, queueRunStartNotice, settlePaneAgent } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktree, featureSlugOfPath, featureWorktreePath, removeWorktree, worktreeRoot } from "./lib/worktree.mjs";
@@ -699,8 +699,9 @@ async function main() {
         console.error(`crew-afk: could not record why the run ended: ${err.message}`);
       }
     }
-    // The feature agent keeps its worktree, as at a normal ending.
-    removeFeatureWorktree({ keep: hasPaneAgent(effects) });
+    // A live feature agent keeps its worktree, as at a normal ending (the probe blocks: this
+    // handler must not yield to the pipeline its children's exits would resume).
+    removeFeatureWorktree({ keep: settlePaneAgent(effects) });
     if (lease) releaseLease(effects, lease);
     process.exit(SIGNAL_EXIT[signal]);
   };
@@ -841,6 +842,10 @@ async function main() {
         // A failed open is a WARN that must outlive the scrollback, not a debug-level effects line.
         log: (line) => emit(line.replace(/^WARN /, ""), /^WARN /.test(line) ? "warn" : "info"),
       });
+      // A reused or adopted agent may hold the checkout from an earlier run's end notice.
+      queueRunStartNotice(effects, sprint.featureSlug, (result) => {
+        if (!result.sent) emit(`[RUN-START-PUSH-SKIPPED] ${result.reason}`, "debug");
+      });
     }
 
     // Before anything reads the feature branch: a resumed branch whose earlier work was
@@ -965,8 +970,8 @@ async function main() {
       }
     }
     // The feature agent outlives the run: `_feature` and the workspace holding it stay while it
-    // is there (a failed open, --dry-run or no host leaves none, and both go as before).
-    const agentLive = hasPaneAgent(effects);
+    // is there (a failed open, a dead agent, --dry-run or no host leaves none, and both go as before).
+    const agentLive = settlePaneAgent(effects);
     // No-ops unless opened above; here so a thrown error can't leave them dangling.
     await closePaneLogTab(effects);
     await closePaneWorkspace(effects);

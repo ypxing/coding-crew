@@ -27,27 +27,33 @@ export const launcherHandle = () => process.env.HERDR_PANE_ID || null;
  * The sprint's workspace is its feature-branch worktree (`worktree open` returns the workspace
  * already open on it, so a re-run reuses the one a live agent sits in, whatever pane launched this
  * run); with none (a dry run) the main checkout. Never the triggering workspace.
+ * Returns `{workspaceId, created}`: `created` is false for a workspace `worktree open` found
+ * already open (its `already_open`, which a host that omits it leaves false too: not ours to close).
  */
 async function openFeatureWorkspace(effects, label) {
   const inWorktree = Boolean(effects.featureRoot) && effects.featureRoot !== effects.mainRoot;
   const create = inWorktree
     ? await paneHostExec(effects, ["worktree", "open", "--path", effects.featureRoot, "--label", label, "--no-focus"])
     : await paneHostExec(effects, ["workspace", "create", "--cwd", effects.mainRoot, "--label", label, "--no-focus"]);
-  const workspaceId = paneHostJson(create)?.result?.workspace?.workspace_id;
+  const result = paneHostJson(create)?.result;
+  const workspaceId = result?.workspace?.workspace_id;
   if (create.code !== 0 || !workspaceId) {
     throw new Error(`herdr ${inWorktree ? "worktree open" : "workspace create"} failed: ${failureDetail(create)}`);
   }
-  return workspaceId;
+  return { workspaceId, created: inWorktree ? result.already_open === false : true };
 }
 
 export async function ensureWorkspace(effects, { featureSlug, logFile }) {
   const label = paneWorkspaceLabel(featureSlug);
-  const workspaceId = await openFeatureWorkspace(effects, label);
+  const { workspaceId, created } = await openFeatureWorkspace(effects, label);
+  effects._paneWorkspaceCreated = created;
   if (logFile) await openLogTab(effects, workspaceId, label, logFile);
   return workspaceId;
 }
 
+/** Closes only a workspace this run made; one that was already open is left to whoever opened it. */
 export async function closeWorkspace(effects, workspaceId) {
+  if (!effects._paneWorkspaceCreated) return;
   await paneHostExec(effects, ["workspace", "close", workspaceId]);
 }
 
@@ -82,14 +88,26 @@ export async function closeLogTab(effects, tabId) {
   await paneHostExec(effects, ["tab", "close", tabId]);
 }
 
-/** Whether `paneId` is listed with an `agent_status` other than `unknown` (herdr detected an agent in it). */
+/** Whether `list` (`pane list`'s result) shows `paneId` with an `agent_status` other than `unknown` (herdr detected an agent in it). */
+function paneHostsAgent(list, paneId) {
+  if (list.code !== 0) return false;
+  const pane = (paneHostJson(list)?.result?.panes ?? []).find((p) => p?.pane_id === paneId);
+  const status = pane?.agent_status;
+  return typeof status === "string" && status !== "" && status !== "unknown";
+}
+
 export async function watchAlive(effects, paneId) {
   try {
-    const list = await paneHostExec(effects, ["pane", "list"], STATUS_TIMEOUT_MS);
-    if (list.code !== 0) return false;
-    const pane = (paneHostJson(list)?.result?.panes ?? []).find((p) => p?.pane_id === paneId);
-    const status = pane?.agent_status;
-    return typeof status === "string" && status !== "" && status !== "unknown";
+    return paneHostsAgent(await paneHostExec(effects, ["pane", "list"], STATUS_TIMEOUT_MS), paneId);
+  } catch {
+    return false;
+  }
+}
+
+/** watchAlive, blocking: for the end of a run, where a signal handler cannot await. */
+export function watchAliveSync(effects, paneId) {
+  try {
+    return paneHostsAgent(effects.exec("herdr", ["pane", "list"], { mutating: false, timeoutMs: STATUS_TIMEOUT_MS }), paneId);
   } catch {
     return false;
   }
@@ -111,7 +129,7 @@ export async function openWatch(effects, { slug, command }) {
     } catch {
       /* the log tab's create failed: open the workspace again below */
     }
-    workspaceId ??= await openFeatureWorkspace(effects, paneWorkspaceLabel(slug));
+    workspaceId ??= (await openFeatureWorkspace(effects, paneWorkspaceLabel(slug))).workspaceId;
     const create = await paneHostExec(effects, [
       "tab",
       "create",
