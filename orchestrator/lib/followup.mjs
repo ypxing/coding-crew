@@ -32,7 +32,7 @@ import {
 } from "./pane-host/index.mjs";
 import { shellQuote } from "./pane-host/shared.mjs";
 import { writeLaunchScript } from "./pane-host/worker-terminal.mjs";
-import { applyWorktreeInclude, ensureWorktree, followupWorktreePath, removeWorktree } from "./worktree.mjs";
+import { applyWorktreeInclude, ensureWorktree, followupWorktreePath, listsWorktree, removeWorktree } from "./worktree.mjs";
 
 const NO_HOST = "crew-afk: follow-ups need orca or herdr as the pane host (this run has none) — set --pane-host orca|herdr or CREW_PANE_HOST";
 
@@ -133,7 +133,7 @@ async function start(effects, { slug, task, platform, model, effort, resolveBran
   // A finished follow-up's checkout is replaced below (`ensureWorktree` force-removes it): not
   // when its worker left changes uncommitted, which would be lost.
   const path = followupWorktreePath(mainRoot, slug);
-  if (effects.gitRead(["worktree", "list", "--porcelain"]).stdout.includes(`worktree ${path}\n`) && existsSync(path)) {
+  if (listsWorktree(effects.gitRead(["worktree", "list", "--porcelain"]).stdout, path) && existsSync(path)) {
     const status = effects.gitRead(["status", "--porcelain"], { cwd: path });
     if (status.code !== 0 || status.stdout.trim()) {
       io.err(`crew-afk: ${path} has uncommitted changes from an earlier follow-up; commit or discard them, then start again — nothing was started`);
