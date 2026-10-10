@@ -36,6 +36,8 @@ const UPDATE = process.env.UPDATE_GOLDEN === "1";
 for (const k of Object.keys(process.env)) if (k.startsWith("GIT_")) delete process.env[k];
 delete process.env.CREW_FAKE_DISPATCH;
 delete process.env.CREW_CODEX_SANDBOX;
+// An install dir (set when this runs inside a sprint) would put the docker shim on the snapshot's PATH.
+delete process.env.CREW_INSTALL_DIR;
 // A config-dir override would put a real skill install's path into the rendered protocol.
 for (const { configDirEnv } of Object.values(PLATFORMS_JSON)) delete process.env[configDirEnv];
 
