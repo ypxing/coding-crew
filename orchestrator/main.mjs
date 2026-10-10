@@ -118,7 +118,7 @@ import {
   validateFlags,
 } from "./lib/crew-config.mjs";
 import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, notifyWatchSession } from "./lib/pane-host/index.mjs";
-import { runFollowup } from "./lib/followup.mjs";
+import { releaseStaleFollowup, runFollowup } from "./lib/followup.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktree, featureWorktreePath, removeWorktree, worktreeRoot } from "./lib/worktree.mjs";
@@ -810,6 +810,13 @@ async function main() {
       }
       featureWorktree = wt.path;
       effects.featureRoot = wt.path;
+      try {
+        // Taking the branch removed a clean _followup: its record must stop blocking `followup start`.
+        const released = releaseStaleFollowup(effects, named.slug);
+        if (released) console.error(`crew-afk: follow-up ${released.id} was still open; this run took the feature branch back from its checkout, so it is marked released.`);
+      } catch (err) {
+        console.error(`crew-afk: WARNING: could not update .scratch/${named.slug}/followup.json: ${err.message}`);
+      }
       if (!wt.reusedBranch) warnDefaultBehindOrigin(effects, named.defaultBranch, (line) => console.error(line));
     }
 

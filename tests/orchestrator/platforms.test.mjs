@@ -214,10 +214,10 @@ function linkedWorktree() {
   return { root, wt, common: join(root, ".git"), own: join(root, ".git", "worktrees", "wt") };
 }
 
-test("followup's unattended policy: claude bypasses permission prompts, copilot allows all tools, the watcher's argv is unchanged", () => {
+test("followup's unattended policy: claude bypasses permission prompts (and the one-time bypass-mode warning), copilot allows all tools, the watcher's argv is unchanged", () => {
   const FOLLOWUP = ROLE_POLICY.followup;
   const claude = ADAPTERS.claude.interactive({ ...INTERACTIVE, model: "sonnet", policy: FOLLOWUP });
-  assert.deepEqual(claude, ["claude", "BRIEF", "--add-dir", "/main", "--model", "sonnet", "--permission-mode", "bypassPermissions", "--disallowedTools", "Agent"]);
+  assert.deepEqual(claude, ["claude", "BRIEF", "--add-dir", "/main", "--model", "sonnet", "--permission-mode", "bypassPermissions", "--settings", '{"skipDangerousModePermissionPrompt":true}', "--disallowedTools", "Agent"]);
   const copilot = ADAPTERS.copilot.interactive({ ...INTERACTIVE, model: "m1", policy: FOLLOWUP });
   assert.deepEqual(copilot, ["copilot", "-i", "BRIEF", "--add-dir", "/main", "--model", "m1", "--allow-all-tools"]);
   for (const platform of ["claude", "copilot"]) {

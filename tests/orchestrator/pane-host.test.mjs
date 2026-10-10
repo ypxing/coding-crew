@@ -880,6 +880,17 @@ test("a failed openWatch deletes the env.sh it wrote on both hosts, and so does 
   assert.deepEqual(envFiles(root), [], "a throw leaves no env.sh either");
 });
 
+test("ensureWatchSession (herdr) closes the tab or workspace it made when pane run fails, leaving no empty <slug>-watch behind", async () => {
+  const outside = watchFixture("herdr", [herdrWorkspace("w9", "w9:p1"), { code: 1, stdout: "", stderr: "pane not found" }, json({})]);
+  assert.equal(await ensureWatchSession(outside.effects, WATCH), null);
+  assert.deepEqual(outside.effects._calls[2], ["herdr", "workspace", "close", "w9"]);
+  assert.equal(existsSync(outside.watchFile), false, "nothing recorded");
+
+  const inside = watchFixture("herdr", [herdrTab("w1:tw", "w1:pw"), { code: 1, stdout: "", stderr: "pane not found" }, json({})]);
+  assert.equal(await withHerdrWorkspaceId("w1", () => ensureWatchSession(inside.effects, WATCH)), null);
+  assert.deepEqual(inside.effects._calls[2], ["herdr", "tab", "close", "w1:tw"]);
+});
+
 test("ensureWatchSession (orca) reuses the recorded handle while terminal show reports an agentIdentity, creating nothing", async () => {
   const { effects, record, saved } = watchFixture("orca", [json({ result: { terminal: { handle: "term_w", agentIdentity: "claude" } } })]);
   record({ host: "orca", handle: "term_w" });

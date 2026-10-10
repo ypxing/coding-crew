@@ -46,7 +46,9 @@ node "$CREW_AFK" followup reply <id> "<answer>" --platform {{PLATFORM}}   # answ
 ```
 
 - `wait` prints the worker's final result as one `DONE: …` line, or its question as one `QUESTION: …`
-  line. It blocks until one arrives, so give it a long timeout. Relay a question to the developer,
+  line. It blocks until one arrives, which can take longer than your shell tool allows: run it in
+  the background if your tool can, and if the call is cut off at its timeout, run the same `wait`
+  again (it only reads, so a re-run loses nothing). Relay a question to the developer,
   then `reply` with their answer and `wait` again. Report the result in a few lines.
 - `start` refuses (exit non-zero, naming why) while a sprint or its lease holds the feature branch,
   or while a follow-up for the slug is still open. Say so and stop; never work around it.

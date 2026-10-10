@@ -8,6 +8,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- crew-afk: a claude follow-up worker skips claude's one-time bypass-mode accept dialog, which stalled it on an account that had never accepted it; a run that takes the feature branch back from a clean `_followup` marks the open follow-up released, so `followup start` is no longer refused until `followup.json` is deleted by hand; herdr closes the tab or workspace of a watch agent whose `pane run` failed; `watcher.md` tells the watch agent to re-run a `followup wait` its shell tool cut off (PR #388)
 - crew-afk: `followup start` and a later run's `_followup` release compare worktree paths by real path, so a repo reached through a symlink (macOS `/var` → `/private/var`) no longer misreads its own `_followup` as a worktree crew-afk did not make (PR #388)
 - crew-afk: on herdr, `followup wait` after a reply no longer fails for good when the worker's TUI wrapped the echoed answer over several lines or a long turn scrolled the echo out of the 400-line read (PR #388)
 - crew-afk: follow-up workers run unattended (claude `bypassPermissions`, copilot `--allow-all-tools`, codex network and git dirs writable, no approvals); `followup start` refuses a `_followup` with uncommitted changes instead of replacing it; the watch agent's env carries `CREW_PANE_HOST`; a failed host call deletes the launch `env.sh`; on herdr the spec is prompted after the brief's first turn ends and a reply's response is read only below the echoed answer (#387)

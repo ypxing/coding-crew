@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { Effects } from "../../orchestrator/lib/effects.mjs";
 import { renderRolePrompt } from "../../orchestrator/lib/adapters/render.mjs";
-import { runFollowup } from "../../orchestrator/lib/followup.mjs";
+import { releaseStaleFollowup, runFollowup } from "../../orchestrator/lib/followup.mjs";
 import { ensureWorktree, featureWorktreePath, followupWorktreePath } from "../../orchestrator/lib/worktree.mjs";
 
 // A real orca/herdr session injects these, and the suite may itself run inside one.
@@ -494,6 +494,42 @@ test("a later run's checkout of the feature branch removes a clean _followup bef
   assert.equal(existsSync(t.worktree), false, "_followup is gone");
   assert.equal(t.git("-C", wt.path, "branch", "--show-current").trim(), "feature/demo");
   assert.equal(t.git("worktree", "list", "--porcelain").includes("_followup"), false);
+});
+
+test("a later run that released a clean _followup marks its open record released, so start is no longer refused and wait/reply say why", async () => {
+  const t = setup({ responses: [orcaRun(), orcaTerminal(), ok(), orcaRun("run_2"), orcaTerminal("term_g"), ok()] });
+  assert.equal(await t.run(START), 0, t.err.join("\n"));
+  const id = t.out[0];
+  ensureWorktree(t.effects, { mainRoot: t.mainRoot, branch: "feature/demo", base: "main", mode: "checkout", path: featureWorktreePath(t.mainRoot, "demo") });
+
+  const released = releaseStaleFollowup(t.effects, "demo");
+  assert.equal(released?.id, id);
+  assert.equal(t.record().state, "released");
+
+  t.err.length = 0;
+  t.calls.length = 0;
+  assert.equal(await t.run({ action: "wait", id }), 1);
+  assert.match(t.err.join("\n"), /released by a later crew-afk run/);
+  assert.equal(await t.run({ action: "reply", id, answer: "yes" }), 1);
+  assert.match(t.err.join("\n"), /released by a later crew-afk run/);
+  assert.equal(t.calls.length, 0, "no host call for a released follow-up");
+
+  t.git("worktree", "remove", "--force", featureWorktreePath(t.mainRoot, "demo"));
+  t.calls.length = 0;
+  t.err.length = 0;
+  assert.equal(await t.run(START), 0, t.err.join("\n"));
+});
+
+test("releaseStaleFollowup leaves an open record whose _followup is still checked out, and a finished one, alone", async () => {
+  const t = setup({ responses: [orcaRun(), orcaTerminal(), ok()] });
+  assert.equal(await t.run(START), 0, t.err.join("\n"));
+  assert.equal(releaseStaleFollowup(t.effects, "demo"), null);
+  assert.equal(t.record().state, "open");
+  writeFileSync(t.recordFile, JSON.stringify({ ...t.record(), state: "done" }));
+  t.git("worktree", "remove", "--force", t.worktree);
+  assert.equal(releaseStaleFollowup(t.effects, "demo"), null);
+  assert.equal(t.record().state, "done");
+  assert.equal(releaseStaleFollowup(t.effects, "nothing-here"), null);
 });
 
 test("a later run refuses a dirty _followup with the commit-or-discard message and keeps it", async () => {

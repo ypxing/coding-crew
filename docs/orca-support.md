@@ -129,13 +129,14 @@ question. With no pane host every subcommand exits 1.
   has uncommitted changes (replacing it would delete them). `cleanup-worktrees.sh` does not touch it
   (it sweeps only `crew/<slug>/*` branches).
 - **No human at the terminal.** The worker's argv runs without permission prompts, as a dispatched
-  coder does (`ROLE_POLICY.followup.unattended`): claude `--permission-mode bypassPermissions`, copilot
+  coder does (`ROLE_POLICY.followup.unattended`): claude `--permission-mode bypassPermissions` (with `--settings` skipping its one-time accept dialog), copilot
   `--allow-all-tools`, codex `workspace-write` with network, the git dirs and the main checkout
   writable (as `build()`) and `--ask-for-approval never`. The watch agent keeps its prompts.
 - **Record.** `.scratch/<slug>/followup.json` holds the id, host, run/terminal or pane handle, the
   pending question and the result. It is written only after the host has started the worker, so a
   failed call leaves nothing recorded (and `_followup` is removed again). It is open until `wait` has
-  returned a final result; a worker that is gone needs the file deleted by hand.
+  returned a final result, or until a later run's checkout of the feature branch removed a clean
+  `_followup` (the record is then `released`); a worker that is gone otherwise needs the file deleted by hand.
 - **orca.** The Run is created with `--from <watch handle>` (the Run's coordinator is the terminal that
   creates it), then the terminal, then `worker-start` with `--worktree` (without it orca refuses the
   terminal as belonging to the coordinator's worktree). `worker-start --agent` is not used: that agent

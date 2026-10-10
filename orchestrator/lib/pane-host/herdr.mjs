@@ -126,20 +126,35 @@ async function newPane(effects, { label, cwd }) {
   return { paneId, container: container[2] ? container : null };
 }
 
+/** Closes the tab or workspace newPane made, when a later call failed. Cosmetic: never throws. */
+async function closeContainer(effects, made) {
+  if (!made?.container) return;
+  try {
+    await paneHostExec(effects, made.container, STATUS_TIMEOUT_MS);
+  } catch {
+    /* cosmetic */
+  }
+}
+
 /**
  * The watch agent: a new tab in the triggering workspace, or outside herdr a `<slug>-watch`
  * workspace on the main checkout (never closed, unlike the sprint's own). The agent is started
- * with `pane run`; herdr detects it as one. Returns `{handle}` (the pane id) or `{failure}`,
- * never throws.
+ * with `pane run`; herdr detects it as one. Returns `{handle}` (the pane id) or `{failure}`;
+ * a pane made before `pane run` failed is closed again. Never throws.
  */
 export async function openWatch(effects, { slug, command }) {
+  let made = null;
   try {
-    const made = await newPane(effects, { label: `${slug}-watch`, cwd: effects.mainRoot });
+    made = await newPane(effects, { label: `${slug}-watch`, cwd: effects.mainRoot });
     if (made.failure) return { failure: made.failure };
     const run = await paneHostExec(effects, ["pane", "run", made.paneId, command]);
-    if (run.code !== 0) return { failure: `herdr pane run exit=${run.code} ${failureDetail(run)}` };
+    if (run.code !== 0) {
+      await closeContainer(effects, made);
+      return { failure: `herdr pane run exit=${run.code} ${failureDetail(run)}` };
+    }
     return { handle: made.paneId };
   } catch (err) {
+    await closeContainer(effects, made);
     return { failure: `herdr watch agent threw: ${err.message}` };
   }
 }
@@ -163,14 +178,7 @@ const FOLLOWUP_FIRST_TURN_TIMEOUT_MS = 120000;
  */
 export async function openFollowup(effects, { slug, worktree, command, spec }) {
   let made = null;
-  const closeMade = async () => {
-    if (!made?.container) return;
-    try {
-      await paneHostExec(effects, made.container, STATUS_TIMEOUT_MS);
-    } catch {
-      /* cosmetic */
-    }
-  };
+  const closeMade = () => closeContainer(effects, made);
   try {
     made = await newPane(effects, { label: `${slug}-followup`, cwd: worktree });
     if (made.failure) return { failure: made.failure };

@@ -232,12 +232,14 @@ host without all three has no follow-ups, and `supportsFollowups` is the gate ev
   a clean `_followup` or refuses a dirty one through `releaseBranch`; `start` itself refuses a dirty `_followup`
   (`commit or discard them`) rather than let `checkoutWorktree` force-remove it.
 - The worker has nobody at its terminal: `ROLE_POLICY.followup.unattended` makes each adapter's `interactive()` add
-  its no-prompt flags (claude `--permission-mode bypassPermissions`, copilot `--allow-all-tools`, codex the
+  its no-prompt flags (claude `--permission-mode bypassPermissions` plus `--settings {"skipDangerousModePermissionPrompt":true}`, since interactive claude asks once per account to accept bypass mode, copilot `--allow-all-tools`, codex the
   `workspace-write` network/git-dir roots shared with `build()` and `--ask-for-approval never`). The watcher's argv has none.
 - A host call that fails deletes the `env.sh` `writeLaunchScript` wrote (`ensureWatchSession`, `start`): only a script a
   host ran deletes it. The watch agent's env carries `CREW_PANE_HOST=<effects.paneHost>`.
 - `.scratch/<slug>/followup.json` is written only after the host call succeeded; any failure after the worktree
-  exists removes it again. Open until `wait` returns a final result. One writer: `followup.mjs`.
+  exists removes it again. Open until `wait` returns a final result (`done`), or until a run's checkout of the
+  feature branch removed its `_followup` (`main.mjs` calls `releaseStaleFollowup` right after `_feature` is made:
+  `released`, so `start` is not refused and `wait`/`reply` say why). One writer: `followup.mjs`.
 - orca: Run → terminal → `worker-start` (D14); the response is `orchestration inbox`'s `worker_done` to `run:<id>`.
   herdr: `agent prompt` / `wait` / `read`, the last `QUESTION:` / `DONE:` line (D15) below the echo of `rec.lastAnswer`
   (the pane text keeps earlier turns; a hard-wrapped echo still matches, and a full 400-line read with no echo is taken whole); `openFollowup` waits out the brief's first turn before prompting the spec. `followup.md` (`ROLE_POLICY.followup`)

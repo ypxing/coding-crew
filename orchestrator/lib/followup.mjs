@@ -6,7 +6,8 @@
  *
  * One follow-up per slug, recorded in `.scratch/<slug>/followup.json` once the host has started
  * it and never before: a failed host call leaves nothing recorded and no worktree behind. The
- * record is "open" until `wait` has returned the worker's final result.
+ * record is "open" until `wait` has returned the worker's final result ("done"), or until a later
+ * run took the branch back and removed its checkout ("released", releaseStaleFollowup).
  *
  * `_followup` and a sprint's `_feature` are never both on the branch: `start` refuses while the
  * feature lease or a live run holds it, and a later run's checkout of the branch releases a clean
@@ -70,7 +71,7 @@ function findRecord(mainRoot, id) {
  */
 function startRefusal(effects, { slug, useLease }) {
   const open = readRecord(recordFile(effects.mainRoot, slug));
-  if (open && open.state !== "done") {
+  if (open?.state === "open") {
     return `crew-afk: a follow-up for ${slug} is already open (${open.id}) — followup wait ${open.id} for its response, or answer it with followup reply; if its worker is gone, delete ${recordFile(effects.mainRoot, slug)}`;
   }
   const lock = readRecord(join(effects.mainRoot, ".scratch", slug, ".crew-afk.lock"));
@@ -91,6 +92,21 @@ function startRefusal(effects, { slug, useLease }) {
     }
   }
   return null;
+}
+
+/**
+ * After a run's checkout of the feature branch: an open follow-up whose `_followup` that checkout
+ * released (worktree.mjs releaseBranch removes a clean one) can no longer commit, so its record is
+ * marked "released" and a new `start` is not refused. Returns the released record, or null.
+ */
+export function releaseStaleFollowup(effects, slug) {
+  const rec = readRecord(recordFile(effects.mainRoot, slug));
+  if (rec?.state !== "open" || !rec.worktree) return null;
+  if (listsWorktree(effects.gitRead(["worktree", "list", "--porcelain"]).stdout, rec.worktree)) return null;
+  rec.state = "released";
+  rec.releasedAt = new Date().toISOString();
+  writeRecord(rec, effects.mainRoot);
+  return rec;
 }
 
 /** `start`: the worktree, the worker, the record; prints the follow-up id. */
@@ -219,6 +235,10 @@ async function findOrFail(effects, id, io) {
   }
   if (rec.host !== effects.paneHost) {
     io.err(`crew-afk: follow-up ${id} runs under ${rec.host}, but the pane host here is ${effects.paneHost}`);
+    return { code: 1 };
+  }
+  if (rec.state === "released") {
+    io.err(`crew-afk: follow-up ${id}'s checkout was released by a later crew-afk run (${rec.releasedAt}); its worker can no longer commit — start another with followup start`);
     return { code: 1 };
   }
   return { rec };
