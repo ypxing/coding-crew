@@ -23,6 +23,9 @@ setup() {
   git init -q
   git config user.email "test@test.com"
   git config user.name "Test"
+  # No background gc/maintenance: a detached one still writing .git/objects/pack races teardown's rm -rf
+  git config gc.auto 0
+  git config maintenance.auto false
   git commit --allow-empty -m "initial"
 
   # Create feature branch
