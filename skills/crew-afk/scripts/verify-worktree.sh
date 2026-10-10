@@ -176,7 +176,7 @@ if [ "${CREW_VERIFY_DOCKER:-on}" != "off" ] && [ -n "$RUN_SCRIPT" ]; then
     bash "$_vw_dep_scripts/gen-override.sh" --project-root "$WORKTREE_DIR" --main-root "${_VW_MAIN_ROOT:-$WORKTREE_DIR}" >/dev/null 2>&1 || true
   fi
   _vw_describe="$(bash "$RUN_SCRIPT" "${_VW_RUN_ARGS[@]}" --describe 2>/dev/null || true)"
-  if printf '%s\n' "$_vw_describe" | grep -qx 'RUN=docker'; then
+  if grep -qx 'RUN=docker' <<<"$_vw_describe"; then
     DOCKER_MODE=1
     DOCKER_SERVICE="$(printf '%s\n' "$_vw_describe" | sed -n 's/^SERVICE=//p')"
     DOCKER_CONTAINER_SRC="$(printf '%s\n' "$_vw_describe" | sed -n 's/^CONTAINER_SRC=//p')"
@@ -249,12 +249,12 @@ _discover_from_claude_md() {
   local in_section=0
   while IFS= read -r line; do
     if [[ "$line" =~ ^## ]]; then
-      if echo "$line" | grep -qi "$category"; then
+      if grep -qi "$category" <<<"$line"; then
         in_section=1
       else
         in_section=0
       fi
-    elif [[ "$in_section" -eq 1 ]] && echo "$line" | grep -q "Run:"; then
+    elif [[ "$in_section" -eq 1 ]] && grep -q "Run:" <<<"$line"; then
       # Extract content between backticks
       local extracted
       extracted=$(echo "$line" | sed "s/.*\`\([^\`]*\)\`.*/\1/")

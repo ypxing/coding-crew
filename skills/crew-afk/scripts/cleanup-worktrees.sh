@@ -319,7 +319,7 @@ $(grep -oE 'wt_[A-Za-z0-9_]+' "$f" 2>/dev/null || true)"
   while IFS= read -r vol; do
     [ -n "$vol" ] || continue
     case "$vol" in "$prefix"*) ;; *) continue ;; esac
-    if printf '%s\n' "$referenced" | grep -qxF -- "$vol"; then continue; fi
+    if grep -qxF -- "$vol" <<<"$referenced"; then continue; fi
     if docker volume rm "$vol" >/dev/null 2>&1; then
       echo "CLEANUP: removed volume $vol"
       removed=$((removed + 1))

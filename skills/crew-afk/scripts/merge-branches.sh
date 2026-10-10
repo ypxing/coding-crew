@@ -103,7 +103,7 @@ for BRANCH in "${BRANCHES[@]}"; do
   if [ "$MERGE_RC" -eq 0 ]; then
     echo "MERGE: $BRANCH success"
     _trace MERGE "branch=$BRANCH success=true"
-  elif printf '%s' "$MERGE_OUT" | grep -qE 'would be overwritten by (merge|checkout)'; then
+  elif grep -qE 'would be overwritten by (merge|checkout)' <<<"$MERGE_OUT"; then
     # git refused before touching anything, so there is no merge to abort. The files it
     # names are its indented lines.
     DIRTY=$(printf '%s\n' "$MERGE_OUT" | sed -n 's/^[[:space:]]\{1,\}//p' | paste -sd, - | sed 's/,/, /g')

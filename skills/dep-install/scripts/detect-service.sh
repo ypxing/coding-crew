@@ -58,7 +58,7 @@ _service_from_recipe() {
     case "$tok" in
       -*) continue ;;
     esac
-    if printf '%s\n' "$KNOWN_SERVICES" | grep -qxF "$tok"; then
+    if grep -qxF -- "$tok" <<<"$KNOWN_SERVICES"; then
       printf '%s\n' "$tok"
       return 0
     fi
@@ -71,7 +71,7 @@ for _target in install deps setup depend bootstrap prepare up build dev lint tes
   # containing the literal word "make" can make some GNU Make builds (macOS's default
   # 3.81 included) actually run it under -n instead of only printing it.
   _recipe="$(cd "$PROJECT_ROOT" && make -n "$_target" 2>/dev/null || true)"
-  printf '%s' "$_recipe" | grep -qE 'docker (compose|run|exec)' || continue
+  grep -qE 'docker (compose|run|exec)' <<<"$_recipe" || continue
   _found="$(_service_from_recipe "$_recipe")"
   if [ -n "$_found" ]; then
     echo "$_found"

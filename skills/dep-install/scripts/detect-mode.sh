@@ -102,7 +102,7 @@ STUB
   done
   for _target in install deps setup depend bootstrap prepare up build dev; do
     _recipe="$(cd "$PROJECT_ROOT" && PATH="$_stub_dir:$PATH" make -n "$_target" 2>/dev/null || true)"
-    if printf '%s' "$_recipe" | grep -qE 'docker (compose|run|exec)' || [ -s "$_stub_log" ]; then
+    if grep -qE 'docker (compose|run|exec)' <<<"$_recipe" || [ -s "$_stub_log" ]; then
       _mode="docker"
       break
     fi

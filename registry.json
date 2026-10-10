@@ -103,7 +103,7 @@
       ]
     },
     "address-pr-comments": {
-      "version": "1.5.1",
+      "version": "1.5.2",
       "source-dir": "address-pr-comments",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "scripts": [
@@ -117,7 +117,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.19.0",
+      "version": "1.19.1",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",

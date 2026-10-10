@@ -37,7 +37,7 @@ if [[ -z "$DIR" || -z "$CMD" ]]; then
   exit 2
 fi
 
-if printf '%s' "$CMD" | grep -qE 'docker (compose|run|exec)'; then
+if grep -qE 'docker (compose|run|exec)' <<<"$CMD"; then
   exit 0
 fi
 
@@ -45,4 +45,4 @@ target="$(printf '%s' "$CMD" | grep -oE 'make[[:space:]]+[A-Za-z0-9_.:-]+' | hea
 [[ -n "$target" && -f "$DIR/Makefile" ]] || exit 1
 
 recipe="$(cd "$DIR" && make -n "$target" 2>/dev/null || true)"
-printf '%s' "$recipe" | grep -qE 'docker (compose|run|exec)'
+grep -qE 'docker (compose|run|exec)' <<<"$recipe"

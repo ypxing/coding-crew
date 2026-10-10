@@ -152,7 +152,7 @@ else
     # A repo without draft PRs (a private repo on a free plan) refuses --draft: a ready PR, said
     # so, beats none; the crew-afk block's "Not green" note still says why.
     if out=$(create --draft 2>&1); then url=$(printf '%s\n' "$out" | tail -1); is_draft=true
-    elif printf '%s' "$out" | grep -qi 'draft'; then state_failed="gh pr create --draft failed: $out"; url=$(create | tail -1)
+    elif grep -qi 'draft' <<<"$out"; then state_failed="gh pr create --draft failed: $out"; url=$(create | tail -1)
     else echo "open-pr.sh: gh pr create failed: $out" >&2; exit 1
     fi
   else

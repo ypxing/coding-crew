@@ -46,7 +46,7 @@ manifest_has() {
 }
 
 FILES="$(list_files)"
-has_ext() { printf '%s\n' "$FILES" | grep -Eq "\.($1)$"; }
+has_ext() { grep -Eq "\.($1)$" <<<"$FILES"; }
 
 STACK=()
 
