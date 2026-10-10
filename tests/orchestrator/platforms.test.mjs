@@ -91,24 +91,28 @@ const EXPECTED_POLICY_ARGS = {
     reviewer: CLAUDE_READ_ONLY,
     triage: CLAUDE_READ_ONLY,
     watcher: ["--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent"],
+    followup: ["--disallowedTools", "Agent"],
   },
   copilot: {
     coder: ["--reasoning-effort", "high"],
     reviewer: ["--reasoning-effort", "high", "--deny-tool", "write"],
     triage: ["--reasoning-effort", "high", "--deny-tool", "write"],
     watcher: ["--deny-tool", "write"],
+    followup: [],
   },
   pi: {
     coder: ["--thinking", "high", "--tools", "read,bash,edit,write"],
     reviewer: ["--thinking", "high", "--tools", "read,bash"],
     triage: ["--thinking", "high", "--tools", "read,bash"],
     watcher: ["--tools", "read,bash"],
+    followup: ["--tools", "read,bash,edit,write"],
   },
   codex: {
     coder: ["-c", 'model_reasoning_effort="high"'],
     reviewer: ["-c", 'model_reasoning_effort="high"'],
     triage: ["-c", 'model_reasoning_effort="high"'],
     watcher: [],
+    followup: [],
   },
 };
 
@@ -131,6 +135,30 @@ test("watcher is a read-only role without sub-agents or a default effort, and re
     const text = renderRolePrompt("watcher", platform);
     assert.match(text, /watch/i, platform);
     assert.doesNotMatch(text, /\{\{/, platform);
+  }
+});
+
+test("followup is an interactive role that may edit, without sub-agents or a default effort, and renders for every platform", () => {
+  assert.equal(ROLE_AGENTS.followup, "crew-followup");
+  assert.deepEqual(ROLE_POLICY.followup, { readOnly: false, subagents: false });
+  for (const platform of PLATFORMS) {
+    const text = renderRolePrompt("followup", platform);
+    assert.match(text, /QUESTION:/, platform);
+    assert.match(text, /DONE:/, platform);
+    assert.match(text, /orchestration ask/, platform);
+    assert.match(text, /worker_done/, platform);
+    assert.doesNotMatch(text, /\{\{/, platform);
+    for (const line of text.split("\n")) {
+      assert.doesNotMatch(line, /^\s*(QUESTION|DONE):/, `${platform}: no line of the brief may look like an answer line`);
+    }
+  }
+});
+
+test("watcher names crew-afk followup as the only way to start follow-up work", () => {
+  for (const platform of PLATFORMS) {
+    const text = renderRolePrompt("watcher", platform);
+    assert.match(text, /`crew-afk followup` is the only way to start follow-up work/, platform);
+    assert.match(text, new RegExp(`followup start <slug> "<task>" --platform ${platform}`), platform);
   }
 });
 

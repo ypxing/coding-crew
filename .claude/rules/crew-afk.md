@@ -219,12 +219,29 @@ adapters implement `openWatch`, `watchAlive` and `notify(effects, handle, messag
 - `ctx.out` also appends to `.scratch/<slug>/traces/summary-<runId>.md` (`:` → `-`); the final push names it, or
   carries the first line of the failure when the run never reached `ctx`.
 
+## Follow-ups (`orchestrator/lib/followup.mjs`)
+
+`crew-afk followup start <slug> "<task>"|wait <id>|reply <id> "<answer>"` is a `main.mjs` command (it needs
+`--platform`, like every command but `status`); the logic is `runFollowup`, backed by the pane-host ops
+`openFollowup` / `awaitFollowup` / `replyFollowup` (`orca.mjs`, `herdr.mjs`, dispatched through `index.mjs`; a
+host without all three has no follow-ups, and `supportsFollowups` is the gate every subcommand passes first).
+
+- The worktree is `followupWorktreePath` (`crew/<slug>/_followup`) on the feature branch, made by `ensureWorktree`'s
+  `checkout` mode. `_feature` and `_followup` are never both on the branch: `start` refuses while a live
+  `.crew-afk.lock` pid or (github tracker) `lease.sh owner` holds it, and a later run's `checkoutWorktree` releases
+  a clean `_followup` or refuses a dirty one through `releaseBranch`.
+- `.scratch/<slug>/followup.json` is written only after the host call succeeded; any failure after the worktree
+  exists removes it again. Open until `wait` returns a final result. One writer: `followup.mjs`.
+- orca: Run → terminal → `worker-start` (D14); the response is `orchestration inbox`'s `worker_done` to `run:<id>`.
+  herdr: `agent prompt` / `wait` / `read`, the last `QUESTION:` / `DONE:` line (D15). `followup.md` (`ROLE_POLICY.followup`)
+  must never start a line with those markers, or the brief's own echo reads as an answer.
+
 ## Adding a new crew-afk role
 
 1. `orchestrator/roles/<role>.md` — the protocol (whole-line `{{FRAGMENT:<key>}}` and `{{PLATFORM}}` expand at dispatch).
 2. Map it in `ROLE_AGENTS` (`orchestrator/lib/adapters/render.mjs`) and give it a `ROLE_POLICY` entry next to it
    (`readOnly`, `subagents`, `effort`); each adapter's `policyArgs` turns that into its CLI's flags. A role that is not
-   dispatched but started interactively (the `watcher`) goes through the adapter's `interactive()` instead of `build()`.
+   dispatched but started interactively (the `watcher`, the `followup` worker) goes through the adapter's `interactive()` instead of `build()`.
 3. Bump crew-afk's `version` in `registry.json`; `TARGET_REPO=/tmp/test-repo ./install.sh claude --skill crew-afk` and inspect `.coding-crew/crew-afk/roles/`.
 
 ## Adding a platform

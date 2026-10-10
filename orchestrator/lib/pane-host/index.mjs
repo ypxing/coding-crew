@@ -8,7 +8,8 @@
  * milestone and the outcome. Never into the pane that launched the run. Each adapter (herdr.mjs,
  * orca.mjs) implements the same operations for those: preflight, ensureWorkspace, closeWorkspace,
  * closeLogTab, openWatch, watchAlive, notify.
- * An adapter may also have adoptWorktree (orca only): told of each worktree the orchestrator
+ * An adapter may also implement a follow-up worker's three ops, openFollowup / awaitFollowup /
+ * replyFollowup (see below; `crew-afk followup`, lib/followup.mjs), and adoptWorktree (orca only): told of each worktree the orchestrator
  * creates, so the host can show it by name under its parent. See adoptWorktree below.
  *
  * An adapter that also has openWorkerTerminal/closeWorkerTerminal (orca only) hosts each
@@ -117,7 +118,7 @@ export function spawnDispatch(effects, cmd, args, opts) {
 export const watchFile = (mainRoot, slug) => join(mainRoot, ".scratch", slug, "watch.json");
 
 /** The recorded `{host, handle}` when it is usable under `host`; null for a missing, unparseable or another host's. */
-function recordedWatch(file, host) {
+export function recordedWatch(file, host) {
   try {
     const rec = JSON.parse(readFileSync(file, "utf8"));
     return rec?.host === host && typeof rec.handle === "string" && rec.handle ? { host, handle: rec.handle } : null;
@@ -226,3 +227,37 @@ export function queuePaneNotice(effects, message, onResult) {
 export async function drainPaneNotices(effects) {
   await effects._paneNotices;
 }
+
+/**
+ * Follow-ups: a feature-level worker agent the watch agent asks for work, reached over the host's
+ * own agent channel (orca `orchestration`, herdr `agent`). Each op returns the adapter's result
+ * (`{failure}` when the host call failed, with the host's own text) and never throws.
+ */
+
+/** Whether the selected host (none, for no host) can run a follow-up worker. */
+export function supportsFollowups(effects) {
+  const adapter = adapterFor(effects);
+  return Boolean(adapter?.openFollowup && adapter.awaitFollowup && adapter.replyFollowup);
+}
+
+async function followupOp(effects, op, ...args) {
+  try {
+    return await adapterFor(effects)[op](effects, ...args);
+  } catch (err) {
+    return { failure: `${effects.paneHost} ${op} threw: ${err.message}` };
+  }
+}
+
+/**
+ * The follow-up worker: the platform CLI interactive in `worktree` with `command` (a launch
+ * script carrying crew-afk's env, as for the watch agent), given `spec`, the brief and the task.
+ * `coordinator` is the watch agent's handle. Returns the host's record of it (`runId` and
+ * `terminal` under orca, `handle` under herdr), or `{failure}`.
+ */
+export const openFollowup = (effects, o) => followupOp(effects, "openFollowup", o);
+
+/** Blocks until the worker answers: `{kind: "done"|"question", text, messageId?}` or `{failure}`. */
+export const awaitFollowup = (effects, rec, o) => followupOp(effects, "awaitFollowup", rec, o);
+
+/** Delivers the answer to the worker's open question; `{failure}` when the host refused it. */
+export const replyFollowup = (effects, rec, answer) => followupOp(effects, "replyFollowup", rec, answer);

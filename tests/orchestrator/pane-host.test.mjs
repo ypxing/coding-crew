@@ -15,8 +15,12 @@ import {
   ensurePaneWorkspace,
   ensureWatchSession,
   notifyWatchSession,
+  awaitFollowup,
+  openFollowup,
   preflightPaneHost,
   queuePaneNotice,
+  replyFollowup,
+  supportsFollowups,
 } from "../../orchestrator/lib/pane-host/index.mjs";
 import { levelFor } from "../../orchestrator/lib/log.mjs";
 import { notifyMilestone } from "../../orchestrator/lib/pipeline/shared.mjs";
@@ -996,4 +1000,66 @@ test("ensureWatchSession never throws: a host call that throws is a WARN", async
   };
   assert.equal(await ensureWatchSession(effects, WATCH), null);
   assert.match(effects._logs.join("\n"), /^WARN .*ENOENT/m);
+});
+
+// ─── follow-up workers: openFollowup / awaitFollowup / replyFollowup ─────────────────────────
+//
+// The command (`crew-afk followup`) over a fake host is followup.test.mjs; these pin each
+// adapter's ops and the dispatch through index.mjs.
+
+const FOLLOWUP = { slug: "alpha", worktree: "/root/.scratch/worktrees/crew/alpha/_followup", command: "bash '/launch.sh'", spec: "BRIEF + TASK", coordinator: "term_watch" };
+
+test("supportsFollowups is true for orca and herdr and false with no host", () => {
+  assert.equal(supportsFollowups({ paneHost: "orca" }), true);
+  assert.equal(supportsFollowups({ paneHost: "herdr" }), true);
+  assert.equal(supportsFollowups({ paneHost: null }), false);
+});
+
+test("openFollowup (orca) creates a Run from the watch handle, a terminal in the follow-up worktree, then starts it as the Run's worker", async () => {
+  const effects = fakeOrcaEffects([json({ result: { run: { id: "run_9" } } }), orcaCreated("term_f"), json({ result: {} })]);
+  const opened = await openFollowup(effects, FOLLOWUP);
+  assert.deepEqual(opened, { runId: "run_9", terminal: "term_f", coordinator: "term_watch" });
+  assert.deepEqual(effects._calls.map((c) => c.slice(0, 3)), [
+    ["orca", "orchestration", "run-create"],
+    ["orca", "terminal", "create"],
+    ["orca", "orchestration", "worker-start"],
+  ]);
+  assert.ok(effects._calls[0].join(" ").includes("--from term_watch"));
+  assert.ok(effects._calls[1].join(" ").includes(`--worktree path:${FOLLOWUP.worktree}`));
+  assert.ok(effects._calls[2].join(" ").includes(`--run run_9 --worktree path:${FOLLOWUP.worktree} --terminal term_f --spec BRIEF + TASK`));
+  assert.ok(effects._timeouts.every((t) => t === 10000), "every call is bounded");
+  assert.equal(effects._paneTerminals?.has("term_f") ?? false, false, "the follow-up terminal is not swept by the run's own close");
+});
+
+test("openFollowup (orca) with no coordinator handle fails before any host call", async () => {
+  const effects = fakeOrcaEffects([]);
+  const opened = await openFollowup(effects, { ...FOLLOWUP, coordinator: undefined });
+  assert.match(opened.failure, /no watch agent handle/);
+  assert.equal(effects._calls.length, 0);
+});
+
+test("awaitFollowup (orca) prefers the worker_done over an unanswered question, and skips answered ones", async () => {
+  const msg = (m) => ({ to_handle: "run:run_9", ...m });
+  const effects = fakeOrcaEffects([
+    json({ result: { messages: [msg({ id: "q1", type: "question", sequence: 2, body: "old?" }), msg({ id: "q2", type: "question", sequence: 4, body: "new?" })] } }),
+    json({ result: { messages: [msg({ id: "q1", type: "question", sequence: 2, body: "old?" }), msg({ id: "d", type: "worker_done", sequence: 6, body: "done" })] } }),
+  ]);
+  const rec = { runId: "run_9", answered: ["q1"] };
+  assert.deepEqual(await awaitFollowup(effects, rec, { pollMs: 1 }), { kind: "question", text: "new?", messageId: "q2" });
+  assert.deepEqual(await awaitFollowup(effects, rec, { pollMs: 1 }), { kind: "done", text: "done", messageId: "d" });
+});
+
+test("replyFollowup (orca) is orchestration reply --id of the pending question; with none it fails without a host call", async () => {
+  const effects = fakeOrcaEffects([json({ result: {} })]);
+  assert.match((await replyFollowup(effects, { runId: "run_9" }, "x")).failure, /no open question/);
+  assert.equal(effects._calls.length, 0);
+  const sent = await replyFollowup(effects, { runId: "run_9", coordinator: "term_watch", pending: { messageId: "q2" } }, "yes");
+  assert.deepEqual(sent, { messageId: "q2" });
+  assert.deepEqual(effects._calls[0], ["orca", "orchestration", "reply", "--id", "q2", "--body", "yes", "--run", "run_9", "--from", "term_watch", "--json"]);
+});
+
+test("openFollowup (herdr) never throws: a host call that throws is a failure with its text", async () => {
+  const effects = fakeHerdrEffects([]);
+  const opened = await openFollowup(effects, FOLLOWUP);
+  assert.match(opened.failure, /no more canned herdr responses/);
 });

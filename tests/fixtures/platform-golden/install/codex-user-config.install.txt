@@ -124,6 +124,7 @@ HOME/.coding-crew/crew-afk/lib/commands.mjs exec=0
 HOME/.coding-crew/crew-afk/lib/crew-config.mjs exec=0
 HOME/.coding-crew/crew-afk/lib/dispatch.mjs exec=0
 HOME/.coding-crew/crew-afk/lib/effects.mjs exec=0
+HOME/.coding-crew/crew-afk/lib/followup.mjs exec=0
 HOME/.coding-crew/crew-afk/lib/install-dir.mjs exec=0
 HOME/.coding-crew/crew-afk/lib/integration-fix.mjs exec=0
 HOME/.coding-crew/crew-afk/lib/labels.mjs exec=0
@@ -163,6 +164,7 @@ HOME/.coding-crew/crew-afk/platforms.json exec=0
 HOME/.coding-crew/crew-afk/review-rollup.mjs exec=0
 HOME/.coding-crew/crew-afk/roles/ /
 HOME/.coding-crew/crew-afk/roles/coder.md exec=0
+HOME/.coding-crew/crew-afk/roles/followup.md exec=0
 HOME/.coding-crew/crew-afk/roles/reviewer.md exec=0
 HOME/.coding-crew/crew-afk/roles/reviewer/ /
 HOME/.coding-crew/crew-afk/roles/reviewer/references/ /

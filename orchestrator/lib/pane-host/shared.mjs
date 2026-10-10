@@ -39,3 +39,23 @@ export function shellQuote(value) {
 export function failureDetail(result) {
   return (result.stderr || result.stdout || "").trim();
 }
+
+/**
+ * One failed host call as text: `<what> exit=<code>` plus the host's own words, and a note when
+ * the call was killed at its timeout (exit 124), whose output is usually empty.
+ */
+export function hostFailure(what, result, timeoutMs) {
+  const detail = failureDetail(result);
+  const timedOut = result.code === 124 ? ` (timed out${timeoutMs ? ` after ${timeoutMs / 1000}s` : ""})` : "";
+  return `${what} exit=${result.code}${timedOut}${detail ? ` ${detail}` : ""}`;
+}
+
+/** The last `QUESTION: …` or `DONE: …` line of an agent's terminal text (herdr has no message queue). */
+export function lastMarkerLine(text) {
+  const marks = String(text ?? "")
+    .split("\n")
+    .map((line) => /^[\s⏺●•·*>-]*(QUESTION|DONE):\s*(.*\S)\s*$/.exec(line))
+    .filter(Boolean);
+  const last = marks.at(-1);
+  return last ? { kind: last[1] === "QUESTION" ? "question" : "done", text: last[2] } : null;
+}
