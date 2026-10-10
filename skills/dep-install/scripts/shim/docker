@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# crew-shim-marker (another copy of this shim skips any file carrying this line when it looks for the real binary)
 # docker — a PATH shim that adds this worktree's crew compose override to every
 # `docker compose …` call, whatever form the call takes, then runs the real docker.
 # docker-compose (beside this file) is the same shim for the standalone binary.
@@ -30,7 +31,9 @@ if [ -z "$SELF_DIR" ]; then
   exit 127
 fi
 
-# The real binary: PATH with this directory removed.
+# The real binary: PATH with this directory removed, and every other copy of this shim skipped too —
+# two installs' shims on one PATH would otherwise each find the other and exec it forever. A copy is
+# known by the crew-shim marker in its head (a real binary stops the read at its first NUL byte).
 REAL=""
 _old_ifs="$IFS"
 IFS=:
@@ -39,7 +42,13 @@ for _d in $PATH; do
   [ -n "$_d" ] || _d=.
   _dp="$(cd "$_d" 2>/dev/null && pwd -P)" || continue
   [ "$_dp" = "$SELF_DIR" ] && continue
-  if [ -f "$_d/$NAME" ] && [ -x "$_d/$NAME" ]; then REAL="$_d/$NAME"; break; fi
+  if [ -f "$_d/$NAME" ] && [ -x "$_d/$NAME" ]; then
+    _head=""
+    IFS= read -r -d '' -n 512 _head < "$_d/$NAME" 2>/dev/null
+    case "$_head" in *"crew-shim-marker"*) continue ;; esac
+    REAL="$_d/$NAME"
+    break
+  fi
 done
 set +f
 IFS="$_old_ifs"

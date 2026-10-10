@@ -297,8 +297,8 @@ trap '"'"'if [ "$keep" = 0 ]; then unlock "$lock"; fi'"'"' EXIT
 trap "exit 143" HUP INT TERM
 date +%s > "$lock/started"
 if [ "$force" != 1 ] && [ -f "$stamp" ]; then present; fi
-if [ "$mode" = lock ]; then keep=1; exit 0; fi
 rm -f "$stamp"
+if [ "$mode" = lock ]; then keep=1; exit 0; fi
 ( eval "$cmd" ) || exit $?
 date -u +%Y-%m-%dT%H:%M:%SZ > "$stamp"
 '

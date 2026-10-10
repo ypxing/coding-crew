@@ -650,6 +650,17 @@ MAKE
   [ ! -e "$(vol_dir)/.crew-stamp" ]
 }
 
+@test "--force with a host-run install deletes the stamp first, so a failed reinstall leaves none" {
+  use_fake_docker
+  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  [ -f "$(vol_dir)/.crew-stamp" ]
+  export FAKE_NPM_RC=1
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --force --install-cmd "docker compose run --rm app npm ci"
+  [ "$status" -eq 3 ]
+  [ ! -e "$(vol_dir)/.crew-stamp" ]
+  [ ! -e "$(state_dir)/.crew-lock" ]
+}
+
 @test "a host-run install that fails is exit 3: no stamp, lock released" {
   use_fake_docker
   export FAKE_NPM_RC=1

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# crew-shim-marker (see shim/docker)
 # docker-compose — the standalone-binary form of the `docker` shim beside it.
 _src="${BASH_SOURCE[0]}"
 case "$_src" in */*) _srcdir="${_src%/*}" ;; *) _srcdir=. ;; esac

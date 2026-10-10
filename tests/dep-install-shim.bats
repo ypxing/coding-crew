@@ -181,6 +181,30 @@ logged() { tr '\n' ' ' < "$LOG" | sed 's/ $//'; }
   [ -f "$LOG" ]
 }
 
+@test "two shim copies on PATH (two installs): the real docker is reached, with the override added once" {
+  # A user's shell exporting one install's shim while the sprint runs another's: each copy used to
+  # find the other as "the real docker" and exec it forever.
+  OTHER="$TEMP_DIR/other-install/shim"
+  mkdir -p "$OTHER"
+  cp "$SHIM_DIR/docker" "$SHIM_DIR/docker-compose" "$OTHER/"
+  chmod +x "$OTHER"/*
+  export PATH="$OTHER:$PATH"
+  run bash -c 'docker compose -f a.yml up & p=$!; (sleep 10; kill $p 2>/dev/null) & w=$!; wait $p; rc=$?; kill $w 2>/dev/null; exit $rc'
+  [ "$status" -eq 0 ]
+  [ "$(logged)" = "compose -f a.yml -f $OVERRIDE up" ]
+  run bash -c 'docker-compose run app x & p=$!; (sleep 10; kill $p 2>/dev/null) & w=$!; wait $p; rc=$?; kill $w 2>/dev/null; exit $rc'
+  [ "$status" -eq 0 ]
+  [ "$(logged)" = "run app x" ]
+}
+
+@test "a nested docker compose call made by the real docker's child still gets the override" {
+  # The guard against a second shim copy must not leak into the commands a compose call runs.
+  printf '#!/usr/bin/env bash\nif [ "${@: -1}" = outer ]; then exec docker compose -f b.yml inner; fi\nprintf "%%s\\n" "$@" > "%s"\n' "$LOG" > "$FAKE/docker"
+  run docker compose -f a.yml outer
+  [ "$status" -eq 0 ]
+  [ "$(logged)" = "compose -f b.yml -f $OVERRIDE inner" ]
+}
+
 @test "no real docker on PATH: exit 127 with a crew-shim: message" {
   run -127 --separate-stderr env PATH="$SHIM_DIR:/nonexistent" "$BASH" "$SHIM_DIR/docker" compose up
   [ "$status" -eq 127 ]
