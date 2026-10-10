@@ -57,6 +57,19 @@ launcher_body() {
   done
 }
 
+@test "launcher: the program lookup falls back to the main checkout's copy before the user-level install, for a linked worktree" {
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    body="$(launcher_body "$p")"
+    fallback='[ -f "$CREW_AFK" ] || CREW_AFK="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.coding-crew/crew-afk/main.mjs"'
+    grep -qF -- "$fallback" "$body" || { echo "$p: no main-checkout fallback line" >&2; return 1; }
+    toplevel="$(grep -nF 'git rev-parse --show-toplevel)/.coding-crew/crew-afk/main.mjs' "$body" | head -1 | cut -d: -f1)"
+    common="$(grep -nF -- "$fallback" "$body" | head -1 | cut -d: -f1)"
+    home="$(grep -nF '$HOME/.coding-crew/crew-afk/main.mjs' "$body" | head -1 | cut -d: -f1)"
+    [ -n "$toplevel" ] && [ -n "$home" ]
+    [ "$toplevel" -lt "$common" ] && [ "$common" -lt "$home" ] || { echo "$p: lookup order is not toplevel, main checkout, \$HOME" >&2; return 1; }
+  done
+}
+
 @test "launcher: step 2 is one instruction for every mode, with no pane-host carve-out" {
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
     body="$(launcher_body "$p")"

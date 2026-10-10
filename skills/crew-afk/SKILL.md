@@ -18,6 +18,8 @@ yourself.**
 
 ```bash
 CREW_AFK="$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/main.mjs"
+# a linked worktree (the feature agent's `_feature`) may lack .coding-crew/: the main checkout's copy
+[ -f "$CREW_AFK" ] || CREW_AFK="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.coding-crew/crew-afk/main.mjs"
 [ -f "$CREW_AFK" ] || CREW_AFK="$HOME/.coding-crew/crew-afk/main.mjs"
 node "$CREW_AFK" run --platform {{PLATFORM}} "$@"
 ```

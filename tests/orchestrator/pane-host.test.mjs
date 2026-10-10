@@ -1181,3 +1181,18 @@ test("a run that reuses or adopts the feature agent pushes it a run-start notice
   await drainPaneNotices(opened.effects);
   assert.equal(opened.effects._calls.length, 1, "a new agent's brief is its start: only the create");
 });
+
+// The agent's cwd is `_feature`, where `.scratch/` and (when gitignored) `.coding-crew/` are not:
+// the brief names every sprint source under the main checkout and says how to find it.
+test("the feature agent's brief names sprint sources under the main checkout, found from _feature by the git common dir", () => {
+  const brief = renderRolePrompt("followup", "claude", { mainRoot: "/main" });
+  const common = '$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")';
+  assert.ok(brief.includes(common), "how to find the main checkout from _feature");
+  assert.ok(brief.includes(`${common}/.coding-crew/tracker/cli.mjs`), "the tracker CLI resolves under the main checkout");
+  assert.match(brief, /run-start notice/i, "a run-start notice returns the agent to the until-the-end-notice rules");
+  // A source path is `.scratch/<x>` or `.coding-crew/<x>`; the bare directory names in the prose are not.
+  for (const line of brief.split("\n")) {
+    assert.ok(!/(^|[\s`(])\.scratch\/[^\s`]/.test(line), `a source path resolving inside _feature: ${line}`);
+    assert.ok(!/(^|[\s`(])(node )?\.coding-crew\/[^\s`]/.test(line), `a source path resolving inside _feature: ${line}`);
+  }
+});
