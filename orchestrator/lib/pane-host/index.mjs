@@ -7,8 +7,8 @@
  * for the sprint's slug (ensureWatchSession), both in the sprint's own `_feature` worktree
  * (`effects.featureRoot`), and best-effort pushes into that agent: each milestone and the
  * outcome. Each adapter (herdr.mjs, orca.mjs) implements the same operations for those:
- * preflight, ensureWorkspace, closeWorkspace, closeLogTab, openWatch, watchAlive, notify,
- * launcherHandle.
+ * preflight, ensureWorkspace, closeWorkspace, closeLogTab, openWatch, watchAlive, watchAliveSync
+ * (the blocking twin the end of a run uses), notify, launcherHandle.
  * An adapter may also implement adoptWorktree (orca only): told of each worktree the orchestrator
  * creates, so the host can show it by name under its parent. See adoptWorktree below.
  *
@@ -18,7 +18,7 @@
  *
  * Run-scoped state lives on `effects`: `_paneWorkspace` (cached promise),
  * `_paneLogTabId`, `_paneNotices` (the queued-push chain), `_paneWatch` (`{host, handle}` of
- * the feature agent, null when none is live) and `_paneWatchReused` (that agent was reused or
+ * the feature agent, null when none is live; settlePaneAgent drops a dead one at the run's end) and `_paneWatchReused` (that agent was reused or
  * adopted, not opened by this run: it may hold the checkout from an earlier run's end notice). The agent is never closed by anything here, and
  * neither is a workspace holding it.
  */
@@ -135,6 +135,29 @@ export function recordedWatch(file, host) {
  * agent's workspace), so a push that later finds the agent closed is only a skipped push.
  */
 export const hasPaneAgent = (effects) => Boolean(effects._paneWatch?.handle);
+
+/**
+ * End of run, before anything decides what outlives it (`_feature`, the agent's workspace): whether
+ * the recorded agent still passes the adapter's watchAlive. A dead one (its pane closed, its CLI
+ * exited) is dropped (`_paneWatch` null), so nothing is kept for it, no push goes to it and its
+ * workspace is closed like any other. Blocking, so a signal handler can call it: the adapter's
+ * `watchAliveSync`. Returns whether a live agent remains; never throws.
+ */
+export function settlePaneAgent(effects) {
+  if (!hasPaneAgent(effects)) return false;
+  const { handle } = effects._paneWatch;
+  let alive = false;
+  try {
+    alive = Boolean(adapterFor(effects)?.watchAliveSync?.(effects, handle));
+  } catch {
+    /* an unreachable host reads as no agent */
+  }
+  if (!alive) {
+    effects.log?.(`WATCH-SESSION gone host=${effects._paneWatch.host} handle=${handle} — nothing is kept for it`);
+    effects._paneWatch = null;
+  }
+  return alive;
+}
 
 /** Whether `dir` is `root` or inside it, by real path. */
 function insideDir(root, dir) {

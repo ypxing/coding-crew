@@ -184,13 +184,23 @@ export async function openWorkerTerminal(effects, { title, command, worktree }) 
 export const closeWorkerTerminal = closeTerminal;
 
 /**
- * Whether `handle` still reports a live agent: `terminal show` has an `agentIdentity` (set for
- * an agent pane, absent for a shell, and missing once the terminal is closed or orca is gone).
+ * Whether `show` (`terminal show`'s result) has an `agentIdentity`: set for an agent pane, absent
+ * for a shell, and missing once the terminal is closed or orca is gone.
  */
+const terminalHostsAgent = (show) => show.code === 0 && Boolean(paneHostJson(show)?.result?.terminal?.agentIdentity);
+
 export async function watchAlive(effects, handle) {
   try {
-    const show = await paneHostExec(effects, ["terminal", "show", "--terminal", handle, "--json"], CALL_TIMEOUT_MS);
-    return show.code === 0 && Boolean(paneHostJson(show)?.result?.terminal?.agentIdentity);
+    return terminalHostsAgent(await paneHostExec(effects, ["terminal", "show", "--terminal", handle, "--json"], CALL_TIMEOUT_MS));
+  } catch {
+    return false;
+  }
+}
+
+/** watchAlive, blocking: for the end of a run, where a signal handler cannot await. */
+export function watchAliveSync(effects, handle) {
+  try {
+    return terminalHostsAgent(effects.exec("orca", ["terminal", "show", "--terminal", handle, "--json"], { mutating: false, timeoutMs: CALL_TIMEOUT_MS }));
   } catch {
     return false;
   }

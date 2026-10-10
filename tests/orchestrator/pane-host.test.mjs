@@ -19,6 +19,7 @@ import {
   preflightPaneHost,
   queuePaneNotice,
   queueRunStartNotice,
+  settlePaneAgent,
 } from "../../orchestrator/lib/pane-host/index.mjs";
 import { levelFor } from "../../orchestrator/lib/log.mjs";
 import { notifyMilestone } from "../../orchestrator/lib/pipeline/shared.mjs";
@@ -1195,4 +1196,34 @@ test("the feature agent's brief names sprint sources under the main checkout, fo
     assert.ok(!/(^|[\s`(])\.scratch\/[^\s`]/.test(line), `a source path resolving inside _feature: ${line}`);
     assert.ok(!/(^|[\s`(])(node )?\.coding-crew\/[^\s`]/.test(line), `a source path resolving inside _feature: ${line}`);
   }
+});
+
+// At the run's end `_feature` and the agent's workspace are kept only for an agent that still lives:
+// a dead one (its pane closed, its CLI exited) leaves nothing to keep them for.
+test("settlePaneAgent keeps a live agent and drops one the host no longer reports, so its workspace closes", async () => {
+  const orcaExec = (terminal) => (_cmd, args) => (args.includes("show") ? { code: terminal ? 0 : 1, stdout: JSON.stringify({ result: { terminal } }), stderr: "" } : { code: 0, stdout: "", stderr: "" });
+  const live = watchFixture("orca", []);
+  live.effects._paneWatch = { host: "orca", handle: "term_w" };
+  live.effects.exec = orcaExec({ handle: "term_w", agentIdentity: "claude" });
+  assert.equal(settlePaneAgent(live.effects), true);
+  assert.deepEqual(live.effects._paneWatch, { host: "orca", handle: "term_w" });
+
+  for (const [name, terminal] of [["a closed terminal", null], ["a shell, no agentIdentity", { handle: "term_w" }]]) {
+    const dead = watchFixture("orca", []);
+    dead.effects._paneWatch = { host: "orca", handle: "term_w" };
+    dead.effects.exec = orcaExec(terminal);
+    assert.equal(settlePaneAgent(dead.effects), false, name);
+    assert.equal(dead.effects._paneWatch, null, name);
+  }
+
+  const none = watchFixture("herdr", []);
+  assert.equal(settlePaneAgent(none.effects), false, "no agent was ever opened");
+
+  const herdr = watchFixture("herdr", [json({ result: { workspace: { workspace_id: "w9" }, already_open: false } }), json({ result: { type: "ok" } })]);
+  await ensurePaneWorkspace(herdr.effects, { featureSlug: "alpha" });
+  herdr.effects._paneWatch = { host: "herdr", handle: "w9:p1" };
+  herdr.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { panes: [{ pane_id: "w9:p1", agent_status: "unknown" }] } }), stderr: "" });
+  assert.equal(settlePaneAgent(herdr.effects), false);
+  await closePaneWorkspace(herdr.effects);
+  assert.deepEqual(herdr.effects._calls.at(-1), ["herdr", "workspace", "close", "w9"], "a dead agent's workspace is closed like any other");
 });

@@ -88,14 +88,26 @@ export async function closeLogTab(effects, tabId) {
   await paneHostExec(effects, ["tab", "close", tabId]);
 }
 
-/** Whether `paneId` is listed with an `agent_status` other than `unknown` (herdr detected an agent in it). */
+/** Whether `list` (`pane list`'s result) shows `paneId` with an `agent_status` other than `unknown` (herdr detected an agent in it). */
+function paneHostsAgent(list, paneId) {
+  if (list.code !== 0) return false;
+  const pane = (paneHostJson(list)?.result?.panes ?? []).find((p) => p?.pane_id === paneId);
+  const status = pane?.agent_status;
+  return typeof status === "string" && status !== "" && status !== "unknown";
+}
+
 export async function watchAlive(effects, paneId) {
   try {
-    const list = await paneHostExec(effects, ["pane", "list"], STATUS_TIMEOUT_MS);
-    if (list.code !== 0) return false;
-    const pane = (paneHostJson(list)?.result?.panes ?? []).find((p) => p?.pane_id === paneId);
-    const status = pane?.agent_status;
-    return typeof status === "string" && status !== "" && status !== "unknown";
+    return paneHostsAgent(await paneHostExec(effects, ["pane", "list"], STATUS_TIMEOUT_MS), paneId);
+  } catch {
+    return false;
+  }
+}
+
+/** watchAlive, blocking: for the end of a run, where a signal handler cannot await. */
+export function watchAliveSync(effects, paneId) {
+  try {
+    return paneHostsAgent(effects.exec("herdr", ["pane", "list"], { mutating: false, timeoutMs: STATUS_TIMEOUT_MS }), paneId);
   } catch {
     return false;
   }

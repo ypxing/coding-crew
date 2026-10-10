@@ -111,7 +111,7 @@ import {
   retiredNotice,
   validateFlags,
 } from "./lib/crew-config.mjs";
-import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, hasPaneAgent, notifyWatchSession, queueRunStartNotice } from "./lib/pane-host/index.mjs";
+import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, notifyWatchSession, queueRunStartNotice, settlePaneAgent } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktree, featureSlugOfPath, featureWorktreePath, removeWorktree, worktreeRoot } from "./lib/worktree.mjs";
@@ -699,8 +699,9 @@ async function main() {
         console.error(`crew-afk: could not record why the run ended: ${err.message}`);
       }
     }
-    // The feature agent keeps its worktree, as at a normal ending.
-    removeFeatureWorktree({ keep: hasPaneAgent(effects) });
+    // A live feature agent keeps its worktree, as at a normal ending (the probe blocks: this
+    // handler must not yield to the pipeline its children's exits would resume).
+    removeFeatureWorktree({ keep: settlePaneAgent(effects) });
     if (lease) releaseLease(effects, lease);
     process.exit(SIGNAL_EXIT[signal]);
   };
@@ -969,8 +970,8 @@ async function main() {
       }
     }
     // The feature agent outlives the run: `_feature` and the workspace holding it stay while it
-    // is there (a failed open, --dry-run or no host leaves none, and both go as before).
-    const agentLive = hasPaneAgent(effects);
+    // is there (a failed open, a dead agent, --dry-run or no host leaves none, and both go as before).
+    const agentLive = settlePaneAgent(effects);
     // No-ops unless opened above; here so a thrown error can't leave them dangling.
     await closePaneLogTab(effects);
     await closePaneWorkspace(effects);

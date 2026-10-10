@@ -94,8 +94,8 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
 // answering what crew-afk reads from it. Spawned directly, since sh() strips the pane-host env.
 // The sprint's workspace is w5 (`worktree open`); the log tab and the agent's tab are made in it,
 // the agent's pane being w9:pl. `agentPromptExit` / `paneRunExit` make the end push or the agent's
-// start fail.
-function herdrEnv(root, { agentPromptExit = 0, paneRunExit = 0 } = {}) {
+// start fail; `agentStatus: "unknown"` makes the host report no agent in its pane (a dead one).
+function herdrEnv(root, { agentPromptExit = 0, paneRunExit = 0, agentStatus = "idle" } = {}) {
   const bin = mkdtempSync(join(TMPDIR, "crew-fake-herdr-"));
   FIXTURE_ROOTS.push(bin);
   const log = join(bin, "calls.log");
@@ -107,9 +107,9 @@ function herdrEnv(root, { agentPromptExit = 0, paneRunExit = 0 } = {}) {
       `printf '%s\\n' "$*" >> '${log}'`,
       'case "$1 $2" in',
       `  "workspace create") ${reply({ result: { workspace: { workspace_id: "w9" }, root_pane: { pane_id: "w9:p1" } } })};;`,
-      `  "worktree open") ${reply({ result: { workspace: { workspace_id: "w5" }, root_pane: { pane_id: "w5:p1" } } })};;`,
+      `  "worktree open") ${reply({ result: { already_open: false, workspace: { workspace_id: "w5" }, root_pane: { pane_id: "w5:p1" } } })};;`,
       `  "tab create") ${reply({ result: { tab: { tab_id: "w5:t" }, root_pane: { pane_id: "w9:pl" } } })};;`,
-      `  "pane list") ${reply({ result: { panes: [{ pane_id: "w9:p1", agent_status: "idle" }, { pane_id: "w9:pl", agent_status: "idle" }] } })};;`,
+      `  "pane list") ${reply({ result: { panes: [{ pane_id: "w9:p1", agent_status: "idle" }, { pane_id: "w9:pl", agent_status: agentStatus }] } })};;`,
       `  "pane run") [ "$3" = "w9:pl" ] && case "$4" in tail) ;; *) exit ${paneRunExit};; esac;;`,
       `  "agent prompt") exit ${agentPromptExit};;`,
       "esac",
@@ -198,6 +198,9 @@ test("a re-run launched from inside _feature with no slug runs that feature, reu
   assert.deepEqual(JSON.parse(readFileSync(join(root, ".scratch/demo/watch.json"), "utf8")), { host: "herdr", handle: "w9:pl" });
   assert.equal(r.calls.filter((c) => c.startsWith("pane run w9:pl ") && !c.includes("tail")).length, 0, "no second agent started");
   assert.equal(worktreeListed(root, featureWt(root)), true);
+  // The reused agent may hold the checkout from the first run's end notice: this run says it has begun.
+  const prompts = r.calls.filter((c) => c.startsWith("agent prompt w9:pl "));
+  assert.match(prompts[0], /\[demo\] .*run started.*until the end notice/, prompts.join("\n"));
 });
 
 test("an explicit --feature-slug naming another feature than the _feature checkout refuses with both slugs, before taking anything", () => {
@@ -270,6 +273,35 @@ test("a run ended by SIGTERM with a live agent leaves _feature registered and on
   assert.equal(worktreeListed(root, featureWt(root)), true);
   assert.equal(existsSync(featureWt(root)), true);
   assert.deepEqual(host.calls().filter((c) => /^(workspace|pane) close/.test(c)), []);
+});
+
+test("an agent the host no longer reports at the end of the run is dead: _feature is removed and its workspace closed, stdout is the whole summary", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = herdrRun(root, [], { agentStatus: "unknown" });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(worktreeListed(root, featureWt(root)), false);
+  assert.equal(existsSync(featureWt(root)), false);
+  assert.ok(r.calls.includes("workspace close w5"), r.calls.join("\n"));
+  assert.match(r.stdout, /NO MORE TASKS/);
+  assert.doesNotMatch(r.stdout, /crew-afk: summary sent/);
+});
+
+test("a run ended by SIGTERM whose agent is dead removes _feature", async () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.worker-sleep", "30");
+  const host = herdrEnv(root, { agentStatus: "unknown" });
+  const { spawn } = await import("node:child_process");
+  const child = spawn("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], { cwd: root, env: host.env, stdio: "ignore" });
+  const exited = new Promise((res) => child.on("exit", (code) => res(code)));
+  const calls = join(root, ".scratch/fake/alpha.worker-sleep.calls");
+  for (let i = 0; i < 300 && !existsSync(calls); i++) await new Promise((res) => setTimeout(res, 100));
+  assert.ok(existsSync(calls), "the worker never started");
+  child.kill("SIGTERM");
+  assert.equal(await exited, 143);
+  assert.equal(worktreeListed(root, featureWt(root)), false);
+  assert.equal(existsSync(featureWt(root)), false);
 });
 
 test("--dry-run opens no watch agent and writes no watch.json", () => {
