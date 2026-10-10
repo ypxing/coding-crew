@@ -159,3 +159,24 @@ setup() {
     ! grep -qF "sed 's|^feature/||'" "$f"
   done
 }
+
+@test "per-branch notes: the report carries concerns outside the criteria; Feature Mode checks each, and a PRD decision excuses no defect, on every platform" {
+  local plat f mode
+  for plat in "${PLATFORMS[@]}"; do
+    f="$(role_prompt reviewer "$plat")"
+    mode="$(sed -n '/^## Feature Mode$/,/^## Precision$/p' "$f")"
+    # per-branch mode defines `notes`, and a prose-only concern reaches nobody
+    grep -qF '"notes": []' "$f"
+    grep -qF '`{"location": "<path>:<line>", "concern": "<input or state → bad outcome>"}`' "$f"
+    grep -qF 'a concern written only in prose reaches nobody, so in a per-branch review it goes in' "$f"
+    # Feature Mode: every listed concern is a Pass 1 candidate that ends as a finding or a Dropped line
+    grep -qF 'Concerns per-issue reviewers noted outside their criteria:' <<<"$mode"
+    grep -qF 'every listed' <<<"$mode"
+    grep -qF 'is a Pass 1 candidate too: each ends in Pass 2 as a finding or a `### Dropped` line' <<<"$mode"
+    # code matching the PRD is not evidence; a prescribed defect is a finding naming the decision
+    grep -qF 'Code that matches the PRD or a criterion is not evidence that it is correct' <<<"$mode"
+    grep -qF 'A defect a decision' <<<"$mode"
+    grep -qF 'prescribes is a finding that names that decision' <<<"$mode"
+    ! grep -qF 'downgraded or dropped' "$f"
+  done
+}

@@ -119,8 +119,10 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
            feature-case-base.feature.prompt.md feature-case-head.feature.prompt.md; do
     [ -s "$d/$f" ]
   done
-  ! grep -q 'the decision text' "$d/branch-case-head.feat.prompt.md"
-  ! grep -q 'PRD decisions' "$d/branch-case-head.feat.prompt.md"
+  # the dispatch itself (the role above it names PRD decisions in its own rules)
+  dispatch=$(sed -n '/^=== THIS DISPATCH ===$/,$p' "$d/branch-case-head.feat.prompt.md")
+  ! grep -q 'the decision text' <<<"$dispatch"
+  ! grep -q 'PRD decisions' <<<"$dispatch"
 }
 
 @test "a feature case is one reviewer whose prompt names the case's PRD file, read whole, with no area blocks" {
@@ -223,6 +225,40 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
     sed -n '/^## Expected misses$/,/^## Reference judgement$/p' "$f" | grep -qF "$m"
   done
   grep -qF 'Origin: #182' "$f"
+}
+
+@test "a feature case's ## Notes reach the feature prompt's concerns block; a case without notes has none" {
+  # a ref whose featureReviewPrompt predates `notes` ignores them (the base side of an A/B)
+  cp "$R/scripts/eval-reviewer-misses/cases/feature-case.md" "$R/scripts/eval-reviewer-misses/cases/noted-case.md"
+  sed -i.bak 's|^## PRD$|## Notes\n\n- `src/a.sh:9` — the stamp survives --force\n- not a note line\n\n## PRD|' "$R/scripts/eval-reviewer-misses/cases/noted-case.md"
+  rm "$R/scripts/eval-reviewer-misses/cases/noted-case.md.bak"
+  run run_eval --dry-run --case noted-case --case feature-case
+  [ "$status" -eq 0 ]
+  d=$(out_dir)
+  grep -qF 'Concerns per-issue reviewers noted outside their criteria:' "$d/noted-case-head.feature.prompt.md"
+  grep -qF -- '- src/a.sh:9 — the stamp survives --force' "$d/noted-case-head.feature.prompt.md"
+  ! grep -qF 'not a note line' "$d/noted-case-head.feature.prompt.md"
+  ! grep -q '^Concerns per-issue reviewers noted' "$d/feature-case-head.feature.prompt.md"
+}
+
+@test "the docker-deps-isolation cases replay PR #382's two escapes; force-keeps-stamp carries #380's note" {
+  local dir="$REPO_ROOT/scripts/eval-reviewer-misses/cases" c
+  for c in force-keeps-stamp shim-mutual-exec; do
+    grep -qx 'mode: feature' "$dir/$c.md"
+    grep -qx 'base_sha: 47e8d1ec1c29c22d4a8d10b7df476b3a9cf0aaab' "$dir/$c.md"
+    grep -qx 'head_sha: e092df11c1fffe6bb5deb99badc11ae82eb0902c' "$dir/$c.md"
+    grep -qx 'via: refs/pull/382/head' "$dir/$c.md"
+  done
+  run env MOD="$REPO_ROOT/scripts/eval-reviewer-misses.mjs" DIR="$dir" node -e '
+    import(process.env.MOD).then((m) => {
+      const fs = require("fs"), parse = (n) => m.parseCase(n, fs.readFileSync(`${process.env.DIR}/${n}.md`, "utf8"));
+      const force = parse("force-keeps-stamp"), shim = parse("shim-mutual-exec");
+      if (force.notes.length !== 1 || !/--force/.test(force.notes[0].concern)) throw new Error(JSON.stringify(force.notes));
+      if (shim.notes.length !== 0) throw new Error("shim-mutual-exec has no note");
+      if (force.misses.length !== 1 || shim.misses.length !== 1) throw new Error("one miss each");
+    }).catch((e) => { console.error(e.message); process.exit(1); });
+  '
+  [ "$status" -eq 0 ]
 }
 
 # The rendered reviewer role

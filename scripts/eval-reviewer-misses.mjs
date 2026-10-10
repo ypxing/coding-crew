@@ -28,7 +28,8 @@
 // Cases live in scripts/eval-reviewer-misses/cases/*.md: front matter (mode: feature|branch,
 // base_sha, head_sha, slug), free text, then `## PRD` (a frozen copy), `## Expected misses`
 // (`- <id>: <defect>`), `## Reference judgement`, and for `branch` cases `## Issue` and
-// `## Acceptance criteria`. A SHA that does not resolve names the case and skips
+// `## Acceptance criteria`. A `feature` case may add `## Notes` (``- `<path>:<line>` — <concern>``): what
+// the per-issue reviewers noted outside their criteria, passed to featureReviewPrompt as it lists them. A SHA that does not resolve names the case and skips
 // only it (exit 1). Results land in .scratch/eval-reviewer-misses/<timestamp>/ (summary.md,
 // results.json, every prompt and output). A reviewer or judge CLI failure is a failed run, never
 // "not caught". --resume <out dir> reruns into a stopped run's directory: a reviewer output already
@@ -97,7 +98,9 @@ export function parseCase(name, text) {
     throw new Error(`${name}: needs ## PRD, ## Expected misses and ## Reference judgement`);
   }
   if (meta.mode === "branch" && !sections["Acceptance criteria"]) throw new Error(`${name}: a branch case needs ## Acceptance criteria`);
-  return { name, ...meta, intro, prd: sections.PRD, misses, reference: sections["Reference judgement"],
+  const notes = (sections.Notes ?? "").split("\n")
+    .map((l) => /^\s*-\s+`([^`]+)`\s+—\s+(.+)$/.exec(l)).filter(Boolean).map((x) => ({ location: x[1], concern: x[2] }));
+  return { name, ...meta, intro, prd: sections.PRD, misses, notes, reference: sections["Reference judgement"],
     issue: sections.Issue ?? name, criteria: sections["Acceptance criteria"] ?? "" };
 }
 
@@ -236,7 +239,7 @@ async function main() {
     // The case's PRD as a file: in its tree when the reviewer runs there, beside the prompts on a dry run.
     const prdFile = {};
     const input = (c) => ({ mode: c.mode, base: c.base, tip: c.tip, branch: c.tip, slug: c.slug, issue: c.issue,
-      criteria: c.criteria, prdPath: prdFile[c.name], prdText: c.prd, reportPath: "(print it in your final message)" });
+      criteria: c.criteria, notes: c.notes, prdPath: prdFile[c.name], prdText: c.prd, reportPath: "(print it in your final message)" });
     const prompt = (c, name, body, role) => `${role}\n\n=== THIS DISPATCH ===\n\n${body}\n\n${EVAL_NOTE(prdFile[c.name])}\n`;
 
     for (const c of cases) {
