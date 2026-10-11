@@ -60,9 +60,10 @@ export async function runSprint(ctx) {
   async function pollOnce() {
     const issues = tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug });
     const fresh = issues.filter((i) => !seen.has(i.slug));
-    for (const i of issues) seen.add(i.slug);
     const linted = fresh.filter((i) => !ownRefs.has(i.number));
     if (linted.length) await stages.lintMidRunIssues(ctx, linted);
+    // Only after the lint returned: a lint that throws leaves its issues for the next poll to lint.
+    for (const i of issues) seen.add(i.slug);
     const claimable = issues.filter((i) => isClaimable(i));
     handoff = claimable;
     const n = Math.min(claimable.length, waiters.length);
