@@ -1,26 +1,8 @@
 /**
- * pane-host — the ambient integration with a terminal multiplexer, selected by
- * `effects.paneHost` ("herdr" | "orca" | null; resolvePaneHost in crew-config.mjs).
- *
- * Every coder/reviewer/triage dispatch is headless regardless of host. A host is asked for
- * one tab/terminal tailing the sprint's trace log and one long-lived interactive feature agent
- * for the sprint's slug (ensureWatchSession), both in the sprint's own `_feature` worktree
- * (`effects.featureRoot`), and best-effort pushes into that agent: each milestone and the
- * outcome. Each adapter (herdr.mjs, orca.mjs) implements the same operations for those:
- * preflight, ensureWorkspace, closeWorkspace (and closeWorkspaceSync, herdr only), closeLogTab, openWatch, watchAlive, watchAliveSync, watchPresentSync
- * (the blocking twin the end of a run uses), notify, launcherHandle.
- * An adapter may also implement adoptWorktree (orca only): told of each worktree the orchestrator
- * creates, so the host can show it by name under its parent. See adoptWorktree below.
- *
- * An adapter that also has openWorkerTerminal/closeWorkerTerminal (orca only) hosts each
- * headless dispatch in a terminal of its own, for watching (worker-terminal.mjs). Completion
- * still comes from the child's pid and exit code on disk, never from the host.
- *
- * Run-scoped state lives on `effects`: `_paneWorkspace` (cached promise),
- * `_paneLogTabId`, `_paneNotices` (the queued-push chain), `_paneWatch` (`{host, handle}` of
- * the feature agent, null when none is live; settlePaneAgent drops a dead one at the run's end) and `_paneWatchReused` (that agent was reused or
- * adopted, not opened by this run: it may hold the checkout from an earlier run's end notice), `_paneWatchOpenedAt` (when this run opened it). The agent is never closed by anything here, and
- * neither is a workspace holding it.
+ * pane-host — the optional terminal-multiplexer integration (`effects.paneHost`: herdr | orca | null).
+ * Dispatches stay headless; a host only gets a log tab, one interactive feature agent per slug and
+ * best-effort pushes into it, and completion never comes from it. Run-scoped state lives on
+ * `effects._pane*`; nothing here closes the feature agent or a workspace holding it.
  */
 
 import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -44,12 +26,7 @@ export function preflightPaneHost(effects, paneHost) {
   return ADAPTERS[paneHost]?.preflight(effects) ?? [];
 }
 
-/**
- * Announce a worktree the orchestrator just created (native git; the host never creates one) to
- * a host that wants to know of it: `{title, issue, parent}` is its display name, its issue number
- * and its parent worktree's path. Best-effort and synchronous, called from ensureWorktree: a
- * failure is logged, never thrown, and no host (or one without the op) calls nothing.
- */
+/** Tells a host of a worktree the orchestrator created (`{title, issue, parent}`). Logs, never throws. */
 export function adoptWorktree(effects, path, meta) {
   const adapter = adapterFor(effects);
   if (!adapter?.adoptWorktree || effects.dryRun) return;
@@ -61,9 +38,8 @@ export function adoptWorktree(effects, path, meta) {
 }
 
 /**
- * Created by whichever caller gets here first, shared by every later one. Cached as a
- * promise, assigned before the first await, so concurrent callers never race two creates;
- * a rejection is cached too, so a broken host fails every caller the same way once.
+ * Cached as a promise before the first await, so concurrent callers never race two creates; a
+ * rejection is cached too, so a broken host fails every caller once.
  */
 export function ensurePaneWorkspace(effects, { featureSlug, logFile } = {}) {
   if (!effects._paneWorkspace) {
@@ -72,11 +48,7 @@ export function ensurePaneWorkspace(effects, { featureSlug, logFile } = {}) {
   return effects._paneWorkspace;
 }
 
-/**
- * End of run. A no-op when nothing was created, or while the feature agent lives in it (it is
- * the developer's terminal now). Swallows failures: the run's exit code is already decided, and
- * a stray workspace is cosmetic.
- */
+/** Not while the feature agent lives in it. Swallows failures: the run's exit code is already decided. */
 export async function closePaneWorkspace(effects) {
   if (!effects._paneWorkspace || hasPaneAgent(effects)) return;
   try {
@@ -86,11 +58,7 @@ export async function closePaneWorkspace(effects) {
   }
 }
 
-/**
- * closePaneWorkspace for a signal handler, which must not yield: blocking, on an adapter with
- * `closeWorkspaceSync` (herdr; orca has no workspace). Same rule, after settlePaneAgent: nothing
- * while the agent lives. Swallows failures.
- */
+/** closePaneWorkspace for a signal handler, which must not yield. */
 export function closePaneWorkspaceSync(effects) {
   if (hasPaneAgent(effects)) return;
   try {
@@ -100,10 +68,7 @@ export function closePaneWorkspaceSync(effects) {
   }
 }
 
-/**
- * End of run, alongside closePaneWorkspace: the log tab is this run's own even when the
- * workspace it lives in is not. Swallows failures (an already-closed tab, for one).
- */
+/** The log tab is this run's own even when its workspace is not. */
 export async function closePaneLogTab(effects) {
   if (effects._paneLogTabId) {
     try {
@@ -120,20 +85,15 @@ export async function closePaneLogTab(effects) {
   }
 }
 
-/**
- * spawnWithTimeout's contract, hosted in a worker terminal when the pane host has them.
- * `--dry-run` always takes spawnWithTimeout, which records instead of running.
- */
+/** spawnWithTimeout's contract, in a worker terminal when the host has them; never under --dry-run. */
 export function spawnDispatch(effects, cmd, args, opts) {
   const adapter = adapterFor(effects);
   if (effects.dryRun || !adapter?.openWorkerTerminal) return effects.spawnWithTimeout(cmd, args, opts);
   return spawnInWorkerTerminal(effects, adapter, cmd, args, opts);
 }
 
-/** `.scratch/<slug>/watch.json`: `{host, handle}` of the slug's watch agent. */
 export const watchFile = (mainRoot, slug) => join(mainRoot, ".scratch", slug, "watch.json");
 
-/** The recorded `{host, handle}` when it is usable under `host`; null for a missing, unparseable or another host's. */
 export function recordedWatch(file, host) {
   try {
     const rec = JSON.parse(readFileSync(file, "utf8"));
@@ -143,25 +103,15 @@ export function recordedWatch(file, host) {
   }
 }
 
-/**
- * Whether this run has a feature agent: one reused, adopted or opened at its start, and not
- * dropped since (a failed open leaves none). It decides what outlives the run (`_feature`, the
- * agent's workspace), so a push that later finds the agent closed is only a skipped push.
- */
 export const hasPaneAgent = (effects) => Boolean(effects._paneWatch?.handle);
 
-/**
- * End of run, before anything decides what outlives it (`_feature`, the agent's workspace): whether
- * the recorded agent still passes the adapter's watchAlive. A dead one (its pane closed, its CLI
- * exited) is dropped (`_paneWatch` null), so nothing is kept for it, no push goes to it and its
- * workspace is closed like any other. Within AGENT_START_GRACE_MS of this run opening it, an agent
- * is dropped only when the host no longer lists its pane or terminal (`watchPresentSync`): a run can
- * end seconds after opening it, before the host identifies the starting CLI as an agent. Blocking, so a signal handler can call
- * it: the adapter's `watchAliveSync`. Returns whether a live agent remains; never throws.
- */
 /** How long after opening an agent the host may not yet identify it as one. */
 export const AGENT_START_GRACE_MS = 120_000;
 
+/**
+ * End of run: drops a dead feature agent so nothing is kept for it. Blocking, for a signal handler.
+ * Within AGENT_START_GRACE_MS of opening, presence alone counts. Returns whether a live agent remains.
+ */
 export function settlePaneAgent(effects) {
   if (!hasPaneAgent(effects)) return false;
   const { handle } = effects._paneWatch;
@@ -183,7 +133,6 @@ export function settlePaneAgent(effects) {
   return alive;
 }
 
-/** Whether `dir` is `root` or inside it, by real path. */
 function insideDir(root, dir) {
   const rel = relative(realpathOr(root), realpathOr(dir));
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
@@ -198,18 +147,9 @@ function realpathOr(path) {
 }
 
 /**
- * The sprint's feature agent: its platform CLI, interactive, in `crew/<slug>/_feature`
- * (`effects.featureRoot`), briefed by the `followup` role as its initial prompt and started with
- * crew-afk's env (worker-terminal.mjs's writeLaunchScript), plus `CREW_PANE_HOST=<the host this
- * run resolved>`, so a crew-afk command the agent runs resolves the same host as this run. One
- * per slug, in this order:
- *   1. the handle recorded in `watch.json`, while the host still reports a live agent there;
- *   2. the pane that launched this run (ORCA_TERMINAL_HANDLE / HERDR_PANE_ID), when cwd is inside
- *      `_feature` and the host reports a live agent there: recorded in `watch.json`, no agent opens;
- *   3. a new agent, its handle recorded (a dead or missing one is replaced).
- * Best-effort, never throws: a failure is a WARN and a null `_paneWatch`, so later pushes are
- * skipped and the run's exit code is what it would be with no host. No-op under --dry-run or
- * with no host. Returns `{host, handle}` or null. `log` receives its lines (default `effects.log`).
+ * The feature agent, one per slug: the one in `watch.json` while alive, else the launching pane
+ * inside `_feature`, else a new CLI briefed by `followup` (CREW_PANE_HOST set, so its crew-afk
+ * commands resolve this host). Best-effort: a failure is a WARN and a null `_paneWatch`.
  */
 export async function ensureWatchSession(effects, { slug, platform, model, effort, log = effects.log?.bind(effects) } = {}) {
   effects._paneWatch = null;
@@ -241,7 +181,6 @@ export async function ensureWatchSession(effects, { slug, platform, model, effor
       return (effects._paneWatch = recorded);
     }
 
-    // Launched from an agent pane inside `_feature`: that pane is the agent.
     const launcher = adapter.launcherHandle?.();
     if (launcher && effects.featureRoot && insideDir(effects.featureRoot, process.cwd()) && (await adapter.watchAlive(effects, launcher))) {
       const watch = { host: effects.paneHost, handle: launcher };
@@ -286,12 +225,7 @@ export async function ensureWatchSession(effects, { slug, platform, model, effor
   }
 }
 
-/**
- * One advisory push into the sprint's feature agent, so a caller waiting in it can stop polling.
- * Never throws. Returns `{sent, reason?}` so a caller with a durable log (notifyMilestone
- * in pipeline.mjs) can record a skip or failure — `effects.log` alone goes nowhere durable.
- * The target is always `_paneWatch`'s handle: the launching pane only when ensureWatchSession adopted it.
- */
+/** One advisory push into the feature agent; `{sent, reason?}` is for a caller with a durable log. */
 export async function notifyWatchSession(effects, message) {
   const adapter = adapterFor(effects);
   if (!adapter) return { sent: false, reason: "no pane host" };
@@ -303,11 +237,7 @@ export async function notifyWatchSession(effects, message) {
   return adapter.notify(effects, handle, message);
 }
 
-/**
- * A mid-run push: queued, not awaited. An orca push takes ~8s (terminal show + send), and
- * awaited inline it held each issue's pipeline that long. The chain keeps pushes into the one
- * agent in order and never overlapping. `onResult` gets notifyWatchSession's `{sent, reason?}`.
- */
+/** Queued, not awaited: an orca push takes ~8s and would hold the issue's pipeline. Kept in order. */
 export function queuePaneNotice(effects, message, onResult) {
   const prior = effects._paneNotices ?? Promise.resolve();
   effects._paneNotices = prior.then(async () => {
@@ -321,9 +251,8 @@ export function queuePaneNotice(effects, message, onResult) {
 }
 
 /**
- * The first push of a run, to an agent it reused or adopted (a new one is briefed as it starts):
- * the sprint is merging into `_feature` again, so followup.md's "until the end notice" rules apply
- * again to an agent an earlier run's end notice handed the checkout. Queued like a milestone.
+ * First push to a reused or adopted agent: the sprint merges into `_feature` again, so
+ * followup.md's "until the end notice" rules apply again.
  */
 export function queueRunStartNotice(effects, slug, onResult) {
   if (!effects._paneWatchReused || !effects._paneWatch?.handle) return;

@@ -1,21 +1,15 @@
 /**
- * deviation.mjs — a coder that ran the whole test suite itself.
- *
- * Under CREW_DEFER_FULL_CHECKS=1 the full suite is the verify gate's; a coder runs only the
- * tests it touched (`run-checks.sh --targeted`). Its tool calls are in the dispatch's
- * `<outFile>.events.jsonl`: a command that contains the `dev-commands.json` `test` command
- * verbatim with no test-file argument after it (and is not run-checks.sh) is the suite run in full. Recorded and named in the
- * summary; never fails the issue.
+ * A coder that ran the whole test suite itself under CREW_DEFER_FULL_CHECKS=1, read from its
+ * events file. Recorded for the summary; never fails the issue.
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { normalizeEvents } from "../adapters/index.mjs";
 
-/** `VAR=value cmd …` → `cmd …`: an env prefix in the cached command is not how a coder types it. */
+/** An env prefix in the cached command is not how a coder types it. */
 const withoutEnvPrefix = (cmd) => cmd.replace(/^(\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, "");
 
-/** The cached `test` command, or null (absent file, `null`, unreadable). */
 export function cachedTestCommand(mainRoot) {
   try {
     const cache = JSON.parse(readFileSync(join(mainRoot, ".coding-crew", "dev-commands.json"), "utf8"));
@@ -25,25 +19,19 @@ export function cachedTestCommand(mainRoot) {
   }
 }
 
-/**
- * True when `cmd` runs `testCommand` as the whole suite: the text after it, up to the next shell
- * separator, holds no argument that is not a flag, a flag's numeric value, or a redirection and
- * its target (`pytest tests/test_x.py` and
- * `npm test -- a.test.js` name test files, so they are targeted runs).
- */
+/** Whole suite: no non-flag argument after it (`pytest tests/test_x.py` is a targeted run). */
 function runsWholeSuite(cmd, testCommand) {
   let from = 0;
   for (;;) {
     const at = cmd.indexOf(testCommand, from);
     if (at < 0) return false;
     from = at + testCommand.length;
-    // Whole words only: `make test` is not in `make test-unit` or `xmake test`. A subshell or a
-    // quoted `bash -lc '…'` (codex's command form) bounds it too, and ends its arguments.
+    // Whole words only (`make test` is not in `make test-unit`); a subshell or a quoted
+    // `bash -lc '…'` (codex's command form) bounds it too.
     if (/[^\s;&|('"]/.test(cmd[at - 1] ?? " ") || /[^\s;&|)<>'"]/.test(cmd[from] ?? " ")) continue;
     const rest = cmd.slice(from).split(/&&|\|\||[;|\n)'"]/)[0];
     const words = rest.split(/\s+/).filter(Boolean);
-    // A bare redirection operator (`>`, `2>`, `&>`) takes the next word as its target; a bare
-    // number is a flag's value (`-n 4`, `--maxWorkers 2`). Neither names a test file.
+    // A redirection's target and a flag's numeric value (`-n 4`) name no test file.
     const args = words.filter(
       (a, i) => a !== "--" && !/^(\d*|&)[<>]/.test(a) && !/^\d+$/.test(a) && !/^(\d*|&)[<>]+$/.test(words[i - 1] ?? ""),
     );
@@ -51,15 +39,11 @@ function runsWholeSuite(cmd, testCommand) {
   }
 }
 
-/**
- * Commands in a `platform` events file that ran `testCommand` in full; [] when none or unreadable.
- * The adapter's `normalize` names each tool call's command and id.
- */
 export function fullSuiteRuns(eventsFile, testCommand, platform) {
   if (!testCommand || !existsSync(eventsFile)) return [];
   const core = withoutEnvPrefix(testCommand);
   const runs = [];
-  // One tool call can appear in several events (codex's item.started and item.completed).
+    // One tool call can appear in several events (codex's item.started and item.completed).
   const seen = new Set();
   for (const line of readFileSync(eventsFile, "utf8").split("\n")) {
     for (const { command: cmd, id } of normalizeEvents(platform, line)) {
@@ -73,10 +57,6 @@ export function fullSuiteRuns(eventsFile, testCommand, platform) {
   return runs;
 }
 
-/**
- * Logs `[DEVIATION]` and records it for the summary when the coder's trace shows the full suite.
- * @returns {number} how many full-suite runs were seen
- */
 export function flagFullSuiteRuns(ctx, { slug, attempt, outFile, platform }) {
   const { sprint, effects } = ctx;
   const testCommand = cachedTestCommand(effects.mainRoot);

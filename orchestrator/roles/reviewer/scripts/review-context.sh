@@ -29,7 +29,6 @@ if [[ -z "$ROOT" ]]; then
 fi
 REF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../references" 2>/dev/null && pwd || true)"
 
-# List candidate files cheaply: tracked files when this is a git repo, else a bounded find.
 list_files() {
   if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     git -C "$ROOT" ls-files 2>/dev/null
@@ -50,13 +49,11 @@ has_ext() { grep -Eq "\.($1)$" <<<"$FILES"; }
 
 STACK=()
 
-# ── React / Next.js ───────────────────────────────────────────────────────────
 REACT=0
 if manifest_has package.json '"(react|next|react-dom|react-native)"' || has_ext 'tsx|jsx'; then
   REACT=1
 fi
 
-# ── Backend / service ─────────────────────────────────────────────────────────
 BACKEND=0
 if manifest_has package.json '"(express|fastify|koa|@nestjs/[a-z]+|@hapi/hapi|hapi|apollo-server[a-z-]*|trpc|@trpc/[a-z]+|prisma|@prisma/client|mongoose|sequelize|typeorm|knex|pg|mysql2?|redis|ioredis)"' \
   || manifest_has requirements.txt '(flask|django|fastapi|starlette|sqlalchemy|psycopg2?|aiohttp|tornado)' \
@@ -67,7 +64,6 @@ if manifest_has package.json '"(express|fastify|koa|@nestjs/[a-z]+|@hapi/hapi|ha
   BACKEND=1
 fi
 
-# ── Web / HTTP surface ────────────────────────────────────────────────────────
 WEB=0
 if [[ "$REACT" -eq 1 || "$BACKEND" -eq 1 ]] \
   || has_ext 'html|htm|vue|svelte|ejs|hbs|erb|jinja2|twig|astro'; then

@@ -1,8 +1,4 @@
-/**
- * herdr (https://herdr.dev): a workspace container holding tabs, each with panes. The sprint's
- * workspace is its `_feature` worktree's, holding the log tab and the feature agent's tab.
- * Ambient id: HERDR_PANE_ID (the launching pane, adopted as the agent when it is inside `_feature`).
- */
+/** herdr (https://herdr.dev): a workspace holds tabs, each with panes; the sprint's is its `_feature` worktree's. */
 
 import { failureDetail, paneHostExec, paneHostJson, paneWorkspaceLabel } from "./shared.mjs";
 
@@ -20,16 +16,12 @@ export function preflight(effects) {
   return [];
 }
 
-/** The pane that launched this run, for D6's adoption: herdr's ambient pane id. */
 export const launcherHandle = () => process.env.HERDR_PANE_ID || null;
 
 /**
- * The sprint's workspace is its feature-branch worktree (`worktree open` returns the workspace
- * already open on it, so a re-run reuses the one a live agent sits in, whatever pane launched this
- * run); with none (a dry run) the main checkout. Never the triggering workspace. `--cwd` names the
- * repo: herdr resolves `--path` against it (or else the focused workspace), not the CLI's cwd.
- * Returns `{workspaceId, created}`: `created` is false for a workspace `worktree open` found
- * already open (its `already_open`, which a host that omits it leaves false too: not ours to close).
+ * `worktree open` returns the workspace already open on `_feature`, so a re-run reuses the one a
+ * live agent sits in; `created` is false for it (not ours to close). `--cwd` names the repo: herdr
+ * resolves `--path` against it (or the focused workspace), not the CLI's cwd.
  */
 async function openFeatureWorkspace(effects, label) {
   const inWorktree = Boolean(effects.featureRoot) && effects.featureRoot !== effects.mainRoot;
@@ -59,16 +51,13 @@ export async function closeWorkspace(effects, workspaceId) {
   await paneHostExec(effects, ["workspace", "close", workspaceId]);
 }
 
-/** closeWorkspace, blocking: for a signal handler, which cannot await the cached workspace promise. */
+/** Blocking: a signal handler cannot await the cached workspace promise. */
 export function closeWorkspaceSync(effects) {
   if (!effects._paneWorkspaceCreated || !effects._paneWorkspaceId) return;
   effects.exec("herdr", ["workspace", "close", effects._paneWorkspaceId], { timeoutMs: STATUS_TIMEOUT_MS });
 }
 
-/**
- * `pane run` cannot report an exit code back, so the only thing herdr is ever asked to run
- * is a `tail -f` whose outcome nothing reads. Best-effort: never throws.
- */
+/** `pane run` cannot report an exit code, so herdr only ever runs a `tail -f` nothing reads. */
 async function openLogTab(effects, workspaceId, label, logFile) {
   try {
     const create = await paneHostExec(effects, [
@@ -96,7 +85,7 @@ export async function closeLogTab(effects, tabId) {
   await paneHostExec(effects, ["tab", "close", tabId]);
 }
 
-/** Whether `list` (`pane list`'s result) shows `paneId` with an `agent_status` other than `unknown` (herdr detected an agent in it). */
+/** An `agent_status` other than `unknown` means herdr detected an agent in the pane. */
 function paneHostsAgent(list, paneId) {
   if (list.code !== 0) return false;
   const pane = (paneHostJson(list)?.result?.panes ?? []).find((p) => p?.pane_id === paneId);
@@ -112,7 +101,7 @@ export async function watchAlive(effects, paneId) {
   }
 }
 
-/** watchAlive, blocking: for the end of a run, where a signal handler cannot await. */
+/** Blocking: a signal handler cannot await. */
 export function watchAliveSync(effects, paneId) {
   try {
     return paneHostsAgent(effects.exec("herdr", ["pane", "list"], { mutating: false, timeoutMs: STATUS_TIMEOUT_MS }), paneId);
@@ -121,7 +110,6 @@ export function watchAliveSync(effects, paneId) {
   }
 }
 
-/** Whether `list` shows `paneId` at all, identified as an agent yet or not. */
 function paneListed(list, paneId) {
   if (list.code !== 0) return false;
   return (paneHostJson(list)?.result?.panes ?? []).some((p) => p?.pane_id === paneId);
@@ -136,13 +124,7 @@ export function watchPresentSync(effects, paneId) {
   }
 }
 
-/**
- * The feature agent: a tab in the feature worktree's workspace (the one ensureWorkspace opened,
- * else `worktree open` again, which returns it), cwd `_feature`. Its workspace is not closed while
- * the agent lives (closePaneWorkspace). The agent is started with `pane run`; herdr detects it as
- * one. Returns `{handle}` (the pane id) or `{failure}`; a tab made before `pane run` failed is
- * closed again. Never throws.
- */
+/** Its workspace is not closed while the agent lives; a tab made before a failed `pane run` is closed again. */
 export async function openWatch(effects, { slug, command }) {
   let tabId = null;
   try {
@@ -184,7 +166,6 @@ export async function openWatch(effects, { slug, command }) {
   }
 }
 
-/** Closes a tab made for the agent when a later call failed. Cosmetic: never throws. */
 async function closeTab(effects, tabId) {
   if (!tabId) return;
   try {
@@ -203,7 +184,6 @@ export async function notify(effects, paneId, message) {
       ["agent", "prompt", paneId, message, "--wait", "--until", "working", "--timeout", "2000"],
       5000,
     );
-    // spawnWithTimeout resolves on a nonzero exit rather than rejecting.
     if (result.code !== 0) {
       const reason = `herdr agent prompt exit=${result.code} ${failureDetail(result)}`;
       effects.log?.(`NOTIFY-FAIL ${reason}`);

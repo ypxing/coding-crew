@@ -1,10 +1,7 @@
 /**
- * The PR body: the prWriter role, a plain dispatch that follows write-pr's SKILL.md (installed
- * as an asset beside crew-afk) over the PR's whole range (`prBase`), once, just before open-pr.sh. It
- * gives a human reviewer a short note: Why, What changes, Risk and Tested. The checks line is
- * built here, from the integration check's own record, and handed to the writer for its
- * **Tested:** line, so the body never states a result no check produced. Advisory: a writer that
- * leaves no usable body never stops the PR — it opens with the checks line alone.
+ * The PR body: the prWriter role follows write-pr's SKILL.md over the PR's whole range. The checks
+ * line is built here from the integration check's record, so the body never states a result no
+ * check produced. Advisory: with no usable body the PR opens with the checks line alone.
  */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -18,10 +15,7 @@ import { prBodyPrompt } from "../prompts.mjs";
 import { CHECK_CATEGORIES, readVerifyRecord } from "../report.mjs";
 import { prBase, roleBinding } from "./shared.mjs";
 
-/**
- * What the integration check proved, as one line (`test pass, lint pass`), or null when it did
- * not run — off, a dry run, or a worktree it could not create. Only reached when it is not red.
- */
+/** Null when the integration check did not run; only reached when it is not red. */
 export function checksLine(sprint, integration) {
   if (integration?.status === "cached" && !integration.reason) return "pass (cached)";
   if (integration?.status !== "pass" || integration.reason) return null;
@@ -30,13 +24,11 @@ export function checksLine(sprint, integration) {
   return ran.length ? ran.join(", ") : "pass";
 }
 
-/** The writer's answer from its first `## Why` line, or null when it has none. */
 export function extractBody(text) {
   const at = (text ?? "").search(/^## Why\b/m);
   return at < 0 ? null : `${text.slice(at).trimEnd()}\n`;
 }
 
-/** The writer's `# <title>` — the last `# ` line before its `## Why` — or null. */
 export function extractTitle(text) {
   const at = (text ?? "").search(/^## Why\b/m);
   if (at < 0) return null;
@@ -44,18 +36,13 @@ export function extractTitle(text) {
   return titles.at(-1) ?? null;
 }
 
-/** The PRD's first `# ` heading, without a `PRD:` prefix — the PR's title — or null. */
 export function prdTitle(prdFile) {
   if (!prdFile) return null;
   const m = /^#\s+(.+)$/m.exec(readFileSync(prdFile, "utf8"));
   return m ? m[1].replace(/^PRD:\s*/i, "").trim() || null : null;
 }
 
-/**
- * Writes `<SPRINT_DIR>/pr-body.md` and returns `{ file, title, failed }`: `title` the writer's,
- * else the PRD's, else null (open-pr.sh then uses the slug), `failed` why the body has no writer prose (null when it has), for the summary. Null on a
- * dry run.
- */
+/** `title`: the writer's, else the PRD's, else null (open-pr.sh uses the slug). Null on a dry run. */
 export async function writePrBody(ctx, { integration = null } = {}) {
   const { sprint, effects, options } = ctx;
   const checks = checksLine(sprint, integration);
