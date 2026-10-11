@@ -19,7 +19,7 @@
     "model_reasoning_effort=\"high\"",
     "-"
   ],
-  "input": "<PROTOCOL crew-coder sha256:aa76878d751904c1>\n\n---\n\n# Task\n\nImplement the alpha issue.\n",
+  "input": "<PROTOCOL crew-coder>\n\n---\n\n# Task\n\nImplement the alpha issue.\n",
   "env": {
     "MAIN_ROOT": "<TMP>/repo",
     "CREW_ORCHESTRATED": "1",

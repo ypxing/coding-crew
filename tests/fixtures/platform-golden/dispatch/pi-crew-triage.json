@@ -13,7 +13,7 @@
     "--tools",
     "read,bash",
     "--append-system-prompt",
-    "<PROTOCOL crew-triage sha256:5a3708e7ebecfc43>",
+    "<PROTOCOL crew-triage>",
     "Implement the alpha issue.\n"
   ],
   "input": null,

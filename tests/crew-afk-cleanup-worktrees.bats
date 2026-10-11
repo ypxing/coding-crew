@@ -221,6 +221,14 @@ make_unmerged_worktree() {
   [[ "$output" == *"unknown argument"* ]]
 }
 
+@test "cleanup: --help prints the usage and options, and no code" {
+  run bash "$CLEANUP_SCRIPT" --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Usage:"* ]]
+  [[ "$output" == *"--force"* ]]
+  [[ "$output" != *"MAIN_ROOT="* ]]
+}
+
 @test "cleanup: errors when main root is not a git repository" {
   run bash "$CLEANUP_SCRIPT" --main-root "$(mktemp -d)"
   [ "$status" -eq 1 ]
