@@ -20,8 +20,8 @@ THIS REPO (source)
 │   ├── lib/
 │   └── roles/
 │       ├── coder.md        ← single-issue worker role
-│       ├── reviewer.md     ← per-branch / feature reviewer role
-│       ├── reviewer/       ← reviewer checklists (references/) and scripts/
+│       ├── reviewer.md     ← per-branch reviewer role (every review dispatch)
+│       ├── reviewer/       ← feature.md (feature review only), checklists (references/) and scripts/
 │       └── triage.md       ← verify-failure / findings / integration triage role
 ├── skills/                 ← reusable skill files
 │   ├── tdd/
@@ -57,7 +57,7 @@ install.sh
 
 #### Roles, not agent files
 
-There are no agents. crew-afk's three roles — coder, reviewer, triage — are protocols under `orchestrator/roles/` (`coder.md`, `reviewer.md` with `reviewer/{references,scripts}`, `triage.md`). They ship with the orchestrator as crew-afk's `assets`, so they install to `.coding-crew/crew-afk/roles/`; a crew-afk install also copies `skills/_shared/fragments/` to `.coding-crew/skills/_shared/fragments/`. The orchestrator renders a role's protocol per dispatch (`orchestrator/lib/adapters/render.mjs`, expanding `{{FRAGMENT:<key>}}` lines and `{{PLATFORM}}`) and hands it to the platform CLI through that platform's adapter (`orchestrator/lib/adapters/<platform>.mjs`). No per-platform agent file is written under `.claude/agents`, `.github/agents`, `.pi/agents` or `.codex/agents`: a crew-afk install (and `uninstall.sh`) removes the ones an older install wrote, by exact path (`retired-agents` in `registry.json`), along with `.coding-crew/agents/` and `.coding-crew/code-review/`.
+There are no agents. crew-afk's three roles — coder, reviewer, triage — are protocols under `orchestrator/roles/` (`coder.md`, `reviewer.md` with `reviewer/{feature.md,references,scripts}`, `triage.md`). They ship with the orchestrator as crew-afk's `assets`, so they install to `.coding-crew/crew-afk/roles/`; a crew-afk install also copies `skills/_shared/fragments/` to `.coding-crew/skills/_shared/fragments/`. The orchestrator renders a role's protocol per dispatch (`orchestrator/lib/adapters/render.mjs`, expanding `{{FRAGMENT:<key>}}` lines and `{{PLATFORM}}`; a feature review also gets `reviewer/feature.md` appended) and hands it to the platform CLI through that platform's adapter (`orchestrator/lib/adapters/<platform>.mjs`). No per-platform agent file is written under `.claude/agents`, `.github/agents`, `.pi/agents` or `.codex/agents`: a crew-afk install (and `uninstall.sh`) removes the ones an older install wrote, by exact path (`retired-agents` in `registry.json`), along with `.coding-crew/agents/` and `.coding-crew/code-review/`.
 
 ---
 

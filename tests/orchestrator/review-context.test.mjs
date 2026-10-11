@@ -65,7 +65,7 @@ test("a missing script falls back without running anything", () => {
   assert.equal(ctx.files.length, 2);
 });
 
-test("the feature review schema carries each finding's `issue`, where reviewer.md puts the design-standard marker; the branch schema has no findings", async () => {
+test("the feature review schema carries each finding's `issue`, where reviewer/feature.md puts the design-standard marker; the branch schema has no findings", async () => {
   const { featureReviewPrompt } = await import("../../orchestrator/lib/prompts.mjs");
   const schema = (p) => JSON.parse(p.match(/```json\n([\s\S]*?)\n```/)[1]);
   const json = schema(featureReviewPrompt({ featureBranch: "f", base: "b", reportPath: "/r" }));
