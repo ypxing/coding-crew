@@ -1,51 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# promote-findings.sh — mechanical half of findings promotion for crew-afk
-#
-# Findings promotion turns actionable code-review findings into fix issues that the
-# existing sprint loop implements in a second phase. See references/findings-promotion.md
-# for the full policy (severity threshold, grouping, depth bound, phases).
-#
-# This script owns only the deterministic parts, so all four platform variants behave
-# identically:
-#
-#   (the severity list comes from the orchestrator as --severities; no level table here)
-#   defer   — write a parked fix issue (Status: deferred-findings) + annotate the review report
-#   defer-integration — the same for a fixable red integration check on the merged feature branch
-#   flush   — flip every parked fix issue to ready-for-agent (Phase 1 → Phase 2 transition)
-#   list    — list parked fix issues without changing anything
-#   open    — the open findings as JSON (what remind counts)
-#   remind  — count findings still needing human triage, for the end-of-sprint reminder
-#   mark-not-run — record that a branch's review never completed, so the gap is visible
-#
-# The reasoning half (reading the review, deciding which findings are CRITICAL/HIGH,
-# restating each as an acceptance criterion) stays with the orchestrator.
-#
-# Every subcommand prints a machine-greppable first token and exits 0 unless the
-# invocation itself was wrong. Callers branch on the printed text, never on exit codes,
-# so a "nothing to do" outcome can never look like a failure mid-sprint.
-#
-# Invocation: bash "<skill-dir>/scripts/promote-findings.sh" <command> [options]
-# (install.sh does not chmod+x skill-local scripts)
+# promote-findings.sh — the deterministic half of findings promotion (policy:
+# references/findings-promotion.md); the orchestrator keeps the reasoning half.
+# Usage: promote-findings.sh <defer|defer-integration|flush|list|open|remind|mark-not-run> [options]
+# Every subcommand prints a greppable first token and exits 0 unless invoked wrongly: callers
+# branch on the text, so "nothing to do" never looks like a failure mid-sprint.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN_ROOT="${MAIN_ROOT:-$PWD}"
 # Sprint files (.scratch/<slug>/…) live in the main checkout, whichever worktree this is run from.
 cd "$MAIN_ROOT" || { echo "promote-findings.sh: cannot enter MAIN_ROOT $MAIN_ROOT" >&2; exit 1; }
-# Each subcommand traces its own outcome, so promotion, the phase flip and a review gap
-# are all in the trace whether or not the orchestrator remembered to echo them.
+# Each subcommand traces its own outcome, so the trace never depends on the orchestrator echoing it.
 _trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" ${FEATURE_SLUG:+--feature-slug "$FEATURE_SLUG"} "$@" 2>/dev/null || true; return 0; }
 
-# review_rollup <report-file>... — the one parser of the reviewer's aggregate report
-# file(s), shared with crew-summary.sh's code_review_summary(). See
-# orchestrator/lib/report.mjs's parseReviewAggregate doc comment: this used to be a
-# hand-rolled, line-anchored awk in each of the two scripts, and they drifted apart on
-# how much whitespace a herdr-captured review header could carry before neither matched
-# it. Prints {"branches": [...]} to stdout; an unreachable CLI degrades to no branches
-# rather than erroring the reminder. $CREW_REVIEW_ROLLUP overrides the lookup — bats
-# fixtures set it to the repo's own orchestrator/review-rollup.mjs, since they exercise
-# this script alone, not a full install.
+# review_rollup <report-file>... — the one parser of the reviewer's aggregate report, shared with
+# crew-summary.sh; an unreachable CLI degrades to no branches. $CREW_REVIEW_ROLLUP overrides the lookup.
 review_rollup() {
   local node_cli="${CREW_REVIEW_ROLLUP:-}"
   [ -f "$node_cli" ] || node_cli="$MAIN_ROOT/.coding-crew/crew-afk/review-rollup.mjs"
@@ -57,9 +27,7 @@ review_rollup() {
   fi
 }
 
-# Which backend (local|github) this repo tracks issues in, and the tracker CLI that answers —
-# read once through tracker-cli.sh, beside this script. $CREW_TRACKER_CLI overrides the lookup
-# for bats fixtures that exercise this script alone, not a full install.
+# $CREW_TRACKER_CLI overrides the lookup, for fixtures that exercise this script alone.
 # shellcheck source=tracker-cli.sh
 . "$SCRIPT_DIR/tracker-cli.sh"
 resolve_tracker_cli "$MAIN_ROOT" || exit 1
@@ -67,10 +35,7 @@ resolve_tracker_cli "$MAIN_ROOT" || exit 1
 DEFERRED_STATUS="deferred-findings"
 READY_STATUS="ready-for-agent"
 
-# --- promotion threshold -----------------------------------------------------
-# The orchestrator resolves afk.fixFindings to the severities a sprint promotes
-# (orchestrator/lib/report.mjs) and passes them as --severities: "actionable", or a list such as
-# "CRITICAL, HIGH"; empty means nothing is promoted. This script keeps no level table of its own.
+# The orchestrator resolves afk.fixFindings and passes --severities; no level table lives here.
 need_severities() {
   echo "promote-findings.sh $1: missing required argument --severities <list>" >&2
   exit 2
@@ -99,9 +64,7 @@ die() {
   exit 1
 }
 
-# Portable in-place edit. GNU sed accepts a bare `-i`, but BSD/macOS sed reads the next
-# argument as a backup suffix and then finds no script; `-i''` does not help because the
-# shell strips the empty quotes. Temp file + mv works identically on both.
+# Portable in-place edit: BSD sed reads the argument after a bare `-i` as a backup suffix.
 sed_inplace() {
   local script="$1" file="$2" tmp="${2}.tmp.$$"
   sed "$script" "$file" > "$tmp"
@@ -112,8 +75,7 @@ issues_open_dir() {
   echo ".scratch/$1/issues/open"
 }
 
-# Highest NN prefix across open/ and done/, +1, zero-padded to two digits. Both
-# directories are scanned so a number is never reused after an issue is closed.
+# Next NN prefix, scanning done/ too so a number is never reused.
 next_issue_number() {
   local slug="$1" max=0 n f
   for f in ".scratch/$slug/issues/open"/*.md ".scratch/$slug/issues/done"/*.md; do
@@ -126,13 +88,11 @@ next_issue_number() {
   printf '%02d' $((max + 1))
 }
 
-# --- defer -------------------------------------------------------------------
 
 # count_criteria <criteria-file> — one `- [ ]` line per promoted finding (or queued gap).
 count_criteria() { grep -c '^- \[' "$1" 2>/dev/null || true; }
 
-# _defer_local <slug> <issue-slug> <title> <criteria-file> <severities> — unchanged: still
-# hand-writes a numbered file under issues/open/. Prints the new file's path.
+# _defer_local <slug> <issue-slug> <title> <criteria-file> <severities> — prints the new file's path.
 _defer_local() {
   local slug="$1" issue_slug="$2" title="$3" criteria_file="$4" severities="$5" branch="$6"
   local open_dir num issue_path
@@ -141,9 +101,8 @@ _defer_local() {
   num=$(next_issue_number "$slug")
   issue_path="$open_dir/$num-fix-findings-$issue_slug.md"
 
-  # Status is deliberately NOT ready-for-agent: the loop's list operation selects on
-  # ready-for-agent, so a parked issue is invisible until flush. That is what keeps
-  # findings work from competing with in-flight Phase 1 issues over the same files.
+  # Not ready-for-agent: the loop selects on that, so a parked issue stays invisible until flush and
+  # cannot compete with in-flight Phase 1 issues over the same files.
   {
     echo "# $title"
     echo ""
@@ -164,27 +123,18 @@ _defer_local() {
   echo "$issue_path"
 }
 
-# _github_tracker_cli <args...> — shells out to the tracker CLI (tracker/cli.mjs, installed to
-# .coding-crew/tracker/ on every install), whose github backend's `create-issue` is the exact same
-# `createIssue` (+ lazy, idempotent milestone bootstrap) every other GitHub write path uses, rather
-# than a second hand-rolled `gh issue create` that can drift from it (it did: this script's own
-# milestone bootstrap used to be missing entirely). The CLI is the one resolve_tracker_cli found.
 _github_tracker_cli() {
   node "$TRACKER_CLI" "$@"
 }
 
-# --- github bodies embed their evidence --------------------------------------
-# A github fix issue is read where the sprint's checkout does not exist, and the `.scratch/`
-# reports are gitignored runtime bookkeeping that is never pushed. So under github the body
-# carries the reviewer's / verifier's content itself, and never a local path.
-# (Local issues sit in the same checkout as the report and keep naming it in `Source:`.)
+# A github fix issue is read where the sprint's checkout does not exist and .scratch/ is never
+# pushed, so its body carries the evidence itself, never a local path.
 FINDINGS_MAX_BYTES=30000   # all embedded review findings; GitHub caps a body at 65536
 EVIDENCE_MAX_BYTES=8000    # the failing output's tail
 FINDING_MAX_LINES=60       # one finding's prose
 
-# _scrub_paths — stdin → stdout with absolute filesystem paths and `.scratch/` paths made
-# repo-relative or reduced to their last component. A body must not leak a username or a
-# directory layout, and an embedded snippet or failing output can quote either.
+# _scrub_paths — absolute and .scratch/ paths made relative or reduced: a body must not leak a
+# username or a directory layout.
 _scrub_paths() {
   local p='[^[:space:]:)"'"'"'`,;/]+'
   sed -e "s#${MAIN_ROOT%/}/##g" -e "s#${PWD%/}/##g" \
@@ -211,15 +161,10 @@ _review_branch_prose() {
   ' "$1"
 }
 
-# _review_findings_md <report> <branch> <severities> — markdown for the findings `defer`
-# promotes: each one's full prose block (title, File:, Snippet:, Issue:, Fix:) in a <details>.
-# <severities> is a list such as "CRITICAL, HIGH", or `actionable`, which keeps the blocks whose
-# location the findings triage judged actionable (that verdict sits in the block's json, not its
-# prose; a folded duplicate_of target's location lists both spots, each matched on its own). Where the prose has no block to keep, the json's one-line findings are listed instead,
-# so a promoted finding is never absent from the body. A finding marked `report_only` (the promotion
-# cap's overflow, marked before defer runs) is no criterion of this issue, so neither path lists it:
-# a prose block is dropped for one only when its own severity and exact `File:` location are that
-# finding's, so a promoted finding at the same spot keeps its block.
+# _review_findings_md <report> <branch> <severities> — markdown for the findings `defer` promotes,
+# each prose block in a <details>; under `actionable`, the blocks whose location triage judged
+# actionable. With no block to keep, the json's one-line findings are listed. A `report_only`
+# block is dropped only on an exact severity + File: match, so a promoted finding there keeps its own.
 _review_findings_md() {
   local report="$1" branch="$2" severities="$3" locs="" sevs="" ro rollup
   rollup="$(review_rollup "$report")"
@@ -292,7 +237,6 @@ _review_findings_md() {
   printf '%s' "$out"
 }
 
-# _tail_fenced <file> — the last lines of <file> (EVIDENCE_MAX_BYTES at most) in a fenced block.
 _tail_fenced() {
   [ -f "$1" ] || return 0
   local tail_text
@@ -301,15 +245,9 @@ _tail_fenced() {
   printf '````\n%s\n````\n' "$tail_text"
 }
 
-# _defer_github <slug> <title> <branch> <report> <criteria-file> <severities> <blocked-by> —
-# github path: creates the issue via _github_tracker_cli, labeled ready-for-agent immediately
-# (github has no pre-created label to represent "parked", so there is no local-style
-# park/flush step for this backend — flush/list correctly report nothing to promote, see
-# cmd_flush/cmd_list). The body keeps local's `Source:` line (naming the kind and branch, not
-# a local report path) so parseIssue reads both the same way, embeds the promoted
-# findings' full reviewer text, and adds a numeric `## Blocked by` reference when the caller
-# names one. Prints the created issue's URL (the tracker CLI's stdout, itself `gh issue
-# create`'s stdout passed through).
+# _defer_github <slug> <title> <branch> <report> <criteria-file> <severities> <blocked-by> — labeled
+# ready-for-agent at once: github has no "parked" label, so flush and list have nothing to do there.
+# `Source:` names kind and branch so parseIssue reads it like local's. Prints the issue's URL.
 _defer_github() {
   local slug="$1" title="$2" branch="$3" report="$4" criteria_file="$5" severities="$6" blocked_by="$7"
 
@@ -382,12 +320,8 @@ cmd_defer() {
     ref="$(_defer_local "$slug" "$issue_slug" "$title" "$criteria_file" "$severities" "$branch")"
   fi
 
-  # Annotate the report so a later human run of /crew-address-findings does not
-  # re-triage findings this sprint already fixed. Appended at the end of the file
-  # (the report is fully written before promotion runs), keyed by branch + severity —
-  # promotion always takes *all* findings at those severities for that branch, so the
-  # pair is an unambiguous marker with no per-finding parsing. Shared across backends:
-  # the review report is runtime bookkeeping, always local (see docs/PRD's Decisions).
+  # Mark the report so /crew-address-findings skips what this sprint fixed. Promotion takes every
+  # finding at those severities for the branch, so (branch, severity) is an unambiguous key.
   if ! grep -q '^## Promoted Findings' "$report"; then
     {
       echo ""
@@ -400,8 +334,7 @@ cmd_defer() {
       echo ""
     } >> "$report"
   fi
-  # The count rides on the marker so crew-summary.sh can show it without the issue file —
-  # a github ref is a URL, and the summary makes no network call to read it back.
+  # The count rides on the marker: the summary makes no network call to read a github ref back.
   local n
   n=$(count_criteria "$criteria_file")
   echo "- $branch: $severities → $ref ($n finding(s))" >> "$report"
@@ -410,15 +343,9 @@ cmd_defer() {
   echo "defer: $ref"
 }
 
-# --- defer-integration -----------------------------------------------------------
-# A fix issue that comes from no reviewed branch, flushed into Phase 2 with the review findings.
-# Its `Source:` line is the same depth bound: findings on its branch are report-only.
-#   defer-integration — a drain-time integration check that triage judged fixable: the merged
-#                       feature branch's own checks fail. The caller (loop.mjs) bounds how many a
-#                       run may create; this only refuses a second while one is still open.
-# _defer_feature_issue <command> <feature-slug> <report> <criteria-file> <title> <source-tag>
-#                      <file-suffix> <trace-label> <context> <github-context> [numbered]
-# The github body drops the report path for the evidence itself: the tail of the failing output.
+# A fix issue from no reviewed branch: a red integration check on the merged feature branch that
+# triage judged fixable. Its `Source:` line is the depth bound. The caller bounds how many a run
+# creates; this refuses a second while one is open. A github body carries the failing tail.
 _defer_feature_issue() {
   local command="$1" slug="$2" report="$3" criteria_file="$4" title="$5" source_tag="$6"
   local suffix="$7" label="$8" context="$9" github_context="${10}" numbered="${11:-}" ref
@@ -444,9 +371,7 @@ _defer_feature_issue() {
     local open_dir existing f
     open_dir=$(issues_open_dir "$slug")
     mkdir -p "$open_dir"
-    # A numbered kind (several per feature over time) gets a slug of its own each time: the slug
-    # is the issue's identity in the sprint's bookkeeping, and a reused one would read as the
-    # earlier, finished issue.
+    # A numbered kind gets a new slug each time: a reused one would read as the earlier, finished issue.
     local pattern="*-$suffix.md" name="$suffix"
     if [ -n "$numbered" ]; then
       local k=1
@@ -484,8 +409,7 @@ _defer_feature_issue() {
   echo "$command: $ref"
 }
 
-# _feature_issue_args <command> <args...> — the options defer-integration takes; sets slug,
-# report and criteria_file in the caller (bash dynamic scope).
+# _feature_issue_args <command> <args...> — sets slug, report and criteria_file in the caller.
 _feature_issue_args() {
   slug="" report="" criteria_file=""
   shift
@@ -503,8 +427,7 @@ _feature_issue_args() {
 
 cmd_defer_integration() {
   local slug report criteria_file at=""
-  # --at <commit> names the feature-branch tip that failed: it keeps each fix issue's title (and
-  # so, under github, its slug) unique across the run's drains.
+  # --at names the failing tip, keeping each fix issue's title (and github slug) unique across drains.
   local args=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -522,11 +445,8 @@ saw the branches together. The tail of the failing output is under \`## Failing 
 below." numbered
 }
 
-# --- flush -------------------------------------------------------------------
-# Phase 1 → Phase 2. Rewriting Status on disk (rather than holding a list in memory) is
-# what makes this idempotent and crash-safe: once flipped, the parked set is empty, so
-# reaching another exit re-runs flush harmlessly and an interrupted sprint resumes with
-# the fix issues already looking like ordinary ready-for-agent work.
+# Phase 1 → Phase 2. Rewriting Status on disk makes this idempotent and crash-safe: an interrupted
+# sprint resumes with the fix issues already ready-for-agent.
 cmd_flush() {
   local slug=""
   while [ $# -gt 0 ]; do
@@ -537,11 +457,7 @@ cmd_flush() {
   done
   [ -n "$slug" ] || usage
 
-  # github's defer (cmd_defer) creates fix issues labeled ready-for-agent immediately —
-  # there is no pre-created "parked" label to represent local's deferred-findings Status,
-  # so nothing is ever queued here for github to promote. Still "works" in the sense the
-  # AC asks for: no crash, and an honest zero rather than scanning a local dir that, under
-  # `tracker: github`, holds no issue content at all.
+  # github's defer never parks an issue, so there is nothing to promote.
   if [ "$TRACKER_KIND" = "github" ]; then
     _trace FLUSH "promoted=0"
     echo "FLUSH: none"
@@ -568,7 +484,6 @@ cmd_flush() {
   fi
 }
 
-# --- list --------------------------------------------------------------------
 cmd_list() {
   local slug=""
   while [ $# -gt 0 ]; do
@@ -579,8 +494,7 @@ cmd_list() {
   done
   [ -n "$slug" ] || usage
 
-  # Same reasoning as cmd_flush's github branch: defer never parks a github issue, so
-  # there is never a deferred one to list.
+  # As in cmd_flush: github never has a parked issue.
   if [ "$TRACKER_KIND" = "github" ]; then
     echo "DEFERRED: none"
     return
@@ -597,16 +511,8 @@ cmd_list() {
   [ "$count" -eq 0 ] && echo "DEFERRED: none" || echo "DEFERRED: count=$count"
 }
 
-# --- mark-not-run ------------------------------------------------------------
-# Review is advisory: a failed reviewer never blocks a merge. But "advisory" must not
-# decay into "reported as clean". If the dispatch dies there is no --out file, so nothing
-# is appended to reviews/ — and `remind` globbing an empty directory prints
-# "FINDINGS: none", which reads as an all-clear on a branch nobody looked at.
-#
-# Writing a stub block closes that hole with the same `not_run` convention
-# verify-worktree.sh already uses for undiscoverable check commands: an unknown result is
-# recorded as unknown, never as a pass. Creating the report when absent is the load-bearing
-# part — it is what makes the gap survive into the end-of-sprint reminder.
+# A dead review dispatch leaves no report, which `remind` would read as an all-clear. A `not_run`
+# stub records the gap so it survives into the end-of-sprint reminder.
 cmd_mark_not_run() {
   local slug="" branch="" issue_slug="" report="" reason=""
   while [ $# -gt 0 ]; do
@@ -620,7 +526,6 @@ cmd_mark_not_run() {
     esac
   done
   [ -n "$slug" ] && [ -n "$branch" ] && [ -n "$issue_slug" ] || usage
-  # A gap with no reason is nearly as unactionable as no gap at all.
   [ -n "$report" ] && [ -n "$reason" ] || usage
 
   mkdir -p "$(dirname "$report")"
@@ -631,9 +536,7 @@ cmd_mark_not_run() {
     return 0
   fi
 
-  # jq -n builds the JSON safely regardless of what $reason contains (quotes, backslashes,
-  # …) — the same reason a reviewer's own findings never get hand-interpolated into a
-  # report either. See report.mjs's parseReviewAggregate for who reads this block.
+  # jq -n builds the JSON safely whatever $reason contains.
   local json_block
   json_block=$(jq -n --arg branch "$branch" --arg slug "$issue_slug" --arg reason "$reason" \
     '{branch: $branch, slug: $slug, verdict: "not_run", detail: $reason, findings: []}')
@@ -660,15 +563,10 @@ cmd_mark_not_run() {
   echo "mark-not-run: not_run recorded — $branch ($reason)"
 }
 
-# open_findings_json <rollup-json> <report>... — the one definition of "open": every finding in
-# the rollup minus what a fix issue already covers: the (branch, severity) pairs, and — under
-# `actionable` — a branch's findings that triage judged Actionable (its bullet names `actionable`
-# where the severities go). Those are defer's own bash-generated "## Promoted Findings" bullets
-# ("- <branch>: SEV, SEV → <ref>", since #209 followed by " (<n> finding(s))"), never the reviewer's free text, so a plain regex capture reads
-# them exactly. Prints a JSON array of {branch, severity, location, criterion, verdict, rationale};
-# verdict and rationale are "" for a finding triage never judged. `carried: true` is added to a
-# finding an earlier review of the branch raised and the latest did not repeat. A finding marked
-# `report_only` (a feature review past the promotion cap) is never covered: no fix issue took it.
+# open_findings_json <rollup-json> <report>... — every finding minus what a fix issue covers: the
+# (branch, severity) pairs in defer's own "## Promoted Findings" bullets, or under `actionable` a
+# branch's triage-actionable findings. `report_only` findings are never covered. Prints a JSON array;
+# `carried: true` marks a finding an earlier review raised and the latest did not repeat.
 open_findings_json() {
   local rollup="$1" promoted
   shift
@@ -692,7 +590,6 @@ open_findings_json() {
   '
 }
 
-# --- open ---------------------------------------------------------------------
 # The open findings as JSON, for post-findings.sh. `[]` when there is nothing.
 cmd_open() {
   local slug=""
@@ -711,9 +608,8 @@ cmd_open() {
   open_findings_json "$(review_rollup "${reports[@]}")" "${reports[@]}"
 }
 
-# verdict_lines <verdict> <HEADING> <note> — open findings (JSON on stdin) with that triage
-# verdict: "HEADING: n (note)" then one "<heading, lowercased>: <branch> [SEV] <location> — <what>
-# — why: <rationale>" line each. Prints nothing when there are none.
+# verdict_lines <verdict> <HEADING> <note> — open findings (JSON on stdin) with that verdict:
+# "HEADING: n (note)", then one line each. Prints nothing when there are none.
 verdict_lines() {
   local verdict="$1" heading="$2" note="$3" json n
   json=$(cat)
@@ -726,21 +622,10 @@ verdict_lines() {
   ' <<< "$json"
 }
 
-# --- remind ------------------------------------------------------------------
-# Promotion only covers what the sprint's fixFindings rule selects (every Actionable finding by
-# default) on Phase 1 branches. Everything else — Debatable and Dismissed findings, the severities
-# a severity level leaves out, plus any finding raised against a Phase 2 fix branch (report-only
-# by the depth bound) — still needs a human. This counts exactly those so the end-of-sprint reminder states a
-# real number instead of nudging the user toward an empty queue, or worse, staying silent
-# when CRITICAL findings from a fix branch are sitting unread.
-#
-# Findings are attributed to the `## Branch: <name>` section they appear under, then any
-# (branch, severity) pair listed in `## Promoted Findings` is subtracted. Reports already
-# archived under reviews/done/ are ignored.
-#
-# Branches marked `Review: not_run` are counted separately and always printed. They
-# contribute no findings by definition, so folding them into the findings total would be
-# wrong — but omitting them is the silent all-clear this is here to prevent.
+# Counts what still needs a human — findings promotion did not take (Debatable, Dismissed,
+# severities left out, anything on a Phase 2 fix branch) — so the reminder states a real number.
+# Review gaps (`Review: not_run`) carry no findings but are always printed: omitting them is the
+# silent all-clear this exists to prevent.
 cmd_remind() {
   local slug=""
   while [ $# -gt 0 ]; do
@@ -766,8 +651,7 @@ cmd_remind() {
   open_json=$(open_findings_json "$rollup" "${reports[@]}")
 
   local totals crit high med low total breakdown
-  # A finding triage dismissed is not "still needing triage": it is counted apart (DISMISSED) and
-  # left out of the total and its severity breakdown.
+  # Dismissed findings are counted apart, outside the total.
   totals=$(jq -r '
     map(select(.verdict != "dismiss")) as $o
     | [($o | map(select(.severity == "CRITICAL")) | length),
@@ -793,23 +677,19 @@ cmd_remind() {
     fi
   else
     echo "FINDINGS: open=$total ($breakdown)"
-    # What a human decides first: the findings triage judged Debatable. An Actionable one still
-    # open here was not promoted (its fix issue failed to queue); Dismissed ones are collapsed to
-    # one line each with the reason. Nothing is printed for findings triage never judged.
+    # Debatable first. An Actionable one still open failed to queue its fix issue; untriaged findings
+    # get no line.
     verdict_lines debatable DEBATABLE "decide these first" <<< "$open_json"
     verdict_lines actionable ACTIONABLE "not promoted" <<< "$open_json"
     verdict_lines dismiss DISMISSED "triage's rationale, collapsed" <<< "$open_json"
-    # Carried findings triage never judged have no line above to carry the label; they are counted
-    # in the total already.
+    # Untriaged carried findings, already in the total, get their own line.
     jq -r '.[] | select(.carried == true and .verdict == "")
       | "earlier: \(.branch) [\(.severity)] \(.location) — \(.criterion) (earlier review)"' <<< "$open_json"
     printf 'report: %s\n' "${reports[@]}"
   fi
 
-  # Printed after the findings line and never suppressed by it: a sprint with zero open
-  # findings and an unreviewed branch is exactly the case that must not look clean.
-  # review_rollup already folded a retried, real verdict over an earlier not_run stub
-  # for the same branch, so a `not_run` entry here is never stale.
+  # Never suppressed: zero findings plus an unreviewed branch must not look clean. review_rollup
+  # already folded a retried verdict over a not_run stub, so no entry here is stale.
   local gaps gap_count
   gaps=$(jq -r '.branches[] | select(.verdict == "not_run") | [.branch, (.detail // "")] | @tsv' <<< "$rollup")
   gap_count=0
@@ -820,8 +700,7 @@ cmd_remind() {
     printf '%s\n' "$gaps" | while IFS=$'\t' read -r branch reason; do
       echo "gap: $branch — $reason"
     done
-    # The report paths are printed with the findings line above; when there are no
-    # findings, the gap lines are the only reason to name the report, so print them here.
+    # With no findings, the gaps are the only reason to name the report.
     if [ "$total" -eq 0 ] && [ "${dismissed:-0}" -eq 0 ]; then
       printf 'report: %s\n' "${reports[@]}"
     fi

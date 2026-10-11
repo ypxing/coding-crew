@@ -1,87 +1,7 @@
 #!/usr/bin/env node
 /**
- * crew-afk — the AFK issue sprint, as a program.
- *
- * Usage:
- *   crew-afk run    [options]   run the sprint to completion
- *   crew-afk plan   [options]   print what a sprint would do, change nothing
- *   crew-afk status             print the current sprint's state
- *   crew-afk doctor [options]   check this platform can dispatch at all
- *
- * Options:
- *   --platform <name>                      required (not for status): one of lib/adapters/index.mjs's PLATFORMS
- *   --pane-host <orca|herdr|auto|none>     [paneHost, ~/.coding-crew/config.json only; default
- *                                           none] or $CREW_PANE_HOST, which beats the file, as
- *                                           do the legacy $ORCA_ENV=1 / $HERDR_ENV=1 (orca
- *                                           first). Opens one tab tailing the trace log and
- *                                           one feature agent for the slug, both in its
- *                                           `_feature` worktree (reused across runs, never
- *                                           closed; `_feature` is kept while it lives), that
- *                                           every milestone and the outcome are pushed to;
- *                                           nothing load-bearing runs through it. Needs
- *                                           `herdr server` / `orca open` running. `run` prints
- *                                           `PANE-HOST: <host|none>` first, for a human or script
- *                                           that wants the resolved host (the launcher skills do
- *                                           not read it).
- *                                           See lib/pane-host/index.mjs, docs/orca-support.md.
- *   --model <alias|inherit>                coder model; every role on the same runtime
- *                                           matches it unless .coding-crew/config.json's
- *                                           afk.models names one (see lib/crew-config.mjs,
- *                                           which also lets a role run on another runtime)
- *   --feature-slug <slug>                  or derived from the first issue's dir
- *   --jira <KEY>                           e.g. PROJ-12: a feature branch this run creates is
- *                                           <afk.branchPrefix, default feature/><KEY>-<slug>.
- *                                           Ignored, with a warning, when the branch is already
- *                                           chosen (a sprint.env to resume)
- *
- * Each flag below overrides the config.json setting in brackets for one run (lib/crew-config.mjs):
- *   --fix-findings <actionable|critical|high|medium|none>  [fixFindings, default actionable]
- *                                           what is auto-fixed in Phase 2: every finding triage
- *                                           judges Actionable, or the lowest severity
- *   --max-parallel <n>                     [maxParallel] concurrent coders (the coder runtime's default)
- *   --max-wall <minutes>                   [maxWallMinutes] default 120, 0 = off; once elapsed no new issue is
- *                                          claimed, in-flight workers finish, Phase 2 is parked, exit 2
- *   --poll-interval <seconds>              default 30; while work is in flight and a slot is idle, list
- *                                           the tracker once per interval and start any issue made
- *                                           ready mid-run (linted first; an ERROR blocks it for this
- *                                           run only). 0 = claim new issues only when an attempt ends
- *   --coder-timeout <minutes>              [timeouts.coder, 60] a hung coder cannot hang the sprint
- *   --reviewer-timeout <minutes>           [timeouts.reviewer, 20]
- *   --no-deps                              [installDeps: false] skip both ensure-deps.sh call sites
- *   --squash                               [squashCommits, default false] squash the sprint's
- *                                           commits into one at the end; --no-squash turns it off
- *   --open-pr                              [openPr, default false] at the end, push the feature
- *                                           branch and create or update its PR, whose body
- *                                           closes the issues it merged; --no-open-pr turns it off
- *   --no-baseline                          [baselineCheck: false] skip running the checks once on
- *                                           the feature branch before any dispatch (a red one
- *                                           otherwise stops the run: every issue would fail it)
- *   --no-integration-check                 [integrationCheck: false] skip running the checks on
- *                                           the merged feature branch each time the queue drains
- *                                           (a red one is reported, and no PR is opened). The
- *                                           baseline flag does not turn it off
- *   --resume-coder-session                 [resumeCoderSession, default false] a fix round
- *                                           continues the claude coder session that wrote the
- *                                           branch, when that session is small and the branch
- *                                           has not moved since
- *
- *   --reclaim                              take over the feature lease (refs/crew-lock/<slug> on
- *                                           origin, held under `tracker: github`) when its holder
- *                                           is on another host or otherwise not provably dead. A
- *                                           lease left by a dead pid on this host is reclaimed
- *                                           without it. Use only when the holding run is gone
- *   --no-sync-main                         skip merging origin's default branch into a resumed feature
- *                                           branch that lacks it (done once, before the baseline;
- *                                           a conflict there stops the run)
- *   --allow-dirty                          accepted, does nothing (prints a notice): the main
- *                                           checkout is never switched or merged into, so its
- *                                           uncommitted changes never stop a run
- *
- * CREW_LOG_LEVEL=debug|info|warn|error|fatal sets the lowest level stderr shows (default
- * info); the trace log keeps every level either way. debug adds each dispatch's throttled
- * [TOOL] heartbeat, the effects log, and a script's stdout echoed after its own trace line.
- * CREW_VERBOSE=1 is the older spelling of debug. CREW_INSTALL_DIR overrides the `.coding-crew/`
- * this run's assets are read from (default: the one holding this crew-afk/; lib/install-dir.mjs).
+ * crew-afk — the AFK issue sprint, as a program: `crew-afk run|plan|status|doctor`.
+ * Flags and the config.json settings they override: `crew-afk help`, lib/crew-config.mjs.
  *
  * Exit codes: 0 clean · 2 stalled · 3 nothing to do · 1 setup error
  */
@@ -203,10 +123,8 @@ function parseArgs(argv) {
       case "-h": case "--help": o.command = "help"; break;
       default:
         if (a.startsWith(".scratch/")) {
-          // A path argument names the sprint: derive the slug from it, exactly once.
           o.featureSlug ??= a.replace(/^\.scratch\//, "").split("/")[0] || null;
         } else {
-          // Collected, not forwarded — see reportUnknownArgs.
           o.unknown.push(a);
         }
     }
@@ -216,7 +134,6 @@ function parseArgs(argv) {
   return o;
 }
 
-// Plain Levenshtein edit distance — no dependency, and small enough to stay honest.
 function editDistance(a, b) {
   const dp = Array.from({ length: a.length + 1 }, (_, i) => {
     const row = new Array(b.length + 1);
@@ -234,10 +151,7 @@ function editDistance(a, b) {
   return dp[a.length][b.length];
 }
 
-/**
- * `plan`'s role table: one line per role, its runtime and model, and which config file set
- * either — with two files merged, a value's source is otherwise a guess.
- */
+/** `plan`'s role table, tagged with the config file that set each value: with two merged, it is otherwise a guess. */
 function crewTable(crew, origin = {}) {
   const width = Math.max(...ROLES.map((r) => r.length));
   return ROLES.map((r) => {
@@ -251,7 +165,6 @@ function crewTable(crew, origin = {}) {
   });
 }
 
-/** Every existing .scratch/<feature-slug> directory name, for a typo suggestion. */
 function existingFeatureSlugs(mainRoot) {
   const scratch = join(mainRoot, ".scratch");
   if (!existsSync(scratch)) return [];
@@ -261,14 +174,8 @@ function existingFeatureSlugs(mainRoot) {
 }
 
 /**
- * Feature slug → its ready-for-agent, unblocked issue slugs, from an unscoped
- * selectDispatchable() (no sprint exists yet). session-init.sh's own no-slug fallback
- * picks an arbitrary feature once two have ready issues; this lets resolveFeatureSlug
- * refuse instead, identically for every launcher.
- *
- * Local-only on purpose: under `tracker: github` there is no cross-feature scan (a
- * milestone query needs the slug already), so this finds nothing and session-init.sh's
- * own `--feature-slug`-required error applies.
+ * Feature slug → its ready issue slugs, so a bare invocation refuses when two features have ready
+ * issues rather than let session-init.sh pick one. Local-only: a github milestone query needs the slug.
  */
 function readyFeatureCandidates(mainRoot) {
   const byFeature = new Map();
@@ -283,13 +190,8 @@ function readyFeatureCandidates(mainRoot) {
 }
 
 /**
- * Resolve the one feature slug a bare invocation (no --feature-slug, no .scratch/<slug>/
- * path) would mean, or explain why it can't. Returns `{ slug }` (slug may be null when
- * nothing is ready yet — session-init.sh's own "No issues found" error still covers that),
- * or `{ error }` when more than one feature dir has a ready issue.
- *
- * A cwd inside `<worktreeRoot>/crew/<slug>/_feature` names its feature, under any tracker, ahead
- * of the ready-issue scan; an explicit slug that differs from it is refused.
+ * The feature slug a bare invocation means: `{ slug }` (null when nothing is ready) or `{ error }`
+ * when several features have ready issues. A cwd in a `_feature` worktree names its feature.
  */
 function resolveFeatureSlug(mainRoot, explicitSlug, worktreeRootDir, cwd = process.cwd()) {
   const here = worktreeRootDir ? featureSlugOfPath(worktreeRootDir, cwd) : null;
@@ -315,9 +217,8 @@ function resolveFeatureSlug(mainRoot, explicitSlug, worktreeRootDir, cwd = proce
 }
 
 /**
- * A pidfile at .scratch/<slug>/.crew-afk.lock: a second `run` for the same slug refuses
- * rather than racing the first for the same worktrees/branches (the loser would burn real
- * attempts off its retry cap). A lock whose pid is dead (crash, SIGKILL) is reclaimed.
+ * A second `run` for the same slug refuses rather than race the first for its worktrees and burn
+ * attempts off its retry cap. A dead pid's lock is reclaimed.
  */
 function acquireSprintLock(mainRoot, slug) {
   const lockPath = join(mainRoot, ".scratch", slug, ".crew-afk.lock");
@@ -357,11 +258,7 @@ function releaseSprintLock(lockPath) {
   }
 }
 
-/**
- * A bare word that isn't a flag or a .scratch/ path. Reported here, with the accepted
- * forms and a likely-typo suggestion, rather than forwarded to session-init.sh, whose
- * downstream scripts only know --jira.
- */
+/** Reported with a typo suggestion rather than forwarded: session-init.sh's scripts only know --jira. */
 function reportUnknownArgs(unknown, mainRoot) {
   const slugs = existingFeatureSlugs(mainRoot);
   const lines = [
@@ -389,10 +286,8 @@ function reportUnknownArgs(unknown, mainRoot) {
 }
 
 /**
- * The main checkout, whichever worktree the run was launched from. From the shared git dir: its
- * parent when it is a `.git`; its `core.worktree` when set (a submodule's `.git/modules/<name>`);
- * else (a bare repo, no main checkout) this worktree's top level. Every script is handed it as
- * MAIN_ROOT; scripts/main-root.sh applies the same rule to a hand run and the gates.
+ * The main checkout from any worktree: the common git dir's parent, its `core.worktree` (a
+ * submodule), else this worktree's top level (bare repo). scripts/main-root.sh applies the same rule.
  */
 function gitRoot() {
   const r = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"], { encoding: "utf8" });
@@ -422,8 +317,7 @@ function warnDefaultBehindOrigin(effects, defaultBranch, log) {
 }
 
 function resolveScriptsDir(mainRoot, platform) {
-  // Project install, then user-level (`TARGET_REPO=$HOME`, the documented default), then this
-  // repo's source tree (dev).
+  // Project install, then user-level (`TARGET_REPO=$HOME`), then this repo's source tree (dev).
   const candidates = [
     process.env.CREW_SCRIPTS,
     ...skillDirCandidates(mainRoot, platform, "crew-afk").map((d) => join(d, "scripts")),
@@ -468,7 +362,6 @@ async function main() {
     console.error(`crew-afk: unknown command ${options.command} (expected ${COMMANDS.join(", ")})`);
     return 2;
   }
-  // `status` only reads the sprint's state, so it dispatches nothing and needs no platform.
   if (!options.platform && options.command !== "status") {
     console.error(`crew-afk: --platform is required (expected ${PLATFORMS.join(", ")})`);
     return 1;
@@ -488,8 +381,6 @@ async function main() {
   }
 
   const scriptsDir = resolveScriptsDir(mainRoot, options.platform);
-  // Once per run; every child inherits it (session-init.sh also records it in sprint.env), and
-  // each asset is a fixed sub-path of it — see install-dir.mjs.
   const installDir = resolveInstallDir(process.env, HERE);
   process.env.CREW_INSTALL_DIR = installDir;
   const stderrLevel = stderrThreshold();
@@ -499,8 +390,7 @@ async function main() {
     scriptsDir,
     mainRoot,
     dryRun: options.dryRun,
-    // Every script, session-init.sh first (it writes sprint.env), uses this root rather than
-    // deriving its own.
+    // Every script uses this root rather than deriving its own.
     env: { MAIN_ROOT: mainRoot },
     log: (line) => {
       logLines.push(line);
@@ -522,9 +412,7 @@ async function main() {
     return 0;
   }
 
-  // .coding-crew/config.json (the repo's, over ~/.coding-crew/config.json) is optional;
-  // absent, every role runs on --platform with --model.
-  // Only a real `run` moves a legacy afk-models.json into it on disk, once setup has passed.
+  // config.json is optional; absent, every role runs on --platform with --model.
   let loaded;
   try {
     loaded = loadConfig(mainRoot);
@@ -557,11 +445,9 @@ async function main() {
   const pane = resolvePaneHost({ afk: loaded.config.afk, cli: options.cli, origin: loaded.origin });
   for (const n of pane.notices) console.error(`crew-afk: ${n}`);
   options.paneHost = pane.paneHost;
-  // Read by pane-host/, which keeps its run-scoped state on effects too.
   effects.paneHost = options.paneHost;
   const worktreeSetting = resolveWorktreeRoot({ afk: loaded.config.afk, origin: loaded.origin });
-  // worktree.mjs and the child scripts all read the location from CREW_WORKTREE_ROOT, so a
-  // config.json value travels the same way rather than as a second channel.
+  // A config.json value travels as CREW_WORKTREE_ROOT, which worktree.mjs and every script read.
   if (worktreeSetting) process.env.CREW_WORKTREE_ROOT = worktreeSetting;
   options.worktreeRoot = worktreeRoot(mainRoot);
   if (worktreeSetting) {
@@ -592,7 +478,6 @@ async function main() {
 
   // --- plan: read-only, zero tokens ----------------------------------------
   if (options.command === "plan") {
-    // Resolved exactly as `run` resolves it, so the preview matches what `run` would do.
     const resolved = resolveFeatureSlug(mainRoot, options.featureSlug, options.worktreeRoot);
     if (resolved.error) {
       console.error(resolved.error);
@@ -638,13 +523,9 @@ async function main() {
     return issues.length ? 0 : 3;
   }
 
-  // --- run -----------------------------------------------------------------
-  // The try starts here, not around runSprint, so a setup failure also reaches the
-  // end-of-run push in `finally` — the feature agent's only notice that the run ended. State is
-  // declared outside it so `finally` sees whatever got assigned.
+  // The try starts here, not around runSprint, so a setup failure also reaches the end-of-run
+  // push in `finally`; state is declared outside it so `finally` sees it.
   let sprint;
-  // A run-stopping failure once the sprint exists: stderr for whoever launched the run, and the
-  // log, which outlives the scrollback.
   // The first line of what stopped the run, for the final push when no summary file was written.
   let failureLine;
   const fatal = (message) => {
@@ -652,7 +533,6 @@ async function main() {
     console.error(message);
     if (sprint?.traceLog) writeLog(sprint.traceLog, `[ABORT] ${message}`, "fatal");
   };
-  // Every other sprint line: the trace log always, stderr at or above CREW_LOG_LEVEL.
   const emit = (line, level = levelFor(line)) => {
     if (!line) return;
     if (shows(level)) console.error(line);
@@ -667,16 +547,13 @@ async function main() {
   // Set where a run ends early after run-start; the others are read off stalled/wallCapped/attemptCapped.
   let endReason;
   let runStarted = false;
-  // `.scratch/<slug>/traces/summary-<runId>.md`, set once ctx exists: all ctx.out printed.
   let summaryFile;
   // Set when ctx.out kept summary text off stdout because the feature agent was there to get it.
   let outWithheld = false;
-  // How the end push went; `sent: true` is what lets stdout end with a pointer line.
   let endPush = null;
   let lockPath;
   let lease;
-  // The sprint's `crew/<slug>/_feature` worktree, once made. Removed on every ending unless the
-  // feature agent is live in it (`keep`: the developer works there next); the branch stays.
+  // Removed on every ending unless the feature agent is live in it; the branch stays.
   let featureWorktree;
   const removeFeatureWorktree = ({ keep = false } = {}) => {
     if (!featureWorktree || keep) return;
@@ -691,7 +568,6 @@ async function main() {
   const SIGNAL_EXIT = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 };
   const onSignal = (signal) => {
     killAllGroups();
-    // Why it ended, as the finally block below records for every other ending after run-start.
     if (runStarted) {
       try {
         sprint.endRun(`signal ${signal}`, SIGNAL_EXIT[signal]);
@@ -710,8 +586,7 @@ async function main() {
   };
   for (const signal of Object.keys(SIGNAL_EXIT)) process.once(signal, onSignal);
   try {
-    // Before any sprint output, so a human or script reading stderr knows the resolved host
-    // without re-deriving it from env and config.
+    // First on stderr, so a reader knows the resolved host without re-deriving it.
     console.error(`PANE-HOST: ${options.paneHost ?? "none"}`);
     // After PANE-HOST, which stays stderr's first line.
     if (stderrLevel.warning) console.error(`crew-afk: ${stderrLevel.warning}`);
@@ -722,7 +597,6 @@ async function main() {
       return exitCode;
     }
 
-    // Before session-init.sh touches disk — see readyFeatureCandidates.
     resolved = resolveFeatureSlug(mainRoot, options.featureSlug, options.worktreeRoot);
     if (resolved.error) {
       console.error(resolved.error);
@@ -757,14 +631,12 @@ async function main() {
       branchPrefix: options.branchPrefix,
       passthrough: options.passthrough,
     };
-    // Which branch and slug session-init.sh will use, before it touches disk: the branch gets its
-    // own worktree first. The main checkout is never switched.
+    // Branch and slug before session-init.sh touches disk; the main checkout is never switched.
     const named = Sprint.resolveBranch(effects, init);
     const runId = new Date().toISOString();
 
-    // Before the worktree, the baseline and any dispatch: a second run on this feature would
-    // otherwise learn of the first only at push time, with its sprint stranded. Local trackers have
-    // no remote to hold a lease on, and --dry-run changes nothing.
+    // Before any dispatch, or a second run on this feature learns of the first only at push time.
+    // Local trackers have no remote to hold a lease on.
     if (!options.dryRun && readTrackerConfig(mainRoot).tracker === "github") {
       const got = acquireLease(effects, {
         slug: named.slug,
@@ -780,9 +652,7 @@ async function main() {
       lease = got.lease;
     }
 
-    // Right after the lease, before session-init.sh: every feature-branch git operation (merge,
-    // sync, squash, the read-only dispatches' view of the code) runs here, so the main checkout
-    // keeps the user's branch. --dry-run changes nothing, so it has no worktree to make.
+    // Every feature-branch git operation runs here, so the main checkout keeps the user's branch.
     if (!options.dryRun) {
       const base = effects.gitRead(["rev-parse", "--verify", "-q", `refs/heads/${named.defaultBranch}`]).code === 0 ? named.defaultBranch : "HEAD";
       const wt = ensureWorktree(effects, {
@@ -835,11 +705,9 @@ async function main() {
       } catch (err) {
         console.error(`crew-afk: could not open the ${options.paneHost} log tab: ${err.message} — continuing without one.`);
       }
-      // Best-effort too (it logs its own WARN): the milestone pushes it receives are advisory.
       await ensureWatchSession(effects, {
         slug: sprint.featureSlug,
         platform: options.platform,
-        // The coder's resolved model, when the coder runs on this platform (else the CLI's own).
         model: options.crew.coder.runtime === options.platform ? options.model : undefined,
         effort: options.effort?.followup,
         // A failed open is a WARN that must outlive the scrollback, not a debug-level effects line.
@@ -851,9 +719,8 @@ async function main() {
       });
     }
 
-    // Before anything reads the feature branch: a resumed branch whose earlier work was
-    // squash-merged lacks origin's default branch, so its baseline and version checks measure
-    // from a stale merge-base. A conflict stops the run; no origin or no fetch does not.
+    // A resumed branch whose earlier work was squash-merged lacks origin's default branch, so its
+    // checks would measure from a stale merge-base. Only a conflict stops the run.
     const sync = syncFeatureBranch({ sprint, effects, options, log: emit });
     if (sync.status === "conflict") {
       fatal(syncConflictMessage(sprint.featureBranch, sync.output));
@@ -890,7 +757,6 @@ async function main() {
 
     // After command discovery: ensure-deps.sh reads the install command it cached.
     if (options.installDeps) {
-      // Stderr only, as before: the install's own output is debug, its DEPS: outcome info.
       await sprint.installDeps((line) => {
         if (shows(/^DEPS:/.test(line) ? "info" : "debug")) console.error(line);
       });
@@ -903,8 +769,7 @@ async function main() {
       options,
       roundReviewFile: makeRoundReviewFile(sprint),
       log: emit,
-      // A dispatch's [TOOL] heartbeat. The dispatch already wrote it to the trace log, and a
-      // launcher agent pays tokens for every stderr line it reads, so it is debug here.
+      // Debug: the trace log already has it, and a launcher agent pays for every stderr line.
       heartbeat: (line) => {
         if (shows("debug")) console.error(line);
       },
@@ -921,9 +786,8 @@ async function main() {
       },
     };
 
-    // Once, before any dispatch, and only when there is something to dispatch. It runs alongside
-    // the first coders (up to --parallel); no verify starts before its verdict, and a red one
-    // stops further claims (loop.mjs) and the run (below).
+    // Runs alongside the first coders; no verify starts before its verdict, and a red one stops
+    // further claims and the run.
     if (options.baselineCheck && !options.dryRun) {
       const tracker = await getTracker(mainRoot);
       if (tracker.selectDispatchable(mainRoot, { featureSlug: sprint.featureSlug }).length) {
@@ -931,10 +795,8 @@ async function main() {
       }
     }
 
-    // Once, before any dispatch: what each dispatchable issue says it needs (## Requires). A
-    // failing one is blocked here, so no coder is paid to rediscover a missing credential. An
-    // issue still waiting on a blocker is probed when it is first claimed (loop.mjs) instead:
-    // its requirement may be what the blocker lands.
+    // A failing `## Requires` blocks its issue before a coder is paid to rediscover it. An issue
+    // still waiting on a blocker is probed at its claim: the blocker may land its requirement.
     if (!options.dryRun) {
       const tracker = await getTracker(mainRoot);
       await checkRequires(ctx, tracker.selectDispatchable(mainRoot, { featureSlug: sprint.featureSlug }));
@@ -959,9 +821,8 @@ async function main() {
     if (sprint?.traceLog) writeLog(sprint.traceLog, `[CRASH] ${err?.stack || err}`, "fatal");
     throw err;
   } finally {
-    // Every ending after run-start, so the next run's summary can say why this one ended (a
-    // signal records its own in onSignal); a hard kill writes none, which the next run-start reads
-    // as killed or crashed.
+    // So the next run's summary can say why this one ended; a hard kill writes none, which the
+    // next run-start reads as killed or crashed.
     if (runStarted) {
       const reason = runError
         ? `error: ${String(runError?.message ?? runError).split("\n")[0]}`
@@ -972,8 +833,7 @@ async function main() {
         console.error(`crew-afk: could not record why the run ended: ${err.message}`);
       }
     }
-    // The feature agent outlives the run: `_feature` and the workspace holding it stay while it
-    // is there (a failed open, a dead agent, --dry-run or no host leaves none, and both go as before).
+    // The feature agent outlives the run: `_feature` and its workspace stay while it is there.
     const agentLive = settlePaneAgent(effects);
     // No-ops unless opened above; here so a thrown error can't leave them dangling.
     await closePaneLogTab(effects);

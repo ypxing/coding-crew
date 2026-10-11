@@ -1,25 +1,11 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# issue-labels.sh — the one writer of crew-afk's status labels on a GitHub issue.
-#
-# Usage: issue-labels.sh claim|release|block <issue-number>
-#        issue-labels.sh sweep <feature-slug>
-#
-# claim: a run is working this issue. Adds `in-progress` (created if the repo lacks it). Display
-#   only — the feature lease, never this label, decides what is dispatched.
-#   Prints `LABELLED: in-progress #<n>`.
-# release: the run is done with the issue without closing it (partial, retained, capped, stalled).
-#   Removes `in-progress`. Prints `RELEASED: in-progress #<n>`.
-# block: crew-afk stopped on this issue and a human is needed. Adds the `blocked` label
-#   (created if the repo lacks it) next to `ready-for-agent` and removes `in-progress`, in one
-#   `gh issue edit`; selectDispatchable skips an issue carrying `blocked` until a human removes
-#   it. Prints `LABELLED: blocked #<n>`.
-# sweep: the new holder of the feature lease removes `in-progress` from every issue in the
-#   feature's milestone — only a dead run can have left one. Prints `SWEPT: <count>`.
-#
-# Under `tracker: local` there is no label: prints nothing and exits 0.
-# Exit 0 on success or when nothing applies; 1 when a gh call fails (caller warns, run goes on).
+# issue-labels.sh — the one writer of crew-afk's status labels on a GitHub issue (none under local).
+# Usage: issue-labels.sh claim|release|block <issue-number> | sweep <feature-slug>
+# claim/release add/remove `in-progress`, display only: the feature lease decides dispatch. block
+# adds `blocked`, which selectDispatchable skips until a human removes it. sweep, run by a new lease
+# holder, clears `in-progress` a dead run left. Exit 1 only when a gh call fails.
 
 MAIN_ROOT="${MAIN_ROOT:-.}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,13 +1,8 @@
-/**
- * pi adapter: `pi -p --mode json`. pi has no built-in subagent tool, so a dispatch is a separate
- * process with the role's protocol as `--append-system-prompt`. The event stream is pi's
- * docs/json.md.
- */
+/** pi adapter: `pi -p --mode json`, the role's protocol as `--append-system-prompt`. */
 import { normalized, safePreview, str } from "./common.mjs";
 
 const FILE_TOOLS = ["read", "write", "edit"];
 
-/** An assistant message's text blocks, joined; "" when none. */
 const textOf = (message) => (message?.content ?? []).filter((b) => b?.type === "text").map((b) => b.text).join("");
 
 export default {
@@ -17,7 +12,6 @@ export default {
   coAuthor: "Co-authored-by: pi <noreply@earendil.works>",
   requiredFlags: ["--mode", "--append-system-prompt"],
 
-  /** The prompt is pi's positional argument; the role's protocol goes in as `--append-system-prompt`. */
   build({ model, policy, protocol, prompt, label }) {
     const args = ["-p", "-n", label, "--mode", "json"];
     if (model && model !== "inherit") args.push("--model", model);
@@ -27,7 +21,6 @@ export default {
     return { args };
   },
 
-  /** pi's interactive mode: the protocol is the initial message, as its last argument. */
   interactive({ model, protocol, policy }) {
     const argv = ["pi"];
     if (model && model !== "inherit") argv.push("--model", model);
@@ -36,13 +29,9 @@ export default {
     return argv;
   },
 
-  // The role's thinking level; pi names an allowlist and ignores tool names it does not know, so these are pi's own.
+  // pi ignores tool names it does not know, so the allowlist uses pi's own.
   policyArgs: ({ readOnly, effort }) => [...(effort ? ["--thinking", effort] : []), "--tools", readOnly ? "read,bash" : "read,bash,edit,write"],
 
-  /**
-   * A tool start (bash's command, read/write/edit's path), a failed tool, or an assistant
-   * `message_end`: its text, or the error it stopped on.
-   */
   normalize(evt) {
     if (evt.type === "tool_execution_start") {
       const tool = evt.toolName ?? "?";
@@ -63,7 +52,6 @@ export default {
     return null;
   },
 
-  /** The last assistant `message_end`'s text blocks, joined; "" when none. */
   finalText(lines) {
     let last = null;
     for (const line of lines) {

@@ -1,7 +1,4 @@
-/**
- * Helpers shared by the pipeline stages: retention-reason tags, issue naming, the
- * milestone push and tracker writes.
- */
+/** Helpers shared by the pipeline stages. */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -10,39 +7,27 @@ import { getTracker } from "../tracker.mjs";
 import { queuePaneNotice } from "../pane-host/index.mjs";
 import { ADAPTERS } from "../adapters/index.mjs";
 
-// Retention-reason tags, written by the gates and read back by resumeRoute. Defined once
-// so writer and reader cannot drift. The two verification tags carry triage's verdict.
+// Retention-reason tags, written by the gates and read back by resumeRoute.
 export const FIXABLE_TAG = "verification-failed:fixable";
 export const NOT_FIXABLE_TAG = "verification-failed:not-fixable";
-// An `AC: unmet` review verdict. No triage: the reviewer's detail is already actionable.
+// No triage: the reviewer's detail is already actionable.
 export const CRITERIA_UNMET_TAG = "criteria-unmet";
-// An `AC: unmet` verdict the reviewer put down to the environment (`cause: "environment"`):
-// a precondition of a criterion did not hold, so no recoding can meet it. Blocks at once.
+// A criterion's precondition did not hold, so no recoding can meet it.
 export const CRITERIA_ENVIRONMENT_TAG = "criteria-unmet:environment";
-// `receipts.sh write ac` failed after an all-met review. Never the branch's fault: the
-// branch is fine, so no route for it re-runs the coder.
+// The branch is fine, so no route for it re-runs the coder.
 export const AC_RECEIPT_FAILED_TAG = "ac-receipt-failed";
-// merge-branches.sh hit a conflict: the feature branch moved on under this branch. Only a
-// coder can reconcile that; retrying the merge alone would conflict again.
+// Only a coder can reconcile the moved feature branch; retrying the merge would conflict again.
 export const MERGE_CONFLICT_TAG = "merge-conflict";
-// merge-branches.sh refused because uncommitted changes in the feature worktree would be
-// overwritten. Not the branch's fault and not fixable by any dispatch, so it blocks at once;
-// a re-run resumes at merge, since verify, review and the AC receipt already passed.
+// Uncommitted changes in the feature worktree; a re-run resumes at merge.
 export const MAIN_TREE_DIRTY_TAG = "main-tree-dirty";
-// The reviewer left no valid verdict, even after its in-round retry. Carries why (a timeout,
-// no report.json, no verdict field) — the branch itself is done, so no route recodes it.
+// The branch itself is done, so no route recodes it.
 export const REVIEW_NOT_RUN_TAG = "review-not-run";
-// An issue's own `## Requires` command failed in preflight (check-requires.sh), so it was
-// blocked before any dispatch. Re-probed on every run, so a re-run restarts it only once the
-// requirement holds.
+// Re-probed on every run, so a re-run restarts it only once the requirement holds.
 export const REQUIRES_FAILED_TAG = "requires-failed";
-// A dispatch stopped at its role's afk.limits.<role>.usd cap (claude's error_max_budget_usd).
 // Blocks at once; a human raises the cap or narrows the issue.
 export const LIMIT_EXCEEDED_TAG = "limit-exceeded";
-// verify-worktree.sh ended without a verdict: killed from outside (INTERRUPTED), or its
-// output named no failing check (INCONCLUSIVE, even after a second run). Neither is
-// evidence against the branch, so no route for either dispatches a coder or triage —
-// the next round only verifies again.
+// Killed from outside, or no failing check named even on a second run: not evidence against the
+// branch, so the next round only verifies again.
 export const VERIFY_INTERRUPTED_TAG = "verify-interrupted";
 export const VERIFY_INCONCLUSIVE_TAG = "verify-inconclusive";
 const REASON_SEP = " — ";
@@ -51,41 +36,27 @@ export function taggedReason(tag, summary) {
   return `${tag}${REASON_SEP}${summary}`;
 }
 
-/**
- * The runtime and model `role` dispatches on (crew-config.mjs's resolveCrew).
- */
 export function roleBinding(ctx, role, adapters = ADAPTERS) {
   const { runtime, model } = ctx.options.crew[role];
-  // afk.limits.<role>.usd — only a runtime whose adapter has a budget flag is handed one.
   const maxBudgetUsd = adapters[runtime]?.budget ? (ctx.options.limitsUsd?.[role] ?? null) : null;
   return { runtime, model, maxBudgetUsd, effort: ctx.options.effort?.[role] };
 }
 
-/**
- * The dispatch stopped at its role's afk.limits dollar cap: the reason to block on, or null.
- * Never a retry — the cap is the human's statement of what one attempt may cost, and a retry
- * would spend it again.
- */
+/** Never a retry: the cap is the human's statement of what one attempt may cost. */
 export function limitExceeded(result, role, binding) {
   if (result?.subtype !== "error_max_budget_usd") return null;
   return `${LIMIT_EXCEEDED_TAG} ($${binding?.maxBudgetUsd ?? "?"}) — the ${role} dispatch hit afk.limits.${role}.usd after $${(result.costUsd ?? 0).toFixed(2)}`;
 }
 
-/** Dispatch filename stem: `NN-<slug>`, sorting like the tracker's files; bare slug if unnumbered. */
 export function dispatchStem(issue) {
   return issue.number ? `${issue.number}-${issue.slug}` : issue.slug;
 }
 
-/** This issue's own subdirectory under dispatch/ — every prompt, report and receipt of its lives together. */
 export function dispatchIssueDir(dispatchDir, issue) {
   return join(dispatchDir, dispatchStem(issue));
 }
 
-/**
- * A verify-worktree.sh transcript, kept in its own file (one per round) instead of the trace
- * log, which gets one [VERIFY-OUTPUT] line naming it: debug on a pass, error on a fail, so
- * a level grep for what went wrong also finds where to read why. `who` is the line's fields.
- */
+/** One file per round instead of the trace log, which gets a [VERIFY-OUTPUT] line naming it. */
 export function logVerifyOutput(ctx, dir, who, round, verify) {
   if (verify.dryRun) return;
   const file = resolve(ctx.effects.mainRoot, dir, round != null ? `verify-r${round}.out` : "verify.out");
@@ -98,20 +69,15 @@ export function logVerifyOutput(ctx, dir, who, round, verify) {
   );
 }
 
-/**
- * A milestone: always logged (the only signal without a pane host), then queued for the
- * pane. Not awaited: the push is advisory and must not hold the issue's pipeline.
- */
+/** Always logged (the only signal without a pane host); the push is advisory, so not awaited. */
 export function notifyMilestone(ctx, issue, message) {
   ctx.log(`[MILESTONE] ${dispatchStem(issue)}: ${message}`);
   if (!ctx.effects.paneHost) {
-    // None was configured: nothing degraded, so not a warning.
     ctx.log(`[MILESTONE-PUSH-SKIPPED] ${dispatchStem(issue)}: no pane host`, "debug");
     return;
   }
   queuePaneNotice(ctx.effects, `[${ctx.sprint.featureSlug}] ${dispatchStem(issue)}: ${message}`, (result) => {
     if (result.sent) return;
-    // One warning per run says the pane is unreachable; every later skip repeats it, so debug.
     const level = ctx.effects._milestonePushWarned ? "debug" : "warn";
     ctx.effects._milestonePushWarned = true;
     ctx.log(`[MILESTONE-PUSH-SKIPPED] ${dispatchStem(issue)}: ${result.reason}`, level);
@@ -119,12 +85,8 @@ export function notifyMilestone(ctx, issue, message) {
 }
 
 /**
- * Which gates `branch`'s current tip already passed, read from the receipts (receipts.sh
- * owns both): `verified` — a `pass` verify record for this exact commit; `reviewed` — also an
- * all-met AC receipt for it; `verifiedThisRun` — that verify pass was this invocation's own.
- * A retry skips what these say is done: re-running a gate on an unchanged commit can only
- * repeat its answer — within one run. Across runs only `reviewed` is reused: an all-met
- * branch has nothing left to learn from its checks, but one still under review may have
+ * Which gates `branch`'s tip already passed, from the receipts. Within a run a gate on an unchanged
+ * commit can only repeat its answer; across runs only `reviewed` is reused, since a check may have
  * failed on an environment a human has since fixed. Matched on the positive line, so
  * CREW_RECEIPTS=off (whose `check` passes everything) never skips a gate.
  */
@@ -143,33 +105,26 @@ export function gatesAtTip(ctx, branch) {
   };
 }
 
-/** close-issue.sh / promote-findings.sh's issue argument: a file path (local) or number (github). */
 export function issueRef(issue) {
   return issue.path ?? String(issue.number);
 }
 
-/** The prompts' `issuePath:` — a file for local; for github, how to fetch the body. */
 export function issueDescriptor(issue) {
   return issue.path ?? `GitHub issue #${issue.number} — fetch its current body with: gh issue view ${issue.number} --json body -q .body`;
 }
 
-/** The free text after a tag this module itself wrote — never applied to a reason whose tag is unknown. */
+/** Never applied to a reason whose tag is unknown. */
 export function stripReasonTag(reason, tag) {
   return reason.startsWith(tag + REASON_SEP) ? reason.slice(tag.length + REASON_SEP.length) : reason;
 }
 
-/** How state.sh records a block (`blocked — <reason>`), and finishRetryOrBlock a capped retry. */
 const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )?/;
 
-/** A retained reason without the block wrapping, so its gate's tag leads again. */
 export function unblockedReason(reason) {
   return reason.replace(BLOCKED_PREFIX, "");
 }
 
-/**
- * Write a `## <heading>` note against `issue`: local splices the file in place, github
- * posts a new comment. The one place that branches on which the tracker exposes.
- */
+/** Local splices the issue file in place; github posts a new comment. */
 export async function writeTrackerSection(effects, issue, heading, body, { append = false } = {}) {
   if (effects.dryRun) return;
   const tracker = await getTracker(effects.mainRoot);
@@ -180,10 +135,7 @@ export async function writeTrackerSection(effects, issue, heading, body, { appen
   if (tracker.writeProgress) tracker.writeProgress(issue, body, { heading, mainRoot: effects.mainRoot });
 }
 
-/**
- * A dispatch's JSON sidecar, or null when absent or unparseable. Callers rmSync it before
- * dispatching, so a stale file from a prior round is never read back as this one's.
- */
+/** Callers rmSync it before dispatching, so a stale file from a prior round is never read back. */
 export function readSidecar(file) {
   if (!existsSync(file)) return null;
   try {
@@ -196,11 +148,9 @@ export function readSidecar(file) {
 const UNCOMMITTED_KEY = "uncommitted changes in the feature worktree";
 
 /**
- * What a read-only dispatch (reviewer, triage) must leave untouched, as `{key: value}`: every
- * crew/<feature>/ ref, the feature branch, the main checkout's HEAD (commit and the branch it is
- * on), and its uncommitted changes (sprint state under .scratch/ aside — the orchestrator and the
- * dispatch's own sidecar write there). `worktrees` maps each crew branch to its worktree, for
- * attribution only. Throws when git cannot answer, so the caller fails closed.
+ * What a read-only dispatch must leave untouched: crew refs, the feature branch, the feature
+ * checkout's HEAD and its uncommitted changes outside .scratch/. Throws when git cannot answer,
+ * so the caller fails closed.
  */
 export function readOnlySnapshot(ctx) {
   const { sprint, effects } = ctx;
@@ -232,16 +182,9 @@ export function readOnlySnapshot(ctx) {
 }
 
 /**
- * Run a read-only dispatch under a before/after snapshot. Returns `{result}` when nothing
- * changed, or `{violation, result}` (a reason string, already logged as [READONLY-VIOLATION])
- * when the dispatch changed anything — or `{violation}` alone when a snapshot could not be taken,
- * in which case `run` never starts or its outcome is not trusted. Never open: a violation is a
- * not-run for the caller to record; `result` only lets it account for what the dispatch cost.
- *
- * A change the orchestrator's own concurrent effects could have made is not blamed on the
- * dispatch: the feature branch and HEAD while a merge (or other main-checkout ref move) ran, and
- * a crew branch while its worktree was busy (its worker committing, a git run in it).
- * `branches` names the dispatch's own branch(es), which nothing else touches during it.
+ * Run a read-only dispatch under a before/after snapshot: `{result}`, or `{violation, result?}` when
+ * it changed anything or a snapshot failed. A change the orchestrator's own concurrent effects could
+ * have made (a merge, a busy worktree) is not blamed on the dispatch.
  */
 export async function readOnlyDispatch(ctx, { label, branches = [] }, run) {
   const fail = (why, result) => {
@@ -280,12 +223,8 @@ export async function readOnlyDispatch(ctx, { label, branches = [] }, run) {
 }
 
 /**
- * Where a range over the whole feature starts: the merge-base of the feature branch with origin's
- * default branch (origin/HEAD, else origin/main, else origin/master), else with the local main /
- * master, so it covers every commit the feature holds, whichever run made it. `ref` is the default
- * branch it measured from. The recorded `base_sha` is only this run's start (session-init.sh resets
- * it each run, squash-commits.sh moves it to the squash), so it is the fallback of `prBase` alone;
- * null when no default branch exists.
+ * The merge-base of the feature branch with origin's default branch, else the local one, so a
+ * range covers every commit the feature holds, whichever run made it. Null with no default branch.
  */
 export function defaultBranchBase(effects, featureBranch) {
   const head = effects.gitRead(["symbolic-ref", "-q", "refs/remotes/origin/HEAD"]);
@@ -297,7 +236,6 @@ export function defaultBranchBase(effects, featureBranch) {
   return null;
 }
 
-/** The PR's range start: `defaultBranchBase`, else the recorded `base_sha`, else null. */
 export function prBase(effects, featureBranch, recordedBase) {
   return defaultBranchBase(effects, featureBranch)?.sha ?? (recordedBase || null);
 }

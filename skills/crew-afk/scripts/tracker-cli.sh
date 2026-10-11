@@ -1,24 +1,9 @@
 #!/usr/bin/env bash
-# tracker-cli.sh — finds the tracker CLI (tracker/cli.mjs) and asks it which tracker a repo uses.
-#
-# Sourced from $SCRIPT_DIR by every crew-afk script that branches on the tracker (close-issue.sh,
-# close-shipped.sh, issue-labels.sh, promote-findings.sh, session-init.sh), so the lookup lives
-# in one place:
-#
-#   . "$SCRIPT_DIR/tracker-cli.sh"
-#   resolve_tracker_cli "$MAIN_ROOT" || exit 1
-#
-# Sets TRACKER_CLI (the cli.mjs path) and TRACKER_KIND (local|github), from
-# `node "$TRACKER_CLI" config --main-root <main-root>`. Returns non-zero with the reason on stderr
-# when no cli.mjs is found, node is missing, or `config` fails (its stderr passes through) — never
-# a silent local. tests/tracker-lookup.bats pins the lookup order.
-#
-# A set $CREW_TRACKER_CLI is the only answer: it names the CLI a test means to run, so a path that
-# does not exist is an error rather than a fall-through to whichever copy the search finds next.
+# tracker-cli.sh — sourced: resolve_tracker_cli <main-root> sets TRACKER_CLI (cli.mjs) and
+# TRACKER_KIND (local|github) from the CLI's `config`, or returns non-zero with the reason, never a
+# silent local. A set $CREW_TRACKER_CLI is the only answer: a missing path is an error, not a fall-through.
 
-# tracker_cli_candidates <main-root> — where cli.mjs is looked for, first existing file wins:
-# the .coding-crew/ the orchestrator runs from, the project install, a source checkout, the
-# user-level install.
+# tracker_cli_candidates <main-root> — first existing wins: the run's install, project, source, user.
 tracker_cli_candidates() {
   local main_root="$1" c
   for c in "${CREW_INSTALL_DIR:+$CREW_INSTALL_DIR/tracker/cli.mjs}" \
