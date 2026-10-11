@@ -14,7 +14,7 @@ const CALL_TIMEOUT_MS = 10000;
 const SEND_TIMEOUT_MS = 20000;
 
 /** How long a new worktree may take to appear in orca after `git worktree add`, and how often to look. */
-export const ADOPT_WAIT = { pollMs: 500, timeoutMs: 10000 };
+export const ADOPT_WAIT = { pollMs: 500, timeoutMs: 60000 };
 
 export function preflight(effects) {
   const which = effects.exec("sh", ["-c", "command -v orca"], { mutating: false });

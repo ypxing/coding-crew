@@ -1450,3 +1450,37 @@ test("an orca worker terminal waits for its worktree's naming still under way", 
   assert.deepEqual(effects._calls.map((c) => c[2]), ["show", "set", "create"]);
   assert.equal(effects._calls[2][effects._calls[2].indexOf("--worktree") + 1], "path:/wt/alpha");
 });
+
+/** `adoptingOrca` whose `worktree show` fails until `listedAt` ms after it was made. */
+function orcaListingAt(listedAt) {
+  const effects = adoptingOrca(0);
+  const created = Date.now();
+  const spawn = effects.spawnWithTimeout;
+  effects.spawnWithTimeout = async (cmd, args, opts) =>
+    args[1] === "show" && Date.now() - created < listedAt ? (effects._calls.push([cmd, ...args]), { code: 1, stdout: "", stderr: "selector_not_found" }) : spawn(cmd, args, opts);
+  return effects;
+}
+
+/** Steps mocked timers a poll at a time until `promise` settles. */
+async function settleOnMockClock(t, promise) {
+  let settled = false;
+  promise.finally(() => (settled = true));
+  while (!settled) {
+    await new Promise(setImmediate);
+    t.mock.timers.tick(ADOPT_WAIT.pollMs);
+  }
+  return promise;
+}
+
+test("adoptWorktree (orca) names a worktree orca lists only after 10s, and the log tab opens in it", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const effects = orcaListingAt(17300);
+  effects.featureRoot = "/wt/_feature";
+  const named = await settleOnMockClock(t, adoptWorktree(effects, effects.featureRoot, { title: "alpha" }));
+  assert.equal(named, true, effects._logs.join("\n"));
+  assert.ok(effects._calls.some((c) => c[2] === "set"), "worktree set called");
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile: "/logs/trace.log" });
+  const create = effects._calls.at(-1);
+  assert.deepEqual(create.slice(1, 3), ["terminal", "create"]);
+  assert.equal(create[create.indexOf("--worktree") + 1], "path:/wt/_feature");
+});
