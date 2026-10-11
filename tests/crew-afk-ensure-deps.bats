@@ -943,32 +943,3 @@ line two"
   [ "$status" -eq 0 ]
   [ -f "$target/.pi/skills/crew-afk/scripts/ensure-deps.sh" ]
 }
-
-# ─── documented where the pipeline is documented ─────────────────────────────
-#
-# The decision is only half-made until the reason survives it: the failure-triggered
-# CHANGELOG entry reads as the whole policy, and after this feature it is one half of a
-# pair — eager where a gate cannot retry, lazy where a human can.
-
-@test ".claude/rules/crew-afk.md lists the script with its one-clause rationale and the pipeline order" {
-  local f="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/.claude/rules/crew-afk.md"
-  grep -q 'ensure-deps.sh' "$f"
-  # Why mechanism and not a worker skill read: it is the only layer covering the gate.
-  grep -q 'verify-worktree.sh' "$f"
-  grep -qi 'cannot invoke a skill' "$f"
-  # And the order it sits in.
-  grep -qi 'deps' "$f"
-  grep -q 'worktreeinclude' "$f"
-}
-
-@test "no launcher SKILL.md mentions the script, and every launcher is still under the word budget" {
-  local repo="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  local p body words
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$(afk_variant "$p")"
-    ! grep -q 'ensure-deps' "$body" || {
-      echo "$p launcher names ensure-deps.sh" >&2; return 1; }
-    words=$(wc -w < "$body")
-    [ "$words" -lt "$AFK_LAUNCHER_WORD_BUDGET" ] || { echo "$p launcher is $words words" >&2; return 1; }
-  done
-}

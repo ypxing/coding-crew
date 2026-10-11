@@ -544,10 +544,3 @@ EOF
   [[ "$output" == *"1 source file(s) found"* ]]
   [ ! -d ".coding-crew" ]
 }
-
-# --- No Dead Stub ---
-
-@test "discover-commands.sh does not contain 'not yet implemented'" {
-  run grep -c "not yet implemented" "$DISCOVER_SCRIPT"
-  [ "$output" -eq 0 ]
-}

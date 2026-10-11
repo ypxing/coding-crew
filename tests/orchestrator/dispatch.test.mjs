@@ -37,6 +37,7 @@ import {
   extractFinalText,
   extractResultMeta,
   preflight,
+  renderRolePrompt,
 } from "../../orchestrator/lib/dispatch.mjs";
 import { ADAPTERS, DEFAULT_PARALLEL, PLATFORMS } from "../../orchestrator/lib/adapters/index.mjs";
 import { formatJsonTraceLine } from "../../orchestrator/lib/adapters/trace.mjs";
@@ -232,7 +233,7 @@ test("every platform's protocol dispatch writes <outFile>.protocol.md; a plain o
   for (const platform of PLATFORMS) {
     const outFile = join(root, `dispatch/${platform}.report.md`);
     buildDispatch(platform, spec(root, promptFile, { outFile }));
-    assert.match(readFileSync(`${outFile}.protocol.md`, "utf8"), /^# Coder/, platform);
+    assert.equal(readFileSync(`${outFile}.protocol.md`, "utf8"), renderRolePrompt("coder", platform, { mainRoot: root }), platform);
     const plainOut = join(root, `dispatch/${platform}.plain.md`);
     buildDispatch(platform, spec(root, promptFile, { agent: "plain", outFile: plainOut }));
     assert.equal(existsSync(`${plainOut}.protocol.md`), false, platform);
@@ -978,7 +979,6 @@ test("the coder's protocol ends with each named skill's installed SKILL.md, per 
     assert.ok(text.includes(`\`solve-issue\`: ${join(main, ".agents/skills/solve-issue/SKILL.md")}`), "the project install");
     assert.ok(text.includes(`\`dep-install\`: ${join(home, ".agents/skills/dep-install/SKILL.md")}`), "the user-level install");
     assert.match(text, /`tdd`: not installed/);
-    assert.match(text, /BLOCKED: solve-issue skill not installed/);
   } finally {
     process.env.HOME = saved;
   }

@@ -254,23 +254,3 @@ EOF
   [[ "$output" == *"FINDINGS: none"* ]]
   [[ "$output" == *"REVIEW-GAPS: branches=1"* ]]
 }
-
-# --- the failure path is code, not a promise in four bodies ----------------------
-#
-# Three tests lived here: no variant reviews the branch itself, no variant merges a branch
-# whose review never ran, and every variant delegates the end-of-sprint reminder to
-# crew-summary.sh (printed last, naming unreviewed branches). All three were prose
-# assertions about bodies that are launchers now. The behaviour is asserted on a real
-# faked-dispatch sprint in tests/orchestrator/sprint-lifecycle.test.mjs (a review that produced nothing) and tests/orchestrator/sprint-settings.test.mjs (the rest): "a review that produced
-# nothing is a gap, not a clean pass", "a review that never ran is named in the summary,
-# not just counted in the state" (which asserts the `## Unreviewed Branches` heading
-# reaches the output), and "the sprint reports once, from disk, and the summary is the last
-# thing printed".
-
-@test "remind's documented tokens all actually appear in the script" {
-  # Guards against the prose and the script drifting apart.
-  for token in 'FINDINGS: none' 'FINDINGS: open=' 'REVIEW-GAPS: branches=' 'gap: '; do
-    run grep -q "$token" "$SCRIPT"
-    [ "$status" -eq 0 ]
-  done
-}

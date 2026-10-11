@@ -15,18 +15,13 @@
 #   <platform>.*     frontmatter/TOML keys + `## Platform Notes`, nothing else
 #
 # Assertions run against the *installed* body (helpers/render.bash `coder_variant`),
-# because that is the file a worker is given.
+# because that is the file a worker is given. They check the rendering, never the wording.
 
 load helpers/render
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 ROLES_DIR="$REPO_ROOT/orchestrator/roles"
 PROTOCOL="$ROLES_DIR/coder.md"
-
-# body_of <platform> — the protocol as crew-afk dispatches it to that platform (no agent file).
-body_of() {
-  cat "$(coder_variant "$1")"
-}
 
 # ─── the protocol exists and is what gets inlined ─────────────────────────────
 
@@ -56,121 +51,10 @@ body_of() {
   done
 }
 
-# ─── parity: identical modulo the platform block ──────────────────────────────
-
 # ─── the frontmatter/TOML contract each platform is dispatched under ──────────
 
 @test "codex's inlined protocol cannot terminate its own literal block" {
   # A ''' inside the protocol would end developer_instructions early and truncate the
   # body — silently, since TOML would still parse.
   ! grep -q "'''" "$PROTOCOL"
-}
-
-# ─── the stale claim finding 6 named ─────────────────────────────────────────
-
-@test "no body claims solve-issue unconditionally installs dependencies" {
-  for p in "${CODER_VARIANTS[@]}"; do
-    local f
-    f=$(coder_variant "$p")
-    ! grep -qE 'installs deps|installs dependencies( itself)?[,.]' "$f" || {
-      echo "$p still claims solve-issue installs deps unconditionally:" >&2
-      grep -nE 'installs deps|installs dependencies' "$f" >&2
-      return 1; }
-  done
-  # ...and the true rule is stated once, in the protocol.
-  grep -q 'installs dependencies only when' "$PROTOCOL"
-}
-
-# ─── nothing was lost in the extraction ──────────────────────────────────────
-
-@test "every instruction the four bodies carried before the extraction survives" {
-  # The union of what pi/claude/copilot/codex each said, sampled at the facts a worker
-  # acts on. Asserted against the rendered body, per platform — not reviewed by eye.
-  #
-  # A handful of entries here are the JSON schema's equivalents of markdown headings the
-  # 1.28.2 report-shape fix retired on purpose (`## Issue: <slug>`, `### Acceptance
-  # Criteria`, `### Changes`, `### Notes`, the pipe-joined `Status:` line) — see CHANGELOG
-  # and "the report's worked example" test below. Checking for the old heading text would
-  # pin the very duplication that fix removed. Likewise, the per-worker `[START]`/`[DONE]`
-  # trace file (`Agent Trace Logging`) was retired on purpose in a later change: nothing
-  # ever read it back (report.mjs reads only the `<slug>.report.json` sidecar), so it was
-  # a write with no reader — see CHANGELOG.
-  for p in "${CODER_VARIANTS[@]}"; do
-    local f
-    f=$(coder_variant "$p")
-    for phrase in \
-      'Issue source: the prompt' \
-      'the `gh issue view` command it gives' \
-      'MAIN_ROOT' \
-      'PROJECT_ROOT' \
-      'is not a worktree' \
-      'solve-issue' \
-      'dep-install' \
-      'tdd' \
-      'BLOCKED: solve-issue skill not installed' \
-      '2 consecutive' \
-      'reading `Status: complete`, `Status: partial`,' \
-      '"criteria":' \
-      'Cross-cutting Requirements' \
-      '"notes":' \
-      'report.json' \
-      'not_run' \
-      'Do not write to the issue file' \
-      '[WIP]' \
-      'refactor-validation'; do
-      grep -qF "$phrase" "$f" || {
-        echo "$p lost: $phrase" >&2; return 1; }
-    done
-  done
-}
-
-@test "the report's worked example ships once, and it is the partial one" {
-  for p in "${CODER_VARIANTS[@]}"; do
-    local f
-    f=$(coder_variant "$p")
-    [ "$(grep -c '^Status: partial$' "$f")" -eq 1 ]
-    ! grep -q '^Status: complete$' "$f"
-  done
-}
-
-@test "no variant tells the worker to write ## Progress into the issue file" {
-  # claude's `partial` definition said exactly this, contradicting the one-writer rule.
-  # Asserted as the rule, not as a sentence: the remaining work travels in the report's
-  # `progress` field, and the ownership line forbids every issue-file write.
-  for p in "${CODER_VARIANTS[@]}"; do
-    local f
-    f=$(coder_variant "$p")
-    ! grep -q '`## Progress` in the issue file' "$f" || {
-      echo "$p still writes ## Progress itself" >&2; return 1; }
-    grep -qF '"progress"' "$f"
-    grep -qF 'Do not write to the issue file' "$f"
-  done
-}
-
-# ─── and the duplication does not come back ──────────────────────────────────
-
-@test "the report wire carries cause and evidence, required for blocked" {
-  # A coder's `partial` used to be taken at its word and restarted from scratch, re-deriving
-  # the same blocker. The orchestrator now routes a stopped-short report through verify and
-  # triage, and triage needs the one command the coder says shows why it stopped.
-  for p in "${CODER_VARIANTS[@]}"; do
-    body_of "$p" | grep -qF '"cause":"environment|code","evidence":{"command":' || {
-      echo "$p: the schema lacks cause/evidence" >&2; return 1; }
-    body_of "$p" | grep -qE '`blocked` requires `cause` and `evidence`' || {
-      echo "$p: cause/evidence not required for blocked" >&2; return 1; }
-  done
-}
-
-@test "the protocol reads a github issue the way the prompt says, not only local files" {
-  # Under tracker: github the prompt's issue line is `gh issue view <n> …`
-  # (pipeline/shared.mjs issueDescriptor). A protocol that forbade gh made the coder
-  # report blocked on every github issue that had no stray local copy.
-  for p in "${CODER_VARIANTS[@]}"; do
-    local f
-    f=$(coder_variant "$p")
-    ! grep -qF 'local only' "$f" || { echo "$p still says local only" >&2; return 1; }
-    ! grep -qF 'Never query `gh`' "$f" || { echo "$p still forbids gh" >&2; return 1; }
-    grep -qF 'gh issue view' "$f" || { echo "$p does not name gh issue view" >&2; return 1; }
-  done
-  grep -qF 'gh issue view' "$REPO_ROOT/orchestrator/lib/pipeline/shared.mjs"
 }

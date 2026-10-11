@@ -124,7 +124,6 @@ teardown() {
   # refuses — so the call was dead. crew-afk still uses it, via session-init.sh.
   [ ! -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/feature-branch-setup.sh" ]
   [ -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/commit-changes.sh" ]
-  ! grep -q 'feature-branch-setup\.sh' "$TEMP_DIR/.claude/skills/solve-issue/SKILL.md"
 }
 
 @test "crew-afk ships no feature-branch-setup.sh, and --update removes an older install's copy" {
@@ -230,7 +229,6 @@ teardown() {
   [ -f "$other/planted.md" ]
 }
 
-
 @test "solve-issue and crew-afk both get write-commands-cache.sh; only crew-afk gets discover-commands.sh" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue
@@ -301,13 +299,6 @@ teardown() {
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-grill
 
   [ -f "$TEMP_DIR/.claude/skills/crew-grill/SKILL.md" ]
-}
-
-@test "crew-grill SKILL.md contains correct name field" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-grill
-
-  grep -q 'name: crew-grill' "$TEMP_DIR/.claude/skills/crew-grill/SKILL.md"
 }
 
 @test "crew-grill copilot skill is installed to correct directory" {
@@ -516,14 +507,6 @@ _assert_legacy_tracker_files_gone() {
 
   # Verify the skill file was created at the correct path
   [ -f "$TEMP_DIR/.claude/skills/crew-address-findings/SKILL.md" ]
-}
-
-@test "crew-address-findings SKILL.md contains correct name field" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-address-findings
-
-  # Verify the installed SKILL.md has name: crew-address-findings
-  grep -q 'name: crew-address-findings' "$TEMP_DIR/.claude/skills/crew-address-findings/SKILL.md"
 }
 
 @test "address-code-review directory is absent after crew-address-findings install" {

@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 
-# lease.sh — the feature lease, against a real bare repo as origin.
+# lease.sh — the feature lease, against a real bare repo as origin. The namespace
+# (CREW_LEASE_NAMESPACE, a host that refuses it) is tested once, through lease.mjs, in
+# tests/orchestrator/lease.test.mjs.
 
 LEASE="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/lease.sh"
 
@@ -87,30 +89,6 @@ teardown() { rm -rf "$TEMP_DIR"; }
   git remote remove origin
   run bash "$LEASE" acquire --slug f --owner "run=r1 host=h pid=1 at=t"
   [ "$status" -eq 1 ]
-}
-
-@test "a host that refuses the namespace: exit 4 naming the fallback, not a lost race" {
-  printf '#!/bin/sh\nwhile read old new ref; do case "$ref" in refs/crew-lock/*) echo "namespace not allowed" >&2; exit 1;; esac; done\n' \
-    > "$TEMP_DIR/remote.git/hooks/pre-receive"
-  chmod +x "$TEMP_DIR/remote.git/hooks/pre-receive"
-  run bash "$LEASE" acquire --slug f --owner "run=r1 host=h pid=1 at=t"
-  [ "$status" -eq 4 ]
-  [[ "$output" == *"rejected the lease ref refs/crew-lock/f"* ]]
-  [[ "$output" == *"CREW_LEASE_NAMESPACE=refs/tags/crew-lock"* ]]
-}
-
-@test "CREW_LEASE_NAMESPACE moves the whole lease to the fallback namespace" {
-  export CREW_LEASE_NAMESPACE=refs/tags/crew-lock
-  run bash "$LEASE" acquire --slug f --owner "run=r1 host=h pid=1 at=t"
-  [ "$status" -eq 0 ]
-  [ -n "$(git ls-remote origin refs/tags/crew-lock/f)" ]
-  [ -z "$(git ls-remote origin refs/crew-lock/f)" ]
-  run bash "$LEASE" owner --slug f
-  [[ "$output" == *"OWNER run=r1"* ]]
-  sha=$(git ls-remote origin refs/tags/crew-lock/f | cut -f1 | head -1)
-  run bash "$LEASE" release --slug f --expect "$sha"
-  [ "$status" -eq 0 ]
-  [ -z "$(git ls-remote origin refs/tags/crew-lock/f)" ]
 }
 
 # Opt-in: pushes a throwaway lease ref to the real origin (see scripts/verify-lease-live.sh).

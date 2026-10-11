@@ -2,16 +2,12 @@
 # scripts/ci-test-shard.sh to balance shards. Measured from CI logs' "::group::<file> (Ns, …)"
 # lines; a file missing here is weighted 5s per @test.
 # Refresh when a shard runs far longer than the others — balance is all this affects.
-1	add-tests-skill-structure.bats
 10	address-pr-comments-scripts.bats
 24	retired-agents.bats
 6	ci-test-shard.bats
 200	platform-install.bats
 2	configure-tracker-skill.bats
-17	copilot-crew-coder-env-setup.bats
 26	copilot-platform.bats
-1	crew-address-findings-review-paths.bats
-1	crew-afk-ac-in-review.bats
 6	crew-afk-cleanup-worktrees.bats
 4	crew-afk-dev-commands-reminder.bats
 11	crew-afk-discover-commands.bats
@@ -19,20 +15,15 @@
 24	crew-afk-launcher.bats
 5	crew-afk-open-pr.bats
 3	crew-afk-post-findings.bats
-1	crew-afk-pre-merge-review.bats
 7	crew-afk-promotion-threshold.bats
 15	crew-afk-receipts.bats
 4	crew-afk-review-gaps.bats
 8	crew-afk-scripts.bats
-1	crew-afk-sprint-target-github-branch.bats
 26	crew-afk-state.bats
 50	crew-afk-user-level-install.bats
 12	crew-afk-write-commands-cache.bats
-20	crew-coder-context-reading.bats
 6	crew-coder-protocol.bats
-1	crew-grill-question-gates.bats
 7	crew-reviewer-references.bats
-1	crew-reviewer-structure.bats
 1	crew-rework-workflow.bats
 8	dep-install-assets.bats
 2	dep-install-detect-compose-bypass.bats
@@ -46,12 +37,9 @@
 5	dep-install-manifest-fingerprint.bats
 3	dep-install-resolve-mode.bats
 2	dep-install-run.bats
-1	implementation-skills-preamble.bats
 1	install-dir-registry.bats
 137	install.bats
-1	issue-tracker-structure.bats
 19	layer-ownership.bats
-1	model-policy.bats
 81	orchestrator-sprint-lifecycle.bats
 15	orchestrator-sprint-feature-worktree.bats
 65	orchestrator-sprint-merge-retries.bats
@@ -64,25 +52,15 @@
 77	orchestrator-sprint-integration.bats
 40	orchestrator-sprint-findings-triage.bats
 7	orchestrator.bats
-1	planning-skills-preamble.bats
 7	promote-findings-github.bats
-19	prompt-integrity.bats
 1	registry-version-bump.bats
 2	render-skill-shared-fragments.bats
 2	retain-partial-work.bats
 3	session-init-tracker.bats
-1	skill-prose-github-support.bats
-1	solve-issue-premise-check.bats
 34	solve-issue-scripts.bats
 2	squash-commits.bats
-1	to-issues-enhancement.bats
-1	tracker-config.bats
 2	tracker-mark-done-github.bats
-1	trim-redundant-prescription.bats
-2	uncovered-skills-structure.bats
-1	upgrade-deps-skill-structure.bats
 12	verify-worktree-docker.bats
 27	verify-worktree.bats
-2	worker-chain-no-duplication.bats
 34	worker-close-guard.bats
 22	workflow-integrity.bats

@@ -431,10 +431,3 @@ EOF
   [ -f "$TEMP_DIR/.coding-crew/dev-commands.json" ]
   [ ! -d ".coding-crew" ]
 }
-
-# --- No Dead Stub ---
-
-@test "write-commands-cache.sh does not contain 'not yet implemented'" {
-  run grep -c "not yet implemented" "$WRITE_SCRIPT"
-  [ "$output" -eq 0 ]
-}

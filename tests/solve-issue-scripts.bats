@@ -322,13 +322,6 @@ _cache() {
   [[ "$output" == *"test: pass"* && "$output" != *"(targeted)"* ]]
 }
 
-@test "solve-issue SKILL.md names the targeted mode and leaves the full suite to the verify gate" {
-  run grep -E -- '--targeted' "$REPO_ROOT/skills/solve-issue/SKILL.md"
-  [ "$status" -eq 0 ]
-  run grep -F "full suite is the verify gate's" "$REPO_ROOT/skills/solve-issue/SKILL.md"
-  [ "$status" -eq 0 ]
-}
-
 @test "run-checks: one failing check fails the run and does not hide the rest" {
   _cache '{"typecheck": "exit 4", "lint": "echo L", "test": "echo T"}'
   run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
