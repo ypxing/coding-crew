@@ -10,8 +10,14 @@
     "--output-format",
     "stream-json",
     "--verbose",
+    "--settings",
+    "{\"disableClaudeAiConnectors\":true,\"disableBundledSkills\":true}",
     "--model",
-    "golden-model"
+    "golden-model",
+    "--tools",
+    "Bash",
+    "Read",
+    "ToolSearch"
   ],
   "input": null,
   "env": {

@@ -77,7 +77,7 @@ workspace are kept, and a failed create only warns and leaves the exit code unch
 
 1. `orchestrator/roles/<role>.md` — the protocol (whole-line `{{FRAGMENT:<key>}}` and `{{PLATFORM}}` expand at dispatch).
 2. Map it in `ROLE_AGENTS` (`orchestrator/lib/adapters/render.mjs`) and give it a `ROLE_POLICY` entry next to it
-   (`readOnly`, `subagents`, `effort`); each adapter's `policyArgs` turns that into its CLI's flags. A role that is not
+   (`readOnly`, `subagents`, `skills`, `effort`); each adapter's `policyArgs` turns that into its CLI's flags. A role that is not
    dispatched but started interactively (the `followup` feature agent) goes through the adapter's `interactive()` instead of `build()`.
 3. `TARGET_REPO=/tmp/test-repo ./install.sh claude --skill crew-afk` and inspect `.coding-crew/crew-afk/roles/`.
 

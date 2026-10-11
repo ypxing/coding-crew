@@ -19,10 +19,11 @@ export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", tri
 
 /**
  * Each adapter's `policyArgs` turns this into its CLI's flags. The coder may not spawn sub-agents:
- * they would edit one worktree at once. A plain role has no policy and runs at its CLI's defaults.
+ * they would edit one worktree at once. `skills` keeps a CLI's skill tool where it has an allowlist.
+ * A plain role has no policy: each adapter picks its flags (claude and codex: read-only).
  */
 export const ROLE_POLICY = {
-  coder: { readOnly: false, subagents: false, effort: "high" },
+  coder: { readOnly: false, subagents: false, skills: true, effort: "high" },
   reviewer: { readOnly: true, subagents: true, effort: "high" },
   triage: { readOnly: true, subagents: true, effort: "high" },
   // Interactive: the CLI's own permission prompts stay on, and its effort applies unless afk.effort.followup sets one.
