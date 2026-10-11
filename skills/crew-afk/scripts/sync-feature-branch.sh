@@ -1,24 +1,11 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# sync-feature-branch.sh — bring origin/<default> into a resumed feature branch that lacks it.
-#
-# Usage: sync-feature-branch.sh [--dry-run] <feature-branch>     (run in the checkout of <feature-branch>)
-#
-# A feature branch whose earlier work was squash-merged to origin/<default> has the same tree
-# but not the squash commit in its history: version-bump checks measure from a stale merge-base
-# and the next PR lists the merged commits again.
-#
-#   - fetches origin/<default> (origin/HEAD, else main); no `origin`, a failed fetch, a missing
-#     origin/<default> or a missing branch is a silent skip (exit 0)
-#   - origin/<default> already an ancestor of the branch: nothing to do, prints nothing
-#   - otherwise `git merge --no-ff` into the branch. A conflict only in registry.json versions /
-#     CHANGELOG.md appends is resolved by resolve-merge-conflicts.sh and committed; any other
-#     conflict aborts the merge (branch at its old tip, clean tree), prints the files and exits 1
-#   - never changes a registry.json version by itself and never pushes
-#   - --dry-run prints whether a merge would happen and merges nothing
-#
-# Prints: SYNC: merged origin/<default> (<n> commit(s)) into <branch> at <sha>
+# sync-feature-branch.sh — merge origin/<default> into a resumed feature branch that lacks it, or
+# work squash-merged there leaves a stale merge-base and the next PR re-lists its commits.
+# Usage: sync-feature-branch.sh [--dry-run] <feature-branch>     (run in that branch's checkout)
+# Anything missing (origin, fetch, branch) is a silent skip. Only registry versions and CHANGELOG
+# appends auto-resolve; any other conflict aborts (old tip, clean tree), prints the files, exits 1.
 
 DRY=0
 if [ "${1:-}" = "--dry-run" ]; then DRY=1; shift; fi

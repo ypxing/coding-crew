@@ -1,14 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# state.sh — the sprint's bookkeeping, as a script instead of as prose.
-#
-# Every round the orchestrator has to remember which slugs completed, which branches
-# were retained and why, which issues are blocked, and which categories had no
-# discoverable check command. That list used to live in the prompt as a set of raw jq
-# one-liners plus an instruction to "append to all_merged / all_partial / all_blocked",
-# which meant a long sprint could silently lose an entry and then report a branch as
-# cleaned up that was never deleted. It is all mechanical, so it lives here.
+# state.sh — the sprint's bookkeeping in sprint-state.json, kept by a script instead of in prose.
 #
 # Usage:
 #   state.sh model <alias>
@@ -38,9 +31,8 @@ set -euo pipefail
 # Common flags: [--feature-slug <slug>] [--state-file <path>]
 #
 # `retain` is the single entry point for every branch that must survive the sprint:
-# partial work, a failed verification, unmet acceptance criteria, a failed merge, or a
-# blocked issue. The reason string is what the summary prints, and `get retained` is what
-# feeds cleanup-worktrees.sh --retain, so a branch recorded here cannot be deleted.
+# partial work, a failed verification, unmet criteria, a failed merge, or a blocked issue. `get
+# retained` feeds cleanup-worktrees.sh --retain, so a branch recorded here cannot be deleted.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -64,11 +56,8 @@ CMD="${1:-}"
 shift
 
 # --- state file resolution ----------------------------------------------------
-# Explicit flags win, then the environment the orchestrator exports to its children
-# (STATE_FILE, FEATURE_SLUG). There is no repo-wide pointer to a "current" sprint — several
-# sprints run in one repo — so a hand run names its sprint with --feature-slug. Never a
-# `ls .scratch/*/sprint-state.json | head -1` glob: that picks the alphabetically-first
-# feature, which is the wrong sprint in any repo that has ever run two.
+# Explicit flags, then the orchestrator's exported STATE_FILE/FEATURE_SLUG. No repo-wide pointer
+# exists (several sprints share a repo), and no glob guesses one.
 FEATURE_SLUG_ARG=""
 STATE_FILE_ARG=""
 ARGS=()
@@ -131,19 +120,9 @@ case "$CMD" in
     ;;
 
   attempt)
-    # Records one attempt at one issue, across the whole sprint (not a batch) — the
-    # scheduler (loop.mjs's runOne) calls this exactly once per dispatch, at claim time,
-    # before runWorker/runHousekeeping run, so `.attempts[slug]` mirrors every pass
-    # including the one that finally completes. `.rounds` (still read by crew-summary.sh
-    # as "Rounds: N") becomes the highest count any single issue has reached this run, with
-    # no other meaning attached to "round" any more.
-    #
-    # `--n` is supplied by the caller, not derived from `.attempts[slug]` here — the real
-    # counter lives in the orchestrator's own in-memory Sprint instance (see sprint.mjs's
-    # bumpAttempt), reset every invocation on purpose: a persisted, ever-growing count
-    # would make crew-summary.sh's "resolve blockers and re-run" recovery advice a lie, by
-    # permanently refusing to retry whatever it told a human to go fix. This command is a
-    # write-only mirror for reporting, never read back to decide anything.
+    # One attempt at one issue, recorded once per dispatch at claim time. --n comes from the
+    # orchestrator's in-memory counter, reset every invocation so a re-run after a human fixed a
+    # blocker retries it; this is a write-only mirror for reporting.
     slug=$(flag slug "" "$@")
     n=$(flag n "" "$@")
     [ -n "$slug" ] || die "attempt requires --slug"
@@ -160,8 +139,7 @@ case "$CMD" in
     slug=$(flag slug "" "$@"); branch=$(flag branch "" "$@")
     [ -n "$slug" ] || die "complete requires --slug"
     [ -n "$branch" ] || die "complete requires --branch"
-    # Retention is cleared here so a stale branch is never offered for resume, and so
-    # the branch moves out of cleanup's --retain list into its --merged list.
+    # Clearing retention moves the branch from cleanup's --retain list to its --merged list.
     edit_state --arg s "$slug" --arg b "$branch" '
       .completed_slugs = ((.completed_slugs // []) + [$s] | unique)
       | .merged_branches = ((.merged_branches // []) + [$b] | unique)
@@ -191,11 +169,8 @@ case "$CMD" in
     ;;
 
   drop-retained)
-    # The one way a retention ends without a merge: its issue was closed or left the tracker, or
-    # its branch was deleted, so no run can retry it — and every run would otherwise list it
-    # under Partial and ## Retained Branches. The orchestrator decides staleness (preflight.mjs's
-    # dropStaleRetained); this only writes it. --issue-gone also forgets the slug's blocked
-    # entries: a closed issue has nothing left to unblock.
+    # The one way a retention ends without a merge (issue closed or gone, branch deleted); the
+    # orchestrator decides staleness. --issue-gone also forgets blocked entries: nothing is left to unblock.
     slug=$(flag slug "" "$@"); reason=$(flag reason "stale" "$@")
     [ -n "$slug" ] || die "drop-retained requires --slug"
     issue_gone=false
@@ -262,21 +237,10 @@ case "$CMD" in
     ;;
 
   dispatch-cost)
-    # Accumulates every dispatch's cost/duration/turns into one sprint-wide running total —
-    # additive, unlike attempt's `max`, since this sums across every dispatch the sprint
-    # makes (coder, reviewer, triage, every retry), not one issue's own latest attempt.
-    # Claude-only for now (see extractResultMeta in dispatch.mjs); 0 for every other
-    # platform, which this is a no-op for.
-    #
-    # With --slug/--role it is also one entry in `.dispatches`, tagged with the run it
-    # belongs to (run-start), so the summary can say what *this* run cost, by role and by
-    # first attempt vs retry — the totals above span every run of the feature. The coder's
-    # entry also keeps its session id, context size and the branch tip it left, which is
-    # what a later fix round needs to decide whether that session can be resumed.
-    #
-    # --cost-unknown marks a dispatch that ended with no `result` event (killed on timeout):
-    # its cost is not zero, it is not known, so it adds nothing to the cost total and the
-    # summary counts it instead. --tokens is what its assistant events used.
+    # Sums every dispatch's cost/duration/turns (coder, reviewer, triage, retries) into sprint totals.
+    # With --slug/--role it is also a `.dispatches` entry tagged with the run, so the summary can say
+    # what this run cost; the coder's keeps its session, context size and tip for a later resume.
+    # --cost-unknown (no `result` event, e.g. a timeout): unknown, not zero, so counted, not summed.
     cost=$(flag cost "0" "$@"); duration_ms=$(flag duration-ms "0" "$@"); turns=$(flag turns "0" "$@")
     slug=$(flag slug "" "$@"); role=$(flag role "" "$@"); attempt=$(flag attempt "0" "$@")
     session_id=$(flag session-id "" "$@"); context_tokens=$(flag context-tokens "0" "$@"); head=$(flag head "" "$@")
@@ -305,14 +269,9 @@ case "$CMD" in
     ;;
 
   run-start)
-    # Marks the start of one crew-afk invocation: every dispatch-cost entry after this is
-    # tagged with it. The feature-wide totals keep accumulating across runs.
-    #
-    # It also counts the run (`runs`, across invocations) and keeps why the one before ended
-    # (`previous_exit`, for the summary): a `current_run` that wrote no matching `last_exit`
-    # (run-end) was killed or crashed before its own exit path ran. run-start writes a
-    # `last_exit` key (null) itself, so a state with a `current_run` and no such key at all comes
-    # from a version that never wrote one: how that run ended is unknown, not a crash.
+    # Tags later dispatch-cost entries with this run, counts runs, and keeps why the previous one ended:
+    # a `current_run` with no matching `last_exit` was killed or crashed. A state with no `last_exit`
+    # key at all has no record of how that run ended: unknown, not a crash.
     run_id=$(flag id "" "$@")
     [ -n "$run_id" ] || die "run-start requires --id"
     unended=$(jq -r 'if .current_run != null and has("last_exit") and (.last_exit.run // null) != .current_run then "yes" else "" end' "$SF")
@@ -332,8 +291,7 @@ case "$CMD" in
     ;;
 
   run-end)
-    # Why this run ended, written by every orchestrator exit path (main.mjs). The next
-    # run-start reads it back: a run that never wrote one was killed or crashed.
+    # Written by every orchestrator exit path; the next run-start reads it back.
     reason=$(flag reason "" "$@"); code=$(flag code "" "$@")
     if [ -z "$reason" ] || ! [[ "$code" =~ ^[0-9]+$ ]]; then
       die "usage: state.sh run-end --reason <text> --code <n>"
@@ -345,9 +303,8 @@ case "$CMD" in
     ;;
 
   baseline)
-    # The feature branch's own checks, run once before any dispatch (preflight.mjs), and again
-    # on the merged branch at each drain (`--slot integration`). Only a pass is ever reused, and
-    # only for the same commit; each slot caches on its own.
+    # The feature branch's checks before any dispatch, and per drain with `--slot integration`. Only a
+    # pass is reused, and only for the same commit.
     commit=$(flag commit "" "$@"); verdict=$(flag verdict "" "$@"); slot=$(flag slot baseline "$@")
     tree=$(flag tree "" "$@")
     [ -n "$commit" ] || die "baseline requires --commit"
@@ -371,8 +328,7 @@ case "$CMD" in
     ;;
 
   feature-reviewed)
-    # The feature branch tip a feature review that wrote a report covered: the next run reviews
-    # only what came after it. Survives runs, like passing_trees.
+    # The tip a feature review covered: the next run reviews only what came after. Survives runs.
     tip=$(flag tip "" "$@")
     [ -n "$tip" ] || die "feature-reviewed requires --tip"
     edit_state --arg t "$tip" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.feature_review = ((.feature_review // {}) + {reviewed_tip: $t, at: $at})'
@@ -381,8 +337,7 @@ case "$CMD" in
     ;;
 
   feature-review-promoted)
-    # A feature review created the feature's fix issue. The promotion cap (loop.mjs) counts these per
-    # feature, so it survives runs like reviewed_tip; a state file without it counts as 0.
+    # The promotion cap (loop.mjs) counts these per feature, across runs.
     edit_state '.feature_review = ((.feature_review // {}) | .promotions = ((.promotions // 0) + 1))'
     n=$(jq -r '.feature_review.promotions' "$SF")
     trace STATE "feature-review-promoted promotions=$n"
@@ -390,10 +345,7 @@ case "$CMD" in
     ;;
 
   resume)
-    # Does this issue have a branch from an earlier round that still exists?
-    # Both halves are mechanical — a recorded branch name and a ref lookup — and both
-    # used to sit in the prompt as a jq call plus `git branch --list`. A worker told to
-    # resume on a branch that no longer exists starts over and silently loses the WIP.
+    # A worker told to resume on a deleted branch would start over and lose the WIP: check the ref.
     slug=$(flag slug "" "$@")
     [ -n "$slug" ] || die "resume requires --slug"
     prior=$(jq -r --arg s "$slug" '.retained_branches[$s] // empty' "$SF")
@@ -405,11 +357,8 @@ case "$CMD" in
     ;;
 
   retention)
-    # A retained branch's *reason* is what tells the orchestrator whether the branch's
-    # content needs another worker pass or only another review attempt — resume answers
-    # "is there a branch", this answers "why was it retained". Read from `.retention`,
-    # never inferred from `.retained_branches` alone: a blocked issue is retained too, but
-    # with a "blocked — ..." reason that must never be mistaken for a review-only retry.
+    # Why a branch was retained decides another worker pass vs a review-only retry. Read from
+    # `.retention`: a blocked issue is retained too, and must never look like a review-only retry.
     slug=$(flag slug "" "$@")
     [ -n "$slug" ] || die "retention requires --slug"
     reason=$(jq -r --arg s "$slug" '.retention[$s].reason // empty' "$SF")

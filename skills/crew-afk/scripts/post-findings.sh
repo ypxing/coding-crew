@@ -1,19 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# post-findings.sh — post the sprint's open review findings to the feature branch's open PR.
-#
-# Usage: post-findings.sh
-#   FEATURE_BRANCH and FEATURE_SLUG come from the environment (the orchestrator's childEnv).
-#
-# The findings are `promote-findings.sh open`'s: those no fix issue covers. They go up as ONE
-# PR review (event COMMENT). A finding whose location is `path:line` on a line the PR diff
-# shows becomes an inline comment; the rest are listed in the review body, grouped by
-# severity. Each shows what is wrong before what the fix must achieve, and triage's verdict and
-# rationale when it has them. Every finding carries a hidden marker, and one already on the PR (in a review
-# body or an inline comment) is skipped, so a re-run posts only what is new.
-#
-# Prints `POSTED: <n> (<inline> inline)`.
+# post-findings.sh — post the sprint's open findings (`promote-findings.sh open`) to the feature
+# branch's open PR as one COMMENT review; prints `POSTED: <n> (<inline> inline)`.
+# Usage: post-findings.sh   (FEATURE_BRANCH and FEATURE_SLUG from the env)
+# A finding at a `path:line` the diff shows goes inline, the rest in the body by severity. Each
+# carries a hidden marker, and one already on the PR is skipped, so a re-run posts only what is new.
 
 : "${FEATURE_BRANCH:?FEATURE_BRANCH is not set}"
 : "${FEATURE_SLUG:?FEATURE_SLUG is not set}"
@@ -40,7 +32,6 @@ pr=$(gh pr view "$FEATURE_BRANCH" --json number,state)
 number=$(jq -r '.number' <<< "$pr")
 repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 
-# Markers already on the PR.
 {
   gh api "repos/$repo/pulls/$number/reviews" --paginate | jq -r '.[]?.body // empty'
   gh api "repos/$repo/pulls/$number/comments" --paginate | jq -r '.[]?.body // empty'
@@ -57,7 +48,6 @@ gh pr diff "$number" | awk '
   /^[+ ]/    { print f ":" n; n++ }
 ' > "$TMP/diff-lines.txt"
 
-# Annotate each finding: marker, and inline path/line when its location is in the diff.
 : > "$TMP/annotated.jsonl"
 while IFS= read -r row; do
   key=$(jq -r '[.branch, .severity, .location, .criterion] | join("|")' <<< "$row")

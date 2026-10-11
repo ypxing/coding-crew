@@ -1,21 +1,11 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# crew-summary.sh — render the end-of-sprint summary and the findings reminder from
-# sprint-state.json and the review reports.
-#
-# Usage:
-#   crew-summary.sh [--feature-slug <slug>] [--stalled] [--capped] [--no-reminder] [--posted-to <pr-url>] [--promoted <severities>]
-#
-# The summary used to be ~430 words of print template that the orchestrator filled in
-# from lists it had been carrying in its context since round 1. That is the one part of
-# the sprint where a dropped entry is invisible: a retained branch left out of
-# "## Retained Branches" reads as a clean teardown, and a review gap left out of the
-# reminder reads as a clean review. Both facts are already on disk — in
-# sprint-state.json (written by state.sh) and in the review reports (written by the
-# reviewer and by promote-findings.sh) — so rendering is mechanical.
-#
-# Sections with nothing to report are omitted, exactly as the prose template said.
+# crew-summary.sh — render the end-of-sprint summary and findings reminder from sprint-state.json
+# and the review reports, so no retained branch or review gap can be dropped from it.
+# Usage: crew-summary.sh [--feature-slug <slug>] [--stalled] [--capped] [--no-reminder]
+#          [--posted-to <pr-url>] [--promoted <severities>]
+# Sections with nothing to report are omitted.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -50,9 +40,7 @@ state() { bash "$SCRIPT_DIR/state.sh" "$@" ${FEATURE_SLUG:+--feature-slug "$FEAT
 
 SF=$(state get state-file) || { echo "crew-summary: no sprint state found" >&2; exit 1; }
 
-# FEATURE_BRANCH (used by the merge-conflict hint below): read it straight from that sprint's
-# own env file instead of re-deriving it from git, which would guess wrong the moment the caller
-# is not currently on that sprint's feature branch.
+# FEATURE_BRANCH from the sprint's own env file: git would guess wrong off that branch.
 if [ -z "${FEATURE_BRANCH:-}" ] && [ -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint.env" ]; then
   # shellcheck disable=SC1091
   . "$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint.env" 2>/dev/null || true
@@ -63,14 +51,7 @@ count_csv() {
   printf '%s' "$1" | tr ',' '\n' | grep -c . || true
 }
 
-# review_rollup <report-file>... — the one parser of the reviewer's aggregate report
-# file(s), shared with promote-findings.sh's remind. See orchestrator/lib/report.mjs's
-# parseReviewAggregate doc comment: this used to be a hand-rolled, line-anchored awk in
-# each of the two scripts, and they drifted apart on how much whitespace a herdr-captured
-# review header could carry before neither matched it. Prints {"branches": [...]} to
-# stdout; an unreachable CLI degrades to no branches rather than erroring the summary.
-# $CREW_REVIEW_ROLLUP overrides the lookup — bats fixtures set it to the repo's own
-# orchestrator/review-rollup.mjs, since they copy this script alone, not a full install.
+# review_rollup <report-file>... — the one review-report parser, as in promote-findings.sh.
 review_rollup() {
   local node_cli="${CREW_REVIEW_ROLLUP:-}"
   [ -f "$node_cli" ] || node_cli="$MAIN_ROOT/.coding-crew/crew-afk/review-rollup.mjs"
@@ -85,13 +66,8 @@ or_none() { [ -n "$1" ] && printf '%s' "$(printf '%s' "$1" | sed 's/,/, /g')" ||
 
 REVIEW_DIR="$MAIN_ROOT/.scratch/$FEATURE_SLUG/reviews"
 
-# --- Code review summary -------------------------------------------------------
-# One place that answers "did anything actually get reviewed, and what did it find" —
-# every other review-shaped section below (Promoted Findings, Next Step, Unreviewed
-# Branches) is detail off of this same disk state, not a second source of truth. A
-# branch reviewed more than once (retried after criteria-unmet or review-not-run) is
-# folded to its latest verdict here: the report files are globbed in creation order, so
-# a later `## Branch:` block for the same name overwrites an earlier one.
+# A branch reviewed more than once is folded to its latest verdict: reports are globbed in
+# creation order, and a later `## Branch:` block overwrites an earlier one.
 code_review_summary() {
   local dir="$1"
   local files=()
@@ -131,23 +107,12 @@ MERGED_SLUGS=$(state get completed)
 PARTIAL_SLUGS=$(state get partial)
 BLOCKED_SLUGS=$(state get blocked)
 
-# Across invocations: how many runs this feature has taken, and why the one before this ended.
 echo "Run $(state get runs) for this feature; previous: $(state get previous-exit)"
 echo "Rounds: $(state get rounds)"
 echo "Model:  $(state get model)"
-# Claude-only for now (see extractResultMeta in dispatch.mjs) — omitted rather than
-# printed as $0.00 when nothing was recorded, since a pi/codex/copilot-only sprint has
-# no cost data at all, not genuinely zero cost.
-#
-# The totals span every run of this feature (state persists across re-runs); `.dispatches`
-# entries tagged with `.current_run` are this run alone, so both are printed, and this run
-# is split by role and by first attempt vs retry — where a stalled feature's money goes. A
-# conflict-only dispatch (role `conflict`) is coder work, so it counts under coder; every other
-# role (commandFinder, prWriter, …) is `other`, so the roles sum to the run total.
-#
-# A dispatch stopped before its `result` event (a timeout, a coder killed by a red baseline) has
-# no cost to add (state.sh dispatch-cost --cost-unknown); it is counted after the figures rather
-# than silently priced at $0.
+# Omitted when nothing was recorded: platforms without cost data are not zero cost. Totals span
+# every run; this run's `.dispatches` are split by role (`conflict` counts as coder) and attempt.
+# A dispatch stopped before its `result` event is counted as cost unknown, never priced at $0.
 TOTAL_COST_USD=$(state get total-cost-usd)
 UNKNOWN_COST_N=$(jq -r '(.current_run) as $r
   | [(.dispatches // [])[] | select($r != null and .run == $r and .cost_unknown == true)] | length' "$SF" 2>/dev/null || echo 0)
@@ -194,7 +159,6 @@ echo ""
 echo "## Code Review"
 code_review_summary "$REVIEW_DIR"
 
-# --- Verification Failures ----------------------------------------------------
 VERIFY_FAILS=$(jq -r '(.retention // {}) | to_entries[]
   | select(.value.reason | startswith("verification-failed"))
   | "- \(.value.branch): \(.value.reason)"' "$SF" 2>/dev/null || true)
@@ -204,7 +168,6 @@ if [ -n "$VERIFY_FAILS" ]; then
   printf '%s\n' "$VERIFY_FAILS"
 fi
 
-# --- Coverage Gaps ------------------------------------------------------------
 GAPS=$(jq -r '(.coverage_gaps // {}) | to_entries[] | "- \(.key): not_run \(.value)"' "$SF" 2>/dev/null || true)
 if [ -n "$GAPS" ]; then
   echo ""
@@ -213,7 +176,6 @@ if [ -n "$GAPS" ]; then
   printf '%s\n' "$GAPS"
 fi
 
-# --- Deviations ---------------------------------------------------------------
 DEVIATIONS=$(jq -r '(.deviations // {}) | to_entries[] | .key as $k | .value[] | "- \($k): \(.)"' "$SF" 2>/dev/null || true)
 if [ -n "$DEVIATIONS" ]; then
   echo ""
@@ -222,7 +184,6 @@ if [ -n "$DEVIATIONS" ]; then
   printf '%s\n' "$DEVIATIONS"
 fi
 
-# --- Retained Branches --------------------------------------------------------
 RETAINED=$(jq -r '(.retention // {}) | to_entries[] | "- \(.value.branch): retained (\(.value.reason))"' "$SF" 2>/dev/null || true)
 if [ -n "$RETAINED" ]; then
   echo ""
@@ -230,12 +191,8 @@ if [ -n "$RETAINED" ]; then
   printf '%s\n' "$RETAINED"
 fi
 
-# --- Merge conflicts (never auto-resolved — see merge-branches.sh) -----------
-# A `merge-failed` retention is the one reason above that isn't the branch's content
-# needing more work: verify passed, review returned all-met, the AC receipt is on disk,
-# and only `git merge --no-ff` itself hit a conflict. merge-branches.sh aborts cleanly
-# and never attempts resolution, by design — so unlike every other retained reason,
-# re-running crew-afk alone cannot fix this one. Spell out the one manual step that does.
+# merge-failed is the one retention a re-run cannot fix: merge-branches.sh never resolves a
+# conflict, so spell out the manual step.
 MERGE_CONFLICTS=$(jq -r '(.retention // {}) | to_entries[] | select(.value.reason | startswith("merge-failed")) | .value.branch' "$SF" 2>/dev/null || true)
 if [ -n "$MERGE_CONFLICTS" ]; then
   echo ""
@@ -248,10 +205,7 @@ if [ -n "$MERGE_CONFLICTS" ]; then
   printf '%s\n' "$MERGE_CONFLICTS" | sed 's/^/- /'
 fi
 
-# --- A dirty main checkout (merge-branches.sh's main-tree-dirty) -----------------
-# Like merge-failed, not the branch's content: verify, review and the AC receipt passed, and
-# git refused the merge because uncommitted changes in the main checkout would be overwritten.
-# Re-running resumes straight at the merge once they are committed or stashed.
+# The merge was refused for uncommitted changes in the feature worktree; a re-run resumes at the merge.
 DIRTY_BLOCKED=$(jq -r '(.retention // {}) | to_entries[] | select(.value.reason | test("main-tree-dirty")) | "- \(.value.branch): \(.value.reason | sub("^.*main-tree-dirty — "; ""))"' "$SF" 2>/dev/null || true)
 if [ -n "$DIRTY_BLOCKED" ]; then
   echo ""
@@ -260,14 +214,8 @@ if [ -n "$DIRTY_BLOCKED" ]; then
   printf '%s\n' "$DIRTY_BLOCKED"
 fi
 
-# --- Environment blockers (triage said not-fixable, twice — see handleVerificationFailure
-# in orchestrator/lib/pipeline/verify.mjs) ------------------------------------
-# A `blocked — environment — ...` reason is the other case, alongside merge-failed, that
-# isn't the branch's own content needing more work: crew-triage judged the verification
-# failure unfixable by recoding, a plain coder-free retry hit the identical failure again,
-# and no further sprint round will change that outcome — carved out of the generic Retained
-# Branches / Blocked list above so a human scanning the summary sees "go fix the
-# registry/network/credentials" at a glance, not "go read what the coder got stuck on".
+# Triage judged the failure unfixable by recoding and a coder-free retry hit it again: carved out
+# so a human sees "fix the environment" at a glance.
 ENV_BLOCKED=$(jq -r '(.retention // {}) | to_entries[]
   | select(.value.reason | test("^blocked — environment"))
   | "- \(.key) (\(.value.branch)): \(.value.reason)"' "$SF" 2>/dev/null || true)
@@ -281,13 +229,9 @@ if [ -n "$ENV_BLOCKED" ]; then
   printf '%s\n' "$ENV_BLOCKED"
 fi
 
-# --- Promoted Findings --------------------------------------------------------
-# Read back the markers promote-findings.sh defer appended to each review report:
-#   - <branch>: <severities> → <issue ref> (<n> finding(s))
-# A marker written before the count existed ends at the ref. A local ref is a path: its count is
-# the number of acceptance criteria in the fix issue (one per promoted finding), its state where
-# the file now lives. A github ref is a URL, rendered as #<n> with the marker's count (none on an
-# old marker) — the summary makes no network call for it.
+# The markers promote-findings.sh defer appends: "- <branch>: <severities> → <ref> (<n> finding(s))",
+# the count absent on an older marker. A local ref's count and state come from the issue file; a
+# github URL renders as #<n> with the marker's count, with no network call.
 PROMOTED=""
 if [ -d "$REVIEW_DIR" ]; then
   while IFS= read -r line; do
@@ -335,19 +279,11 @@ bash "$SCRIPT_DIR/trace.sh" --level "$([ "$(count_csv "$BLOCKED_SLUGS")" -eq 0 ]
 
 [ "$REMINDER" -eq 1 ] || exit 0
 
-# The sprint is over, so release the close gate: `cli.mjs mark-done` refuses while
-# .orchestrated exists, and a marker left behind would block a standalone solve-issue run
-# on this feature long after the orchestrator stopped. Only on the final summary —
-# --no-reminder is the per-round rollup, and the sprint is still running then.
+# Release the close gate (mark-done refuses while .orchestrated exists) — on the final summary
+# only: --no-reminder is the per-round rollup.
 rm -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/.orchestrated"
 
-# --- dev-commands.json reminder -----------------------------------------------
-# .coding-crew/dev-commands.json is committed and human-editable, but nothing here
-# auto-commits it (see PRD: no auto-commit to any branch, ever) — a sprint's bootstrap
-# write (discover-commands.sh / write-commands-cache.sh, before any worktree existed) is
-# otherwise easy to lose to a stray `git clean` before the next sprint notices it. Stateless
-# — re-run `git status` every time, no "already warned" flag file. Omitted when clean or
-# absent, following this file's own "sections with nothing to report are omitted" style.
+# Nothing auto-commits dev-commands.json, and a stray `git clean` would lose it.
 DEV_COMMANDS_STATUS=$(git -C "$MAIN_ROOT" status --porcelain -- .coding-crew/dev-commands.json 2>/dev/null || true)
 if [ -n "$DEV_COMMANDS_STATUS" ]; then
   echo ""
@@ -355,10 +291,6 @@ if [ -n "$DEV_COMMANDS_STATUS" ]; then
   echo "Reminder: .coding-crew/dev-commands.json has uncommitted changes at MAIN_ROOT — review and commit it."
 fi
 
-# --- Findings reminder (last thing printed) -----------------------------------
-# Promotion only covered what fixFindings selects (every Actionable finding by default) on Phase 1
-# branches. Everything else — Debatable and Dismissed findings, what a severity level leaves out,
-# and any finding raised against a Phase 2 fix branch — still needs a human.
 REMIND=$(cd "$MAIN_ROOT" && bash "$SCRIPT_DIR/promote-findings.sh" remind --feature-slug "$FEATURE_SLUG" 2>/dev/null || true)
 
 OPEN_LINE=$(printf '%s\n' "$REMIND" | grep '^FINDINGS: open=' || true)
@@ -373,7 +305,6 @@ if [ -n "$OPEN_LINE" ]; then
   echo "$total review finding(s) still need triage ($breakdown)."
   echo "Reports: $REPORTS"
   if [ -n "$POSTED_TO" ]; then
-    # every open finding is on the PR now, whether this run or an earlier one posted it
     echo "$total finding(s) posted to $POSTED_TO"
     echo "Run: /address-pr-comments $POSTED_TO"
   else
@@ -405,14 +336,8 @@ if [ -n "$DISMISSED_N" ]; then
 fi
 
 if [ -n "$GAP_LINE" ]; then
-  # A branch this sprint actually merged is proof its review completed with an all-met
-  # verdict — the merge gate cannot be passed otherwise (runHousekeeping in
-  # orchestrator/lib/pipeline.mjs only merges after that). A `gap:` entry for a merged
-  # branch is therefore always stale — a not_run stub left by an earlier failed attempt
-  # (this run's own retry, or a leftover report from a previous process on a resumed
-  # sprint) that a later successful review didn't get matched against and clear — and
-  # must not contradict the Merged line above it by telling the user it was "retained
-  # rather than merged".
+  # A merged branch passed an all-met review (the merge gate requires it), so a `gap:` for one is a
+  # stale not_run stub from an earlier attempt and must not contradict the Merged line.
   GAP_ENTRIES=""
   gap_count=0
   while IFS= read -r gline; do

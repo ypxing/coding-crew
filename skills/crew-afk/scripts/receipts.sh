@@ -1,56 +1,12 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# receipts.sh — mechanical gate receipts for a crew-afk sprint
-#
-# Usage:
-#   receipts.sh write ac           --dir   <worktree-path>
-#   receipts.sh write ac           --branch <branch>            # cwd: main root
-#   receipts.sh clear <verify|ac>  --dir   <worktree-path> [--stem <n>-<slug>]
-#   receipts.sh path  <verify|ac>  --dir   <worktree-path> [--stem <n>-<slug>]
-#   receipts.sh check verify       --branch <branch>            # cwd: main root
-#   receipts.sh check ac           --issue  <issue-file-path>   # local backend
-#   receipts.sh check ac           --branch <branch>            # github backend, cwd: main root
-#   receipts.sh check ac           --branch <branch> --at-tip   # cwd: main root
-#
-#   --branch is the form to use once the worktree is gone: some variants remove a
-#   worktree straight after its checks, then verify acceptance criteria from the
-#   main checkout, so the ac receipt has no worktree left to derive from.
-#
-# Why this exists
-#   crew-afk's pipeline gates (check verification, then acceptance-criteria
-#   verification) were prose-only instructions to the orchestrator. An
-#   orchestrator that skipped them left no trace and nothing refused the merge,
-#   so a branch with failing checks merged and a second issue was closed off the
-#   first issue's branch. A receipt turns each gate into a fact on disk that the
-#   mechanical steps downstream can require.
-#
-# What a receipt is
-#   Both live in <main-root>/.scratch/<feature-slug>/dispatch/<n>-<slug>/ (or bare
-#   <slug>/ when unnumbered) — the issue's own subdirectory, beside its worker reports,
-#   so a sprint's evidence stays grouped one issue to a folder instead of piled flat.
-#
-#   verify: verify.json, verify-worktree.sh's own record of the run, in the issue's
-#   subdirectory named by --stem. It is written by that script, never here, pass or
-#   fail; `check verify` accepts it only with a `pass` verdict and a `commit` equal to
-#   the branch's tip, so commits pushed after verification cannot ride in on an earlier
-#   pass. `check verify --branch` knows only the slug, so it finds the subdirectory by
-#   `<digits>-<slug>` or bare `<slug>` (_dispatch_issue_dir).
-#
-#   ac: ac.ok in that same subdirectory, written here once review returned all-met,
-#   holding the reviewed commit. `check ac` tests only its existence — by close time the
-#   branch may already be merged and deleted, so there is no tip to compare. `--at-tip`
-#   also requires that commit to be the branch's tip: what a retry asks before skipping
-#   a review it already passed.
-#
-#   Writing an `ac` receipt also emits the ACVERIFY trace line, because the receipt
-#   is the only evidence that gate ran. Verify receipts are traced by
-#   verify-worktree.sh, which is the script that runs those checks.
-#
-# Escape hatch
-#   CREW_RECEIPTS=off disables *checking* (writes still happen). For debugging
-#   and for callers driving these scripts outside a sprint. Never set it in a
-#   sprint: it re-opens exactly the hole this file closes.
+# receipts.sh — gate receipts: facts on disk the merge and close steps require, so a skipped gate
+# refuses the merge instead of leaving no trace. Usage: receipts.sh <write|clear|path|check> <verify|ac> (see _usage).
+# verify.json (written by verify-worktree.sh, pass or fail) counts only as a `pass` at the branch's tip.
+# ac.ok (written here once review returns all-met) holds the reviewed commit; `check ac` tests only that
+# it exists, since by close time the branch may be gone, and --at-tip also requires the tip.
+# CREW_RECEIPTS=off disables checking (writes still happen); never set it in a sprint.
 
 _usage() {
   cat >&2 <<'EOF'
@@ -65,19 +21,15 @@ Usage:
 EOF
 }
 
-# receipts_enabled — false when the operator has explicitly disabled gating.
 receipts_enabled() {
   [ "${CREW_RECEIPTS:-on}" != "off" ]
 }
 
-# _main_root_of <dir> — the main worktree's root, from any worktree (main-root.sh's rule, which
-# also covers a submodule and a bare repo), as a `pwd -P` path.
 # shellcheck source=main-root.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/main-root.sh"
 _main_root_of() { main_root "$1"; }
 
-# _split_crew_branch <branch> — echoes "<feature-slug> <issue-slug>".
-# Fails for anything that is not crew/<feature-slug>/<issue-slug>.
+# _split_crew_branch <branch> — "<feature-slug> <issue-slug>"; fails for anything else.
 _split_crew_branch() {
   local branch="$1"
   case "$branch" in
@@ -92,12 +44,8 @@ _split_crew_branch() {
   esac
 }
 
-# _dispatch_issue_dir <dispatch-dir> <issue-slug> [<stem>]
-# An issue's own subdirectory under dispatch/. A fresh write already knows its
-# --stem and is given it directly; a lookup that only has the bare slug (derived
-# from a branch, which never carries the issue number for the local tracker) finds
-# whichever of `<digits>-<slug>` or bare `<slug>` the writer actually created,
-# numbered taking priority since that is what a numbered issue's own writes used.
+# _dispatch_issue_dir <dispatch-dir> <issue-slug> [<stem>] — a lookup by bare slug (a branch never
+# carries the issue number) finds `<digits>-<slug>` first, else bare `<slug>`.
 _dispatch_issue_dir() {
   local dispatch="$1" slug="$2" stem="${3:-}"
   if [ -n "$stem" ]; then echo "$dispatch/$stem"; return; fi
@@ -120,10 +68,8 @@ _receipt_file() {
   echo "$dir/verify.json"
 }
 
-# issue_slug_of <issue-file-path> — filename minus leading digits and extension,
-# matching the ISSUE_SLUG derivation the orchestrator uses to name branches.
-# That shared derivation is the whole point: it is what ties an ac receipt to one
-# specific issue rather than to whichever branch happened to be verified last.
+# issue_slug_of <issue-file-path> — the orchestrator's ISSUE_SLUG derivation, which ties an ac
+# receipt to one issue rather than to whichever branch was verified last.
 issue_slug_of() {
   local base
   base=$(basename "$1")
@@ -131,7 +77,6 @@ issue_slug_of() {
   echo "$base" | sed -E 's/^[0-9]+[-_]?//'
 }
 
-# ─── argument parsing ────────────────────────────────────────────────────────
 
 ACTION="${1:-}"
 KIND="${2:-}"
@@ -153,8 +98,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --at-tip) AT_TIP=1; shift ;;
     --dir|--branch|--issue|--stem|--sha)
-      # Guard before reading $2: under `set -u` a bare flag would abort with an
-      # unbound-variable error instead of the usage message.
+      # Guard: under `set -u` a bare flag would abort on an unbound variable.
       if [ $# -lt 2 ]; then echo "ERROR: $1 requires a value" >&2; exit 1; fi
       case "$1" in
         --dir) DIR="$2" ;;
@@ -169,7 +113,6 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# ─── actions ─────────────────────────────────────────────────────────────────
 
 case "$ACTION" in
   write|clear|path)
@@ -188,7 +131,6 @@ case "$ACTION" in
         echo "ERROR: not a git worktree: $DIR" >&2; exit 1; }
       sha_source="$DIR"
     else
-      # Resolve from the current repository (the main checkout).
       branch="$BRANCH"
       git rev-parse --verify --quiet "${branch}^{commit}" >/dev/null || {
         echo "ERROR: no such branch: $branch" >&2; exit 1; }
@@ -224,17 +166,11 @@ case "$ACTION" in
             echo "ERROR: no such commit: $SHA" >&2; exit 1; }
         fi
         [ -n "$sha" ] || { echo "ERROR: cannot record commit for $branch" >&2; exit 1; }
-        # No `set -e` here: an unchecked failed write would still print "wrote" and exit 0.
-        # `>` creates the file before the write can fail, and `check` only tests that the
-        # file exists, so a failed write removes what it left behind.
+        # No `set -e`, and `check` tests only existence, so a failed write removes what `>` created.
         { mkdir -p "$(dirname "$file")" && echo "$sha" > "$file"; } 2>/dev/null || {
           rm -f "$file" 2>/dev/null
           echo "ERROR: cannot write $KIND receipt: $file" >&2; exit 1; }
-        # An ac receipt is only ever written after an acceptance-criteria check returned
-        # `AC: all-met`, so writing it *is* the event worth tracing. Tracing it here rather
-        # than asking the orchestrator for a second `trace.sh ACVERIFY` call means the
-        # marker cannot be emitted for a gate that never wrote a receipt, and costs no
-        # extra round trip. verify receipts are already traced by verify-worktree.sh.
+        # The receipt is the only evidence the AC gate ran, so writing it is what gets traced.
         if [ "$KIND" = "ac" ]; then
           bash "$(dirname "$0")/trace.sh" ACVERIFY "branch=$branch result=all-met" 2>/dev/null || true
         fi
@@ -258,9 +194,7 @@ case "$ACTION" in
         [ -n "$BRANCH" ] || { echo "ERROR: check verify requires --branch <branch>" >&2; exit 1; }
         split=$(_split_crew_branch "$BRANCH") || split=""
         if [ -z "$split" ]; then
-          # Not a crew branch: outside this gate's remit. Callers merge branches
-          # that a sprint never produced, and failing those would be a false
-          # positive, not a caught bug.
+          # Not a crew branch: outside this gate; failing it would be a false positive.
           echo "RECEIPT: $BRANCH is not a crew branch — gate not applicable"
           exit 0
         fi
@@ -296,11 +230,7 @@ case "$ACTION" in
         ;;
 
       ac)
-        # --branch is the github-backend form: there is no issue file path to derive a
-        # slug/feature dir from (see close-issue.sh's github branch), so this splits the
-        # branch itself — the exact same derivation `write ac --branch` already used to
-        # place the receipt in the first place, and `check verify --branch` above already
-        # uses for the same reason. --issue stays the local form, unchanged.
+        # --branch: the github form, with no issue file to derive the slug from.
         if [ -n "$BRANCH" ]; then
           split=$(_split_crew_branch "$BRANCH") || split=""
           if [ -z "$split" ]; then
@@ -314,8 +244,7 @@ case "$ACTION" in
         else
           [ -n "$ISSUE" ] || { echo "ERROR: check ac requires --issue <issue-file-path> or --branch <branch>" >&2; exit 1; }
 
-          # Derive both slugs from the path, so this works whether or not the
-          # branch still exists: .scratch/<feature>/issues/<state>/<file>.md
+          # From the path, so this works after the branch is gone: .scratch/<feature>/issues/<state>/<file>.md
           state_dir=$(dirname "$ISSUE")
           feature_dir=$(dirname "$(dirname "$state_dir")")
           slug=$(issue_slug_of "$ISSUE")

@@ -1,50 +1,12 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# verify-worktree.sh — run project checks in a worktree directory
-#
+# verify-worktree.sh — run the project's checks in a worktree; exit 0 only if all pass.
 # Usage: verify-worktree.sh --dir <worktree-path> [--stem <n>-<slug>]
-#
-# After the three base checks, every other check category .coding-crew/dev-commands.json gives
-# a command (coverage, integration, ...) runs too, on every call — no caller chooses which. The
-# cache is committed and human-edited, so its non-null keys are the project's own statement of
-# what its checks are; `null` is how a category opts out. Each such check is required (a
-# failure fails the gate) and its full output is always persisted, with its path printed as
-# `<LABEL>: log: <path>`, so a reviewer can read a figure (a coverage percentage) that
-# pass/fail alone cannot carry.
-#
-# In a crew worktree the run's evidence is written into the sprint's dispatch directory, in
-# the issue's own subdirectory (--stem, `<n>-<slug>`; the bare slug when absent), beside its
-# other dispatch files: `verify.json` — branch, commit, verdict, and per check its category,
-# command, result, exit code and log, and the cached categories set to `null` — plus
-# `verify-<check>.log`, every check's full output. The JSON is also the merge receipt (see
-# receipts.sh): merge-branches.sh accepts
-# only a `pass` verdict recorded for the branch's current tip. It outlives the worktree, so what
-# the gate did can be read after the fact. Outside a crew worktree nothing is recorded, and full
-# output is kept under <worktree>/.scratch/ only when it was capped.
-#
-# Discovers check commands using this reference chain:
-#   0. .coding-crew/dev-commands.json at MAIN_ROOT (see discover-commands.sh / write-commands-cache.sh)
-#      — a model's one-time reading of CLAUDE.md/AGENTS.md/Makefile/manifest, done once
-#      (bootstrap) before any worktree exists, not re-derived by this gate. A category the cache
-#      resolves to `null` is trusted as-is (no local command exists) and is not retried
-#      against steps 1-3 below — the whole point of the cache is that a model already looked.
-#   1. CLAUDE.md at the worktree root (explicit Run: commands under Tests section)
-#   2. Makefile targets (test, lint, typecheck)
-#   3. Ecosystem conventions (bats, npm test, pytest, cargo test, go test, etc.)
-# Steps 1-3 only ever run when there is no usable cache at all (absent, or unparseable) —
-# the fallback every repo already had before the cache existed.
-#
-# A check category with no discoverable command is reported explicitly as
-# not_run — never silently treated as passing.
-#
-# A check that leaves the worktree modified (an auto-fixing lint) fails, whatever its exit code,
-# with `<LABEL>: modified files: <list>` — see _vw_tree_state.
-#
-# A failing run records a `fail` verdict over any earlier pass, so a branch that once
-# passed cannot merge on stale evidence.
-#
-# Exit code: 0 if all discovered checks pass, non-zero otherwise.
+# Commands come from .coding-crew/dev-commands.json (a `null` is trusted: no command); with no
+# usable cache, from CLAUDE.md/AGENTS.md, Makefile targets, then ecosystem conventions. A
+# category with no command is not_run, never a pass. In a crew worktree the verdict is recorded
+# as verify.json (the merge receipt, see receipts.sh) beside each check's full log.
 
 WORKTREE_DIR=""
 STEM=""
@@ -52,8 +14,7 @@ STEM=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dir)
-      # Guard before reading $2 — under `set -u` a bare `--dir` would otherwise
-      # abort with "$2: unbound variable" instead of the usage message.
+      # Guard: under `set -u` a bare `--dir` would abort on "$2: unbound variable".
       if [ $# -lt 2 ]; then
         echo "ERROR: --dir requires a value" >&2
         echo "Usage: $0 --dir <worktree-path>" >&2
@@ -88,45 +49,26 @@ if [ ! -d "$WORKTREE_DIR" ]; then
   exit 1
 fi
 
-# Resolve to the physical path once: a symlinked tmp dir (macOS's /var -> /private/var)
-# would otherwise make the compose-file path built here disagree, string-wise, with the
-# one _main_root_of resolves via `pwd -P` for MAIN_ROOT below — same file, different
-# strings, and the docker-mode presence checks below would never line up.
+# Physical path, so it compares string-wise with main_root's `pwd -P` (macOS /var -> /private/var).
 WORKTREE_DIR="$(cd "$WORKTREE_DIR" && pwd -P)"
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ─── docker-mode verification ─────────────────────────────────────────────────
-#
-# dep-install's own docker-install.md tells a worker "every subsequent docker compose
-# command must pass both -f flags — including test, lint and type-check runs", because
-# gen-override.sh mounts a *named volume* over the ecosystem's dependency directory
-# (node_modules, .venv, …) at a container-side subpath — not a host bind-mount. Content
-# written there by `yarn install` (via ensure-deps.sh's docker path) never exists on the
-# host filesystem at all, in the worktree or in MAIN_ROOT. A worker gets that instruction
-# from the skill; this gate cannot read a skill, so until now it ran every discovered
-# command directly on the host — looking at a worktree whose node_modules never existed
-# outside the container, and failing every check that needed it.
-#
-# Every signal below must resolve or this silently falls back to the existing host path —
-# a gate must never stall a whole sprint because docker introspection failed.
+# Dependencies live in a named volume inside the container, never on the host, so a docker-mode
+# check must run there. Any docker signal that fails to resolve falls back to the host path.
 
-# _main_root_of <dir> — the main worktree's root from any linked worktree, by main-root.sh's rule
-# (also a submodule and a bare repo), as a `pwd -P` path, so it compares with WORKTREE_DIR above.
 # shellcheck source=main-root.sh
 . "$SELF_DIR/main-root.sh"
 _main_root_of() { main_root "$1"; }
 
-# _vw_find_dep_scripts <main-root> — the same candidate order ensure-deps.sh uses, so a
-# repo's dep-install scripts are found the same way regardless of which script asks.
+# Same candidate order as ensure-deps.sh.
 _vw_find_dep_scripts() {
   local main_root="$1"
   if [ -n "${CREW_DEP_INSTALL_SCRIPTS:-}" ]; then
     [ -f "$CREW_DEP_INSTALL_SCRIPTS/run.sh" ] && printf '%s' "$CREW_DEP_INSTALL_SCRIPTS"
     return 0
   fi
-  # A sprint resolved its install once (sprint.env's CREW_INSTALL_DIR): that copy, no search.
-  # The list below is only for a hand run with no sprint.env.
+  # A sprint resolved its install once (CREW_INSTALL_DIR); the search below is for hand runs.
   if [ -n "${CREW_INSTALL_DIR:-}" ] && [ -f "$CREW_INSTALL_DIR/dep-install/scripts/run.sh" ]; then
     printf '%s' "$CREW_INSTALL_DIR/dep-install/scripts"
     return 0
@@ -149,10 +91,7 @@ _vw_find_dep_scripts() {
   done
 }
 
-# Where a check runs — host, docker, or host because its own recipe runs docker — is
-# dep-install's run.sh's decision, the same one a worker's own check runs get: the two
-# must not disagree about where `npm test` runs. No run.sh found → host, as before docker
-# mode existed here. Every docker signal must resolve or run.sh itself falls back to host.
+# Where a check runs is dep-install run.sh's decision, the same one a worker's own runs get.
 DOCKER_MODE=0
 DOCKER_SERVICE=""
 DOCKER_CONTAINER_SRC=""
@@ -164,12 +103,10 @@ _vw_dep_scripts="$(_vw_find_dep_scripts "$_VW_MAIN_ROOT")"
 _VW_RUN_ARGS=(--project-root "$WORKTREE_DIR")
 [ -n "$_VW_MAIN_ROOT" ] && _VW_RUN_ARGS+=(--main-root "$_VW_MAIN_ROOT")
 
-# CREW_VERIFY_DOCKER=off is the rollback lever, independent of CREW_DEPS, back to the
-# always-host behaviour this gate had before docker mode was mechanized here.
+# CREW_VERIFY_DOCKER=off: rollback lever to always-host.
 if [ "${CREW_VERIFY_DOCKER:-on}" != "off" ] && [ -n "$RUN_SCRIPT" ]; then
-  # A docker-mode worktree whose crew override was never written (ensure-deps.sh only writes it on
-  # its own docker path) would make run.sh fall back to the host, and with it skip the install below.
-  # gen-override.sh is deterministic and also what docker-install.sh runs first, so write it now.
+  # A docker-mode worktree without the crew override would make run.sh fall back to the host;
+  # gen-override.sh is deterministic, so write it now.
   _vw_override="$(git -C "$WORKTREE_DIR" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)/crew-compose.override.yml"
   if [ ! -f "$_vw_override" ] && [ -f "$_vw_dep_scripts/gen-override.sh" ] &&
      bash "$_vw_dep_scripts/resolve-mode.sh" "${_VW_RUN_ARGS[@]}" --no-heuristic 2>/dev/null | grep -qx 'INSTALL_MODE=docker'; then
@@ -183,14 +120,6 @@ if [ "${CREW_VERIFY_DOCKER:-on}" != "off" ] && [ -n "$RUN_SCRIPT" ]; then
   fi
 fi
 
-# ─── commands cache ────────────────────────────────────────────────────────────
-#
-# .coding-crew/dev-commands.json (see discover-commands.sh / write-commands-cache.sh) is
-# committed and human-editable, written once (bootstrap) at MAIN_ROOT, before any worktree
-# exists — read here so a worktree's checks use the same commands already discovered,
-# instead of re-guessing per worktree with the heuristic chain below. Reuses _main_root_of,
-# already defined above for the same MAIN_ROOT-from-a-worktree problem the docker detection
-# has.
 _CACHE_MAIN_ROOT="${MAIN_ROOT:-}"
 if [ -z "$_CACHE_MAIN_ROOT" ]; then
   _CACHE_MAIN_ROOT=$(_main_root_of "$WORKTREE_DIR")
@@ -198,13 +127,7 @@ fi
 COMMANDS_CACHE=""
 [ -n "$_CACHE_MAIN_ROOT" ] && COMMANDS_CACHE="$_CACHE_MAIN_ROOT/.coding-crew/dev-commands.json"
 
-# _load_cached_command <category>
-# Prints the cached command for <category> and returns 0 when a usable cache exists —
-# including printing nothing for an explicit `null`, the discovery step's own considered
-# answer that no local command exists for that category, which must not be second-guessed
-# by the heuristic chain below. Returns 1 (nothing printed) only when there is no usable
-# cache at all: absent, or missing every recognisable field (a half-written stub) — the only
-# case that falls through to steps 1-3.
+# _load_cached_command <category> — 0 with the command (empty for `null`); 1 only with no usable cache.
 _load_cached_command() {
   local category="$1"
   [ -n "$COMMANDS_CACHE" ] && [ -f "$COMMANDS_CACHE" ] || return 1
@@ -220,12 +143,8 @@ _load_cached_command() {
   esac
 }
 
-# ─── check discovery ─────────────────────────────────────────────────────────
 
-# _discover_from_claude_md <category> <worktree-dir>
-# Looks for a "Run: `command`" line under a ## <category> section in an agent
-# context file (CLAUDE.md, then AGENTS.md — pi and other harnesses use the latter).
-# Prints the command if found, empty string otherwise.
+# First backticked "Run:" command under a `## <category>` heading of CLAUDE.md, else AGENTS.md.
 _discover_from_claude_md() {
   local category="$1"
   local dir="$2"
@@ -244,8 +163,6 @@ _discover_from_claude_md() {
     return
   fi
 
-  # Find sections matching the category header, then look for Run: lines
-  # Use grep/sed: find lines after a matching ## header until the next ## header
   local in_section=0
   while IFS= read -r line; do
     if [[ "$line" =~ ^## ]]; then
@@ -255,7 +172,6 @@ _discover_from_claude_md() {
         in_section=0
       fi
     elif [[ "$in_section" -eq 1 ]] && grep -q "Run:" <<<"$line"; then
-      # Extract content between backticks
       local extracted
       extracted=$(echo "$line" | sed "s/.*\`\([^\`]*\)\`.*/\1/")
       if [ "$extracted" != "$line" ] && [ -n "$extracted" ]; then
@@ -266,8 +182,6 @@ _discover_from_claude_md() {
   done < "$claude_md"
 }
 
-# _has_makefile_target <target> <worktree-dir>
-# Returns 0 if the Makefile has the specified target, non-zero otherwise.
 _has_makefile_target() {
   local target="$1"
   local dir="$2"
@@ -280,28 +194,17 @@ _has_makefile_target() {
   grep -qE "^${target}[[:space:]]*:" "$makefile"
 }
 
-# _discover_test_command <worktree-dir>
-# Returns the test command or empty string if none found.
-#
-# Every command returned here is bare — no embedded absolute path (no `make -C
-# "$dir"`, no `--manifest-path "$dir/..."`, no `--prefix "$dir"`). It relies solely
-# on the `cd "$WORKTREE_DIR" && ...` (host) / `cd "$DOCKER_CONTAINER_SRC" && ...`
-# (docker) wrappers in the run section below to be correct, matching every other
-# script in this repo's cd-then-bare-command convention (host-install.sh). An
-# embedded host path would additionally be wrong verbatim inside the container,
-# where that path does not exist. Do not run a returned command outside those
-# wrappers.
+# Commands are bare (no embedded path): they rely on the cd in the run section, and a host path
+# would be wrong inside the container.
 _discover_test_command() {
   local dir="$1"
 
-  # 0. .coding-crew/dev-commands.json, if usable — authoritative, including an explicit null.
   local cached
   if cached=$(_load_cached_command test); then
     echo "$cached"
     return
   fi
 
-  # 1. CLAUDE.md explicit command under Tests section
   local cmd
   cmd=$(_discover_from_claude_md "test" "$dir")
   if [ -n "$cmd" ]; then
@@ -309,15 +212,12 @@ _discover_test_command() {
     return
   fi
 
-  # 2. Makefile test target
   if _has_makefile_target "test" "$dir"; then
     echo "make test"
     return
   fi
 
-  # 3. Ecosystem conventions
-  # bats: point bats at the directory the .bats files are actually in — a repo
-  # with root-level .bats files and no tests/ dir must not be handed tests/.
+  # bats wherever the .bats files are: a repo with only root-level ones has no tests/.
   if ls "$dir"/tests/*.bats >/dev/null 2>&1; then
     echo "bats tests/"
     return
@@ -327,36 +227,28 @@ _discover_test_command() {
     return
   fi
 
-  # npm/pnpm/yarn: package.json with test script
   if [ -f "$dir/package.json" ] && grep -q '"test"' "$dir/package.json" 2>/dev/null; then
     echo "npm test"
     return
   fi
 
-  # Python: pytest. Match conventionally-named test files only (test_*.py /
-  # *_test.py at the root or under tests/), not "any .py file exists" — a
-  # stray build/deploy script would otherwise make an unrelated project
-  # attempt (and fail) pytest instead of honestly reporting not_run.
+  # Conventional test file names only: a stray .py script must not trigger pytest.
   if ls "$dir"/test_*.py >/dev/null 2>&1 || ls "$dir"/*_test.py >/dev/null 2>&1 \
     || ls "$dir"/tests/test_*.py >/dev/null 2>&1 || ls "$dir"/tests/*_test.py >/dev/null 2>&1; then
     echo "pytest"
     return
   fi
 
-  # Go: go test
   if [ -f "$dir/go.mod" ]; then
     echo "go test ./..."
     return
   fi
 
-  # Rust: cargo test
   if [ -f "$dir/Cargo.toml" ]; then
     echo "cargo test"
     return
   fi
 
-  # Ruby: bundle exec rspec
-  # No path flag: rspec has no --project-root, and the cd below already sets cwd.
   if [ -f "$dir/Gemfile" ]; then
     echo "bundle exec rspec"
     return
@@ -365,12 +257,9 @@ _discover_test_command() {
   echo ""
 }
 
-# _discover_lint_command <worktree-dir>
-# Returns the lint command or empty string if none found.
 _discover_lint_command() {
   local dir="$1"
 
-  # 0. .coding-crew/dev-commands.json, if usable — authoritative, including an explicit null.
   local cached
   if cached=$(_load_cached_command lint); then
     echo "$cached"
@@ -384,7 +273,6 @@ _discover_lint_command() {
     return
   fi
 
-  # Makefile: lint, then check (verification.md names eslint/lint/check targets)
   local target
   for target in lint check; do
     if _has_makefile_target "$target" "$dir"; then
@@ -393,19 +281,16 @@ _discover_lint_command() {
     fi
   done
 
-  # npm/pnpm/yarn: package.json with a lint script
   if [ -f "$dir/package.json" ] && grep -q '"lint"' "$dir/package.json" 2>/dev/null; then
     echo "npm run lint"
     return
   fi
 
-  # Go: vet ships with the toolchain
   if [ -f "$dir/go.mod" ]; then
     echo "go vet ./..."
     return
   fi
 
-  # Rust: clippy
   if [ -f "$dir/Cargo.toml" ]; then
     echo "cargo clippy"
     return
@@ -414,12 +299,9 @@ _discover_lint_command() {
   echo ""
 }
 
-# _discover_typecheck_command <worktree-dir>
-# Returns the type check command or empty string if none found.
 _discover_typecheck_command() {
   local dir="$1"
 
-  # 0. .coding-crew/dev-commands.json, if usable — authoritative, including an explicit null.
   local cached
   if cached=$(_load_cached_command typecheck); then
     echo "$cached"
@@ -446,13 +328,11 @@ _discover_typecheck_command() {
     fi
   done
 
-  # TypeScript
   if [ -f "$dir/tsconfig.json" ]; then
     echo "npx tsc --noEmit"
     return
   fi
 
-  # Go: build acts as the type check
   if [ -f "$dir/go.mod" ]; then
     echo "go build ./..."
     return
@@ -461,7 +341,6 @@ _discover_typecheck_command() {
   echo ""
 }
 
-# ─── run checks ──────────────────────────────────────────────────────────────
 
 OVERALL_EXIT=0
 
@@ -473,7 +352,6 @@ echo ""
 
 NOT_RUN=()
 
-# ─── evidence ────────────────────────────────────────────────────────────────
 # receipts.sh owns where the evidence lives; empty outside a crew worktree.
 RECEIPTS_SCRIPT="$SELF_DIR/receipts.sh"
 EVIDENCE_FILE=""
@@ -481,13 +359,11 @@ if [ -f "$RECEIPTS_SCRIPT" ]; then
   EVIDENCE_FILE=$(bash "$RECEIPTS_SCRIPT" path verify --dir "$WORKTREE_DIR" ${STEM:+--stem "$STEM"} 2>/dev/null) || EVIDENCE_FILE=""
 fi
 
-# One entry per check run or reported not_run, in order — the JSON's `checks` array.
 REC_JSON=()
 _VW_KIND="base"
 _VW_CMD=""
 
-# _json_str <text> — <text> as a JSON string literal. sed/awk, not ${var//…}: that
-# expansion's quoting differs between macOS's bash 3.2 and bash 5.2.
+# sed/awk, not ${var//…}: that expansion's quoting differs between bash 3.2 and 5.2.
 _json_str() {
   printf '"%s"' "$(printf '%s' "$1" | tr '\t\r' '  ' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
     | awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }')"
@@ -504,25 +380,11 @@ _record() {
   REC_JSON+=("{\"category\": $(_json_str "$cat"), \"command\": $cmd, \"result\": \"$3\", \"exit\": $ex, \"log\": $log$missing}")
 }
 
-# ─── output capping ──────────────────────────────────────────────────────────
-# A check command's own stdout/stderr is arbitrary and can be very large — a full test
-# suite's own verbose output, most of all. Streamed straight through, every caller of
-# this script pays for that in full: a human's own terminal, and the orchestrator's own
-# trace log (`ctx.log(verify.stdout.trim())` in pipeline.mjs, which also feeds
-# console.error) both get an unbounded copy. Bounding it here — the one place the
-# command actually runs — bounds it for every caller at once, the same way
-# ensure-deps.sh already bounds an install command's output instead of leaving every
-# caller to guess a cap of its own.
-#
-# The tail (not the head) is kept: a failing suite's own error is almost always at the
-# end, and pass/fail — the one thing every caller actually gates on — is never inside
-# the capped portion, since it is printed by this script, not the command.
-# CREW_VERIFY_OUTPUT_LINES overrides the default, per the same escape-hatch convention
-# as CREW_DEPS/CREW_VERIFY_DOCKER.
+# Bounded here, where the command runs, so no caller (the orchestrator's trace log included) gets
+# an unbounded copy. The tail is kept: a failing suite's error is at the end.
 VERIFY_OUTPUT_LINES="${CREW_VERIFY_OUTPUT_LINES:-50}"
 
-# _verify_log_path <label> — where a category's full, uncapped output is persisted (one
-# file per category, so a re-run does not clobber a sibling category's log mid-read).
+# _verify_log_path <label> — one file per category, so a re-run cannot clobber a sibling's log.
 _verify_log_path() {
   local check
   check="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
@@ -533,16 +395,8 @@ _verify_log_path() {
   fi
 }
 
-# _run_capped <label> <out-file> <rc> — prints <out-file>, capped to VERIFY_OUTPUT_LINES
-# lines. Under the cap, this is a plain `cat` and nothing else changes — pass or fail.
-# Over the cap:
-#   - a failing check (rc != 0) keeps a tail: that is almost always where the actual
-#     error is, and it is the one case a caller is actually going to read this for.
-#   - a passing check (rc == 0) prints nothing of the body at all. A check that passed
-#     is not why anyone opens this log, however verbose its own suite is — showing a
-#     tail of it anyway would mean a sprint's cumulative trace log still grows with
-#     every issue's test-suite size even when nothing ever fails. The full output is
-#     still persisted to disk either way, one `cat` away.
+# _run_capped <label> <out-file> <rc> — over the cap a failure prints its tail and a pass prints
+# nothing, so the trace log does not grow with suite size; the full output is persisted either way.
 _run_capped() {
   local label="$1" out_file="$2" rc="$3"
   local total
@@ -564,30 +418,19 @@ _run_capped() {
   tail -n "$VERIFY_OUTPUT_LINES" "$out_file"
 }
 
-# ─── a check must leave the tree as it found it ──────────────────────────────
-# A check that rewrites files (a lint that auto-fixes, a formatter) passes on code it changed
-# itself, and leaves the drift for whoever runs next — a sprint once had every coder revert the
-# same 17 files a `make lint` rewrote, while the baseline and every verify passed. So a check's
-# verdict includes whether the tree is unchanged: `git status --porcelain` before and after it,
-# and any line that differs names a file it touched. Dirt already there is in the before
-# snapshot, so it is never blamed on the check; an ignored file (a coverage report) never shows.
+# A check that rewrites files (an auto-fixing lint) passes on its own edits and leaves the drift to
+# the next run. Dirt already present is in the before snapshot, so it is never blamed on the check.
 _vw_tree_state() {
   git -C "$WORKTREE_DIR" status --porcelain 2>/dev/null | LC_ALL=C sort
 }
 
-# _vw_changed_files <before> <after> — the paths whose status line differs, comma-separated.
 _vw_changed_files() {
   LC_ALL=C comm -3 <(printf '%s\n' "$1") <(printf '%s\n' "$2") \
     | sed -E 's/^\t//; s/^...//' \
     | awk 'NF && !seen[$0]++ { printf "%s%s", (n++ ? ", " : ""), $0 }'
 }
 
-# _exec_and_report <label> -- <argv...>
-# Runs <argv...> (already fully assembled by the caller — a host `bash -c` wrapper, or
-# a docker compose invocation), captures its combined stdout/stderr to a temp file,
-# prints it through _run_capped, then reports pass/fail and sets OVERALL_EXIT on
-# failure. The one place a check command's exit code and its output both originate,
-# so every call site gets the same capping and the same pass/fail report for free.
+# _exec_and_report <label> -- <argv...> — the one place a check's output and exit code originate.
 _exec_and_report() {
   local label="$1"
   shift
@@ -607,9 +450,8 @@ _exec_and_report() {
     mkdir -p "$(dirname "$log")" 2>/dev/null || true
     if cp "$out_file" "$log" 2>/dev/null; then echo "$label: log: $log"; else log=""; fi
   fi
-  # Exit 127 is the shell's "command not found": the tool is not installed where the check
-  # runs, which no change to the branch can fix. Named in the record so the baseline and
-  # the per-issue gate report the environment instead of a red branch or a coder's bug.
+  # Exit 127: the tool is not installed where the check runs, which no branch change can fix, so the
+  # record names it as an environment problem.
   local missing=""
   if [ "$rc" -eq 127 ]; then
     missing="$(sed -n -E 's/.*[: ]([^: ]+): (command )?not found$/\1/p' "$out_file" | head -n 1)"
@@ -617,8 +459,7 @@ _exec_and_report() {
   fi
   rm -f "$out_file"
   if [ -n "$changed" ]; then
-    # Whatever its exit code: its pass was on files it rewrote. solve-issue's run-checks.sh
-    # prints the same line, so a coder sees the verdict this gate will reach.
+    # Whatever its exit code. solve-issue's run-checks.sh prints the same line.
     echo "$label: modified files: $changed — the check rewrote them: run it, commit the result, and re-run (a check that rewrites files on every run needs a non-mutating command in .coding-crew/dev-commands.json)"
     echo "$label: fail"
     _record "$label" "$_VW_CMD" fail "$rc" "$log"
@@ -637,15 +478,9 @@ _exec_and_report() {
   fi
 }
 
-# _run_category <LABEL> <command> <required>
-# Runs one check category. An empty command is reported as not_run and collected
-# for the summary — never silently treated as passing.
-#
-# `required=yes` (TEST only) makes a missing command fatal: with no test command
-# nothing was verified at all, so the gate cannot vouch for the branch. For lint
-# and typecheck, not_run is loud but non-fatal — many projects legitimately have
-# neither, and failing them would stall every sprint on a false positive, which
-# is worse for an unattended run than the gap it would close.
+# _run_category <LABEL> <command> <required> — an empty command is not_run, never a pass.
+# required=yes makes not_run fatal (nothing was verified); lint and typecheck stay non-fatal, since
+# many projects have neither and failing them would stall every sprint.
 _run_category() {
   local label="$1"
   local cmd="$2"
@@ -664,17 +499,13 @@ _run_category() {
   fi
 
   if [ "$DOCKER_MODE" -eq 1 ]; then
-    # Docker-in-docker guard: a command that already invokes docker itself — directly, or
-    # through a Makefile recipe `make -n` expands — runs on the host, where its own docker
-    # calls resolve, instead of nested inside an outer `docker compose run`. run.sh decides
-    # (detect-docker-nesting.sh, shared with docker-install.sh's --install-cmd guard); it is
-    # asked first only so the line below can say where the check is about to run.
+    # A command that runs docker itself (directly or via its make recipe) runs on the host. run.sh
+    # decides; it is asked first only so the line below can say where.
     local via
     via="$(bash "$RUN_SCRIPT" "${_VW_RUN_ARGS[@]}" --describe -- "$cmd" 2>/dev/null | sed -n 's/^VIA=//p')"
     case "$via" in
       docker) echo "$label: running (docker: $DOCKER_SERVICE): cd \"$DOCKER_CONTAINER_SRC\" && $cmd" ;;
       *)
-        # host — and a stale `nested` from an older describe, which run.sh also runs as host.
         via=host
         if bash "$_vw_dep_scripts/detect-docker-nesting.sh" --dir "$WORKTREE_DIR" --cmd "$cmd"; then
           echo "$label: running on host (docker: $DOCKER_SERVICE skipped — '$cmd' recipe already manages docker itself): $cmd"
@@ -688,18 +519,11 @@ _run_category() {
   fi
 
   echo "$label: running: $cmd"
-  # Run in the worktree directory so relative paths resolve correctly
   _exec_and_report "$label" bash -c 'cd "$1" && eval "$2"' _ "$WORKTREE_DIR" "$cmd"
 }
 
-# ─── dependencies, docker mode ───────────────────────────────────────────────
-# The dependency volumes are named by a hash of this worktree's lockfiles, so a branch that changed
-# one since its deps install (a coder adding a package) would have its checks read volumes that
-# were never installed. docker-install.sh is install-if-missing: with the stamp present it costs
-# one container start; with the lockfiles changed it installs into the new-hash volumes first. It
-# also rewrites this worktree's override to name them, which the checks below pick up. A failure
-# fails the verify as a `deps` check, with the install's tail. Exit 2 means there is nothing to
-# install (no compose file or ecosystem it knows), which is not a failure.
+# Dependency volumes are named by a hash of the lockfiles, so a branch that changed one needs an
+# install first; docker-install.sh is install-if-missing. Exit 2 (nothing to install) is no failure.
 if [ "$DOCKER_MODE" -eq 1 ] && [ "${CREW_DEPS:-on}" != "off" ] && [ "${CREW_DOCKER_INSTALL:-on}" != "off" ] &&
    [ -f "$_vw_dep_scripts/docker-install.sh" ]; then
   _vw_di_args=(--project-root "$WORKTREE_DIR" --main-root "${_VW_MAIN_ROOT:-$WORKTREE_DIR}")
@@ -721,12 +545,8 @@ _run_category "LINT" "$(_discover_lint_command "$WORKTREE_DIR")" no
 echo ""
 _run_category "TEST" "$(_discover_test_command "$WORKTREE_DIR")" yes
 
-# ─── the cache's other checks ────────────────────────────────────────────────
-# Keys of dev-commands.json that are not checks.
 _VW_NOT_CHECKS=" test lint typecheck install install_mode env credential_target docker_service "
-# Every other key, in file order: one with a command runs, one that is `null` (or empty) is
-# recorded as unset. Only the cache's own values are ever executed. Keys are collected first so
-# a check that reads stdin (docker compose run) cannot swallow the rest of the list.
+# Keys are collected first so a check that reads stdin (docker compose run) cannot swallow the list.
 _VW_KEYS=()
 _VW_UNSET=()
 if [ -n "$COMMANDS_CACHE" ] && [ -f "$COMMANDS_CACHE" ] && grep -q '"test"' "$COMMANDS_CACHE" 2>/dev/null; then
@@ -748,8 +568,6 @@ fi
 done
 
 echo ""
-# Report bounded coverage explicitly — a category that never ran must not read as
-# passing just because the overall gate succeeded.
 if [ "${#NOT_RUN[@]}" -gt 0 ]; then
   echo "Verification: coverage gap — not_run: ${NOT_RUN[*]}"
 fi
@@ -765,11 +583,9 @@ else
   echo "Verification: fail — one or more checks did not pass"
 fi
 
-# ─── evidence record (the merge receipt) ────────────────────────────────────
 
-# Written pass or fail — a `fail` verdict is what revokes an earlier pass. A failed write is
-# reported but never changes the check outcome: this script's exit code must keep meaning
-# "the checks passed", and a missing record already fails closed at merge time.
+# Written pass or fail: a `fail` verdict revokes an earlier pass. A failed write never changes the
+# exit code; a missing record already fails closed at merge.
 if [ -n "$EVIDENCE_FILE" ]; then
   _vw_sha=$(git -C "$WORKTREE_DIR" rev-parse HEAD 2>/dev/null || true)
   _vw_rec_branch=$(git -C "$WORKTREE_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
@@ -792,15 +608,13 @@ fi
 
 TRACE_SCRIPT="$SELF_DIR/trace.sh"
 
-# Trace the gate result from the gate itself. The branch name comes from the worktree,
-# so the trace cannot disagree with what was actually checked.
+# Branch from the worktree, so the trace cannot disagree with what was checked.
 if [ -f "$TRACE_SCRIPT" ]; then
   _vw_branch=$(git -C "$WORKTREE_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
   if [ "$OVERALL_EXIT" -eq 0 ]; then _vw_result=pass; else _vw_result=fail; fi
   _vw_gap=""
   [ "${#NOT_RUN[@]}" -gt 0 ] && _vw_gap=" not_run=${NOT_RUN[*]}"
-  # The checked worktree's sprint, not the caller's: a crew branch is crew/<slug>/<issue>, and
-  # TRACE_LOG (a sprint's own children inherit it) wins over that.
+  # The checked worktree's sprint (crew/<slug>/<issue>), unless an inherited TRACE_LOG wins.
   _vw_slug=""
   case "$_vw_branch" in crew/*/*) _vw_slug="${_vw_branch#crew/}"; _vw_slug="${_vw_slug%%/*}" ;; esac
   (cd "$WORKTREE_DIR" && MAIN_ROOT="${MAIN_ROOT:-$_CACHE_MAIN_ROOT}" \

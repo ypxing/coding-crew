@@ -1,23 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Session initialization and feature branch setup for afk-run
-# Usage: source this script or run it directly
-# Optional: --feature-slug <slug>, --jira TICKET-123, --branch-prefix <prefix>, --fix-findings <level>,
-#           --print-branch (print FEATURE_SLUG=/FEATURE_BRANCH=/DEFAULT_BRANCH= and stop; touches nothing)
-#
-# This script never checks a branch out: the main checkout stays on the user's branch, and the
-# orchestrator keeps the feature branch in its own `crew/<slug>/_feature` worktree. It only names
-# the branch and, if it does not exist yet, creates the ref.
-
-# --fix-findings is the sprint's policy setting (config.json's afk fixFindings, resolved by the
-# orchestrator). It is captured here, once, and written into sprint.env — so the step that acts on
-# it reads a variable instead of the orchestrator remembering a flag for a whole sprint. --promote
-# is its old name, still accepted from a hand run. --prd-audit <value> and --coverage set the
-# retired PRD audit: accepted and ignored, with a notice.
-#
-# --jira <KEY> and --branch-prefix <prefix> (config.json's afk.branchPrefix; "" allowed) name a
-# new feature branch: see feature_branch_name below.
+# session-init.sh — name the sprint's feature branch (creating the ref if new) and write sprint.env.
+# Usage: session-init.sh [--feature-slug <slug>] [--jira <KEY>] [--branch-prefix <prefix>]
+#          [--fix-findings <level>] [--print-branch]   (print the slug and branches, touch nothing)
+# Never checks a branch out: the orchestrator keeps the feature branch in its `_feature` worktree.
+# --promote is an alias of --fix-findings; --prd-audit and --coverage are accepted and ignored.
 FEATURE_SLUG_ARG=""
 FIX_FINDINGS_OPT="actionable"
 JIRA_KEY=""
@@ -67,10 +55,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# The one place a feature branch is named: `<prefix><KEY>-<slug>`, or `<prefix><slug>` with no
-# --jira. Every path that creates, switches to or expects a feature branch calls this, so the
-# name cannot drift between them. A name git would refuse stops the run here, before any
-# checkout, naming the branch rather than leaving git's own error two steps later.
+# The one place a feature branch is named, so the name cannot drift between callers. A name git
+# would refuse stops the run here, naming the branch.
 feature_branch_name() {
   local name="$BRANCH_PREFIX${JIRA_KEY:+$JIRA_KEY-}$1"
   if ! git check-ref-format --branch "$name" >/dev/null 2>&1; then
@@ -80,8 +66,7 @@ feature_branch_name() {
   printf '%s\n' "$name"
 }
 
-# --jira only names a branch this run creates; a branch already chosen keeps its name. That name
-# is only worth a warning when it is not the one --jira would have built.
+# --jira only names a new branch; warn only when the kept name is not the one it would build.
 warn_jira_ignored() {
   [ -n "$JIRA_KEY" ] || return 0
   local expected
@@ -90,19 +75,16 @@ warn_jira_ignored() {
   echo "WARNING: --jira $JIRA_KEY ignored: $1" >&2
 }
 
-# A slug that already has a `.scratch/<slug>/sprint.env` from an earlier session pins to the
-# FEATURE_BRANCH that file recorded — never to whatever the main checkout is on, which no longer
-# has anything to do with the sprint. Prints the recorded branch, or nothing when there is no
-# prior session.
+# A slug with a prior sprint.env pins to the FEATURE_BRANCH it recorded, never to whatever the main
+# checkout is on. Prints nothing when there is no prior session.
 recorded_feature_branch() {
   local prior_env="$MAIN_ROOT/.scratch/$1/sprint.env"
   [ -f "$prior_env" ] || return 0
   grep -m1 '^export FEATURE_BRANCH=' "$prior_env" | sed -E 's/^export FEATURE_BRANCH="?([^"]*)"?$/\1/'
 }
 
-# A new feature branch forks from the local default branch; when that is behind origin the
-# sprint silently starts from stale code. Warn only (branch is still made from local), after
-# a best-effort fetch: no origin, an unreachable one, or any failure stays silent.
+# A new feature branch forks from the local default branch: warn (only) when origin is ahead, after
+# a best-effort fetch; any failure stays silent.
 warn_if_default_behind_origin() {
   local default
   default=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
@@ -120,14 +102,8 @@ warn_if_default_behind_origin() {
   return 0
 }
 
-# --- tracker config (issue 01) --------------------------------------------------
-# Read once, this early, because it changes two things below: whether omitting
-# --feature-slug is even allowed, and whether an off-default-branch resume with no
-# sprint.env may silently adopt the current branch. The tracker CLI answers, found by
-# tracker-cli.sh beside this script; no CLI, no node or an invalid config stops here
-# rather than running as local — under github that would scan .scratch/ for issues that
-# live on GitHub and blame their absence on the user.
-# The main checkout, whichever worktree this runs from (the orchestrator passes its own).
+# Read early: under github, a missing CLI or node or an invalid config must stop here rather than
+# scan .scratch/ for issues that live on GitHub.
 # shellcheck source=main-root.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/main-root.sh"
 MAIN_ROOT="${MAIN_ROOT:-$(main_root || pwd)}"
@@ -135,19 +111,15 @@ MAIN_ROOT="${MAIN_ROOT:-$(main_root || pwd)}"
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tracker-cli.sh"
 resolve_tracker_cli "$MAIN_ROOT" || exit 1
 
-# Under tracker: github there is nothing local to scan (issues live on GitHub, not
-# under .scratch/*/issues/open/), so the local-scan fallback below is not a fallback
-# at all there — it would silently pick whatever .scratch/ happens to contain. Require
-# the slug explicitly instead of guessing.
+# Under github there is no local issue to derive the slug from: require it.
 if [ "$TRACKER_KIND" = "github" ] && [ -z "$FEATURE_SLUG_ARG" ]; then
   echo "ERROR: --feature-slug is required under tracker: github (no local .scratch/ issues to scan for one)." >&2
   echo "Pass --feature-slug <slug> explicitly." >&2
   exit 1
 fi
 
-# The feature slug: the one given, else the directory the first ready issue lives in. The slug is
-# a property of where the issues live, never of the branch name — deriving it from the branch
-# would point sprint state, traces and the PRD lookup at a directory that holds no issues.
+# The slug is where the issues live, never derived from the branch name: that would point sprint
+# state, traces and the PRD lookup at a directory with no issues.
 if [ -n "$FEATURE_SLUG_ARG" ]; then
   FEATURE_SLUG="$FEATURE_SLUG_ARG"
 else
@@ -198,42 +170,35 @@ else
 fi
 CURRENT_BRANCH="$FEATURE_BRANCH"
 
-# Auto-create .scratch/<feature-slug>/issues/open/ directory structure if needed
 mkdir -p "$MAIN_ROOT/.scratch/$FEATURE_SLUG/issues/open"
 
-# Archive previous traces/ dir if present, then create fresh traces/
 TS=$(date +%Y%m%dT%H%M%S)
 if [ -d "$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces" ]; then
   mv "$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces" "$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces-$TS"
 fi
 mkdir -p "$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces"
 
-# Validate git repository
 if ! git rev-parse "refs/heads/$FEATURE_BRANCH" >/dev/null 2>&1; then
   echo "ERROR: Not in a git repository or HEAD is invalid"
   exit 1
 fi
 
-# Check if .scratch is gitignored
 if ! git -C "$MAIN_ROOT" check-ignore -q .scratch 2>/dev/null; then
   echo "WARNING: .scratch/ is not gitignored. Add it to .gitignore to prevent committing design docs and traces."
 fi
 
 git rev-parse "refs/heads/$FEATURE_BRANCH" > "$MAIN_ROOT/.scratch/$FEATURE_SLUG/session-start-sha"
 
-# Check for jq dependency
 if ! command -v jq >/dev/null 2>&1; then
   echo "ERROR: jq is required but not installed."
   echo "Install with: apt-get install jq (Debian/Ubuntu) or brew install jq (macOS)"
   exit 1
 fi
 
-# Initialize sprint state tracking
 STATE_FILE="$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint-state.json"
 BASE_SHA=$(git rev-parse "refs/heads/$FEATURE_BRANCH")
 
 if [ ! -f "$STATE_FILE" ]; then
-  # Create new state file with initial branch entry
   echo "{}" | jq --arg branch "$CURRENT_BRANCH" \
                   --arg sha "$BASE_SHA" \
                   --arg slug "$FEATURE_SLUG" \
@@ -241,7 +206,6 @@ if [ ! -f "$STATE_FILE" ]; then
                   '.feature_slug = $slug | .branches[$branch] = {base_sha: $sha, created_at: $timestamp}' \
                   > "$STATE_FILE"
 else
-  # Read existing state, add/update current branch entry
   jq --arg branch "$CURRENT_BRANCH" \
      --arg sha "$BASE_SHA" \
      --arg slug "$FEATURE_SLUG" \
@@ -250,11 +214,8 @@ else
      "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
 fi
 
-# --- sprint.env ---------------------------------------------------------------
-# This sprint's own environment, read by the orchestrator (sprint.mjs) and handed to every child.
-# The slug is known here, exactly once, so it is written here. There is deliberately no
-# repo-wide pointer to "the" sprint: several sprints run in one repo, and a hand run of a
-# script names its sprint with --feature-slug.
+# The sprint's own environment, handed to every child. No repo-wide pointer to "the" sprint
+# exists: several sprints share a repo.
 SPRINT_ENV="$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint.env"
 cat > "$SPRINT_ENV" <<ENV
 # Generated by session-init.sh — source this, never re-derive it.
@@ -275,12 +236,8 @@ if [ -n "${CREW_INSTALL_DIR:-}" ]; then
   echo "export CREW_INSTALL_DIR=\"$CREW_INSTALL_DIR\"" >> "$SPRINT_ENV"
 fi
 
-# --- orchestration marker ------------------------------------------------------
-# The one fact that stops a worker closing its own issue. A worker that moves its issue
-# to done/ takes it out of the ready-for-agent list, so a later gate that demotes the
-# result to `partial` has nothing left to re-dispatch and the unmerged branch is
-# orphaned. The tracker CLI's `mark-done` refuses while this file exists;
-# crew-summary.sh removes it when the sprint ends.
+# A worker that moves its own issue to done/ orphans a branch a later gate demotes to partial;
+# mark-done refuses while this marker exists, and crew-summary.sh removes it at sprint end.
 date -u +%Y-%m-%dT%H:%M:%SZ > "$MAIN_ROOT/.scratch/$FEATURE_SLUG/.orchestrated"
 
 if [ -f "$(dirname "$0")/trace.sh" ]; then
