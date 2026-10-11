@@ -33,7 +33,7 @@ Never guess the slug silently — confirm with the user if there's any ambiguity
 
 Run `node "$TRACKER" prd --feature-slug <feature-slug>`. Exit 0 prints the PRD: use it as the primary source material for decomposition, and save that output to `.scratch/<feature-slug>/.drafts/PRD.md` for step 6's lint. Note the PRD's ref — step 6 cites it in each work issue: `#<n>` when the output opens with `<!-- PRD issue #<n>: … -->`, else `.scratch/<feature-slug>/PRD.md`. Exit 3 means there is none.
 
-With no PRD, work from the conversation context; step 4's slice count decides whether one is needed. One slice publishes without a PRD (its issue carries its own `## Decisions`). Two or more slices, or two or more origin issues named in the source, invoke `to-prd` with the feature slug (so its own slug question is never reached) before publishing, then resume with the PRD it wrote. Origin issues count because only a PRD's `Origin:` line closes them.
+With no PRD, work from the conversation context; step 4's slice count decides whether one is needed. One slice publishes without a PRD (its issue carries its own `## Decisions`). Two or more slices, or two or more origin issues named in the source, invoke `to-prd` with the feature slug (so its own slug question is never reached) before publishing, then resume with the PRD it wrote: run `node "$TRACKER" prd --feature-slug <feature-slug>` again and save its output to `.scratch/<feature-slug>/.drafts/PRD.md` before step 6, so the lint's `--prd` and the builder check receive it on this path too. Origin issues count because only a PRD's `Origin:` line closes them.
 
 ### 3. Explore the codebase
 
