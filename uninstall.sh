@@ -21,7 +21,6 @@ else
   REPO_ROOT="${TARGET_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 fi
 
-# Current manifest location; fall back to the legacy top-level file if present.
 MANIFEST="$REPO_ROOT/.coding-crew/manifest.json"
 LEGACY_MANIFEST="$REPO_ROOT/.coding-crew.manifest.json"
 if [[ ! -f "$MANIFEST" && -f "$LEGACY_MANIFEST" ]]; then

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ci-test-shard.sh <index> <total> — print the test files belonging to one CI shard.
-# Longest-processing-time-first over scripts/ci-weights.sh's weights (measured seconds, not @test
-# counts, which left one shard at 3x another's time); deterministic for a given (index, total).
+# Longest-processing-time-first over scripts/ci-weights.sh's weights in measured seconds, since
+# @test counts misweigh files that run for minutes; deterministic for a given (index, total).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
