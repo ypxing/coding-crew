@@ -1,26 +1,17 @@
-/**
- * The last gate: merge, then close.
- */
+/** The last gate: merge, then close. */
 
 import { finishBlocked, finishRetryOrBlock } from "./finish.mjs";
 import { MAIN_TREE_DIRTY_TAG, MERGE_CONFLICT_TAG, dispatchStem, issueRef, notifyMilestone, taggedReason } from "./shared.mjs";
 
-/**
- * Merge, then close only on the merge's success. Also the merge route's entry point: a
- * retry is safe because merge-branches.sh short-circuits an already-merged branch and
- * both scripts re-check the SHA-bound receipts themselves.
- */
+/** A retry is safe: merge-branches.sh short-circuits a merged branch and both scripts re-check the receipts. */
 export async function mergeAndClose(ctx, worker, outcome) {
-  // Deliberately synchronous end to end (effects.git/bash, no await): while verifies run
-  // concurrently, every merge into the feature branch still runs alone, because no other
-  // worker loop gets the event loop between the merge and the close. It runs in the feature
-  // branch's own worktree (merge-branches.sh's cwd), never in the main checkout.
+  // Deliberately synchronous (no await): no other worker loop gets the event loop between the
+  // merge and the close, so every merge into the feature branch runs alone.
   const { sprint, effects, options } = ctx;
   const { issue, branch } = worker;
 
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=merge`);
-  // Bounded: effects.bash is spawnSync, so a stalled merge would freeze the whole sprint — and
-  // that blocking is what keeps merges serialized.
+  // Bounded: a stalled spawnSync merge would freeze the whole sprint.
   const merge = effects.bash("merge-branches.sh", [sprint.featureBranch, branch], {
     env: sprint.childEnv(),
     timeoutMs: options.timeoutMs.merge,
@@ -38,7 +29,6 @@ export async function mergeAndClose(ctx, worker, outcome) {
       const summary = `${what} — the feature worktree had uncommitted changes; re-running recreates it (discarding them) and resumes at the merge`;
       return finishBlocked(ctx, worker, outcome, taggedReason(MAIN_TREE_DIRTY_TAG, summary));
     }
-    // merge-branches.sh's own conflict line; it has already aborted the merge.
     if (/failed \(conflict/.test(merge.stderr)) {
       const summary = `'${sprint.featureBranch}' gained commits that conflict with '${branch}'`;
       return finishRetryOrBlock(ctx, worker, outcome, taggedReason(MERGE_CONFLICT_TAG, summary));
@@ -47,7 +37,7 @@ export async function mergeAndClose(ctx, worker, outcome) {
   }
 
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=close`);
-  // The branch is for github's AC receipt check; local ignores it.
+  // The branch is for github's AC receipt check.
   const close = effects.bash("close-issue.sh", [issueRef(issue), branch], {
     env: sprint.childEnv(),
     timeoutMs: options.timeoutMs.merge,

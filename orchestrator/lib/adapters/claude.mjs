@@ -1,10 +1,6 @@
-/**
- * claude adapter: `claude -p --output-format stream-json --verbose`. Today's argv, trace parsing
- * and the cost/session/resume/budget behaviour, moved out of dispatch.mjs.
- */
+/** claude adapter: `claude -p --output-format stream-json --verbose`. */
 import { EMPTY_RESULT_META, lastEvent, normalized, safePreview, str } from "./common.mjs";
 
-/** One assistant event's whole token usage: prompt, cache and output. */
 function usageTokens(u) {
   return (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0);
 }
@@ -16,9 +12,9 @@ export default {
   coAuthor: "Co-authored-by: Claude Code <claude@anthropic.com>",
   // Cost arrives in the final `result` event: a dispatch killed before it has an unknown cost.
   reportsCost: true,
-  // Flags the dispatch argv relies on for a full-permission headless run; `doctor` checks `--help` lists them.
+  // `doctor` checks `--help` lists these.
   requiredFlags: ["--permission-mode", "--output-format", "--append-system-prompt-file", "--add-dir"],
-  // The one alias order this CLI knows: a reviewer/triage tier below the coder's is warned about.
+  // A reviewer/triage tier below the coder's is warned about.
   modelTiers: { haiku: 0, sonnet: 1, opus: 2 },
   // An alias maps through the child CLI's own env, which every dispatch inherits.
   modelAliasEnv: {
@@ -28,10 +24,8 @@ export default {
   },
 
   /**
-   * bypassPermissions removes the *prompt*, not an allowlist. stream-json requires --verbose, or
-   * claude refuses to start. The protocol goes in from its file (`--append-system-prompt-file`),
-   * the prompt as the positional argument right after `-p`: `--add-dir` and `--disallowedTools`
-   * are variadic and would swallow a prompt that followed them.
+   * bypassPermissions removes the *prompt*, not an allowlist. stream-json requires --verbose. The
+   * prompt goes right after `-p`: `--add-dir` and `--disallowedTools` are variadic and would swallow it.
    */
   build({ mainRoot, model, policy, protocolFile, prompt }) {
     const args = ["-p", prompt, "--permission-mode", "bypassPermissions", "--add-dir", mainRoot];
@@ -42,11 +36,7 @@ export default {
     return { args };
   },
 
-  /**
-   * The feature agent: claude's own interactive mode, the protocol as its first prompt. The prompt
-   * comes first because `--add-dir` and `--disallowedTools` are variadic and would swallow one that
-   * followed. Permission prompts stay on: a human is in the pane.
-   */
+  /** Prompt first, for the same variadic flags; permission prompts stay on for the human in the pane. */
   interactive({ mainRoot, model, protocol, policy }) {
     const argv = ["claude", protocol, "--add-dir", mainRoot];
     if (model && model !== "inherit") argv.push("--model", model);
@@ -54,30 +44,22 @@ export default {
     return argv;
   },
 
-  /** The role's effort; read-only removes the edit tools; no sub-agents removes Agent. */
   policyArgs({ readOnly, subagents, effort }) {
     const denied = [...(readOnly ? ["Edit", "Write", "NotebookEdit"] : []), ...(subagents ? [] : ["Agent"])];
     return [...(effort ? ["--effort", effort] : []), ...(denied.length ? ["--disallowedTools", ...denied] : [])];
   },
 
-  // A fix round continuing the coder's own earlier session.
   resume: (id) => ["--resume", id],
   // claude ends the session with `subtype: error_max_budget_usd` (exit 1, no result).
   budget: (usd) => ["--max-budget-usd", String(usd)],
 
-  // Session ids cleared so a child launched from inside a Claude Code session starts its own
-  // instead of attaching to the parent's hook chain, which can mutate or swallow the prompt.
-  // Auto-memory off: every dispatch is unattended, and the memory dir is shared across every
-  // worktree, so a note one wrote would reach every later session unreviewed.
+  // Session ids cleared so a child of a Claude Code session doesn't attach to the parent's hook
+  // chain, which can mutate or swallow the prompt. Auto-memory off: the memory dir is shared across
+  // worktrees, so an unattended note would reach every later session unreviewed.
   env: { CLAUDE_CODE_SESSION_ID: "", CLAUDE_CODE_CHILD_SESSION: "", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" },
 
-  // A pane shows the assistant's text between tool calls (follow-output.mjs).
   liveText: true,
 
-  /**
-   * A tool_use block (an array of them when a message has several), a failed tool_result, a
-   * run-ending `result` error, or the assistant's non-blank text blocks (trimmed, one per line).
-   */
   normalize(evt) {
     const blocks = Array.isArray(evt.message?.content) ? evt.message.content : [];
     if (evt.type === "assistant") {
@@ -103,14 +85,12 @@ export default {
     return null;
   },
 
-  /** The terminal `result` line's `.result`; "" when absent (an empty report is a handled state). */
+  /** "" when absent: an empty report is a handled state. */
   finalText: (lines) => lastEvent(lines, "result")?.result ?? "",
 
   /**
-   * Cost, error and timing from claude's `result` events. A session can emit several (a worker that
-   * used background tasks gets one per wake-up): turns and agent time are summed, cost (cumulative)
-   * is the last one's. A stream with no `result` (killed on timeout) is cost-unknown, with what it
-   * spent read off its assistant events. `contextTokens` is the last assistant turn's prompt size.
+   * A session can emit several `result` events (one per background-task wake-up): turns and time are
+   * summed, cost (cumulative) is the last one's. No `result` (killed on timeout) is cost-unknown.
    */
   resultMeta(lines) {
     let contextTokens = null;
@@ -130,7 +110,7 @@ export default {
       if (evt?.type === "result") {
         results.push(evt);
       } else if (evt?.type === "assistant") {
-        // One message streams as several events (one per content block) sharing an id and usage.
+        // One message streams as several events sharing an id and usage.
         const id = evt.message?.id;
         if (id != null) {
           if (seenMessages.has(id)) continue;

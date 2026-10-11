@@ -1,19 +1,9 @@
 #!/usr/bin/env bash
-# main-root.sh — which checkout holds a sprint's .scratch/ and .coding-crew/, from any of the
-# repo's worktrees. Sourced, not run:
-#
-#   . "$SCRIPT_DIR/main-root.sh"
-#   MAIN_ROOT="${MAIN_ROOT:-$(main_root)}"
-#
-# The same rule as main.mjs's gitRoot(), so a hand run, a gate and the orchestrator agree. From the
-# shared git dir (`--git-common-dir`, the same from every worktree):
-#   - named `.git`: its parent, the main checkout;
-#   - else with `core.worktree` set (a submodule's `.git/modules/<name>`): that checkout;
-#   - else (a bare repo): no main checkout exists, so the current worktree's top level.
-# Printed through `pwd -P`, so callers can compare it with their own `pwd -P` paths (on Windows
-# git's `C:/…` and git-bash's `/c/…` name the same directory differently).
+# main-root.sh — sourced: main_root [dir] prints the checkout holding .scratch/ and .coding-crew/
+# from any worktree, by main.mjs's gitRoot() rule: the shared git dir's parent when it is `.git`,
+# else its `core.worktree` (a submodule), else (a bare repo) the current worktree's top level.
+# Printed via `pwd -P`, so it compares with callers' own (Windows' `C:/…` vs git-bash's `/c/…`).
 
-# main_root [dir] — prints the root for the repo `dir` (default: cwd) is in; non-zero outside one.
 main_root() {
   local dir="${1:-.}" common wt top
   common=$(cd "$dir" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1

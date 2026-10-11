@@ -1,27 +1,12 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# close-shipped.sh — close a feature's issues whose pull request has merged, under `tracker: github`.
-#
+# close-shipped.sh — under `tracker: github`, close a feature's issues whose PR has merged.
 # Usage: close-shipped.sh <feature-slug> <feature-branch>
-#
-# GitHub closes an issue on merge only if it linked the PR's `Closes #n` line when the PR was
-# opened, and it can fail to (a real PR merged with all five of its lines unlinked, leaving the
-# issues open). This reads those lines itself instead:
-#   1. Every merged PR from <feature-branch> into the repo's default branch, and the issue numbers
-#      its body names with a closing keyword (close/closes/closed, fix/…, resolve/…).
-#   2. Each open `awaiting-merge` issue in the milestone <feature-slug> that such a body names is
-#      closed as completed, with a comment naming the PR. An issue no merged PR names stays open:
-#      its work has not reached the default branch.
-#   3. Once no open work issue is left in the milestone, its PRD issue (title `PRD: …`) is closed
-#      too — only after at least one merged PR, so a PRD whose feature has not shipped stays open.
-# The milestone itself is left open (closing it is a human's call; the tracker reopens a closed
-# one when the next issue is created for the feature).
-#
-# Runs once per crew-afk run, right after the feature lease is taken, and by hand after a merge.
-# Prints `CLOSED: #<n> (PR #<p>)` per issue, `CLOSED: PRD #<n>`, then `SHIPPED: <count>`.
-# Under `tracker: local` prints nothing. Exit 0 on success or when nothing applies; 1 when a gh
-# call fails (the caller warns, the run goes on).
+# GitHub can fail to link a PR's closing keywords, so this reads them itself: an open `awaiting-merge`
+# issue a PR merged into the default branch names is closed, and once no work issue is left, so is
+# the PRD. Prints `CLOSED: …` lines, then `SHIPPED: <count>`; exit 1 only when a gh call fails. The
+# milestone is left open: closing it is a human's call.
 
 MAIN_ROOT="${MAIN_ROOT:-.}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,9 +37,8 @@ if ! PRS="$(gh pr list --head "$BRANCH" --state merged --limit 100 \
 fi
 [ -n "$PRS" ] || PRS="[]"
 
-# "<issue> <pr>" per closing keyword, in a PR merged into the default branch — the only base
-# GitHub itself honours the keywords for. A reference is `#n`, `owner/repo#n` or the issue's
-# URL, as GitHub accepts; one naming another repo is not this feature's to close.
+# Only PRs into the default branch, the one base GitHub honours the keywords for. A reference to
+# another repo is not this feature's to close.
 if ! SHIPPED="$(printf '%s' "$PRS" | jq -r --arg base "$DEFAULT_BRANCH" --arg repo "$REPO_NAME" '
     .[] | select(.baseRefName == $base) | .number as $pr
     | (.body // "")

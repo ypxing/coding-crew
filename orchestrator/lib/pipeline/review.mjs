@@ -1,6 +1,4 @@
-/**
- * Gate 2, the independent review: the acceptance criteria, and no findings.
- */
+/** Gate 2, the independent review: the acceptance criteria, and no findings. */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -23,7 +21,6 @@ export function isTestPath(path) {
   );
 }
 
-/** Line count of each log that exists, for the prompt's size hint. */
 function countLines(logs = {}) {
   const out = {};
   for (const [k, f] of Object.entries(logs)) {
@@ -36,7 +33,7 @@ function countLines(logs = {}) {
   return out;
 }
 
-/** `branch`'s review blocks on disk, across the sprint review reports, folded into one record (empty when none): a not_run stub keeps the findings before it. */
+/** A not_run stub keeps the findings before it. */
 function earlierBranchReviews(reviewDir, branch) {
   if (!existsSync(reviewDir)) return [];
   const folded = readdirSync(reviewDir)
@@ -58,7 +55,6 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   const sidecarFile = join(issueDir, "review.report.json");
   const reportFile = ctx.roundReviewFile();
 
-  // A stale sidecar at this fixed path must not be read back as this round's verdict.
   rmSync(sidecarFile, { force: true });
 
   // The commit the reviewer is given: the AC receipt is written for it, not for a later tip.
@@ -104,7 +100,6 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       promptFile,
       outFile,
       // Defaults to the coder's model: a weaker reviewer silently lowers the bar.
-      // config.json's afk.models can name another explicitly.
       model: reviewer.model,
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
@@ -143,19 +138,13 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
     };
   }
 
-  // The aggregate is built from the sidecar's bytes, not the chat reply, so the two can't
-  // disagree. The `## Branch:` heading is for humans; parseReviewAggregate reads only the
-  // fenced json. Findings come from the feature review alone: any a branch report still
-  // carries are dropped here, so none reaches a fix issue. What an earlier version's report
-  // left open for this branch is carried into the block, so it stays listed for a human even
-  // to a reader of this one block or report file — with its verdict, which is what a fix issue's
-  // `actionable` Promoted Findings line was decided on. `criteria_only` tells the fold
-  // (foldReview) this block judged no findings, so the rollup keeps them listed past it too.
+  // Built from the sidecar's bytes, not the chat reply, so the two can't disagree. Findings come
+  // from the feature review alone, so a branch block carries none of its own; what earlier rounds
+  // left open stays listed with its verdict, and `criteria_only` tells foldReview to keep it.
   mkdirSync(sprint.reviewDir, { recursive: true });
   const reviewedBranch = sidecar.branch ?? branch;
   parsed.findings = [];
-  // `notes` (the valid ones) and `reviewed_sha` ride in the block for the feature review: it lists the
-  // notes whose sha lies in its range (feature-review.mjs's featureNotes).
+  // `notes` and `reviewed_sha` are for the feature review, which lists the notes in its range.
   const written = {
     ...sidecar,
     findings: carryFindings(earlierBranchReviews(sprint.reviewDir, reviewedBranch), [], { keepVerdicts: true }).map(({ explicit, ...f }) => f),

@@ -1,26 +1,15 @@
-/**
- * The two non-complete endings of an issue's attempt: partial (retain the branch, retry)
- * and blocked (retain it for a human). finishRetryOrBlock picks between them.
- */
 
 import { removeWorktree } from "../worktree.mjs";
 import { issueFingerprint } from "../../../tracker/body-format.mjs";
 import { notifyMilestone, writeTrackerSection } from "./shared.mjs";
 
-// Every non-complete outcome spends an attempt. One retry covers "might have been
-// transient"; a second failure is the answer, so the next demotion blocks instead.
+// One retry covers "might have been transient"; a second failure is the answer.
 export const MAX_ATTEMPTS_PER_ISSUE = 2;
-// Except a coder that ran out of time after committing: it was working, not failing, so its
-// retry is free. Free retries still count here, so an issue whose coder keeps outgrowing the
-// timeout blocks after this many dispatches.
+// A coder out of time after committing was working, not failing, so its retry is free; free
+// retries still count here, so a coder that keeps outgrowing the timeout blocks.
 export const MAX_DISPATCHES_PER_ISSUE = 3;
 
-/**
- * Every retryable demotion goes through here: the one place that decides, from the attempt
- * spent at claim time (sprint.bumpAttempt in loop.mjs), whether a retry is left. `reason`
- * passes through unchanged on a retry — resumeRoute reads it back. `free`: this attempt
- * timed out after committing, so it spends no attempt while a dispatch is left.
- */
+/** The one place that decides whether a retry is left; `reason` passes through for resumeRoute. */
 export function finishRetryOrBlock(ctx, worker, outcome, reason, { free = false } = {}) {
   const { sprint } = ctx;
   const slug = worker.issue.slug;
@@ -35,8 +24,7 @@ export function finishRetryOrBlock(ctx, worker, outcome, reason, { free = false 
   return finishPartial(ctx, worker, outcome, reason);
 }
 
-// The fingerprint a retention record is written with: the issue's current one, except after an
-// attempt that never got to work from it (worker.keepFingerprint, set by a conflict dispatch left unresolved).
+// The issue's current fingerprint, except after an attempt that never worked from it.
 function recordFingerprint(worker) {
   if (worker.keepFingerprint) return worker.keepFingerprint;
   return worker.issue.text ? issueFingerprint(worker.issue.text) : null;
@@ -46,8 +34,7 @@ export async function finishPartial(ctx, worker, outcome, reason) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
   const progress = worker.report.progress || worker.report.notes || `Round ${worker.attempt}: ${reason}`;
-  // The worker's own unmet criteria, verbatim: the prose summary may not name every gap.
-  // (Empty on the review's criteria-unmet path, whose detail rides in `reason`.)
+  // Verbatim: the prose summary may not name every gap.
   const unmet = (worker.report.criteria || []).filter((c) => c && c.met === false && c.text);
   const unmetBlock = unmet.length
     ? `\n\nUnmet criteria (from the worker's own report):\n${unmet.map((c) => `- ${c.text}`).join("\n")}`
@@ -66,11 +53,7 @@ export async function finishPartial(ctx, worker, outcome, reason) {
   return outcome;
 }
 
-/**
- * `tracker: github`: label the issue `blocked` so later runs skip it until a human removes it
- * (issue-labels.sh is the only writer; a no-op under local). A failed write only warns.
- * The same edit removes `in-progress`. True when the label is on the issue.
- */
+/** `tracker: github`: later runs skip a `blocked` issue until a human removes the label. */
 function labelBlocked(ctx, issue) {
   const { effects } = ctx;
   if (effects.dryRun || issue.number == null) return false;
@@ -88,12 +71,10 @@ export async function finishBlocked(ctx, worker, outcome, reason) {
   await writeTrackerSection(effects, issue, "Blocked", `Round ${worker.attempt}: ${reason}`, { append: true });
   removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
   const labelled = labelBlocked(ctx, issue);
-  // A branch refused as stale is someone else's leftover, not this issue's: retaining it
-  // would make the next run resume on it (runWorker's priorBranch) and skip the refusal.
+  // A branch refused as stale is someone else's leftover: retained, the next run would resume on it.
   sprint.blocked(issue.slug, worker.report.parsedFrom === "stale-branch" ? null : branch, reason, labelled ? issue.number : null,
     recordFingerprint(worker));
-  // In-memory only: persisted `blocked_slugs` feeds the summary, and must not stop a
-  // future run retrying once a human has fixed the blocker.
+  // In-memory only: the persisted list must not stop a future run retrying once a human fixed it.
   sprint.markBlockedThisRun(issue.slug);
   outcome.status = "blocked";
   outcome.inProgressCleared = labelled;
