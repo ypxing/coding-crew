@@ -1553,3 +1553,18 @@ test("an orca re-probe whose `worktree show` fails, times out or throws leaves t
     assert.ok(!effects._calls.some((c) => c[2] === "set"), label);
   }
 });
+
+test("an orca re-probe whose `worktree set` is refused logs nothing: the adoption's own WARN stays the only one", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const effects = adoptingOrca(0);
+  const spawn = effects.spawnWithTimeout;
+  effects.spawnWithTimeout = async (cmd, args, opts) => (args[1] === "set" ? (effects._calls.push([cmd, ...args]), { code: 1, stdout: "", stderr: "orca boom" }) : spawn(cmd, args, opts));
+  assert.equal(await withAdoptWait({ pollMs: 10, timeoutMs: 1000 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" })), false);
+  for (let spawned = 0; spawned < 2; spawned++) {
+    const opened = await openWorkerTerminal(effects, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+    assert.equal(opened.handle, undefined);
+  }
+  assert.equal(effects._calls.filter((c) => c[2] === "set").length, 3, "each spawn re-probed");
+  assert.equal(effects._logs.length, 1, effects._logs.join("\n"));
+  assert.match(effects._logs[0], /^WARN orca worktree set \/wt\/alpha exit=1 orca boom$/);
+});
