@@ -274,6 +274,19 @@ for (const originHead of [null, "refs/remotes/origin/master"]) {
   });
 }
 
+test("after origin renames main to trunk, the local origin/HEAD names origin/trunk, so a resumed feature branch syncs with trunk, not the stale origin/main", () => {
+  const { root, origin } = withOrigin();
+  git(root, "remote", "set-head", "origin", "main");
+  git(origin, "branch", "-m", "main", "trunk");
+  pushFromElsewhere(origin, "trunk");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(git(root, "symbolic-ref", "refs/remotes/origin/HEAD"), "refs/remotes/origin/trunk");
+  pushFromElsewhere(origin, "trunk");
+  const sync = sh("bash", [join(SCRIPTS, "sync-feature-branch.sh"), "--dry-run", "feature/demo"], { cwd: root });
+  assert.match(sync.stdout, /would merge origin\/trunk/);
+});
+
 test("an origin with branches but no default to start from (its HEAD names none it has, and no main) stops the run at setup, creating no branch", () => {
   const { root, origin } = withOrigin();
   git(origin, "branch", "-m", "main", "trunk");

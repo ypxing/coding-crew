@@ -55,6 +55,14 @@ export function settleFeatureBranch(effects, { branch, defaultBranch, now = new 
     if (fetched.code !== 0) return { error: `crew-afk: cannot fetch from origin (git fetch origin): ${fetched.stderr.trim()}`, messages };
   }
 
+  // The rest of the run (review range, PR base, sync-feature-branch.sh) reads the local origin/HEAD,
+  // which git never refreshes after origin renames its default branch.
+  const headRef = `refs/remotes/origin/${headBranch}`;
+  if (fromHead && effects.gitRead(["symbolic-ref", "-q", "refs/remotes/origin/HEAD"]).stdout.trim() !== headRef) {
+    const set = effects.git(["symbolic-ref", "refs/remotes/origin/HEAD", headRef]);
+    if (set.code !== 0) return { error: `crew-afk: could not point origin/HEAD at origin/${headBranch}: ${set.stderr.trim()}`, messages };
+  }
+
   // Only an empty origin has no default branch to start from; a non-empty one without one stops the run.
   const noStart = () => {
     if (remoteDefault) return null;
