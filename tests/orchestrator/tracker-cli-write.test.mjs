@@ -576,6 +576,11 @@ test("mark-done --force skips both guards", async () => {
   const r = await cli(dir, ["mark-done", path, "--force"], undefined, { CREW_ORCHESTRATED: "1" });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(existsSync(join(dir, ".scratch/feat/issues/done/01-t.md")), true);
+
+  const exec = fakeGh({ "issue view 12": { stdout: UNMET }, "label create": {}, "issue edit 12": {} });
+  const gh = await cli(root({ github: true }), ["mark-done", "12", "--force"], exec, { CREW_ORCHESTRATED: "1" });
+  assert.equal(gh.code, 0, gh.stderr);
+  assert.equal(exec.find("issue edit 12").length, 1);
 });
 
 test("mark-done (github) adds awaiting-merge, removes in-progress, and leaves the issue open", async () => {

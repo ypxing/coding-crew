@@ -52,7 +52,9 @@ working on crew-afk; the repo-wide rules are in `CLAUDE.md`. Each script's heade
 
 - The per-branch review is a criteria gate: it writes `findings: []`, and `pipeline/review.mjs` drops any findings a
   branch report still carries. Findings come only from the feature review. A per-branch reviewer's out-of-criteria
-  concerns travel as `notes` to the next feature review.
+  concerns travel as `notes` to the next feature review. Known limit: `featureNotes` keeps notes whose `reviewed_sha` the
+  range reaches, and `afk.squashCommits` rewrites a run's merges into one commit, so a later run's whole review loses the
+  notes of an earlier squashed run whose own feature review did not list them (failed or skipped). Documented, not fixed.
 - Reviewer, triage and feature-review dispatches are read-only by snapshot (`pipeline/shared.mjs`'s `readOnlyDispatch`):
   any change to a `crew/<feature>/*` ref, the feature branch or `_feature` fails the dispatch closed. Changes the
   orchestrator's own concurrent effects made are excluded (`refActivityMark` / `refActivitySince`).

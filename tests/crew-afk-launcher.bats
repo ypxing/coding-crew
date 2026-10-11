@@ -128,3 +128,39 @@ launcher_body() {
   [ ! -e "$REPO_ROOT/skills/crew-afk/scripts/dispatch-agent.sh" ]
   [ ! -e "$REPO_ROOT/skills/crew-afk/scripts/dispatch-codex-agent.sh" ]
 }
+
+# ─── the launcher's program lookup ──────────────────────────────────────────
+
+# run_lookup <platform> <dir> — runs the body's launch block (the one setting CREW_AFK) in <dir> with node stubbed to print the path it got.
+run_lookup() {
+  local block
+  block="$(awk '/^```bash$/{f=1; b=""; next} f && /^```$/{f=0; if (b ~ /CREW_AFK=/) { printf "%s", b; exit } next} f {b = b $0 "\n"}' "$(launcher_body "$1")")"
+  run bash -c "cd '$2' && node() { printf '%s\n' \"\$1\"; }; $block"
+}
+
+@test "launcher: the program lookup tries the repo, then the main checkout, then the user-level install" {
+  local home="$BATS_TEST_TMPDIR/home" main="$BATS_TEST_TMPDIR/main" wt="$BATS_TEST_TMPDIR/wt"
+  mkdir -p "$home" "$main"
+  git -C "$main" init -q -b main
+  git -C "$main" -c user.email=t@test -c user.name=T commit -q --allow-empty -m init
+  git -C "$main" worktree add -q "$wt"
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    HOME="$home" run_lookup "$p" "$wt"
+    [ "$output" = "$home/.coding-crew/crew-afk/main.mjs" ] || { echo "$p: no copy → $output" >&2; return 1; }
+
+    mkdir -p "$main/.coding-crew/crew-afk" && touch "$main/.coding-crew/crew-afk/main.mjs"
+    HOME="$home" run_lookup "$p" "$wt"
+    [ "$output" = "$main/.coding-crew/crew-afk/main.mjs" ] || { echo "$p: worktree → $output" >&2; return 1; }
+
+    mkdir -p "$wt/.coding-crew/crew-afk" && touch "$wt/.coding-crew/crew-afk/main.mjs"
+    HOME="$home" run_lookup "$p" "$wt"
+    [ "$output" = "$wt/.coding-crew/crew-afk/main.mjs" ] || { echo "$p: own copy → $output" >&2; return 1; }
+    rm -r "$main/.coding-crew" "$wt/.coding-crew"
+  done
+}
+
+@test "launcher: copilot pre-approves the shell, so an unattended sprint never stalls on a permission prompt" {
+  run grep -m1 '^allowed-tools:' "$(launcher_body copilot)"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shell"* ]]
+}

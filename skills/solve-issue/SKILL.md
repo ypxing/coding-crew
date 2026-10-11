@@ -126,7 +126,8 @@ behavior the issue names, find the `file:line` that confirms or contradicts it. 
   `<issue's name> → <file:line>` in Step 6's `DETAILS`.
 - **Already met** — the code satisfies a criterion before this branch touches it (a bug already
   fixed is this case; `[$ISSUE_SLUG]` commits on this branch are a resumed run, not this): write no
-  code for it. Pin it with a test if none exists — for a bug, the regression test — and report it
+  code for it. Pin it with a test if none exists — for a bug, the regression test; when the
+  criterion is docs or prompt text, none (tdd's exemption: a grep pins wording) — and report it
   met with its `file:line`. Every criterion already met and tested leaves nothing to commit: that
   is still `complete`.
 - **Wrong assumption** — the issue's picture of the code is wrong in a way reading cannot recover:

@@ -220,7 +220,6 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     "A per-branch review writes `findings: []`: it is the criteria gate, and nothing more. A defect you",
     "notice outside the criteria goes in `notes`, never in prose: the feature review reads it from there.",
     "Each note is `{\"location\": \"<path>:<line>\", \"concern\": \"<input or state → bad outcome>\"}`.",
-    "The always-on classes and the design-standard checks apply only to a `Feature review:` dispatch.",
     "",
     `Write your structured verdict to ${reportPath} as your last action. This file is the`,
     "only thing that gates the merge, so get it exactly right:",
@@ -303,8 +302,8 @@ export function featureReviewPrompt({ featureBranch, base, exclude = null, repor
     ),
     "```",
     "",
-    "`findings` is `[]` when there are none — never omit the block itself. Follow it with your usual",
-    "snippet-anchored explanation per finding, for the human reading the report.",
+    "`findings` is `[]` when there are none — never omit the block itself. After writing the file, explain",
+    "each finding in your reply, anchored on a code snippet, for the human reading the report.",
   ].join("\n");
 }
 
