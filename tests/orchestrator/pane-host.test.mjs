@@ -107,7 +107,13 @@ function fakePaneHostEffects(paneHost, responses, { mainRoot = "/root", dryRun =
   };
 }
 const fakeHerdrEffects = (responses, opts) => fakePaneHostEffects("herdr", responses, opts);
-const fakeOrcaEffects = (responses, opts) => fakePaneHostEffects("orca", responses, opts);
+/** orca effects with the sprint's `_feature` named to orca, as main.mjs leaves them before any terminal opens. */
+function fakeOrcaEffects(responses, opts) {
+  const effects = fakePaneHostEffects("orca", responses, opts);
+  effects.featureRoot = join(effects.mainRoot, ".scratch", "worktrees", "crew", "alpha", "_feature");
+  effects._paneAdopted = new Set([effects.featureRoot]);
+  return effects;
+}
 const json = (obj) => ({ code: 0, stdout: JSON.stringify(obj), stderr: "" });
 
 // Every canned-response list for ensurePaneWorkspace (herdr) that passes a logFile needs
@@ -397,7 +403,7 @@ test("notifyWatchSession (herdr) swallows a failed prompt — the sprint's own o
 // Confirmed live against a running orca runtime this session: a git checkout's own root is
 // already an Orca-managed worktree with no `repo add`/`worktree create` needed (`orca
 // worktree current` resolves it directly from cwd), so `terminal create --worktree
-// path:<mainRoot>` is the whole story — there is no herdr-style workspace object to create, reuse, or close.
+// path:<_feature>` is the whole story — there is no herdr-style workspace object to create, reuse, or close.
 
 test("ensurePaneWorkspace (orca) creates a log terminal directly — no separate workspace-create call exists", async () => {
   const { root } = fixture();
@@ -411,7 +417,7 @@ test("ensurePaneWorkspace (orca) creates a log terminal directly — no separate
   const create = effects._calls[0];
   assert.deepEqual(create.slice(0, 4), ["orca", "terminal", "create", "--worktree"]);
   assert.equal(create[create.indexOf("--title") + 1], "implement-user-auth-log");
-  assert.equal(create[create.indexOf("--worktree") + 1], `path:${root}`, "scoped to this checkout, not whatever worktree orca's GUI has active");
+  assert.equal(create[create.indexOf("--worktree") + 1], `path:${effects.featureRoot}`, "scoped to _feature, not whatever worktree orca's GUI has active");
   assert.equal(create[create.indexOf("--command") + 1], `tail -f '${logFile}'`);
 });
 
@@ -463,7 +469,7 @@ test("every orca call is bounded by a timeout", async () => {
     { mainRoot: root },
   );
 
-  await withOrcaTerminalHandle("term_1", () => ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile }));
+  await withOrcaTerminalHandle("term_1", () => inDir(effects.featureRoot, () => ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile })));
   await closePaneLogTab(effects);
 
   assert.equal(effects._calls.length, 4);
@@ -475,9 +481,9 @@ test("every orca call is bounded by a timeout", async () => {
 // The triggering terminal's own tab still shows whatever it was called before crew-afk
 // started running in it — orca also injects that terminal's own handle as
 // ORCA_TERMINAL_HANDLE, alongside ORCA_WORKTREE_ID for the enclosing worktree — so this is
-// the one chance to relabel it, the same way herdr's reuse path does. Unlike herdr, no
+// the one chance to relabel it, when it was launched inside `_feature`. Unlike herdr, no
 // separate "reuse the workspace" call is needed: every terminal create is already scoped by
-// --worktree path:<mainRoot>, so the ambient ORCA_WORKTREE_ID is returned for symmetry with herdr's
+// --worktree path:<_feature>, so the ambient ORCA_WORKTREE_ID is returned for symmetry with herdr's
 // return value, not because orca ever needs it again.
 test("ensurePaneWorkspace (orca) renames the triggering terminal via ORCA_TERMINAL_HANDLE, and reuses ORCA_WORKTREE_ID implicitly", async () => {
   const { root } = fixture();
@@ -491,12 +497,12 @@ test("ensurePaneWorkspace (orca) renames the triggering terminal via ORCA_TERMIN
   );
 
   const workspaceId = await withOrcaWorktreeId("wt1", () =>
-    withOrcaTerminalHandle("term_1", () => ensurePaneWorkspace(effects, { featureSlug: "implement-user-auth", logFile })),
+    withOrcaTerminalHandle("term_1", () => inDir(effects.featureRoot, () => ensurePaneWorkspace(effects, { featureSlug: "implement-user-auth", logFile }))),
   );
 
   assert.equal(workspaceId, "wt1");
   assert.deepEqual(effects._calls[0], ["orca", "terminal", "rename", "--terminal", "term_1", "--title", "implement-user-auth", "--json"]);
-  assert.equal(effects._calls[1][4], `path:${root}`, "the log terminal is scoped by --worktree path:<mainRoot> — reuse needs nothing explicit");
+  assert.equal(effects._calls[1][4], `path:${effects.featureRoot}`, "the log terminal is scoped by --worktree path:<_feature> — reuse needs nothing explicit");
 });
 
 test("ensurePaneWorkspace (orca) never renames the triggering terminal when no feature slug resolved", async () => {
@@ -860,15 +866,15 @@ test("the log terminal and the agent terminal are both created with --worktree p
   assert.deepEqual(worktrees, [`path:${featureRoot}`, `path:${featureRoot}`]);
 });
 
-test("orca: when `_feature` was never adopted (worktree set failed), both terminals are scoped to the main checkout and the agent still starts in _feature", async () => {
-  const { featureRoot, root, effects } = watchFixture("orca", [orcaCreated("term_log"), orcaCreated("term_w")]);
+test("orca: when `_feature` was never named (worktree set failed), neither the log terminal nor the agent is created, each a WARN", async () => {
+  const { featureRoot, root, effects } = watchFixture("orca", []);
   effects._paneAdopted = new Set();
   await ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile: join(root, "trace.log") });
-  await ensureWatchSession(effects, WATCH);
-  const creates = effects._calls.filter((c) => c[2] === "create");
-  assert.deepEqual(creates.map((c) => c[c.indexOf("--worktree") + 1]), [`path:${root}`, `path:${root}`]);
-  const { text } = launchScriptOf(creates[1][creates[1].indexOf("--command") + 1]);
-  assert.ok(text.includes(`cd -P '${featureRoot}'`), "the agent's cwd is _feature");
+  const logs = [];
+  assert.equal(await ensureWatchSession(effects, { ...WATCH, log: (l) => logs.push(l) }), null);
+  assert.deepEqual(effects._calls, [], "no terminal create, and none in the main checkout");
+  assert.ok(effects._logs.some((l) => l.startsWith("WARN ") && l.includes(featureRoot) && /log/.test(l)), effects._logs.join("\n"));
+  assert.ok(logs.some((l) => l.startsWith("WARN watch session (orca): ") && l.includes(featureRoot)), logs.join("\n"));
 });
 
 test("ensureWatchSession gives the host a command that sources crew-afk's env.sh before the interactive argv, then deletes it", async () => {
@@ -1272,4 +1278,175 @@ test("settlePaneAgent drops an agent this run opened that the host still lists b
   herdr.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { panes: [{ pane_id: "w9:p1", agent_status: "unknown" }] } }), stderr: "" });
   assert.equal(settlePaneAgent(herdr.effects), false);
   assert.equal(herdr.effects._paneWatch, null);
+});
+
+// orca keeps reporting `agentIdentity` for a terminal whose PTY is gone or whose renderer
+// detached: such a terminal takes no input, so it is no live agent.
+const unhealthyOrcaTerminals = {
+  orphaned: { orphaned: true, writable: true, connected: true },
+  "not writable": { orphaned: false, writable: false, connected: true },
+  "not connected": { orphaned: false, writable: true, connected: false },
+};
+
+test("ensureWatchSession (orca) replaces a recorded agent whose terminal is orphaned, not writable or not connected, and logs it opened", async () => {
+  for (const [name, health] of Object.entries(unhealthyOrcaTerminals)) {
+    const { featureRoot, effects, record, saved } = watchFixture("orca", [json({ result: { terminal: { handle: "term_old", agentIdentity: "claude", ...health } } }), orcaCreated("term_new")]);
+    record({ host: "orca", handle: "term_old" });
+    await ensureWatchSession(effects, WATCH);
+    const create = effects._calls[1];
+    assert.equal(create[2], "create", name);
+    assert.equal(create[create.indexOf("--worktree") + 1], `path:${featureRoot}`, name);
+    assert.deepEqual(saved(), { host: "orca", handle: "term_new" }, name);
+    assert.ok(effects._logs.some((l) => l.startsWith("WATCH-SESSION opened host=orca handle=term_new")), `${name}: ${effects._logs.join("\n")}`);
+    assert.ok(!effects._logs.some((l) => l.startsWith("WATCH-SESSION reused")), name);
+  }
+  const healthy = watchFixture("orca", [json({ result: { terminal: { handle: "term_old", agentIdentity: "claude", orphaned: false, writable: true, connected: true } } })]);
+  healthy.record({ host: "orca", handle: "term_old" });
+  await ensureWatchSession(healthy.effects, WATCH);
+  assert.deepEqual(healthy.effects._calls.map((c) => c[2]), ["show"]);
+  assert.ok(healthy.effects._logs.some((l) => l.startsWith("WATCH-SESSION reused host=orca handle=term_old")), healthy.effects._logs.join("\n"));
+});
+
+test("settlePaneAgent (orca) drops an agent whose terminal is orphaned, not writable or not connected, even inside the start-up grace", () => {
+  for (const [name, health] of Object.entries(unhealthyOrcaTerminals)) {
+    for (const reused of [true, false]) {
+      const { effects } = watchFixture("orca", []);
+      effects._paneWatch = { host: "orca", handle: "term_w" };
+      effects._paneWatchReused = reused;
+      effects._paneWatchOpenedAt = Date.now();
+      effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { terminal: { handle: "term_w", agentIdentity: "claude", ...health } } }), stderr: "" });
+      assert.equal(settlePaneAgent(effects), false, `${name}, reused=${reused}`);
+      assert.equal(effects._paneWatch, null, `${name}, reused=${reused}`);
+    }
+  }
+  const starting = watchFixture("orca", []);
+  starting.effects._paneWatch = { host: "orca", handle: "term_w" };
+  starting.effects._paneWatchOpenedAt = Date.now();
+  starting.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { terminal: { handle: "term_w", orphaned: false, writable: true, connected: true } } }), stderr: "" });
+  assert.equal(settlePaneAgent(starting.effects), true, "a just-opened terminal with no agentIdentity yet still counts");
+});
+
+// orca learns of a natively created worktree from its own git watch, a moment after `git worktree
+// add`: a `worktree set` before then fails with selector_not_found.
+import { adoptWorktree } from "../../orchestrator/lib/pane-host/index.mjs";
+import { ADOPT_WAIT } from "../../orchestrator/lib/pane-host/orca.mjs";
+
+/** orca effects whose `worktree show` fails `failShows` times (Infinity: always), every other call succeeding. */
+function adoptingOrca(failShows) {
+  const calls = [];
+  const logs = [];
+  let shows = 0;
+  return {
+    paneHost: "orca",
+    mainRoot: "/root",
+    _calls: calls,
+    _logs: logs,
+    log: (l) => logs.push(l),
+    spawnWithTimeout: async (cmd, args) => {
+      calls.push([cmd, ...args]);
+      if (args[0] === "worktree" && args[1] === "show" && shows++ < failShows) return { code: 1, stdout: JSON.stringify({ error: { code: "selector_not_found", message: "no such worktree" } }), stderr: "" };
+      if (args[0] === "terminal" && args[1] === "create") return json({ result: { terminal: { handle: "term_x" } } });
+      return json({ result: {} });
+    },
+  };
+}
+
+async function withAdoptWait(wait, fn) {
+  const prior = { ...ADOPT_WAIT };
+  Object.assign(ADOPT_WAIT, wait);
+  try {
+    return await fn();
+  } finally {
+    Object.assign(ADOPT_WAIT, prior);
+  }
+}
+
+test("adoptWorktree (orca) polls `worktree show` until orca lists the worktree, then names it with `worktree set`", async () => {
+  const effects = adoptingOrca(2);
+  const named = await withAdoptWait({ pollMs: 10, timeoutMs: 5000 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", issue: 1, parent: "/wt/_feature" }));
+  assert.equal(named, true);
+  assert.deepEqual(effects._calls.map((c) => c.slice(1, 3).join(" ")), ["worktree show", "worktree show", "worktree show", "worktree set"]);
+  assert.deepEqual(effects._calls[0], ["orca", "worktree", "show", "--worktree", "path:/wt/alpha", "--json"]);
+  assert.deepEqual(effects._calls[3], ["orca", "worktree", "set", "--worktree", "path:/wt/alpha", "--display-name", "01-alpha", "--issue", "1", "--parent-worktree", "path:/wt/_feature"]);
+});
+
+test("adoptWorktree (orca) gives up within its bound when orca never lists the worktree: no `worktree set`, not named, a WARN naming it", async () => {
+  const effects = adoptingOrca(Infinity);
+  const started = Date.now();
+  const named = await withAdoptWait({ pollMs: 20, timeoutMs: 200 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" }));
+  assert.ok(Date.now() - started < 1500, `bounded: took ${Date.now() - started}ms`);
+  assert.equal(named, false);
+  assert.ok(effects._calls.length > 1, "it polled");
+  assert.ok(effects._calls.every((c) => c[2] === "show"), "never `worktree set`");
+  assert.equal(effects._logs.length, 1, effects._logs.join("\n"));
+  assert.match(effects._logs[0], /^WARN orca .*\/wt\/alpha/);
+});
+
+test("adoptWorktree (orca) still names a worktree orca listed while the event loop was blocked past the whole wait", async () => {
+  const effects = adoptingOrca(0);
+  const created = Date.now();
+  const spawn = effects.spawnWithTimeout;
+  // orca finds the worktree 50ms after it is created, which falls inside the synchronous stretch below.
+  effects.spawnWithTimeout = async (cmd, args, opts) =>
+    args[1] === "show" && Date.now() - created < 50 ? (effects._calls.push([cmd, ...args]), { code: 1, stdout: "", stderr: "selector_not_found" }) : spawn(cmd, args, opts);
+  const named = await withAdoptWait({ pollMs: 20, timeoutMs: 200 }, () => {
+    const adopting = adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" });
+    while (Date.now() - created < 2 * ADOPT_WAIT.timeoutMs) {
+      /* a blocking check holding the event loop */
+    }
+    return adopting;
+  });
+  assert.equal(named, true, effects._logs.join("\n"));
+  assert.ok(effects._calls.some((c) => c[2] === "set"), "worktree set called");
+  assert.deepEqual(effects._logs, []);
+});
+
+test("adoptWorktree (orca) logs a failed `worktree set` as a WARN naming the worktree, which stays unnamed", async () => {
+  const effects = adoptingOrca(0);
+  const spawn = effects.spawnWithTimeout;
+  effects.spawnWithTimeout = async (cmd, args, opts) => (args[1] === "set" ? (effects._calls.push([cmd, ...args]), { code: 1, stdout: "", stderr: "orca boom" }) : spawn(cmd, args, opts));
+  const named = await withAdoptWait({ pollMs: 10, timeoutMs: 1000 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" }));
+  assert.equal(named, false);
+  assert.match(effects._logs.join("\n"), /^WARN orca worktree set \/wt\/alpha exit=1 orca boom$/m);
+});
+
+test("ensurePaneWorkspace (orca) renames the launching terminal only for a run launched from inside _feature", async () => {
+  const { root } = fixture();
+  const outside = fakeOrcaEffects([json({ result: { terminal: { handle: "term_2" } } })], { mainRoot: root });
+  await withOrcaTerminalHandle("term_1", () => inDir(join(root, "elsewhere"), () => ensurePaneWorkspace(outside, { featureSlug: "alpha", logFile: join(root, "trace.log") })));
+  assert.deepEqual(outside._calls.map((c) => c[2]), ["create"], "no rename of a terminal outside _feature");
+
+  const inside = fakeOrcaEffects([json({ result: { rename: { title: "alpha" } } }), json({ result: { terminal: { handle: "term_2" } } })], { mainRoot: root });
+  await withOrcaTerminalHandle("term_1", () => inDir(join(inside.featureRoot, "src"), () => ensurePaneWorkspace(inside, { featureSlug: "alpha", logFile: join(root, "trace.log") })));
+  assert.deepEqual(inside._calls[0], ["orca", "terminal", "rename", "--terminal", "term_1", "--title", "alpha", "--json"]);
+});
+
+test("an orca worker terminal opens in its own worktree when named, else in _feature when named, else not at all", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const created = () => json({ result: { terminal: { handle: "term_x" } } });
+  const own = fakeOrcaEffects([created()]);
+  own._paneAdopted.add("/wt/alpha");
+  assert.equal((await openWorkerTerminal(own, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" })).handle, "term_x");
+  assert.equal(own._calls[0][own._calls[0].indexOf("--worktree") + 1], "path:/wt/alpha");
+
+  const feature = fakeOrcaEffects([created(), created()]);
+  await openWorkerTerminal(feature, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+  await openWorkerTerminal(feature, { title: "crew-afk crew-feature-review", command: "true", worktree: feature.mainRoot });
+  assert.deepEqual(feature._calls.map((c) => c[c.indexOf("--worktree") + 1]), [`path:${feature.featureRoot}`, `path:${feature.featureRoot}`]);
+
+  const none = fakeOrcaEffects([]);
+  none._paneAdopted = new Set();
+  const opened = await openWorkerTerminal(none, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+  assert.equal(opened.handle, undefined);
+  assert.match(opened.failure, /\/wt\/alpha/);
+  assert.deepEqual(none._calls, [], "never --worktree path:<mainRoot>");
+});
+
+test("an orca worker terminal waits for its worktree's naming still under way", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const effects = fakeOrcaEffects([json({ result: {} }), json({ result: {} }), json({ result: { terminal: { handle: "term_x" } } })]);
+  adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" });
+  await openWorkerTerminal(effects, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+  assert.deepEqual(effects._calls.map((c) => c[2]), ["show", "set", "create"]);
+  assert.equal(effects._calls[2][effects._calls[2].indexOf("--worktree") + 1], "path:/wt/alpha");
 });

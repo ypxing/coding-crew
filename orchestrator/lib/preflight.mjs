@@ -12,6 +12,7 @@ import { depsLine, parseRequiresFailures, readVerifyRecord } from "./report.mjs"
 import { sectionBody } from "../../tracker/body-format.mjs";
 import { dispatchIssueDir, logVerifyOutput, REQUIRES_FAILED_TAG, taggedReason, writeTrackerSection } from "./pipeline/shared.mjs";
 import { applyWorktreeInclude, removeWorktree, worktreePath } from "./worktree.mjs";
+import { adoptWorktree } from "./pane-host/index.mjs";
 
 /** The file whose presence says an asset dir is really installed, not just created. */
 const ASSET_PROBES = {
@@ -198,7 +199,8 @@ const STATE_KEY = { [BASELINE_STEM]: "baseline", [INTEGRATION_STEM]: "integratio
  * A pass is cached by commit and tree; a failure never is, so a fixed environment is re-checked.
  */
 export function runFeatureChecks(ctx, { stem }) {
-  const prep = prepareChecks(ctx, stem);
+  // Not named to a pane host: these checks hold the event loop past the naming's whole wait, and remove the worktree before it ends.
+  const prep = prepareChecks(ctx, stem, { adopt: false });
   if (prep.result) return prep.result;
   try {
     if (ctx.options.installDeps !== false) {
@@ -213,7 +215,7 @@ export function runFeatureChecks(ctx, { stem }) {
 
 /** runFeatureChecks without blocking the event loop (the baseline, which runs alongside dispatch). */
 export async function runFeatureChecksAsync(ctx, { stem }) {
-  const prep = prepareChecks(ctx, stem);
+  const prep = prepareChecks(ctx, stem, { adopt: true });
   if (prep.result) return prep.result;
   try {
     if (ctx.options.installDeps !== false) {
@@ -238,7 +240,7 @@ function treePassed(state, tree) {
 }
 
 /** The commit, the cache lookup and the worktree: either an early `result` or what the rest needs. */
-function prepareChecks(ctx, stem) {
+function prepareChecks(ctx, stem, { adopt }) {
   const { sprint, effects } = ctx;
   const step = stem.replace(/^_/, "");
   const label = step.toUpperCase();
@@ -270,6 +272,7 @@ function prepareChecks(ctx, stem) {
     ctx.log(`${label}: skipped — could not create its worktree: ${add.stderr.trim()}`);
     return { result: { status: stem === INTEGRATION_STEM ? "skipped" : "pass", commit, failed: [], reason: "worktree add failed" } };
   }
+  if (adopt) adoptWorktree(effects, path, { title: `${sprint.featureSlug} ${step}`, parent: effects.featureRoot });
   applyWorktreeInclude(effects.mainRoot, path);
   return { stem, step, stateKey, commit, tree, branch, path, effects };
 }

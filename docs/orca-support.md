@@ -30,7 +30,7 @@ terminals, and agent sessions, and can also run headless (`orca serve`).
 Every coder/reviewer/triage dispatch is headless — neither backend is ever asked to report
 on anything load-bearing. A pane host is asked to open one tab/terminal that runs
 `tail -f orchestrator.log`, to open (or reuse) one interactive [feature agent](#the-feature-agent)
-for the slug, and to push best-effort milestone and outcome messages into that agent. orca additionally hosts each dispatch in a terminal of its own (see
+for the slug, and to push best-effort milestone and outcome messages into that agent. Each host also runs every dispatch in a tab of its own (see
 [Worker terminals](#worker-terminals)), but only as a place to run it. That shrunk surface
 is why orca support didn't need `worktree create`, `repo add`, or any env injection scheme —
 confirmed with a live spike against a running orca runtime (not just the CLI reference doc):
@@ -41,8 +41,8 @@ confirmed with a live spike against a running orca runtime (not just the CLI ref
   [`terminal create`], not `worktree create`, for a fresh agent in the current checkout."*
 - **No separate workspace object.** Unlike herdr (workspace container → tabs within it),
   orca's model is flat: a worktree already is the container, a terminal is the pane. Every
-  `terminal create --worktree path:<mainRoot>` naturally lands in the right place with nothing extra
-  to create, reuse, or close.
+  `terminal create --worktree path:<_feature>` (or an issue worktree crew-afk named) lands in the
+  right place with nothing extra to create, reuse, or close.
 - **Ambient env vars exist.** Dumping `env` inside a created terminal showed
   `ORCA_WORKTREE_ID`, `ORCA_TAB_ID`, `ORCA_TERMINAL_HANDLE` — direct equivalents of herdr's
   `HERDR_WORKSPACE_ID`/`HERDR_TAB_ID`/`HERDR_PANE_ID`, letting a run launched from inside an
@@ -59,12 +59,14 @@ confirmed with a live spike against a running orca runtime (not just the CLI ref
 
 | operation                         | herdr                                                        | orca                                                                        |
 | ---------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| ensure workspace + log tab         | `worktree open --path <_feature> --cwd <mainRoot> --label <slug> --no-focus` (the sprint's feature worktree, even from inside another workspace; `workspace create --cwd <mainRoot> …` with none), then `tab create --workspace <id> --cwd <_feature> --label <slug>-log --no-focus` + `pane run <pane> tail -f <log>` | `terminal create --worktree path:<_feature> --title <slug>-log --command "tail -f '<log>'" --json` (one call) |
+| name a new worktree                | — (`_feature` is the workspace; issue worktrees get no call) | `worktree show --worktree path:<dir> --json`, polled until orca lists it (bounded, 10s), then `worktree set --worktree path:<dir> --display-name <title> [--issue <n>] [--parent-worktree path:<_feature>]` |
+| ensure workspace + log tab         | `worktree open --path <_feature> --cwd <mainRoot> --label <slug> --no-focus` (the sprint's feature worktree, even from inside another workspace; `workspace create --cwd <mainRoot> …` with none), then `tab create --workspace <id> --cwd <_feature> --label <slug>-log --no-focus` + `pane run <pane> tail -f <log>` | `terminal create --worktree path:<_feature> --title <slug>-log --command "tail -f '<log>'" --json` (one call); with `_feature` not named to orca, no log tab (`WARN`) |
 | close log tab                      | `tab close <tabId>`                                          | `terminal close --terminal <handle> --json`                                |
 | close workspace                    | `workspace close <id>` (no-op while the feature agent lives) | no-op always — no workspace object exists                                  |
-| rename triggering terminal         | — (the triggering workspace is not used)                     | `terminal rename --terminal <handle> --title <slug> --json`                |
-| open feature agent                 | `tab create --workspace <the feature worktree's> --cwd <_feature> --label <slug>-watch --no-focus`, then `pane run <pane> "bash '<launch.sh>'"` | `terminal create --worktree path:<_feature> --title <slug>-watch --command "bash '<launch.sh>'" --json` |
-| feature agent still live           | `pane list` has the pane with an `agent_status` other than `unknown` | `terminal show --terminal <handle> --json` has `agentIdentity`             |
+| rename triggering terminal         | — (the triggering workspace is not used)                     | `terminal rename --terminal <handle> --title <slug> --json`, only for a run launched from inside `_feature` |
+| open feature agent                 | `tab create --workspace <the feature worktree's> --cwd <_feature> --label <slug>-watch --no-focus`, then `pane run <pane> "bash '<launch.sh>'"` | `terminal create --worktree path:<_feature> --title <slug>-watch --command "bash '<launch.sh>'" --json`; with `_feature` not named, none (`WARN`) |
+| feature agent still live           | `pane list` has the pane with an `agent_status` other than `unknown` | `terminal show --terminal <handle> --json` has `agentIdentity`, and is not `orphaned: true`, `writable: false` or `connected: false` |
+| run a dispatch (worker tab)        | `tab create --workspace <the feature worktree's> --cwd <the dispatch's cwd> --label <slug> <agent> --no-focus`, then `pane run <pane> "bash '<run.sh>'"`; `tab close <tabId>` after | `terminal create --worktree path:<its worktree, else _feature> --title <slug> <agent> --command "bash '<run.sh>'" --json`; neither named: headless; `terminal close` after |
 | notify feature agent               | `agent prompt <paneId> <msg> --wait --until working --timeout-ms 2000` | `terminal send --terminal <handle> --text <msg> --enter --json`  |
 | launching pane (ambient env)       | `HERDR_PANE_ID`                                              | `ORCA_TERMINAL_HANDLE` |
 | preflight readiness check          | `herdr status` (text: `status: running`)                     | `orca status --json` → `result.runtime.reachable`                          |
@@ -83,15 +85,19 @@ in place (`/crew-afk <slug>`, `/crew-address-findings`, `/address-pr-comments`) 
 never edits an issue's `Status:` or criteria boxes.
 
 - **Handle.** `.scratch/<slug>/watch.json` holds `{host, handle}` (an orca terminal handle, a
-  herdr pane id). In order: a recorded handle the host still reports live (table above); else,
+  herdr pane id). In order: a recorded handle the host still reports live (table above: orca's
+  terminal must also be connected, writable and not orphaned — orca keeps reporting `agentIdentity`
+  for a terminal whose PTY is gone, which takes no input); else,
   when cwd is inside `<worktreeRoot>/crew/<slug>/_feature` and the launching pane
   (`ORCA_TERMINAL_HANDLE` / `HERDR_PANE_ID`) passes the same liveness check, that pane, recorded
   and adopted with no new agent; else a new one, recorded. The title `<slug>-watch` is only a
   display name — an agent rewrites its own terminal title, so a lookup by title cannot work.
-- **Where.** orca creates the log terminal and the agent with `--worktree path:<_feature>` (`path:<mainRoot>`
-  when `orca worktree set` never named `_feature` to orca; the agent's launch script still starts it in `_feature`). herdr
-  opens both as tabs of the feature worktree's workspace (`worktree open` returns the one already
-  open), never the triggering workspace (`HERDR_WORKSPACE_ID` is not read).
+- **Where.** Every tab a sprint opens lives on `_feature`; none opens in the main checkout, which is
+  the developer's. orca creates the log terminal and the agent with `--worktree path:<_feature>`;
+  when `orca worktree set` never named `_feature` to orca, neither is created and each is a `WARN`.
+  herdr opens both as tabs of the feature worktree's workspace (`worktree open` returns the one
+  already open), never the triggering workspace (`HERDR_WORKSPACE_ID` is not read). The launching
+  orca terminal is renamed to the slug only when the run was launched from inside `_feature`.
 - **`_feature` is kept.** While the agent still passes the host's liveness check at the end of
   the run (a signal included) the `_feature` worktree stays registered and on disk, and herdr's
   workspace holding the agent is not closed. A run with no host, under `--dry-run`, or whose agent
@@ -99,6 +105,7 @@ never edits an issue's `Status:` or criteria boxes.
   only when this run made it (`worktree open`'s `already_open` is false), never one a developer
   already had open (a signal ending closes it too). An agent this run opened that the host lists but has
   not yet identified counts as live only in its first two minutes: herdr's pane outlives a CLI that exited.
+  An orca terminal that is orphaned, not writable or not connected is gone at once, grace or not.
   The next run reuses a clean `_feature` in place (switching it back to the feature branch if it is on
   another branch or detached, never recreating it) and refuses a dirty one
   (whatever branch or detached HEAD it is on), listing its files. A run that reuses or adopts the
@@ -134,16 +141,21 @@ never edits an issue's `Status:` or criteria boxes.
 
 ## Worker terminals
 
-With orca as the pane host, each coder/reviewer/triage dispatch runs in its own orca terminal,
-titled `<slug> <agent>` and scoped to the dispatch's own worktree (the main checkout for a dispatch with none), so every worker is a tab you can
-watch. Without it, dispatch is the plain headless spawn, unchanged. herdr keeps the plain
-spawn too: its per-worker panes (`dispatchViaHerdr`) were removed for driving an
-interactive REPL and scraping it, and this design does neither.
+With orca or herdr as the pane host, every dispatch (coder, reviewer, triage, feature review —
+whatever `spawnDispatch` routes) runs in a tab of its own titled `<slug> <agent>`, so every
+worker is a tab you can watch. orca scopes the terminal to the dispatch's own worktree when crew-afk
+named it to orca, else to `_feature` when that is named; with neither, the dispatch runs headless.
+herdr opens it as a tab of the sprint's `_feature` workspace, started in the dispatch's own cwd
+(an issue's worktree for its coder and reviewer), runs `run.sh` with `pane run`, and closes the tab
+with `tab close` when the dispatch ends (a close that fails or times out is a `WARN herdr tab <tabId>
+not closed` in `orchestrator.log`). Without a host, dispatch is the plain headless spawn,
+unchanged. (herdr's earlier per-worker panes, `dispatchViaHerdr`, drove an interactive REPL and
+scraped it; this design does neither.)
 
 The worker is the same headless argv (`claude -p … --output-format stream-json`, etc.).
-orca never reports on it — `--command` is typed into a login shell that outlives the
-command, so `terminal wait --for exit` never fires and no exit code comes back (checked
-live). `orchestrator/lib/pane-host/worker-terminal.mjs` writes a `run.sh` that records the
+Neither host reports on it — orca's `--command` and herdr's `pane run` are typed into a
+login shell that outlives the command, so `terminal wait --for exit` never fires and no exit
+code comes back (checked live). `orchestrator/lib/pane-host/worker-terminal.mjs` writes a `run.sh` that records the
 child's pid and exit code under `<outFile>.term/`, and polls those:
 
 | on disk                                  | result                                      |
@@ -152,7 +164,7 @@ child's pid and exit code under `<outFile>.term/`, and polls those:
 | past the dispatch timeout                | SIGKILL the pid, 124 (as the headless path) |
 | pid gone, no `rc` after 5s               | 1 — the terminal was closed under it        |
 | no `pid` within 30s                      | 127 — the shell never ran `run.sh`          |
-| `terminal create` fails                  | the headless spawn instead                  |
+| `terminal create` / `tab create` / `pane run` fails, or nothing is named to orca | the headless spawn instead, a `WARN SPAWN-TERMINAL-FALLBACK` naming the tab (herdr closes a tab made before a failed `pane run`) |
 
 stdout goes straight to a file that crew-afk tails, so traces, heartbeats and report
 parsing are the headless path's. What the tab shows comes from a separate follower
@@ -210,7 +222,7 @@ agent definition.
   one at a time, in order, and is drained before the end-of-run push.
 - `ORCA_TAB_ID` is read by nothing: every create is already scoped by `--worktree`, and the
   rename goes by `ORCA_TERMINAL_HANDLE`; pushes go by the feature agent's recorded handle.
-- `--worktree path:<_feature>` (`<mainRoot>` for a worker terminal with no worktree, or when `_feature` was not adopted), not `active`: `active` isn't documented as cwd-relative and
+- `--worktree path:<_feature>` (or a worker's own named worktree; never `<mainRoot>`), not `active`: `active` isn't documented as cwd-relative and
   may resolve to whatever worktree orca's GUI has focused. `--command` is typed into the
   terminal's shell rather than passed as argv, so the log path is shell-quoted.
 - Orca's own orchestration layer (`orchestration run-create`/`task-create`/`worker-start`,
@@ -221,13 +233,19 @@ agent definition.
 
 The sprint keeps its feature branch in `crew/<slug>/_feature` and each issue in its own worktree,
 all made with native git — neither host creates one. After creating one, crew-afk names it to
-the host, best-effort (a failure is logged and the run goes on):
+the host, best-effort (a failure is a `WARN` in `orchestrator.log` — held until that file exists for
+`_feature`, named before it — and the run goes on):
 
-- **orca:** `orca worktree set --worktree path:<worktree> --display-name <title> [--issue <n>]
-  [--parent-worktree path:<_feature>]` for `_feature` and every issue worktree, and a worker
-  terminal for a dispatch in an adopted worktree is created with `--worktree path:<that worktree>`
-  (any other dispatch keeps `path:<mainRoot>`). Whether an adopted worktree shows in orca's sidebar
-  is unverified: `orca worktree list` showed only the repo's main checkout.
+- **orca:** once `orca worktree show --worktree path:<worktree>` succeeds (orca finds a new
+  worktree from its own git watch; polled every 0.5s for up to 10s, plus one look after the 10s
+  in case a blocking check held the event loop through them, else not named and a `WARN`),
+  `orca worktree set --worktree path:<worktree> --display-name <title> [--issue <n>]
+  [--parent-worktree path:<_feature>]` for `_feature`, every issue worktree (`--issue <n>`) and the
+  `_baseline` check worktree when the baseline runs alongside dispatch, the last two as children of
+  `_feature` (a check that blocks the event loop, such as the integration check, names none). A worker
+  terminal for a dispatch in a named worktree is created with `--worktree path:<that worktree>`, any
+  other with `path:<_feature>`. Whether a named worktree shows in orca's sidebar is unverified:
+  `orca worktree list` showed only the repo's main checkout.
 - **herdr:** `_feature` only, as the sprint's workspace (`herdr worktree open --path <_feature>`);
   issue worktrees get no herdr call, since each herdr worktree is a whole workspace.
 - **none:** nothing is called.

@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { isGreen } from "../../orchestrator/lib/loop.mjs";
-import { integrationSection, runFeatureChecks } from "../../orchestrator/lib/preflight.mjs";
+import { integrationSection, runFeatureChecks, runFeatureChecksAsync } from "../../orchestrator/lib/preflight.mjs";
+import { worktreePath } from "../../orchestrator/lib/worktree.mjs";
 
 function ctxWith() {
   const effects = {
@@ -75,5 +76,48 @@ test("a tree that only failed, was never checked, or sits in an older state file
     const { ctx, calls } = cacheCtx(state);
     assert.notEqual(runFeatureChecks(ctx, { stem: "_integration" }).status, "cached");
     assert.ok(calls.some((c) => c.startsWith("worktree add")));
+  }
+});
+
+function orcaChecksCtx() {
+  const orca = [];
+  const effects = {
+    mainRoot: "/nonexistent-main",
+    featureRoot: "/nonexistent-main/_feature",
+    paneHost: "orca",
+    gitRead: () => ({ code: 0, stdout: "abcdef0123456789\n", stderr: "" }),
+    git: () => ({ code: 0, stdout: "", stderr: "" }),
+    bash: () => {
+      throw new Error("checks stop here");
+    },
+    bashAsync: async () => {
+      throw new Error("checks stop here");
+    },
+    spawnWithTimeout: async (cmd, args) => (orca.push(args), { code: 0, stdout: "{}", stderr: "" }),
+  };
+  const sprint = { featureBranch: "feature/demo", featureSlug: "demo", readState: () => ({}), childEnv: () => ({}) };
+  return { ctx: { sprint, effects, options: { installDeps: false }, log: () => {} }, effects, orca };
+}
+
+test("under orca the baseline and integration worktrees of the non-blocking checks are named as children of _feature", async () => {
+  for (const stem of ["_baseline", "_integration"]) {
+    const { ctx, effects, orca } = orcaChecksCtx();
+    await assert.rejects(runFeatureChecksAsync(ctx, { stem }), /checks stop here/);
+    await effects._paneAdoptions?.values().next().value;
+    const set = orca.find((a) => a[0] === "worktree" && a[1] === "set");
+    assert.ok(set, `${stem}: ${JSON.stringify(orca)}`);
+    assert.equal(set[set.indexOf("--worktree") + 1], `path:${worktreePath("/nonexistent-main", `crew/demo/${stem}`)}`, stem);
+    assert.equal(set[set.indexOf("--parent-worktree") + 1], "path:/nonexistent-main/_feature", stem);
+    assert.ok(!set.includes("--issue"), stem);
+  }
+});
+
+// Blocking checks hold the event loop past the naming's whole wait, and remove the worktree before it ends.
+test("under orca the blocking checks start no naming of their worktree", () => {
+  for (const stem of ["_baseline", "_integration"]) {
+    const { ctx, effects, orca } = orcaChecksCtx();
+    assert.throws(() => runFeatureChecks(ctx, { stem }), /checks stop here/);
+    assert.deepEqual(orca, [], stem);
+    assert.equal(effects._paneAdoptions, undefined, stem);
   }
 });

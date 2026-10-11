@@ -34,6 +34,7 @@ import {
 import { closePaneLogTab, closePaneWorkspace, closePaneWorkspaceSync, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, notifyWatchSession, queueRunStartNotice, settlePaneAgent } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
+import { settleFeatureBranch } from "./lib/feature-start.mjs";
 import { ensureWorktree, featureSlugOfPath, featureWorktreePath, removeWorktree, worktreeRoot } from "./lib/worktree.mjs";
 import { resolveInstallDir } from "./lib/install-dir.mjs";
 import { skillDirCandidates } from "./lib/skill-dirs.mjs";
@@ -301,21 +302,6 @@ function gitRoot() {
   return realpathSync(wt ? resolve(common, wt) : top);
 }
 
-/**
- * A new feature branch forks from the local default branch; when that is behind origin the sprint
- * starts from stale code. Warn only, after a best-effort fetch: no origin or any failure stays silent.
- */
-function warnDefaultBehindOrigin(effects, defaultBranch, log) {
-  if (effects.gitRead(["remote", "get-url", "origin"]).code !== 0) return;
-  if (effects.gitRead(["rev-parse", "--verify", "-q", `refs/heads/${defaultBranch}`]).code !== 0) return;
-  if (effects.gitRead(["fetch", "-q", "origin", defaultBranch]).code !== 0) return;
-  const behind = Number(effects.gitRead(["rev-list", "--count", `refs/heads/${defaultBranch}..refs/remotes/origin/${defaultBranch}`]).stdout.trim());
-  if (behind > 0) {
-    log(`WARNING: local ${defaultBranch} is ${behind} commit(s) behind origin/${defaultBranch}`);
-    log(`The new feature branch is created from local ${defaultBranch}; update ${defaultBranch} first to start from current code.`);
-  }
-}
-
 function resolveScriptsDir(mainRoot, platform) {
   // Project install, then user-level (`TARGET_REPO=$HOME`), then this repo's source tree (dev).
   const candidates = [
@@ -386,6 +372,9 @@ async function main() {
   const stderrLevel = stderrThreshold();
   const shows = (level) => atLeast(level, stderrLevel.level);
   const logLines = [];
+  // An effects line starting `WARN ` is a degraded host call, so orchestrator.log carries it; one
+  // logged before Sprint.init creates that file (naming `_feature`) is held until then.
+  const warnLog = { file: null, held: [] };
   const effects = new Effects({
     scriptsDir,
     mainRoot,
@@ -394,7 +383,12 @@ async function main() {
     env: { MAIN_ROOT: mainRoot },
     log: (line) => {
       logLines.push(line);
+      const warn = /^WARN /.test(line) ? line.slice("WARN ".length) : null;
       if (shows("debug")) console.error(line);
+      else if (warn && shows("warn")) console.error(warn);
+      if (!warn) return;
+      if (warnLog.file) writeLog(warnLog.file, warn, "warn");
+      else warnLog.held.push(warn);
     },
   });
   if (options.command === "status") {
@@ -654,11 +648,18 @@ async function main() {
 
     // Every feature-branch git operation runs here, so the main checkout keeps the user's branch.
     if (!options.dryRun) {
-      const base = effects.gitRead(["rev-parse", "--verify", "-q", `refs/heads/${named.defaultBranch}`]).code === 0 ? named.defaultBranch : "HEAD";
+      // After the lock and lease: no other run on this slug moves the branch while it is settled.
+      const start = settleFeatureBranch(effects, { branch: named.branch, defaultBranch: named.defaultBranch });
+      for (const line of start.messages) console.error(line);
+      if (start.error) {
+        console.error(start.error);
+        exitCode = 1;
+        return exitCode;
+      }
       const wt = ensureWorktree(effects, {
         mainRoot,
         branch: named.branch,
-        base,
+        base: start.base,
         mode: "checkout",
         path: featureWorktreePath(mainRoot, named.slug),
         adopt: { title: named.slug },
@@ -670,7 +671,15 @@ async function main() {
       }
       featureWorktree = wt.path;
       effects.featureRoot = wt.path;
-      if (!wt.reusedBranch) warnDefaultBehindOrigin(effects, named.defaultBranch, (line) => console.error(line));
+      // In the worktree, not by moving the ref: a clean `_feature` already on the branch would read as dirty.
+      if (start.fastForward) {
+        const ff = effects.git(["merge", "--ff-only", "-q", start.fastForward], { cwd: wt.path });
+        if (ff.code !== 0) {
+          console.error(`crew-afk: could not fast-forward ${named.branch} to origin/${named.branch} (${start.fastForward}): ${ff.stderr.trim()}`);
+          exitCode = 1;
+          return exitCode;
+        }
+      }
     }
 
     sprint = await Sprint.init(effects, {
@@ -684,6 +693,10 @@ async function main() {
       },
     });
     sprint.setModel(options.model ?? "agent default");
+    if (sprint.traceLog) {
+      warnLog.file = sprint.traceLog;
+      for (const warn of warnLog.held.splice(0)) writeLog(warnLog.file, warn, "warn");
+    }
 
     if (lease) {
       const leaseLog = (line, level) => {

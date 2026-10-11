@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { MAIN, SCRIPTS, FAKE, FIXTURE_ROOTS, sprintEnv, sh, fixtureRepo, addIssue, runSprint, state, fake, traceLog, test } from "./helpers/sprint.mjs";
 
@@ -216,21 +216,198 @@ test("launched inside a submodule, the run and its scripts share the submodule's
   assert.equal(sh("git", ["-C", sub, "cat-file", "-e", "feature/demo:src/alpha.txt"]).code, 0);
 });
 
-test("a new feature branch cut from a local default branch behind origin logs the WARNING", () => {
+/**
+ * The user's checkout on `main` with a bare `origin` holding it, and no `feature/demo` anywhere: the
+ * hook that moves `feature/demo` with `main` is gone, so a commit on `main` stays unpushed.
+ */
+function withOrigin() {
   const root = userOnMain();
+  rmSync(join(root, ".git/hooks/post-commit"));
   git(root, "branch", "-D", "feature/demo");
   const origin = `${root}-origin.git`;
-  sh("git", ["clone", "-q", "--bare", root, origin]);
+  FIXTURE_ROOTS.push(origin);
+  sh("git", ["init", "-q", "--bare", "-b", "main", origin]);
   git(root, "remote", "add", "origin", origin);
-  const other = `${root}-other`;
+  git(root, "push", "-q", "origin", "main");
+  return { root, origin };
+}
+
+/** One commit on `parent`, made without touching any checkout; its sha. */
+const commitOn = (root, parent, message) => git(root, "commit-tree", `${parent}^{tree}`, "-p", parent, "-m", message);
+
+/** Another developer's push: `branch` on origin becomes `from` (on origin) plus one commit; its sha. */
+function pushFromElsewhere(origin, branch, from = branch) {
+  const other = `${origin}-${FIXTURE_ROOTS.length}`;
+  FIXTURE_ROOTS.push(other);
   sh("git", ["clone", "-q", origin, other]);
-  git(other, "config", "user.email", "t@test");
-  git(other, "config", "user.name", "T");
-  writeFileSync(join(other, "new.txt"), "x\n");
-  git(other, "add", "-A");
-  git(other, "commit", "-q", "-m", "ahead");
-  git(other, "push", "-q", "origin", "main");
+  for (const [k, v] of [["user.email", "t@test"], ["user.name", "T"]]) git(other, "config", k, v);
+  const tip = commitOn(other, `origin/${from}`, `elsewhere on ${branch}`);
+  git(other, "push", "-q", "origin", `${tip}:refs/heads/${branch}`);
+  return tip;
+}
+
+const upstreamOf = (root, branch) => sh("git", ["-C", root, "rev-parse", "--abbrev-ref", `${branch}@{upstream}`]);
+
+test("with no feature branch anywhere, it starts untracked at the fetched origin/main, whatever local main holds, and a second run reuses it", () => {
+  const { root, origin } = withOrigin();
+  const originMain = pushFromElsewhere(origin, "main");
+  git(root, "commit", "-q", "--allow-empty", "-m", "unpushed");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(git(root, "rev-parse", "feature/demo"), originMain);
+  assert.notEqual(upstreamOf(root, "feature/demo").code, 0, "no upstream configured");
+  assert.doesNotMatch(r.stderr, /behind origin/);
+  const again = runSprint(root);
+  assert.equal(again.code, 0, `${again.stdout}\n${again.stderr}`);
+  assert.equal(git(root, "rev-parse", "feature/demo"), originMain);
+  assert.doesNotMatch(again.stderr, /BRANCH-SHIPPED/);
+});
+
+for (const originHead of [null, "refs/remotes/origin/master"]) {
+  test(`with origin's default branch trunk and the local origin/HEAD ${originHead ? "naming origin/master, which origin lacks" : "unset"}, a new feature branch starts at origin's trunk`, () => {
+    const { root, origin } = withOrigin();
+    git(origin, "branch", "-m", "main", "trunk");
+    const trunk = pushFromElsewhere(origin, "trunk");
+    if (originHead) git(root, "symbolic-ref", "refs/remotes/origin/HEAD", originHead);
+    const r = runSprint(root);
+    assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+    assert.equal(git(root, "rev-parse", "feature/demo"), trunk);
+  });
+}
+
+test("after origin renames main to trunk, the local origin/HEAD names origin/trunk, so a resumed feature branch syncs with trunk, not the stale origin/main", () => {
+  const { root, origin } = withOrigin();
+  git(root, "remote", "set-head", "origin", "main");
+  git(origin, "branch", "-m", "main", "trunk");
+  pushFromElsewhere(origin, "trunk");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(git(root, "symbolic-ref", "refs/remotes/origin/HEAD"), "refs/remotes/origin/trunk");
+  pushFromElsewhere(origin, "trunk");
+  const sync = sh("bash", [join(SCRIPTS, "sync-feature-branch.sh"), "--dry-run", "feature/demo"], { cwd: root });
+  assert.match(sync.stdout, /would merge origin\/trunk/);
+});
+
+test("an origin with branches but no default to start from (its HEAD names none it has, and no main) stops the run at setup, creating no branch", () => {
+  const { root, origin } = withOrigin();
+  git(origin, "branch", "-m", "main", "trunk");
+  git(origin, "symbolic-ref", "HEAD", "refs/heads/gone");
   addIssue(root, "01-alpha.md");
   const r = runSprint(root);
-  assert.match(r.stderr, /WARNING: local main is 1 commit\(s\) behind origin\/main/);
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /origin/);
+  assert.notEqual(sh("git", ["-C", root, "rev-parse", "--verify", "-q", "refs/heads/feature/demo"]).code, 0, "no feature branch created");
+  assert.equal(existsSync(featureWt(root)), false);
+});
+
+test("with feature/<slug> only on origin, the local branch is created at its tip, tracking it", () => {
+  const { root, origin } = withOrigin();
+  const tip = pushFromElsewhere(origin, "feature/demo", "main");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(git(root, "rev-parse", "feature/demo"), tip);
+  assert.equal(upstreamOf(root, "feature/demo").stdout.trim(), "origin/feature/demo");
+});
+
+for (const ahead of [true, false]) {
+  test(`a local feature/<slug> ${ahead ? "ahead of" : "equal to"} origin's is used unchanged`, () => {
+    const { root } = withOrigin();
+    git(root, "push", "-q", "origin", "main:refs/heads/feature/demo");
+    const local = ahead ? commitOn(root, "main", "local only") : git(root, "rev-parse", "main");
+    git(root, "branch", "feature/demo", local);
+    const r = runSprint(root);
+    assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+    assert.equal(git(root, "rev-parse", "feature/demo"), local);
+  });
+}
+
+test("a local feature/<slug> behind origin's is fast-forwarded to origin's tip", () => {
+  const { root, origin } = withOrigin();
+  git(root, "branch", "feature/demo", "main");
+  const tip = pushFromElsewhere(origin, "feature/demo", "main");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(git(root, "rev-parse", "feature/demo"), tip);
+});
+
+test("a local feature/<slug> diverged from origin's stops the run at setup, naming both tips, with no worktree made", () => {
+  const { root, origin } = withOrigin();
+  const local = commitOn(root, "main", "local only");
+  git(root, "branch", "feature/demo", local);
+  const remote = pushFromElsewhere(origin, "feature/demo", "main");
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, new RegExp(local.slice(0, 12)));
+  assert.match(r.stderr, new RegExp(remote.slice(0, 12)));
+  assert.equal(existsSync(featureWt(root)), false);
+  assert.equal(git(root, "worktree", "list", "--porcelain").includes("_feature"), false);
+  assert.equal(git(root, "rev-parse", "feature/demo"), local);
+});
+
+for (const upstream of [null, "origin/main"]) {
+  test(`a local feature/<slug> with ${upstream ? "an upstream that is not its own origin branch" : "no upstream"} and none on origin is used unchanged`, () => {
+    const { root } = withOrigin();
+    const local = commitOn(root, "main", "never pushed");
+    git(root, "branch", "feature/demo", local);
+    if (upstream) git(root, "branch", "-q", `--set-upstream-to=${upstream}`, "feature/demo");
+    const r = runSprint(root);
+    assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+    assert.equal(git(root, "rev-parse", "feature/demo"), local);
+    assert.doesNotMatch(r.stderr, /BRANCH-SHIPPED/);
+  });
+}
+
+test("a shipped feature/<slug> (its origin branch gone) is renamed aside and the run starts fresh from origin/main in the same _feature", () => {
+  const { root, origin } = withOrigin();
+  const shipped = commitOn(root, "main", "shipped work");
+  git(root, "branch", "feature/demo", shipped);
+  git(root, "push", "-q", "-u", "origin", "feature/demo");
+  git(root, "push", "-q", "origin", "--delete", "feature/demo");
+  const originMain = pushFromElsewhere(origin, "main");
+  const d = new Date();
+  const day = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  git(root, "branch", `feature/demo-shipped-${day}`, "main");
+  git(root, "worktree", "add", "-q", featureWt(root), "feature/demo");
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const renamed = `feature/demo-shipped-${day}-2`;
+  assert.ok(r.stderr.split("\n").includes(`[BRANCH-SHIPPED] renamed feature/demo → ${renamed}`), r.stderr);
+  assert.equal(git(root, "rev-parse", renamed), shipped);
+  assert.equal(git(root, "rev-parse", "feature/demo~1"), originMain, "the issue merged onto a branch fresh from origin/main");
+  assert.equal(sh("git", ["-C", root, "cat-file", "-e", "feature/demo:src/alpha.txt"]).code, 0, "merged in _feature, on the new branch");
+  assert.equal(sh("git", ["-C", root, "cat-file", "-e", `${renamed}:src/alpha.txt`]).code, 128);
+});
+
+for (const holder of ["the main checkout", "a worktree crew-afk did not make"]) {
+  test(`a shipped feature/<slug> checked out in ${holder} is not renamed: the run stops at setup naming it`, () => {
+    const { root } = withOrigin();
+    const shipped = commitOn(root, "main", "shipped work");
+    git(root, "branch", "feature/demo", shipped);
+    git(root, "push", "-q", "-u", "origin", "feature/demo");
+    git(root, "push", "-q", "origin", "--delete", "feature/demo");
+    const mine = join(root, "..", `${root.split("/").pop()}-mine`);
+    if (holder === "the main checkout") git(root, "checkout", "-q", "feature/demo");
+    else git(root, "worktree", "add", "-q", mine, "feature/demo");
+    const branches = git(root, "for-each-ref", "--format=%(refname)", "refs/heads");
+    addIssue(root, "01-alpha.md");
+    const r = runSprint(root);
+    assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+    assert.match(r.stderr, new RegExp(`'${(holder === "the main checkout" ? root : mine).replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}'`));
+    assert.doesNotMatch(r.stderr, /BRANCH-SHIPPED/);
+    assert.equal(git(root, "for-each-ref", "--format=%(refname)", "refs/heads"), branches, "no branch renamed or created");
+    assert.equal(git(root, "rev-parse", "feature/demo"), shipped);
+    assert.equal(existsSync(featureWt(root)), false);
+  });
+}
+
+test("an unreachable origin stops the run at setup with git's error, not a fallback to local refs", () => {
+  const root = userOnMain();
+  git(root, "remote", "add", "origin", `${root}-nowhere.git`);
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /nowhere\.git/);
+  assert.equal(existsSync(featureWt(root)), false);
 });
