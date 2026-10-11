@@ -239,8 +239,10 @@ the host, best-effort (a failure is a `WARN` in `orchestrator.log` — held unti
 `_feature`, named before it — and the run goes on):
 
 - **orca:** once `orca worktree show --worktree path:<worktree>` succeeds (orca finds a new
-  worktree from its own git watch; polled every 0.5s for up to 10s, plus one look after the 10s
-  in case a blocking check held the event loop through them, else not named and a `WARN`),
+  worktree from its own git watch; polled every 0.5s for up to 60s, plus one look after the 60s
+  in case a blocking check held the event loop through them, else not named yet and a `WARN`;
+  each later worker terminal for that worktree looks once more — one `worktree show`, then
+  `worktree set` — and a failure there logs nothing, since the adoption already warned),
   `orca worktree set --worktree path:<worktree> --display-name <title> [--issue <n>]
   [--parent-worktree path:<_feature>]` for `_feature`, every issue worktree (`--issue <n>`) and the
   `_baseline` check worktree when the baseline runs alongside dispatch, the last two as children of
