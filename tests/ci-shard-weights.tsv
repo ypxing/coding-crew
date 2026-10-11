@@ -1,18 +1,21 @@
-# Seconds each test file takes on a macos-latest runner (the slowest job in the matrix), read by
-# scripts/ci-test-shard.sh to balance shards. Measured from CI logs' "::group::<file> (Ns, …)"
-# lines; a file missing here is weighted 5s per @test.
-# Refresh when a shard runs far longer than the others — balance is all this affects.
+# Seconds each test file takes on a macos-latest runner (the slowest job in the matrix), read through
+# scripts/ci-weights.sh to balance shards and to start the heaviest files first. Measured from CI
+# logs' "::group::<file> (Ns, …)" lines; a file never measured there is estimated from its local
+# seconds, and a split file gets its parent's seconds by its share of the parent's tests. A file
+# missing here is weighted 5s per @test. Refresh when a shard runs far longer than the others.
+1	address-pr-comments-escaped.bats
 10	address-pr-comments-scripts.bats
-24	retired-agents.bats
+1	ci-run-bats.bats
 6	ci-test-shard.bats
-200	platform-install.bats
 2	configure-tracker-skill.bats
-26	copilot-platform.bats
 6	crew-afk-cleanup-worktrees.bats
+12	crew-afk-close-shipped.bats
 4	crew-afk-dev-commands-reminder.bats
 11	crew-afk-discover-commands.bats
 27	crew-afk-ensure-deps.bats
 24	crew-afk-launcher.bats
+6	crew-afk-lease.bats
+1	crew-afk-main-root.bats
 5	crew-afk-open-pr.bats
 3	crew-afk-post-findings.bats
 7	crew-afk-promotion-threshold.bats
@@ -20,11 +23,13 @@
 4	crew-afk-review-gaps.bats
 8	crew-afk-scripts.bats
 26	crew-afk-state.bats
+6	crew-afk-sync-feature-branch.bats
 50	crew-afk-user-level-install.bats
 12	crew-afk-write-commands-cache.bats
 6	crew-coder-protocol.bats
 7	crew-reviewer-references.bats
 1	crew-rework-workflow.bats
+9	cut-release.bats
 8	dep-install-assets.bats
 2	dep-install-detect-compose-bypass.bats
 2	dep-install-detect-mode.bats
@@ -33,33 +38,60 @@
 5	dep-install-ensure-env.bats
 3	dep-install-gen-override-git-mount.bats
 2	dep-install-gen-override-project-name.bats
+6	dep-install-gen-override-volume-names.bats
 3	dep-install-host-install.bats
 5	dep-install-manifest-fingerprint.bats
+1	dep-install-python-install-cmd.bats
 3	dep-install-resolve-mode.bats
 2	dep-install-run.bats
+96	dep-install-shim.bats
+18	eval-design-skills.bats
+33	eval-reviewer-misses.bats
+1	git-test-env.bats
+3	human-issue-shared.bats
 1	install-dir-registry.bats
-137	install.bats
+57	install.bats
 19	layer-ownership.bats
-81	orchestrator-sprint-lifecycle.bats
-15	orchestrator-sprint-feature-worktree.bats
-65	orchestrator-sprint-merge-retries.bats
-77	orchestrator-sprint-worker-outcomes.bats
-81	orchestrator-sprint-gates-config.bats
-36	orchestrator-sprint-settings.bats
-77	orchestrator-sprint-github.bats
+15	no-agent-files.bats
 93	orchestrator-sprint-deps.bats
-79	orchestrator-sprint-discovery-preflight.bats
-77	orchestrator-sprint-integration.bats
+28	orchestrator-sprint-discovery.bats
+18	orchestrator-sprint-feature-findings.bats
+33	orchestrator-sprint-feature-review.bats
+15	orchestrator-sprint-feature-worktree.bats
 40	orchestrator-sprint-findings-triage.bats
+81	orchestrator-sprint-gates-config.bats
+77	orchestrator-sprint-github.bats
+26	orchestrator-sprint-integration.bats
+24	orchestrator-sprint-issue-lint.bats
+30	orchestrator-sprint-lifecycle.bats
+65	orchestrator-sprint-merge-retries.bats
+17	orchestrator-sprint-pane-host.bats
+26	orchestrator-sprint-preflight.bats
+36	orchestrator-sprint-settings.bats
+9	orchestrator-sprint-stale-retained.bats
+34	orchestrator-sprint-verify-review.bats
+77	orchestrator-sprint-worker-outcomes.bats
 7	orchestrator.bats
+30	platform-golden-install.bats
+48	platform-install.bats
 7	promote-findings-github.bats
+1	receipts-ac-sha.bats
 1	registry-version-bump.bats
 2	render-skill-shared-fragments.bats
 2	retain-partial-work.bats
+30	retired-agents.bats
+9	session-init-behind-origin.bats
+12	session-init-branch-name.bats
 3	session-init-tracker.bats
+1	shell-sigpipe-lint.bats
+54	smoke-sprint.bats
 34	solve-issue-scripts.bats
 2	squash-commits.bats
+6	sync-pr-with-main.bats
+18	to-issues-lint-issues.bats
+45	tracker-lookup.bats
 2	tracker-mark-done-github.bats
+6	tracker-rewrite-github.bats
 12	verify-worktree-docker.bats
 27	verify-worktree.bats
 34	worker-close-guard.bats

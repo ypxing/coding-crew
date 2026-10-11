@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ci-run-bats.sh [--log-dir <dir>] <file>... — run each bats file as its own process, several
-# at once, then print every file's output in the order given and exit non-zero if any failed.
+# at once and heaviest first, then print every file's output in the order given and exit non-zero if any failed.
 # Without --log-dir the per-file logs go to a temp dir removed on exit. CI and the
 # dev-commands.json `test` both run the suite through it.
 #
@@ -29,12 +29,12 @@ BATS="${BATS:-bats}"
 jobs="${CI_BATS_JOBS:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || jobs=2
 
-# Numbered logs keep the given order and survive two files sharing a basename.
-i=0
-for f in "$@"; do
-  i=$((i + 1))
-  printf '%s\0%s\0' "$i" "$f"
-done | BATS="$BATS" LOG_DIR="$LOG_DIR" xargs -0 -n 2 -P "$jobs" bash -c '
+# Heaviest first (scripts/ci-weights.sh), so the long files are not left to run alone at the
+# end. Numbered logs keep the output in the given order and survive two files sharing a basename.
+bash "$(dirname "${BASH_SOURCE[0]}")/ci-weights.sh" "$@" \
+  | awk -F'\t' '{ printf "%d\t%d\t%s\n", $1, NR, $2 }' \
+  | sort -t $'\t' -k1,1rn -k2,2n \
+  | while IFS=$'\t' read -r _ i f; do printf '%s\0%s\0' "$i" "$f"; done | BATS="$BATS" LOG_DIR="$LOG_DIR" xargs -0 -n 2 -P "$jobs" bash -c '
   start=$(date +%s)
   "$BATS" --print-output-on-failure "$2" > "$LOG_DIR/$1.log" 2>&1
   echo "$? $(( $(date +%s) - start ))" > "$LOG_DIR/$1.rc"

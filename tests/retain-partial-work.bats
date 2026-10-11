@@ -3,7 +3,7 @@
 # Tests for retain-and-resume-partial-work (issue 08): a retained (partial) branch survives the
 # cleanup that deletes merged ones. The rest of the behaviour — the resume prompt, the summary's
 # retained list, a demoted branch never merging — is asserted on faked-dispatch sprints in
-# tests/orchestrator/sprint-gates-config.test.mjs and sprint-lifecycle.test.mjs.
+# tests/orchestrator/sprint-gates-config.test.mjs and sprint-verify-review.test.mjs.
 
 # ─── Git-state test: retained branches survive cleanup script ─────────────────
 

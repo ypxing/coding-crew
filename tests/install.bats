@@ -1,10 +1,19 @@
 #!/usr/bin/env bats
 
-# Tracer bullet test - verify basic install creates expected file
+# install.sh and uninstall.sh behaviour. Tests that only read what an install leaves behind read
+# the installs setup_file makes; the rest install into their own TEMP_DIR.
 
 load helpers/platforms
+load helpers/shared-install
+
+setup_file() {
+  shared_install all
+  shared_install to-issues claude --skill to-issues
+  bg_wait
+}
 
 setup() {
+  ALL="$(shared_installed all)"
   export TEMP_DIR=$(mktemp -d)
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 }
@@ -13,23 +22,9 @@ teardown() {
   rm -rf "$TEMP_DIR"
 }
 
-@test "install skill creates SKILL.md at expected path" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd
-
-  # Verify the skill file was created
-  [ -f "$TEMP_DIR/.claude/skills/tdd/SKILL.md" ]
-}
-
 @test "manifest contains correct skill name and version after install" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd
-
-  # Verify manifest was created
-  [ -f "$TEMP_DIR/.coding-crew/manifest.json" ]
-
-  # Verify skill entry exists
-  run jq -r '.skills["tdd"].version' "$TEMP_DIR/.coding-crew/manifest.json"
+  [ -f "$ALL/.coding-crew/manifest.json" ]
+  run jq -r '.skills["tdd"].version' "$ALL/.coding-crew/manifest.json"
   [ "$status" -eq 0 ]
   [ -n "$output" ]
   [ "$output" != "null" ]
@@ -39,107 +34,30 @@ teardown() {
 #
 # Every installed word is a word some agent may read at runtime, so a developer
 # README and a retired reference are not inert: they are exploration bait in a
-# directory the model lists. These assert the crew-afk install ships neither, and
-# that an older install's copies are swept rather than left to contradict the body.
+# directory the model lists. These assert the crew-afk install ships neither; the
+# prune below sweeps an older install's copies.
 
 @test "crew-afk install ships no developer README in the skill tree" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
-
-  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/README.md" ]
+  [ -f "$ALL/.claude/skills/crew-afk/SKILL.md" ]
+  [ ! -f "$ALL/.claude/skills/crew-afk/scripts/README.md" ]
 }
 
 @test "crew-afk install ships no verification reference (verify-worktree.sh is the policy)" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
-
-  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/references/verification.md" ]
+  [ ! -f "$ALL/.claude/skills/crew-afk/references/verification.md" ]
   # solve-issue's own verification reference is a different file and still ships.
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue
-  [ -f "$TEMP_DIR/.claude/skills/solve-issue/references/verification.md" ]
+  [ -f "$ALL/.claude/skills/solve-issue/references/verification.md" ]
 }
 
 @test "to-issues installs references/ beside SKILL.md for every platform" {
-  cd "$SCRIPT_DIR"
-  local platform skill_md dir count=0
-  for platform in "${PLATFORMS[@]}"; do
-    TARGET_REPO="$TEMP_DIR" ./install.sh "$platform" --skill to-issues > /dev/null
-  done
+  local skill_md dir count=0
   while IFS= read -r skill_md; do
     dir=$(dirname "$skill_md")
     [ ! -e "$dir/references/github-publish.md" ]
     [ ! -e "$dir/references/rerun.md" ]
     [ -f "$dir/references/expand-contract.md" ]
     count=$((count + 1))
-  done < <(find "$TEMP_DIR" -path '*/skills/to-issues/SKILL.md')
+  done < <(find "$ALL" -path '*/skills/to-issues/SKILL.md')
   [ "$count" -eq "${#PLATFORMS[@]}" ]
-}
-
-@test "install sweeps retired files an earlier version left in the skill tree" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
-
-  # Simulate an install from before these were retired.
-  mkdir -p "$TEMP_DIR/.claude/skills/crew-afk/references" \
-           "$TEMP_DIR/.claude/skills/crew-afk/scripts"
-  echo "stale policy" > "$TEMP_DIR/.claude/skills/crew-afk/references/verification.md"
-  echo "stale readme" > "$TEMP_DIR/.claude/skills/crew-afk/scripts/README.md"
-  echo "stale tracker setup" > "$TEMP_DIR/.claude/skills/crew-afk/scripts/configure-tracker-auto.sh"
-  echo "stale audit" > "$TEMP_DIR/.claude/skills/crew-afk/scripts/coverage-validation.sh"
-  echo "stale audit" > "$TEMP_DIR/.claude/skills/crew-afk/scripts/prd-audit.sh"
-
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
-
-  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/references/verification.md" ]
-  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/README.md" ]
-  # Tracker configuration was a step in the prose orchestrator; the program does its own
-  # issue discovery (orchestrator/lib/tracker.mjs), so crew-afk shipped a script no agent
-  # ran.
-  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/configure-tracker-auto.sh" ]
-  # The PRD audit's script, under its old name and its last.
-  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/coverage-validation.sh" ]
-  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/prd-audit.sh" ]
-  # The skill itself is intact.
-  [ -f "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/verify-worktree.sh" ]
-}
-
-@test "configure-tracker-auto.sh ships with no skill, and an older install's copy is removed" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
-  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/configure-tracker-auto.sh" ]
-  # configure-tracker offers its two backends itself; an earlier version's script is swept.
-  mkdir -p "$TEMP_DIR/.claude/skills/configure-tracker/scripts"
-  echo "stale tracker setup" > "$TEMP_DIR/.claude/skills/configure-tracker/scripts/configure-tracker-auto.sh"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill configure-tracker
-  [ ! -e "$TEMP_DIR/.claude/skills/configure-tracker/scripts" ]
-  [ -f "$TEMP_DIR/.claude/skills/configure-tracker/SKILL.md" ]
-}
-
-@test "solve-issue ships no feature-branch-setup.sh: its step 0 is a guard, not a branch creation" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue
-
-  # The script only acts when on the default branch — which the guard above it already
-  # refuses — so the call was dead. crew-afk still uses it, via session-init.sh.
-  [ ! -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/feature-branch-setup.sh" ]
-  [ -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/commit-changes.sh" ]
-}
-
-@test "crew-afk ships no feature-branch-setup.sh, and --update removes an older install's copy" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
-  # session-init.sh names the feature branch itself (feature_branch_name).
-  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/feature-branch-setup.sh" ]
-
-  # An install from before it was retired: the script beside session-init.sh, an older version.
-  echo "stale branch setup" > "$TEMP_DIR/.claude/skills/crew-afk/scripts/feature-branch-setup.sh"
-  local m="$TEMP_DIR/.coding-crew/manifest.json"
-  jq '.skills["crew-afk"].version = "0.0.0"' "$m" > "$m.tmp" && mv "$m.tmp" "$m"
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
-  [ "$status" -eq 0 ]
-  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/feature-branch-setup.sh" ]
-  [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/session-init.sh" ]
 }
 
 # ─── an installed tree is an exact copy of what the install wrote ────────────
@@ -201,17 +119,6 @@ teardown() {
   [[ "$output" == *".coding-crew/crew-afk/lib/retired.mjs (removed)"* ]]
 }
 
-@test "installing crew-afk prunes an older install's common/ and per-platform fragment dirs" {
-  cd "$SCRIPT_DIR"
-  mkdir -p "$TEMP_DIR/.coding-crew/skills/_shared/fragments/common" "$TEMP_DIR/.coding-crew/skills/_shared/fragments/claude"
-  echo "old" > "$TEMP_DIR/.coding-crew/skills/_shared/fragments/common/a.md"
-  echo "old" > "$TEMP_DIR/.coding-crew/skills/_shared/fragments/claude/b.md"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
-  [ ! -e "$TEMP_DIR/.coding-crew/skills/_shared/fragments/common" ]
-  [ ! -e "$TEMP_DIR/.coding-crew/skills/_shared/fragments/claude" ]
-  [ -f "$TEMP_DIR/.coding-crew/skills/_shared/fragments/design-standard.md" ]
-}
-
 @test "the prune leaves files outside the skill root and asset dests alone" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null
@@ -230,19 +137,15 @@ teardown() {
 }
 
 @test "solve-issue and crew-afk both get write-commands-cache.sh; only crew-afk gets discover-commands.sh" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
-
   # solve-issue's own agent turn already *is* the model, so it never dispatches a
   # separate prompt-building call — only the shared write side is needed.
-  [ -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/write-commands-cache.sh" ]
-  [ ! -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/discover-commands.sh" ]
+  [ -f "$ALL/.claude/skills/solve-issue/scripts/write-commands-cache.sh" ]
+  [ ! -f "$ALL/.claude/skills/solve-issue/scripts/discover-commands.sh" ]
 
   # crew-afk dispatches an agent-less model call (orchestrator/lib/commands.mjs) and
   # needs both halves.
-  [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/write-commands-cache.sh" ]
-  [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/discover-commands.sh" ]
+  [ -f "$ALL/.claude/skills/crew-afk/scripts/write-commands-cache.sh" ]
+  [ -f "$ALL/.claude/skills/crew-afk/scripts/discover-commands.sh" ]
 
   # Canonical source is scripts/skill-utils/git-workflow/ for both, not duplicated by
   # hand in either skill's own source-dir.
@@ -292,36 +195,6 @@ teardown() {
   ! echo "$output" | grep -qxF "crew-tdd"
   # crew-plan must not be present (renamed to crew-grill)
   ! echo "$output" | grep -qxF "crew-plan"
-}
-
-@test "crew-grill skill is installed to correct directory" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-grill
-
-  [ -f "$TEMP_DIR/.claude/skills/crew-grill/SKILL.md" ]
-}
-
-@test "crew-grill copilot skill is installed to correct directory" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-grill
-
-  # Copilot scans .github/skills at project scope, never .copilot/skills
-  [ -f "$TEMP_DIR/.github/skills/crew-grill/SKILL.md" ]
-  [ ! -d "$TEMP_DIR/.copilot" ]
-}
-
-@test "crew-brainstorm skill is installed to correct directory (claude)" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-brainstorm
-
-  [ -f "$TEMP_DIR/.claude/skills/crew-brainstorm/SKILL.md" ]
-}
-
-@test "crew-brainstorm skill is installed to correct directory (copilot)" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-brainstorm
-
-  [ -f "$TEMP_DIR/.github/skills/crew-brainstorm/SKILL.md" ]
 }
 
 @test "reinstalling modified skill reports the update without a diff body" {
@@ -448,15 +321,13 @@ _assert_legacy_tracker_files_gone() {
 }
 
 @test "a fresh install writes no .coding-crew/docs/ and no tracker section, and installs the tracker docs" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude > /dev/null
-  [ ! -e "$TEMP_DIR/.coding-crew/docs" ]
-  if [ -f "$TEMP_DIR/.coding-crew/config.json" ]; then
-    run jq -e 'has("tracker")' "$TEMP_DIR/.coding-crew/config.json"
+  [ ! -e "$ALL/.coding-crew/docs" ]
+  if [ -f "$ALL/.coding-crew/config.json" ]; then
+    run jq -e 'has("tracker")' "$ALL/.coding-crew/config.json"
     [ "$status" -ne 0 ]
   fi
-  cmp "$SCRIPT_DIR/tracker/docs/local.md" "$TEMP_DIR/.coding-crew/tracker/docs/local.md"
-  cmp "$SCRIPT_DIR/tracker/docs/github.md" "$TEMP_DIR/.coding-crew/tracker/docs/github.md"
+  cmp "$SCRIPT_DIR/tracker/docs/local.md" "$ALL/.coding-crew/tracker/docs/local.md"
+  cmp "$SCRIPT_DIR/tracker/docs/github.md" "$ALL/.coding-crew/tracker/docs/github.md"
 }
 
 @test "install --update overwrites the tracker docs when a source doc changed" {
@@ -495,51 +366,8 @@ _assert_legacy_tracker_files_gone() {
 }
 
 @test "install does not create triage-labels.md in target repo" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude > /dev/null
-
-  [ ! -f "$TEMP_DIR/docs/agents/triage-labels.md" ]
-}
-
-@test "crew-address-findings skill is installed to correct directory" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-address-findings
-
-  # Verify the skill file was created at the correct path
-  [ -f "$TEMP_DIR/.claude/skills/crew-address-findings/SKILL.md" ]
-}
-
-@test "address-code-review directory is absent after crew-address-findings install" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-address-findings
-
-  # Verify the old address-code-review directory does not exist
-  [ ! -d "$TEMP_DIR/.claude/skills/address-code-review/" ]
-}
-
-@test "uninstall leaves no empty platform directories behind" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh >/dev/null
-  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh
-  [ "$status" -eq 0 ]
-
-  # Every top-level dir any platform installs into or keeps config in, from platforms.json.
-  local dirs=() p f
-  for p in "${PLATFORMS[@]}"; do
-    for f in projectSkills userSkills configDir; do dirs+=("$(platform_field "$p" "$f" | cut -d/ -f1)"); done
-  done
-  for dir in $(printf '%s\n' "${dirs[@]}" | sort -u); do
-    if [ -d "$TEMP_DIR/$dir" ]; then
-      echo "REPO_ROOT was: $TEMP_DIR"
-      echo "--- uninstall output ---"
-      echo "$output"
-      echo "--- leftover $dir ---"
-      find "$TEMP_DIR/$dir" | head -5
-    fi
-    [ ! -d "$TEMP_DIR/$dir" ]
-  done
-  # Everything under .coding-crew/ is mechanism install owns, so nothing is left of it.
-  [ ! -e "$TEMP_DIR/.coding-crew/docs" ]
+  [ -d "$ALL/.coding-crew" ]
+  [ ! -f "$ALL/docs/agents/triage-labels.md" ]
 }
 
 # ── Windows: jq that emits CRLF ────────────────────────────────────────────────
@@ -643,106 +471,9 @@ PROBE
   [[ "$output" == *"okrc=0"* ]]
 }
 
-# ── retired tracker wrappers (.coding-crew/scripts/) ──────────────────────────
-# tracker-config.sh and mark-issue-done.sh no longer ship: every caller runs tracker/cli.mjs. A copy
-# an older install left is a second answer that can go stale, so install, --update and uninstall
-# delete each (registry.json `retired-scripts`), then the directory once nothing else is in it.
-
-# plant_retired_scripts <root> [extra-file] — the two wrappers an older install wrote.
-plant_retired_scripts() {
-  mkdir -p "$1/.coding-crew/scripts"
-  echo "# old" > "$1/.coding-crew/scripts/tracker-config.sh"
-  echo "# old" > "$1/.coding-crew/scripts/mark-issue-done.sh"
-  [ -z "${2:-}" ] || echo "mine" > "$1/.coding-crew/scripts/$2"
-}
-
-@test "registry.json ships no docs.scripts and retires both tracker wrappers" {
-  run jq -e '.docs | has("scripts") | not' "$SCRIPT_DIR/registry.json"
-  [ "$status" -eq 0 ]
-  run jq -r '."retired-scripts"[]' "$SCRIPT_DIR/registry.json"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *".coding-crew/scripts/tracker-config.sh"* ]]
-  [[ "$output" == *".coding-crew/scripts/mark-issue-done.sh"* ]]
-}
-
 @test "a fresh install into an empty repo writes no .coding-crew/scripts/" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude >/dev/null
-  [ -f "$TEMP_DIR/.coding-crew/tracker/cli.mjs" ]
-  [ ! -e "$TEMP_DIR/.coding-crew/scripts" ]
-}
-
-@test "install deletes the retired wrappers, then the emptied .coding-crew/scripts/" {
-  cd "$SCRIPT_DIR"
-  plant_retired_scripts "$TEMP_DIR"
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"removed .coding-crew/scripts/tracker-config.sh"* ]]
-  [ ! -e "$TEMP_DIR/.coding-crew/scripts" ]
-}
-
-@test "install --update deletes the retired wrappers even when every entry is up to date" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null
-  plant_retired_scripts "$TEMP_DIR"
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
-  [ "$status" -eq 0 ]
-  [ ! -e "$TEMP_DIR/.coding-crew/scripts" ]
-}
-
-@test "uninstall deletes the retired wrappers, then the emptied .coding-crew/scripts/" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null
-  printf '{"tracker": {"kind": "github"}}\n' > "$TEMP_DIR/.coding-crew/config.json"
-  plant_retired_scripts "$TEMP_DIR"
-  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh
-  [ "$status" -eq 0 ]
-  [ ! -e "$TEMP_DIR/.coding-crew/scripts" ]
-  [ -f "$TEMP_DIR/.coding-crew/config.json" ]
-}
-
-@test "uninstall --skill deletes the retired wrappers too" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null
-  plant_retired_scripts "$TEMP_DIR"
-  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill tdd
-  [ "$status" -eq 0 ]
-  [ ! -e "$TEMP_DIR/.coding-crew/scripts" ]
-}
-
-@test "install, --update and uninstall leave another file in .coding-crew/scripts/, and the directory" {
-  cd "$SCRIPT_DIR"
-  local step
-  for step in install update uninstall; do
-    plant_retired_scripts "$TEMP_DIR" notes.sh
-    case "$step" in
-      install) run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd ;;
-      update) run env TARGET_REPO="$TEMP_DIR" ./install.sh --update ;;
-      uninstall) run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh ;;
-    esac
-    echo "$step: $output"
-    [ "$status" -eq 0 ]
-    [ ! -e "$TEMP_DIR/.coding-crew/scripts/tracker-config.sh" ]
-    [ ! -e "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh" ]
-    [ "$(cat "$TEMP_DIR/.coding-crew/scripts/notes.sh")" = mine ]
-  done
-}
-
-@test "a user-level install (TARGET_REPO=\$HOME) deletes the retired wrappers there, and so do --update and uninstall" {
-  cd "$SCRIPT_DIR"
-  local home="$TEMP_DIR/home" step
-  mkdir -p "$home"
-  for step in install update uninstall; do
-    plant_retired_scripts "$home"
-    case "$step" in
-      install) run env HOME="$home" TARGET_REPO="$home" ./install.sh claude --skill tdd ;;
-      update) run env HOME="$home" TARGET_REPO="$home" ./install.sh --update ;;
-      uninstall) run env HOME="$home" TARGET_REPO="$home" ./uninstall.sh --user ;;
-    esac
-    echo "$step: $output"
-    [ "$status" -eq 0 ]
-    [ ! -e "$home/.coding-crew/scripts" ]
-  done
+  [ -f "$ALL/.coding-crew/tracker/cli.mjs" ]
+  [ ! -e "$ALL/.coding-crew/scripts" ]
 }
 
 # ── the shared tracker CLI (.coding-crew/tracker/) ─────────────────────────────
@@ -750,11 +481,10 @@ plant_retired_scripts() {
 # tracker through it without crew-afk; mechanism, so always overwritten, and removed by uninstall.
 
 @test "install of a skill without crew-afk ships the tracker CLI, which runs" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill to-issues >/dev/null
-  [ -f "$TEMP_DIR/.coding-crew/tracker/cli.mjs" ]
-  [ ! -d "$TEMP_DIR/.coding-crew/crew-afk" ]
-  cd "$TEMP_DIR"
+  local dir; dir="$(shared_installed to-issues)"
+  [ -f "$dir/.coding-crew/tracker/cli.mjs" ]
+  [ ! -d "$dir/.coding-crew/crew-afk" ]
+  cd "$dir"
   run node .coding-crew/tracker/cli.mjs prd --feature-slug x
   [ "$status" -eq 3 ]
 }
