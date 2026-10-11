@@ -1568,3 +1568,35 @@ test("an orca re-probe whose `worktree set` is refused logs nothing: the adoptio
   assert.equal(effects._logs.length, 1, effects._logs.join("\n"));
   assert.match(effects._logs[0], /^WARN orca worktree set \/wt\/alpha exit=1 orca boom$/);
 });
+
+/**
+ * orca effects that list exactly the paths in `effects.listed`. As probed live, a `worktree set`
+ * whose `--parent-worktree` orca does not list is refused with `selector_not_found`, naming the child.
+ */
+function orcaListing(...paths) {
+  const effects = adoptingOrca(0);
+  effects.listed = new Set(paths);
+  const selected = (args, flag) => args[args.indexOf(flag) + 1]?.replace(/^path:/, "");
+  const notFound = (path) => ({ code: 1, stdout: JSON.stringify({ error: { code: "selector_not_found", message: `No worktree matches path:${path}` } }), stderr: "" });
+  effects.spawnWithTimeout = async (cmd, args) => {
+    effects._calls.push([cmd, ...args]);
+    const worktree = selected(args, "--worktree");
+    if (args[0] === "worktree" && !effects.listed.has(worktree)) return notFound(worktree);
+    if (args[1] === "set" && args.includes("--parent-worktree") && !effects.listed.has(selected(args, "--parent-worktree"))) return notFound(worktree);
+    if (args[0] === "terminal" && args[1] === "create") return json({ result: { terminal: { handle: "term_x" } } });
+    return json({ result: {} });
+  };
+  return effects;
+}
+
+const sets = (effects, path) => effects._calls.filter((c) => c[2] === "set" && c[c.indexOf("--worktree") + 1] === `path:${path}`);
+
+test("adoptWorktree (orca) names a child whose parent orca does not list yet, and sets its parent once orca lists and names that", async () => {
+  const effects = orcaListing("/wt/alpha");
+  const named = await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", issue: 1, parent: "/wt/_feature" }));
+  assert.equal(named, true, effects._logs.join("\n"));
+  effects.listed.add("/wt/_feature");
+  assert.equal(await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/_feature", { title: "alpha" })), true);
+  const last = sets(effects, "/wt/alpha").at(-1);
+  assert.deepEqual(last.slice(1), ["worktree", "set", "--worktree", "path:/wt/alpha", "--display-name", "01-alpha", "--issue", "1", "--parent-worktree", "path:/wt/_feature"]);
+});
