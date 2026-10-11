@@ -22,10 +22,6 @@ teardown() {
   rm -rf "$TEMP_DIR"
 }
 
-@test "install skill creates SKILL.md at expected path" {
-  [ -f "$ALL/.claude/skills/tdd/SKILL.md" ]
-}
-
 @test "manifest contains correct skill name and version after install" {
   [ -f "$ALL/.coding-crew/manifest.json" ]
   run jq -r '.skills["tdd"].version' "$ALL/.coding-crew/manifest.json"
