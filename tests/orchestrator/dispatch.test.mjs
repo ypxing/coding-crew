@@ -344,15 +344,20 @@ test("claude: every role dispatches with no agent file present, protocol via --a
   assert.ok(!existsSync(join(root, ".claude/agents")));
 });
 
-test("claude: the coder denies sub-agents; reviewer and triage deny file edits but may spawn sub-agents", () => {
+test("claude: the coder edits and keeps Skill but no sub-agents; reviewer and triage only read but may spawn sub-agents; a plain role only reads", () => {
   const { root, promptFile } = fixture();
-  const coder = buildDispatch("claude", spec(root, promptFile)).args;
-  assert.equal(coder[coder.indexOf("--disallowedTools") + 1], "Agent");
-  for (const agent of ["crew-reviewer", "crew-triage"]) {
+  const tools = (a) => a.slice(a.indexOf("--tools") + 1, a.indexOf("ToolSearch") + 1);
+  const expected = {
+    "crew-coder": ["Bash", "Read", "Edit", "Write", "NotebookEdit", "Skill", "ToolSearch"],
+    "crew-reviewer": ["Bash", "Read", "Agent", "ToolSearch"],
+    "crew-triage": ["Bash", "Read", "Agent", "ToolSearch"],
+    "pr-writer": ["Bash", "Read", "ToolSearch"],
+  };
+  for (const [agent, list] of Object.entries(expected)) {
     const a = buildDispatch("claude", spec(root, promptFile, { agent })).args;
-    const denied = a.slice(a.indexOf("--disallowedTools") + 1, a.indexOf("--disallowedTools") + 4);
-    assert.deepEqual(denied, ["Edit", "Write", "NotebookEdit"], agent);
-    assert.ok(!a.includes("Agent"), agent);
+    assert.deepEqual(tools(a), list, agent);
+    assert.ok(!a.includes("--disallowedTools"), agent);
+    assert.equal(a[a.indexOf("--settings") + 1], '{"disableClaudeAiConnectors":true,"disableBundledSkills":true}', agent);
   }
 });
 
@@ -536,13 +541,13 @@ test("a plain role dispatches through its platform's adapter, with its prompt an
   }
 });
 
-test("claude: a plain role's prompt sits right after -p, so no variadic flag swallows it, and gets no --tools", async () => {
+test("claude: a plain role's prompt sits right after -p, so no variadic flag swallows it, and gets the read-only --tools", async () => {
   // --add-dir and --tools are variadic: a prompt after them was consumed as their values, and
   // claude exited 1 with "Input must be provided either through stdin or as a prompt argument".
   for (const model of [null, "opus"]) {
     const { rec } = await recordedDispatch("claude", { model });
     assert.equal(rec.argv[rec.argv.indexOf("-p") + 1], "the whole prompt");
-    assert.equal(rec.argv.includes("--tools"), false);
+    assert.deepEqual(rec.argv.slice(rec.argv.indexOf("--tools") + 1), ["Bash", "Read", "ToolSearch"]);
   }
 });
 
@@ -975,7 +980,7 @@ test("only crew-coder dispatches set CREW_DEFER_FULL_CHECKS, on every runtime", 
 
 test("the flag probe reads a help text that folds a flag's variant into brackets", () => {
   // claude 2.1's --help lists the file form only as `--append-system-prompt[-file]`.
-  const help = ({ exec: (cmd, args) => (args[0] === "-c" ? { code: 0, stdout: "/bin/x", stderr: "" } : { code: 0, stdout: "  --permission-mode <m>\n  --output-format <f>\n  --add-dir <d>\n  --append-system-prompt <p>\n     … also --append-system-prompt[-file], --add-dir\n", stderr: "" }) });
+  const help = ({ exec: (cmd, args) => (args[0] === "-c" ? { code: 0, stdout: "/bin/x", stderr: "" } : { code: 0, stdout: "  --permission-mode <m>\n  --output-format <f>\n  --add-dir <d>\n  --tools <t...>\n  --settings <s>\n  --append-system-prompt <p>\n     … also --append-system-prompt[-file], --add-dir\n", stderr: "" }) });
   assert.deepEqual(preflight(help, "claude", { probeFlags: true }), []);
 });
 
@@ -988,6 +993,16 @@ test("preflight with probeFlags reports a PROBLEM when --help omits a flag the a
     const out = preflight(helpWith(requiredFlags.slice(1)), platform, { probeFlags: true });
     assert.equal(out.length, 1);
     assert.match(out[0], new RegExp(requiredFlags[0]));
+  }
+});
+
+test("preflight with probeFlags reports a claude CLI whose --help lacks --tools or --settings", () => {
+  const { requiredFlags } = ADAPTERS.claude;
+  for (const flag of ["--tools", "--settings"]) {
+    const help = { exec: (cmd, args) => (args[0] === "-c" ? { code: 0, stdout: "/bin/x", stderr: "" } : { code: 0, stdout: requiredFlags.filter((f) => f !== flag).join("\n"), stderr: "" }) };
+    const out = preflight(help, "claude", { probeFlags: true });
+    assert.equal(out.length, 1, flag);
+    assert.match(out[0], new RegExp(`does not list ${flag}`));
   }
 });
 

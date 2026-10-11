@@ -10,6 +10,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { LIMIT_RE, parseJudge, pool, runClaude, shuffleLabels } from "./eval-design-skills.mjs";
+import claudeAdapter, { HEADLESS_SETTINGS } from "../orchestrator/lib/adapters/claude.mjs";
+import { ROLE_POLICY } from "../orchestrator/lib/adapters/render.mjs";
 
 const ROOT = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
 const HERE = path.join(ROOT, "scripts", "eval-reviewer-misses");
@@ -236,9 +238,11 @@ async function main() {
     console.log(`${plan.length} reviewer runs on ${o.model}, ${cases.length} judge calls on ${o.judgeModel}`);
     const stop = { hit: false, why: "" };
     const note = (r) => { if (!r.ok && LIMIT_RE.test(`${r.text}\n${r.err}`) && !stop.hit) { stop.hit = true; stop.why = (r.text || r.err).trim().split("\n")[0]; } };
-    const claude = (model, turns, inputText, cwd, extraDeny = "", { effort = null, subagents = false } = {}) => runClaude(["-p", "--model", model,
-      "--output-format", "json", "--max-turns", String(turns), ...(effort ? ["--effort", effort] : []),
-      "--disallowedTools", `${extraDeny}Edit,Write,NotebookEdit${subagents ? "" : ",Agent"}`], inputText, cwd);
+    const claude = (model, turns, inputText, cwd, flags) => runClaude(["-p", "--model", model,
+      "--output-format", "json", "--max-turns", String(turns), ...flags], inputText, cwd);
+    // A sprint reviewer's tools and settings, so the eval measures what crew-afk dispatches. `--tools` is variadic: it goes last.
+    const reviewerFlags = ["--settings", HEADLESS_SETTINGS,
+      ...claudeAdapter.policyArgs({ ...ROLE_POLICY.reviewer, subagents: o.subagents, effort: o.effort })];
 
     const runs = await pool(plan.map(({ c, v, i }) => async () => {
       const id = `${c.name}-${v}-${i}`;
@@ -250,7 +254,7 @@ async function main() {
         const prior = o.resume && fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : null;
         if (prior !== null && !prior.startsWith("RUN FAILED")) { reused = true; return prior; }
         fs.writeFileSync(path.join(outDir, `${id}.${r.name}.prompt.md`), text);
-        const res = await claude(o.model, 40, text, caseTree[c.name], "", { effort: o.effort, subagents: o.subagents });
+        const res = await claude(o.model, 40, text, caseTree[c.name], reviewerFlags);
         cost += res.cost; note(res);
         fs.writeFileSync(outFile, res.ok ? res.text : `RUN FAILED: ${res.err}\n${res.text}`);
         if (!res.ok) failure ??= (res.err || res.text).trim().split("\n")[0];
@@ -280,7 +284,7 @@ async function main() {
         const labelled = shuffleLabels(good);
         const jp = judgePrompt(rubric, c, labelled);
         fs.writeFileSync(path.join(outDir, `${c.name}.judge.prompt.md`), jp);
-        const j = await claude(o.judgeModel, 1, jp, ROOT, "Bash,Read,Grep,Glob,");
+        const j = await claude(o.judgeModel, 1, jp, ROOT, ["--disallowedTools", "Bash,Read,Grep,Glob,Edit,Write,NotebookEdit,Agent"]);
         judgeCost = j.cost; judgeOk = j.ok;
         fs.writeFileSync(path.join(outDir, `${c.name}.judge.out.md`), j.ok ? j.text : `JUDGE FAILED: ${j.err}\n${j.text}`);
         if (!j.ok && LIMIT_RE.test(`${j.text}\n${j.err}`)) {

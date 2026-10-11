@@ -12,12 +12,20 @@
     "--output-format",
     "stream-json",
     "--verbose",
+    "--settings",
+    "{\"disableClaudeAiConnectors\":true,\"disableBundledSkills\":true}",
     "--model",
     "golden-model",
     "--effort",
     "high",
-    "--disallowedTools",
-    "Agent"
+    "--tools",
+    "Bash",
+    "Read",
+    "Edit",
+    "Write",
+    "NotebookEdit",
+    "Skill",
+    "ToolSearch"
   ],
   "input": null,
   "env": {

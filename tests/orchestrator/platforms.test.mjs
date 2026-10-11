@@ -85,16 +85,17 @@ test("ROLE_POLICY declares a policy for every role with a protocol", () => {
 });
 
 // The flags each role carried per platform before ROLE_POLICY (role-args.mjs, deleted).
-// Since then: the reviewer and triage may spawn sub-agents, so claude no longer denies them Agent.
-// And claude passes the role's effort (`--effort`), which it used to drop.
-const CLAUDE_READ_ONLY = ["--effort", "high", "--disallowedTools", "Edit", "Write", "NotebookEdit"];
+// Since then: the reviewer and triage may spawn sub-agents, and claude passes the role's effort
+// (`--effort`), which it used to drop. claude's headless roles now get a `--tools` allowlist instead
+// of `--disallowedTools`; its followup goes through interactive(), pinned below.
+const CLAUDE_READ_ONLY = ["--effort", "high", "--tools", "Bash", "Read", "Agent", "ToolSearch"];
 // The feature agent (followup): it edits, takes no sub-agents, and has no effort (its CLI's default applies).
+// claude has no followup row: its interactive() derives its own denylist instead of calling policyArgs.
 const EXPECTED_POLICY_ARGS = {
   claude: {
-    coder: ["--effort", "high", "--disallowedTools", "Agent"],
+    coder: ["--effort", "high", "--tools", "Bash", "Read", "Edit", "Write", "NotebookEdit", "Skill", "ToolSearch"],
     reviewer: CLAUDE_READ_ONLY,
     triage: CLAUDE_READ_ONLY,
-    followup: ["--disallowedTools", "Agent"],
   },
   copilot: {
     coder: ["--reasoning-effort", "high"],
@@ -118,11 +119,32 @@ const EXPECTED_POLICY_ARGS = {
 
 for (const platform of Object.keys(EXPECTED_POLICY_ARGS)) {
   test(`${platform}: policyArgs(ROLE_POLICY[role]) is each role's flags`, () => {
-    for (const role of Object.keys(ROLE_POLICY)) {
+    for (const role of Object.keys(EXPECTED_POLICY_ARGS[platform])) {
       assert.deepEqual(ADAPTERS[platform].policyArgs(ROLE_POLICY[role]), EXPECTED_POLICY_ARGS[platform][role], `${platform} × ${role}`);
     }
   });
 }
+
+// Every headless claude dispatch starts without claude.ai connectors or Claude Code's bundled skills;
+// a plain role (no protocol, so no policy) only reads, as on codex.
+const CLAUDE_SETTINGS = ["--settings", '{"disableClaudeAiConnectors":true,"disableBundledSkills":true}'];
+const CLAUDE_HEADLESS_TOOLS = {
+  coder: ["--effort", "high", "--tools", "Bash", "Read", "Edit", "Write", "NotebookEdit", "Skill", "ToolSearch"],
+  reviewer: ["--effort", "high", "--tools", "Bash", "Read", "Agent", "ToolSearch"],
+  triage: ["--effort", "high", "--tools", "Bash", "Read", "Agent", "ToolSearch"],
+  plain: ["--tools", "Bash", "Read", "ToolSearch"],
+};
+
+test("claude: each headless role's argv carries its --tools allowlist and the trimming --settings, never --disallowedTools", () => {
+  for (const [role, flags] of Object.entries(CLAUDE_HEADLESS_TOOLS)) {
+    const policy = role === "plain" ? null : ROLE_POLICY[role];
+    const { args } = ADAPTERS.claude.build({ mainRoot: "/main", model: "sonnet", policy, protocolFile: role === "plain" ? null : "/p.md", prompt: "TASK" });
+    const base = ["-p", "TASK", "--permission-mode", "bypassPermissions", "--add-dir", "/main"];
+    const protocol = role === "plain" ? [] : ["--append-system-prompt-file", "/p.md"];
+    assert.deepEqual(args, [...base, ...protocol, "--output-format", "stream-json", "--verbose", ...CLAUDE_SETTINGS, "--model", "sonnet", ...flags], role);
+    assert.ok(!args.includes("--disallowedTools"), role);
+  }
+});
 
 test("every platform's expected policy flags are pinned", () => {
   assert.deepEqual(Object.keys(EXPECTED_POLICY_ARGS).sort(), [...PLATFORMS].sort());
