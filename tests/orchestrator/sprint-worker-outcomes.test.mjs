@@ -313,7 +313,7 @@ test("a coder that hits afk.limits.coder.usd is blocked at once, not retried", (
     env: { ...process.env, CREW_NO_COMMANDS: "1", CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: "", MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
   });
   assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
-  const calls = readFileSync(argsLog, "utf8").trim().split("\n").filter((l) => l.includes("--disallowedTools Agent"));
+  const calls = readFileSync(argsLog, "utf8").trim().split("\n").filter((l) => l.includes("--tools Bash Read Edit Write"));
   assert.equal(calls.length, 1, "a capped coder is never dispatched again");
   assert.match(calls[0], /--max-budget-usd 0\.5/);
   const s = state(root);

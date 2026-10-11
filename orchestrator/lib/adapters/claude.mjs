@@ -1,6 +1,9 @@
 /** claude adapter: `claude -p --output-format stream-json --verbose`. */
 import { EMPTY_RESULT_META, lastEvent, normalized, safePreview, str } from "./common.mjs";
 
+// Drops claude.ai connectors and the skills bundled with Claude Code; an older CLI ignores the keys.
+const HEADLESS_SETTINGS = JSON.stringify({ disableClaudeAiConnectors: true, disableBundledSkills: true });
+
 function usageTokens(u) {
   return (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0);
 }
@@ -13,7 +16,7 @@ export default {
   // Cost arrives in the final `result` event: a dispatch killed before it has an unknown cost.
   reportsCost: true,
   // `doctor` checks `--help` lists these.
-  requiredFlags: ["--permission-mode", "--output-format", "--append-system-prompt-file", "--add-dir"],
+  requiredFlags: ["--permission-mode", "--output-format", "--append-system-prompt-file", "--add-dir", "--tools", "--settings"],
   // A reviewer/triage tier below the coder's is warned about.
   modelTiers: { haiku: 0, sonnet: 1, opus: 2 },
   // An alias maps through the child CLI's own env, which every dispatch inherits.
@@ -25,28 +28,40 @@ export default {
 
   /**
    * bypassPermissions removes the *prompt*, not an allowlist. stream-json requires --verbose. The
-   * prompt goes right after `-p`: `--add-dir` and `--disallowedTools` are variadic and would swallow it.
+   * prompt goes right after `-p`: `--add-dir` and `--tools` are variadic and would swallow it. A plain
+   * role (no protocol, so no policy) only reads: its output is the final text.
    */
   build({ mainRoot, model, policy, protocolFile, prompt }) {
     const args = ["-p", prompt, "--permission-mode", "bypassPermissions", "--add-dir", mainRoot];
     if (protocolFile) args.push("--append-system-prompt-file", protocolFile);
-    args.push("--output-format", "stream-json", "--verbose");
+    args.push("--output-format", "stream-json", "--verbose", "--settings", HEADLESS_SETTINGS);
     if (model) args.push("--model", model);
-    if (policy) args.push(...this.policyArgs(policy));
+    args.push(...this.policyArgs(policy ?? { readOnly: true }));
     return { args };
   },
 
-  /** Prompt first, for the same variadic flags; permission prompts stay on for the human in the pane. */
+  /**
+   * Prompt first, for the same variadic flags. A human is in the pane, so permission prompts, their
+   * own tools and connectors stay on: only the policy's tools are denied.
+   */
   interactive({ mainRoot, model, protocol, policy }) {
     const argv = ["claude", protocol, "--add-dir", mainRoot];
     if (model && model !== "inherit") argv.push("--model", model);
-    if (policy) argv.push(...this.policyArgs(policy));
+    if (policy) {
+      const { readOnly, subagents, effort } = policy;
+      const denied = [...(readOnly ? ["Edit", "Write", "NotebookEdit"] : []), ...(subagents ? [] : ["Agent"])];
+      argv.push(...(effort ? ["--effort", effort] : []), ...(denied.length ? ["--disallowedTools", ...denied] : []));
+    }
     return argv;
   },
 
-  policyArgs({ readOnly, subagents, effort }) {
-    const denied = [...(readOnly ? ["Edit", "Write", "NotebookEdit"] : []), ...(subagents ? [] : ["Agent"])];
-    return [...(effort ? ["--effort", effort] : []), ...(denied.length ? ["--disallowedTools", ...denied] : [])];
+  /**
+   * An allowlist, so a tool a new Claude Code adds stays off. No Monitor, TaskStop or ScheduleWakeup:
+   * a headless run that waits on one ends its turn and is lost.
+   */
+  policyArgs({ readOnly, subagents, skills, effort }) {
+    const tools = ["Bash", "Read", ...(readOnly ? [] : ["Edit", "Write"]), ...(subagents ? ["Agent"] : []), ...(skills ? ["Skill"] : []), "ToolSearch"];
+    return [...(effort ? ["--effort", effort] : []), "--tools", ...tools];
   },
 
   resume: (id) => ["--resume", id],
