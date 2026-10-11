@@ -7,9 +7,9 @@
  * the adapters must leave these byte-identical; a deliberate change regenerates them with
  * `UPDATE_GOLDEN=1 node --test tests/orchestrator/platform-golden-dispatch.test.mjs`.
  *
- * The temp root is written as `<TMP>` and each rendered role protocol as
- * `<PROTOCOL <agent> sha256:…>`, so a fixture holds where the protocol goes, not its text, and
- * no machine-specific path. Codex asks git for the worktree's git dirs, so `cwd` is a real
+ * The temp root is written as `<TMP>` and each rendered role protocol as `<PROTOCOL <agent>>`, so
+ * a fixture holds where the protocol goes, not its text (a role wording edit leaves it unchanged),
+ * and no machine-specific path. Codex asks git for the worktree's git dirs, so `cwd` is a real
  * linked worktree.
  *
  * Also checks orchestrator/platforms.json against install.sh's platform helper and skill-dirs.mjs.
@@ -18,7 +18,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -69,8 +68,7 @@ writeFileSync(promptFile, "Implement the alpha issue.\n");
 function normalize(text, protocol, agent) {
   let out = text;
   if (protocol) {
-    const tag = `<PROTOCOL ${agent} sha256:${createHash("sha256").update(protocol).digest("hex").slice(0, 16)}>`;
-    out = out.replaceAll(JSON.stringify(protocol).slice(1, -1), tag);
+    out = out.replaceAll(JSON.stringify(protocol).slice(1, -1), `<PROTOCOL ${agent}>`);
   }
   for (const p of [TMP, rawTmp]) out = out.replaceAll(p, "<TMP>");
   return out;

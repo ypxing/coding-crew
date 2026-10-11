@@ -1,69 +1,11 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# write-commands-cache.sh — merges a model's discovery response into .coding-crew/dev-commands.json
-#
-# The sibling of discover-commands.sh: that script decides whether a model call is needed and
-# builds its prompt; this one takes the model's answer and persists it. The file is committed
-# and human-editable, so there is no staleness stamp to compute or compare — once a field
-# exists, discover-commands.sh trusts it as-is until a human clears it or passes --refresh.
-#
-# Field extraction is intentionally not a JSON parser: the prompt asks for a flat, single-line
-# object with only string/null values, so a per-key "name": "value"|null regex is enough, and
-# it still finds the fields even when the model wraps the object in prose or a markdown code
-# fence — no fence-stripping needed, since the regex just looks for the substring anywhere in
-# the response text.
-#
-# A response with none of the eight fields recognisable is treated as a failed discovery, not
-# as "everything is null": it exits non-zero and never touches any existing cache file, so a
-# bad model response cannot destroy a prior good (possibly hand-edited) cache.
-#
-# Merge, not overwrite: a caller is free to answer only the fields it actually investigated
-# (solve-issue's own Step 5 DISCOVER fallback only ever determines test/lint/typecheck; a
-# dep-install session resolving a docker-install.md credential-target cache miss only ever
-# determines that one field). A field this response is silent on keeps whatever an earlier
-# write already resolved for it; a field neither this response nor any earlier write ever
-# touched is omitted from the file entirely, rather than defaulted to null. That omission is
-# load-bearing: a key that is *present* with value `null` means "a model already looked and
-# confirmed no command exists" (trust it, never ask again) — a key that is *absent* means
-# "nobody has asked yet" (dep-install's on-demand path may still resolve it, cheaply, since
-# it is already running in a live session with file access, then write the answer back here).
-# Collapsing those two into the same "null" would make discover-commands.sh's own
-# bootstrap-once skip permanently foreclose a category nobody ever actually checked.
-#
-# Because a response is authoritative for whatever field it does name, a full re-discovery
-# (discover-commands.sh --refresh, which always asks about all eight) is expected to overwrite
-# every field it names, including turning a previously-cached command back to null if the
-# model no longer finds one. Callers that only ever investigate a subset of fields must not
-# name the fields they did not check — naming one as null when it was never actually asked
-# would overwrite a real cached answer with a false "confirmed absent".
-#
-# install is the fourth field, consumed by ensure-deps.sh in place of its own mechanical
-# Makefile-target/lockfile heuristic when present — see discover-commands.sh's header comment
-# for why that script never reads CLAUDE.md itself.
-#
-# env is the fifth field, consumed the same way by ensure-env.sh in place of its own mechanical
-# .env.example-or-empty convention.
-#
-# credential_target is the sixth field: the full command (if any) that runs the Makefile target
-# whose recipe generates package-manager credential config files (.npmrc, pip.conf,
-# .cargo/credentials.toml, …) from a template or env vars — same shape as install/env (a
-# runnable command, not a bare target name), so ensure-env.sh can eval it directly. Determining
-# it the first time still needs a model reading Makefile comments/prose — that judgment does not
-# reduce to a regex — but nothing requires re-asking on every docker-install run once it has been
-# cached: ensure-deps.sh forwards a cached value to docker-install.sh's own --credential-target
-# flag, which passes it straight to ensure-env.sh.
-#
-# coverage is the seventh field: the local command that produces a test coverage report,
-# consumed by the add-tests skill in place of asking a model to guess one from scratch on
-# every run. Same optional/absent-vs-null semantics as the five fields above.
-#
-# integration is the eighth field: the command (if any) that runs a real dependency-backed
-# integration test tier, as distinct from a tier that only mocks the dependency away — also
-# consumed by the add-tests skill, to route external-dependency gap-fix issues to the real
-# tier instead of a mocked one. Same optional/absent-vs-null semantics as the other fields.
-#
-# Usage: bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file <path>
+# write-commands-cache.sh --response-file <path> — merges a model's discovery response into
+# .coding-crew/dev-commands.json. No recognisable field is a failed discovery: exit 1, cache untouched.
+# A field the response omits keeps its value, and one never written stays absent. Absent means
+# "nobody asked yet"; null means "a model looked and found none", which is never re-asked, so a
+# caller must not name a field it did not check.
 
 FIELDS=(test lint typecheck install env credential_target coverage integration)
 
@@ -97,10 +39,8 @@ fi
 
 RESPONSE_TEXT=$(cat "$RESPONSE_FILE")
 
-# _extract_field <text> <key> — prints the raw value token for "<key>": <value> found anywhere
-# in <text>: either a quoted string (with its quotes) or the bare word null. Empty output means
-# the key was not found at all in that text — the caller distinguishes "not found" from "found
-# and null" itself, since they mean different things (see the merge comment above).
+# _extract_field <text> <key> — the raw value token for "<key>" anywhere in <text> (a quoted string
+# or null), so prose or a code fence around the object does not matter; empty when not found.
 _extract_field() {
   local text="$1" key="$2"
   printf '%s\n' "$text" \
@@ -124,17 +64,8 @@ if [ "$ANY_FOUND" -eq 0 ]; then
   exit 1
 fi
 
-# MAIN_ROOT resolution — must land on the *shared* main checkout even when this script runs
-# from inside a crew-afk worktree (solve-issue's own DISCOVER fallback, Step 5, can invoke
-# this from a worker's worktree cwd when the sprint-level cache never got written): prefer
-# the $MAIN_ROOT env var the orchestrator already exports to every dispatch (dispatch.mjs),
-# then fall back to _main_root_of's --git-common-dir trick (mirrors
-# verify-worktree.sh's own helper of the same name), which resolves the main worktree's root
-# from any linked worktree without needing an env var at all. `git rev-parse --show-toplevel`
-# alone — the prior behaviour — returns the *current* worktree's own root, which is wrong
-# from inside a linked worktree: the cache would be written where no later reader (this
-# script's own USE_CACHE fast path, verify-worktree.sh, another issue's solve-issue) ever
-# looks, and would vanish with the worktree besides.
+# Must land on the shared main checkout even from a worker's worktree, where
+# `git rev-parse --show-toplevel` returns the worktree's own root and the cache would vanish with it.
 _main_root_of() {
   local dir="$1" common
   common=$(cd "$dir" && git rev-parse --git-common-dir 2>/dev/null) || return 1

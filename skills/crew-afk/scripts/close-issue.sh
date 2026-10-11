@@ -1,36 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# close-issue.sh — mechanical issue close: rewrite Status line and move file
-#
-# Usage: close-issue.sh <issue-file-path>                 # tracker: local
-#        close-issue.sh <issue-number> <branch>            # tracker: github — the
-#        branch is required so receipts.sh can check the ac receipt without a file
-#        path to derive a feature/slug from (see receipts.sh's own comment on this).
-#
-# What it does:
-#   1. Validates the issue file exists.
-#   2. Requires an acceptance-criteria receipt for *this issue's own slug*
-#      (see receipts.sh). Without it the issue is not closed. This is what stops
-#      an issue being closed off a sibling issue's verified branch — observed in
-#      a real sprint, where one dispatch produced two "merged" issues.
-#   3. Rewrites the `Status:` line to `Status: done` and ticks every remaining
-#      `- [ ]` under `## Acceptance criteria` / `## Cross-cutting Requirements`
-#      (under tracker: github, ticks them in the issue body; status is a label there).
-#   4. Moves the file from .../issues/open/ to .../issues/done/.
-#
-# Why the check-off lives here
-#   It used to be the worker's job (solve-issue step 7), which made it
-#   self-attestation: the tracker CLI's mark-done refuses to close while a `- [ ]` remains
-#   (exit 4), a gate any worker defeats by ticking its own boxes — the exact thing
-#   the reviewer-owned acceptance-criteria gate exists to prevent. The tick is
-#   bookkeeping *about* a close, so it belongs to whatever performs the close, and
-#   it happens only after the receipt gate below has passed.
-#
-# What it does NOT do:
-#   - Verify acceptance criteria (that is a separate agent step, run pre-merge, before this).
-#     This only demands the receipt that step leaves behind.
-#   - Any judgment or content analysis.
+# close-issue.sh — close an issue once its own acceptance-criteria receipt exists (receipts.sh):
+# Status: done, every criterion ticked, file moved to done/ (github: body ticked, label swapped).
+# Usage: close-issue.sh <issue-file-path>          # tracker: local
+#        close-issue.sh <issue-number> <branch>    # tracker: github (the receipt is keyed by branch)
+# The receipt for this issue's own slug stops a close off a sibling's branch. Ticking lives here,
+# after the gate, because a worker ticking its own boxes would defeat mark-done's guard.
 
 ISSUE_PATH="${1:-}"
 
@@ -39,14 +15,8 @@ if [ -z "$ISSUE_PATH" ]; then
   exit 1
 fi
 
-# tick_criteria [status] — stdin → stdout: every `- [ ]` under `## Acceptance criteria` /
-# `## Cross-cutting Requirements` becomes `- [x]`; with a status, the `Status:` line is
-# rewritten to it too. Both backends tick through this one filter.
-#
-# Section scoping matches the tracker CLI's mark-done guard exactly, so the two agree on
-# which boxes are criteria: only those under an acceptance-criteria or
-# cross-cutting-requirements heading. A `- [ ]` in `## What to build` or `## Notes`
-# is somebody's note, not a criterion, and is left alone.
+# tick_criteria [status] — stdin → stdout: `- [ ]` under Acceptance criteria / Cross-cutting
+# Requirements (mark-done's own scoping) becomes `- [x]`; with a status, the Status: line too.
 tick_criteria() {
   awk -v status="${1:-}" '
     status != "" && /^Status:[ 	]*/            { print "Status: " status; next }
@@ -58,10 +28,7 @@ tick_criteria() {
   '
 }
 
-# ─── tracker backend: local (file path) or github (issue number) ────────────
-#
-# Which backend is the tracker CLI's answer (tracker-cli.sh, beside this script); no CLI, no
-# node or an invalid config is an error, never a silent local.
+# No CLI, no node or an invalid config is an error, never a silent local.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN_ROOT="${MAIN_ROOT:-.}"
 # shellcheck source=tracker-cli.sh
@@ -69,11 +36,7 @@ MAIN_ROOT="${MAIN_ROOT:-.}"
 resolve_tracker_cli "$MAIN_ROOT" || exit 1
 
 if [ "$TRACKER_KIND" = "github" ]; then
-  # ─────────────────────────── github backend ────────────────────────────
-  #
-  # The argument is a GitHub issue number here, not a file path. Who is allowed
-  # to trigger this close is unchanged — the same ac-receipt gate as local, keyed
-  # on the same argument — only how the close itself happens differs.
+  # The argument is an issue number here; the same ac-receipt gate applies.
   ISSUE_NUMBER="$ISSUE_PATH"
   case "$ISSUE_NUMBER" in
     ''|*[!0-9]*)
@@ -83,13 +46,9 @@ if [ "$TRACKER_KIND" = "github" ]; then
 
   RECEIPTS_SCRIPT="$SCRIPT_DIR/receipts.sh"
   _trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" ${FEATURE_SLUG:+--feature-slug "$FEATURE_SLUG"} "$@" 2>/dev/null || true; return 0; }
-  # CREW_RECEIPTS=off is the same escape hatch receipts.sh's own receipts_enabled() grants
-  # (see its header comment) — mirrored here, not just left to receipts.sh, because a
-  # missing branch arg must not become a hard error when no check is going to run at all.
+  # Mirrors CREW_RECEIPTS=off, so a missing branch arg is no error when no check will run.
   if [ -f "$RECEIPTS_SCRIPT" ] && [ "${CREW_RECEIPTS:-on}" != "off" ]; then
-    # No issue file path to derive a feature/slug from (see receipts.sh's own comment on
-    # this) — the branch is the one thing both the write (runHousekeeping, pre-merge) and
-    # this check agree on, so receipts.sh splits it the same way for both.
+    # The branch is what both the receipt write and this check split into feature/slug.
     BRANCH_ARG="${2:-}"
     if [ -z "$BRANCH_ARG" ]; then
       echo "ERROR: tracker: github requires the branch as a second argument: $0 <issue-number> <branch>" >&2
@@ -98,9 +57,7 @@ if [ "$TRACKER_KIND" = "github" ]; then
     bash "$RECEIPTS_SCRIPT" check ac --branch "$BRANCH_ARG"
   fi
 
-  # Tick the criteria in the issue body, as the local backend ticks the file. Fetched
-  # live, so a human's edit since listFeatureIssues is kept. A failed fetch or edit only warns:
-  # the ticks are bookkeeping, and the label swap below is what marks the issue done.
+  # Fetched live, so a human's edit is kept. A failure only warns: the label swap marks the close.
   if BODY="$(gh issue view "$ISSUE_NUMBER" --json body --jq .body)"; then
     TICKED="$(printf '%s\n' "$BODY" | tick_criteria)"
     if [ "$TICKED" != "$BODY" ]; then
@@ -114,11 +71,8 @@ if [ "$TRACKER_KIND" = "github" ]; then
     echo "WARNING: could not fetch issue #$ISSUE_NUMBER to tick its criteria" >&2
   fi
 
-  # "Done" here is merged into the feature branch, not shipped, so the issue stays open,
-  # labelled awaiting-merge: the feature PR's `Closes #n` closes it on merge. That label
-  # swap is the tracker CLI's mark-done; --force because criteria were already re-verified
-  # pre-merge (the receipt above is that fact) and this sprint's own .orchestrated marker
-  # would otherwise refuse it.
+  # Merged into the feature branch is not shipped: the issue stays open, awaiting-merge, until the
+  # PR's Closes keyword. --force: the receipt is the re-verification, and .orchestrated would refuse.
   node "$TRACKER_CLI" mark-done "$ISSUE_NUMBER" --force --main-root "$MAIN_ROOT" >/dev/null
 
   _trace CLOSE "issue=$ISSUE_NUMBER"
@@ -127,14 +81,9 @@ if [ "$TRACKER_KIND" = "github" ]; then
   exit 0
 fi
 
-# ─────────────────────────── local backend (byte-identical to today) ────────
 
-# finalize_issue — mark an issue file closed: Status: done, plus every criterion ticked.
-#
-# One awk pass, written to a temp file and moved into place. `sed -i` is not portable
-# (GNU takes a bare -i, BSD/macOS reads the next argument as a backup suffix, and
-# `-i''` does not help — the shell strips the empty quotes), and one pass means the
-# file is never observable half-rewritten.
+# finalize_issue — Status: done plus every criterion ticked, in one awk pass to a temp file: `sed -i`
+# is not portable, and the file is never observable half-rewritten.
 finalize_issue() {
   local file="$1"
   local tmp="${file}.tmp.$$"
@@ -146,11 +95,8 @@ finalize_issue() {
 }
 
 if [ ! -f "$ISSUE_PATH" ]; then
-  # A worker that closed the issue itself, or a re-run of this step, leaves the file
-  # in the sibling done/ directory. That is the desired end state, so report it and
-  # succeed rather than aborting the orchestrator mid-pipeline. No receipt is
-  # demanded here: there is no state left to change, so refusing would only make
-  # re-runs fail.
+  # Already in done/ (a re-run): the desired end state, so succeed. No receipt is demanded, as there
+  # is no state left to change.
   _open_dir=$(dirname "$ISSUE_PATH")
   _already="$(dirname "$_open_dir")/done/$(basename "$ISSUE_PATH")"
   if [ -f "$_already" ]; then
@@ -170,11 +116,9 @@ if [ -f "$RECEIPTS_SCRIPT" ]; then
   bash "$RECEIPTS_SCRIPT" check ac --issue "$ISSUE_PATH"
 fi
 
-# Status: done, and every criterion ticked. Only reached once the receipt gate above
-# has passed — a refused close leaves the file exactly as the worker left it.
+# Only reached past the receipt gate: a refused close leaves the file as the worker left it.
 finalize_issue "$ISSUE_PATH"
 
-# Move to sibling done/ directory
 OPEN_DIR=$(dirname "$ISSUE_PATH")
 DONE_DIR=$(dirname "$OPEN_DIR")/done
 mkdir -p "$DONE_DIR"

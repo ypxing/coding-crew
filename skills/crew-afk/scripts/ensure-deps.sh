@@ -8,42 +8,12 @@ set -uo pipefail
 #
 #   --stem names this issue's own dispatch subdirectory, like its other dispatch files (the slug when absent).
 #
-# Output — exactly one `DEPS:` line, always exit 0:
-#
-#   DEPS: present            dep dir already there (inherited via .worktreeinclude, or a prior run)
-#   DEPS: installed <cmd>
-#   DEPS: none               no manifest / no install method found — not a failure
-#   DEPS: docker             USE_DOCKER, but docker-install.sh found nothing it can do (exit 2), or
-#                            the MAIN_ROOT call (which only records the mode) → left to the worker's dep-install
-#   DEPS: docker-present     USE_DOCKER, and the volumes this worktree's lockfiles name already hold the install
-#   DEPS: docker-installed <cmd>
-#   DEPS: failed <cmd> (exit N) (see <log>)   the install failed — host or docker alike
-#   DEPS: skipped            CREW_DEPS=off
-#
-# Why this is a script and not a step in a worker's skill
-#   dep-install is failure-triggered, which is right for a human's `solve-issue` run: their
-#   worktree usually already has deps, so an unconditional skill read plus an install per
-#   issue buys nothing. A sprint is the opposite case — the orchestrator creates every
-#   worktree fresh, and one consumer of the deps is not a model at all. verify-worktree.sh
-#   runs `npm test` / `pytest` in the worktree and has no dep recovery path, because a gate
-#   cannot invoke a skill. Provisioning that a gate depends on has to be mechanism.
-#
-#   There is no judgement on the host path, so there is nothing here for a model to decide:
-#   this script owns no package-manager knowledge of its own and delegates every install
-#   decision to dep-install's own detect-mode.sh / host-install.sh, or — when one is cached —
-#   to command discovery's own "install" answer (see step 1b, `_cached_install_command`),
-#   which is the one place a documented CLAUDE.md/AGENTS.md/Makefile override reaches this
-#   script without it ever reading those files itself. Generating the docker override
-#   (compose file, volumes) is still judgement docker-install.sh owns; forwarding the cached
-#   override as `--install-cmd` is not — it is the same mechanical hand-off step 5 does on
-#   the host path.
-#
-# Never exits non-zero
-#   A repo with no dependency step must not stall a sprint, and what a failed install
-#   means is not this script's decision: it reports `DEPS: failed` and the orchestrator
-#   acts on it — a per-issue failure stops that issue before its coder is dispatched, a baseline's
-#   stops the run; the sprint-level warm-up's host failure stops nothing, since every issue
-#   installs again on its own.
+
+# Prints one `DEPS:` line and exits 0 on every install outcome: present | installed <cmd> | none |
+# docker (left to the worker's dep-install) | docker-present | docker-installed <cmd> |
+# failed <cmd> (exit N) (see <log>) | skipped (CREW_DEPS=off); the orchestrator decides what a
+# failure means. A gate cannot invoke a skill, so what verify-worktree.sh depends on is mechanism
+# here; every install decision is delegated to dep-install's scripts or the cached "install".
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=main-root.sh
@@ -62,8 +32,7 @@ _usage() {
 while [ $# -gt 0 ]; do
   case "$1" in
     --dir|--slug|--stem|--feature-slug|--timeout)
-      # Guard before reading $2: under `set -u` a bare flag would abort with an
-      # unbound-variable error instead of the usage message.
+      # Guard: under `set -u` a bare flag would abort on an unbound variable.
       if [ $# -lt 2 ]; then echo "ERROR: $1 requires a value" >&2; _usage; exit 1; fi
       case "$1" in
         --dir) DIR="$2" ;;
@@ -79,19 +48,15 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# A usage error is still an error: exiting 0 on a typo'd flag would report "deps are fine"
-# about a directory nobody looked at. The always-exit-0 rule is about install *outcomes*.
+# A usage error still exits non-zero: the always-exit-0 rule is about install outcomes.
 if [ -z "$DIR" ]; then echo "ERROR: --dir <path> is required" >&2; _usage; exit 1; fi
 if [ ! -d "$DIR" ]; then echo "ERROR: directory does not exist: $DIR" >&2; exit 1; fi
 DIR="$(cd "$DIR" && pwd -P)"
 
 TRACE_SCRIPT="$SELF_DIR/trace.sh"
 
-# _sprint_dir — where this sprint's dispatch markers live, or empty outside a sprint.
-# The orchestrator's children inherit SPRINT_DIR. A hand run names its sprint with
-# --feature-slug (no repo-wide pointer to a "current" sprint exists: several run in one repo),
-# and one that names neither exits 2 — except under CREW_ORCHESTRATED=1, which a dispatched
-# agent's stray call inherits and which trace.sh treats the same way.
+# _sprint_dir — inherited SPRINT_DIR, else --feature-slug's; empty outside a sprint. --slug with
+# neither exits 2 unless CREW_ORCHESTRATED=1 (a dispatched agent's stray call).
 _sprint_dir() {
   if [ -n "${SPRINT_DIR:-}" ]; then printf '%s' "$SPRINT_DIR"; return; fi
   if [ -n "$FEATURE_SLUG_ARG" ]; then
@@ -112,8 +77,7 @@ if [ -n "$SLUG" ] && [ -n "$MARKER_DIR" ]; then
   MARKER="$MARKER_DIR/dispatch/${STEM:-$SLUG}/deps"
 fi
 
-# _report <outcome-line> <marker-suffix> — the single exit point.
-# Prints the one DEPS: line, records the marker cache, traces, and exits 0.
+# _report <outcome-line> <marker-suffix> — the single exit point: prints, caches, traces, exits 0.
 _report() {
   local line="$1" kind="${2:-}"
   echo "DEPS: $line"
@@ -131,16 +95,8 @@ _report() {
   exit 0
 }
 
-# _debug_log_path — where a failed command's full output is persisted.
-#
-# Only the one DEPS: line above survives into whatever the caller does with this
-# script's output (the orchestrator's own log, the trace log): stderr — the tail printed
-# next to each failure below — is captured by the caller and thrown away (see
-# Sprint.installDeps / runWorker in orchestrator/lib). Without a file on disk, "failed npm ci
-# (exit 1)" is all that is ever left to debug from. Reusing the per-issue
-# marker path when one exists keeps the log beside the .ok/.skip marker it explains;
-# otherwise it falls back to the target directory's own .scratch, so a standalone run
-# (no sprint, no --slug) still leaves something on disk to point at.
+# _debug_log_path — the caller discards stderr, so a failed command's full output persists here:
+# beside the marker in a sprint, else the target directory's .scratch.
 _debug_log_path() {
   if [ -n "$MARKER" ]; then
     printf '%s' "$MARKER.log"
@@ -149,9 +105,6 @@ _debug_log_path() {
   fi
 }
 
-# _docker_log_path — where a failed docker install's full output is saved: under the sprint dir,
-# beside the other dispatch files, named for the stem it ran for (outside a sprint, the target
-# directory's own .scratch).
 _docker_log_path() {
   local stem="${STEM:-${SLUG:-install}}"
   if [ -n "$MARKER_DIR" ]; then
@@ -161,41 +114,23 @@ _docker_log_path() {
   fi
 }
 
-# _persist_log <dest> <source-file> — best-effort copy, mkdir -p first. Never fails the
-# caller: a log that could not be written is no worse than the tail already on stderr.
-#
-# Stamped with the run's UTC time: this file is overwritten by the next failure at the same
-# path, not appended to, so a reader who opens it later has no other way to tell a fresh
-# failure from one left over from a previous round.
+# _persist_log <dest> <src> — best-effort, never fails the caller. Stamped with UTC time: the file
+# is overwritten by the next failure, so the stamp tells a fresh failure from a stale one.
 _persist_log() {
   local dest="$1" src="$2"
   mkdir -p "$(dirname "$dest")" 2>/dev/null || return 0
   { printf '--- %s ---\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"; cat "$src"; } > "$dest" 2>/dev/null || true
 }
 
-# ─── 1. escape hatch ─────────────────────────────────────────────────────────
-# Mirrors CREW_RECEIPTS=off: an operator debugging the pipeline can take one
-# mechanism out of it without editing the orchestrator.
 if [ "${CREW_DEPS:-on}" = "off" ]; then
   _report "skipped"
 fi
 
-# ─── 1b. the discovered install override ──────────────────────────────
-# $MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json's "install" field — cached once
-# (bootstrap) by discover-commands.sh / write-commands-cache.sh, before this script's own
-# MAIN_ROOT call, from a documented CLAUDE.md/AGENTS.md/Makefile override this script would
-# otherwise never see: it deliberately never reads those files itself (see the top-of-file
-# comment). Resolved this early
-# — ahead of the presence guard at step 3 — because an explicit override also stands in for that
-# guard's manifest check: a source that documents its own install command has a dependency step
-# whether or not this script recognises the ecosystem's usual manifest file.
-#
-# A missing cache, a missing file, or a cached `null` all mean the same thing here: nothing to
-# override, fall through to the mechanical detection below unchanged.
+# Resolved before the presence guard: a documented install command is a dependency step even when
+# no known manifest exists. A missing cache or a `null` means no override.
 MAIN_ROOT_EFFECTIVE="${MAIN_ROOT:-}"
 if [ -z "$MAIN_ROOT_EFFECTIVE" ]; then
-  # The main checkout, not $DIR's own worktree: the cache lives there, and the stale-link check
-  # below compares $DIR's manifests against it.
+  # The main checkout: the cache lives there, and the stale-link check compares against it.
   MAIN_ROOT_EFFECTIVE="$(main_root "$DIR" || echo "$DIR")"
 fi
 _cached_install_command() {
@@ -207,14 +142,7 @@ _cached_install_command() {
 }
 CACHED_INSTALL="$(_cached_install_command)"
 
-# _cached_credential_target — the same cache's "credential_target" field: the full command (if
-# any) that runs the Makefile target whose recipe generates package-manager credential config
-# files. Forwarded to docker-install.sh's own --credential-target flag (step 4, docker mode
-# only — the host path has no credential-file generation step of its own to override). A
-# missing cache, missing field, or cached `null` all mean "no override", the same as install:
-# this script never scans Makefile comments for it itself, docker-install.sh keeps calling
-# ensure-env.sh with no --credential-target, and ensure-env.sh's own template-expansion
-# fallback still applies.
+# _cached_credential_target — forwarded to docker-install.sh only; missing or `null` is no override.
 _cached_credential_target() {
   local cache="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json"
   [ -f "$cache" ] || return 0
@@ -224,23 +152,15 @@ _cached_credential_target() {
 }
 CACHED_CREDENTIAL_TARGET="$(_cached_credential_target)"
 
-# _merge_mode_cache <docker|host> [service] — writes detect-mode.sh's verdict (and, in docker
-# mode, detect-service.sh's own verdict on which compose service to use) into the same committed
-# cache, alongside install/env/credential_target, so both are trusted indefinitely instead of
-# re-derived every sprint. Mirrors write-commands-cache.sh's own field-preserving technique
-# (grep out each known field's raw token, rebuild the JSON body, atomic mktemp+mv) rather than
-# calling that script directly: it has no path reachable from here — unlike dep-install's
-# scripts, it gets no platform-neutral install copy, only one buried in each of crew-afk's and
-# solve-issue's own per-platform skill directories.
+# _merge_mode_cache <docker|host> [service] — record the mode (and service) in the committed cache
+# so later sprints trust it. Rebuilds the JSON like write-commands-cache.sh rather than calling it:
+# that script has no install path reachable from here.
 _merge_mode_cache() {
   local mode_val="$1" service_val="${2:-}" cache="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json" old=""
-  # Mirrors write-commands-cache.sh's FIELDS (test lint typecheck install env credential_target
-  # coverage integration) plus install_mode/docker_service — keep this list in sync if a field
-  # is ever added/removed there.
+  # write-commands-cache.sh's FIELDS — keep in sync.
   local fields=(test lint typecheck install env credential_target coverage integration)
   [ -f "$cache" ] && old="$(cat "$cache" 2>/dev/null || true)"
-  # An empty detection this call (e.g. no Makefile, or no recipe named a real service) must not
-  # erase a service a prior call already found — fall back to whatever is already cached.
+  # An empty detection must not erase a service a prior call found.
   if [ -z "$service_val" ]; then
     service_val="$(printf '%s' "$old" | grep -o '"docker_service"[[:space:]]*:[[:space:]]*"[^"]*"' \
       | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/' || true)"
@@ -262,24 +182,16 @@ _merge_mode_cache() {
   mv "$tmp" "$cache" 2>/dev/null || rm -f "$tmp"
 }
 
-# ─── 2. resolve dep-install's scripts ────────────────────────────────────────
-# No install logic lives here. host-install.sh stays the only place that knows package
-# managers, so this only has to find it — and it must find it without knowing which of the
-# four platform skill directories a consuming repo installed, which is why install.sh also
-# ships one platform-neutral copy at .coding-crew/dep-install/scripts.
-#
-# Resolved ahead of the presence guard (used to be step 3) so the MAIN_ROOT check below
-# can run detect-mode.sh before that guard gets a chance to fire.
+# No install logic lives here: host-install.sh is the only place that knows package managers.
+# install.sh also ships a platform-neutral copy at .coding-crew/dep-install/scripts.
 _script_roots() {
   local root
   [ -n "${MAIN_ROOT:-}" ] && printf '%s\n' "$MAIN_ROOT"
   root=$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || true)
   [ -n "$root" ] && printf '%s\n' "$root"
-  # The repo this script was installed into, whether that is .../.pi/skills/crew-afk/scripts
-  # or this source repo's skills/crew-afk/scripts.
+  # The repo this script was installed into (.../.pi/skills/crew-afk/scripts, or this source repo).
   printf '%s\n' "$(cd "$SELF_DIR/../../.." && pwd -P)"
   printf '%s\n' "$(cd "$SELF_DIR/../.." && pwd -P)"
-  # A user-level install (TARGET_REPO=$HOME), after every project candidate.
   [ -n "${HOME:-}" ] && printf '%s\n' "$HOME"
 }
 
@@ -290,8 +202,7 @@ _find_dep_scripts() {
     fi
     return 0
   fi
-  # A sprint resolved its install once (sprint.env's CREW_INSTALL_DIR): that copy, no search.
-  # The list below is only for a hand run with no sprint.env.
+  # A sprint resolved its install once (CREW_INSTALL_DIR); the search below is for hand runs.
   if [ -n "${CREW_INSTALL_DIR:-}" ] && [ -f "$CREW_INSTALL_DIR/dep-install/scripts/detect-mode.sh" ]; then
     printf '%s' "$CREW_INSTALL_DIR/dep-install/scripts"
     return 0
@@ -319,25 +230,14 @@ if [ -z "$DEP_SCRIPTS" ]; then
   _report "none" skip
 fi
 
-# ─── 2b. the docker verdict, ahead of the presence guard ─────────────────────
-# A host-side node_modules being present says nothing about the docker volumes: those are named
-# by this directory's own lockfiles and filled by docker-install.sh alone. The presence guard
-# below exists to say "nothing to do", which is true on the host path but not here — a stale host
-# copy (predating .worktreeinclude excluding it, or a contributor's own local install) would make
-# it return `present` and the docker install would never run. So docker mode skips the guard, for
-# the MAIN_ROOT call and every worktree call alike.
+# Docker volumes are named by the lockfiles and filled only by docker-install.sh, so a host-side
+# node_modules says nothing about them: docker mode skips the presence guard.
 MODE="$(bash "$DEP_SCRIPTS/detect-mode.sh" --project-root "$DIR" 2>/dev/null || echo USE_HOST)"
 SKIP_PRESENCE_GUARD=0
 [ "$MODE" = "USE_DOCKER" ] && SKIP_PRESENCE_GUARD=1
 
-# ─── 3. the presence guard ───────────────────────────────────────────────────
-# The real guard, and the reason a resumed sprint and a .worktreeinclude repo cost
-# nothing: if the ecosystem's dep dir is already in $DIR there is nothing to do, and no
-# marker, no round counter and no cache is consulted to establish that.
-#
-# One row per ecosystem: "<dep dir>:<manifest> <manifest> …". A manifest with no dep dir
-# means an install is worth attempting; no manifest at all means this repo has no
-# dependency step.
+# A present dep dir needs no install, so a resumed sprint or a .worktreeinclude repo costs nothing.
+# One row per ecosystem: "<dep dir>:<manifest> …"; no manifest at all means no dependency step.
 if [ "$SKIP_PRESENCE_GUARD" -eq 0 ]; then
 _ECOSYSTEMS=(
   "node_modules:package-lock.json pnpm-lock.yaml yarn.lock bun.lockb package.json"
@@ -366,9 +266,8 @@ for _row in "${_ECOSYSTEMS[@]}"; do
     [ -e "$DIR/$_m" ] || continue
     HAS_MANIFEST=1
     if [ -d "$DIR/$_depdir" ]; then
-      # A dep dir linked in from the main checkout (.worktreeinclude) was installed for the
-      # branch the main checkout is on, which is no longer this sprint's feature branch: when a
-      # manifest here differs from the main checkout's, the link is stale — drop it and install.
+      # A dep dir linked from the main checkout was installed for that checkout's branch; when a
+      # manifest here differs from it, the link is stale — drop it and install.
       if [ -L "$DIR/$_depdir" ] && _manifests_differ_from_main "$_manifests"; then
         rm -f "$DIR/$_depdir"
       else
@@ -379,25 +278,20 @@ for _row in "${_ECOSYSTEMS[@]}"; do
   done
 done
 
-# A Makefile install/deps target is a dependency step even with no manifest file — it is
-# the first thing host-install.sh looks for, so it must not be filtered out before it.
+# A Makefile install/deps target is a dependency step: host-install.sh looks for it first.
 if [ "$HAS_MANIFEST" -eq 0 ] && [ -f "$DIR/Makefile" ] &&
    grep -qE '^(install|deps)[[:space:]]*:' "$DIR/Makefile" 2>/dev/null; then
   HAS_MANIFEST=1
 fi
 
-# Go and .NET vendor nothing by default: there is no dep dir to look for, so the presence
-# guard cannot short-circuit them and `go mod download` is left to be the idempotent thing
-# it already is.
+# Go and .NET vendor nothing, so there is no dep dir to find; their install is idempotent.
 if [ "$HAS_MANIFEST" -eq 0 ]; then
   for _m in go.sum go.mod pom.xml; do
     [ -e "$DIR/$_m" ] && { HAS_MANIFEST=1; break; }
   done
 fi
 
-# An explicit, documented install override (step 1b) means there is a dependency step even
-# when no ecosystem's usual manifest file is present — a custom bootstrap script has no
-# lockfile for this heuristic to find, which is exactly the case the override exists for.
+# A documented install override is a dependency step even with no manifest (a custom bootstrap).
 if [ "$HAS_MANIFEST" -eq 0 ] && [ -n "$CACHED_INSTALL" ]; then
   HAS_MANIFEST=1
 fi
@@ -406,55 +300,32 @@ if [ "$HAS_MANIFEST" -eq 0 ]; then
   _report "none" skip
 fi
 
-# ─── 3b. the marker cache ─────────────────────────────────────────────────────
-# `none` and `failed` are the two outcomes that would otherwise be re-probed every round
-# for the same worktree — one of them runs a full install command to learn nothing new.
-# Cache them. The guard above has already run, so a worktree that has since acquired its
-# deps reports `present` regardless of what this file says.
+# `none` and `failed` are cached so a round does not re-probe or re-run a failing install. The
+# guard above already ran, so a worktree that has since got its deps still reports `present`.
 if [ -n "$MARKER" ] && [ -f "$MARKER.skip" ]; then
   _report "$(cat "$MARKER.skip" 2>/dev/null || echo none)"
 fi
 fi  # SKIP_PRESENCE_GUARD
 
-# ─── 4. docker mode ──────────────────────────────────────────────────────────
-# The judgement half (env/credential setup, choosing a service or command by hand, and
-# recovering from an install failure) stays with the dep-install skill. What is left has no
-# judgement in it: generating the override and running the ecosystem's own install command inside
-# the container are deterministic, so docker-install.sh (dep-install's docker-mode sibling of
-# host-install.sh) does it here.
-#
-# The dependency volumes are named by a hash of the lockfiles (gen-override.sh), so each worktree
-# has the volumes its own lockfiles describe, and docker-install.sh installs into them only when
-# they lack their completion stamp. Every worktree call therefore runs it: a volume another
-# worktree or sprint already filled costs one container start and reports `docker-present`.
+# Generating the override and installing in the container are deterministic, so docker-install.sh
+# does them here; recovering from a failure stays with the dep-install skill. Volumes are keyed by
+# lockfile hash, so every worktree call runs it (`docker-present` when already filled).
 if [ "$MODE" = "USE_DOCKER" ]; then
-  # Persist the verdict into *this* directory's local git config — the exact key
-  # detect-mode.sh checks first and solve-issue Sec.2 already reads. Without this, a
-  # verdict reached only via detect-mode.sh's Makefile heuristic (no explicit
-  # agent.install-mode set) is never written anywhere: the worker's own up-front check sees
-  # neither signal, silently concludes host mode, and skips dep-install entirely — the worktree
-  # never gets its deps at all, in any mode.
+  # The key detect-mode.sh checks first: without it a verdict reached by the Makefile heuristic is
+  # never written, and the worker's own check concludes host mode and never installs.
   git -C "$DIR" config --local agent.install-mode docker 2>/dev/null || true
 
   if [ -z "$SLUG" ]; then
-    # The one MAIN_ROOT call records the mode and installs nothing. It lands in
-    # .coding-crew/dev-commands.json's "install_mode" field (and the service, when the Makefile that
-    # inferred docker names one — a stronger signal than gen-override.sh's file-order guess among
-    # several declared services), read by detect-mode.sh ahead of its own Makefile heuristic. The
-    # git-config write above can silently lose a lock race against a sibling issue's own call, and
-    # only helps a reader that shares this checkout's git config; a committed cache at a fixed,
-    # well-known path is something any copy of detect-mode.sh can agree on, and — unlike a
-    # .scratch file — survives to the next sprint. Best-effort: an empty service leaves
-    # docker_service unset and every reader falls back to gen-override.sh's default.
+    # The MAIN_ROOT call records the mode (and service) in the committed cache and installs nothing:
+    # the git-config write can lose a lock race, and only the cache reaches every copy of
+    # detect-mode.sh and survives to the next sprint.
     DETECTED_SERVICE=""
     [ -f "$DEP_SCRIPTS/detect-service.sh" ] &&
       DETECTED_SERVICE="$(bash "$DEP_SCRIPTS/detect-service.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" 2>/dev/null || true)"
     _merge_mode_cache docker "$DETECTED_SERVICE"
 
-    # Remove the shared override an older install generated at the repo root. Compose would
-    # still auto-load it for a bare call, with volume names this version no longer uses. Only a
-    # generated one goes — its volume keys are named wt_<project>_…; a project's own committed
-    # docker-compose.override.yml never has one and is left alone.
+    # A generated repo-root override (volume keys wt_<project>_…) would auto-load on a bare compose
+    # call with stale volume names; remove it, never a project's own committed one.
     _proj_slug="$(basename "$MAIN_ROOT_EFFECTIVE" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_*$//')"
     if [ -f "$MAIN_ROOT_EFFECTIVE/docker-compose.override.yml" ] &&
        grep -Eq "^[[:space:]]+wt_${_proj_slug}_[A-Za-z0-9_]*:[[:space:]]*\$" "$MAIN_ROOT_EFFECTIVE/docker-compose.override.yml" 2>/dev/null; then
@@ -463,8 +334,7 @@ if [ "$MODE" = "USE_DOCKER" ]; then
     _report "docker"
   fi
 
-  # CREW_DOCKER_INSTALL=off is the rollback lever back to the always-deferred behaviour,
-  # independent of CREW_DEPS (which also gates host mode).
+  # CREW_DOCKER_INSTALL=off: rollback lever to always deferring to the worker.
   DOCKER_INSTALL_SCRIPT="$DEP_SCRIPTS/docker-install.sh"
   if [ "${CREW_DOCKER_INSTALL:-on}" = "off" ] || [ ! -f "$DOCKER_INSTALL_SCRIPT" ]; then
     _report "docker"
@@ -473,19 +343,10 @@ if [ "$MODE" = "USE_DOCKER" ]; then
   DOCKER_OUT="$(mktemp)"
   trap 'rm -f "$DOCKER_OUT"' EXIT
   DOCKER_ARGS=(--project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" --timeout "$TIMEOUT")
-  # Forward the same discovered override step 5 would otherwise use on the host path —
-  # without this, docker-install.sh falls back to its own lockfile table and silently runs
-  # a different command than the one a CLAUDE.md/AGENTS.md/Makefile documents.
+  # Forward the cached overrides, or docker-install.sh would run its own lockfile table's command.
   [ -n "$CACHED_INSTALL" ] && DOCKER_ARGS+=(--install-cmd "$CACHED_INSTALL")
-  # Forward the same discovered credential-target override step 0 would otherwise leave to
-  # docker-install.md's own Makefile-comment scan — without this, a repo whose docker install
-  # needs a generated .npmrc/pip.conf/etc. silently gets ensure-env.sh's template-only
-  # fallback instead of the credential-generating target a prior discovery already found.
   [ -n "$CACHED_CREDENTIAL_TARGET" ] && DOCKER_ARGS+=(--credential-target "$CACHED_CREDENTIAL_TARGET")
-  # Streamed live via tee (PIPESTATUS[0] reads the real exit code through the pipe), not a
-  # plain redirect — a caller running this in the foreground otherwise sees nothing at all
-  # while the install runs. $DOCKER_OUT still gets the full output for the tail-on-failure
-  # diagnostic below.
+  # tee, so a foreground caller sees the install live; PIPESTATUS[0] is the install's exit code.
   bash "$DOCKER_INSTALL_SCRIPT" "${DOCKER_ARGS[@]}" 2>&1 | tee "$DOCKER_OUT"
   DOCKER_RC=${PIPESTATUS[0]}
   DOCKER_CMD="$(grep -m1 '^Running: ' "$DOCKER_OUT" 2>/dev/null | sed 's/^Running: //')"
@@ -499,9 +360,8 @@ if [ "$MODE" = "USE_DOCKER" ]; then
       _report "docker-installed $DOCKER_CMD" ok
       ;;
     2)
-      # Nothing this mechanism can do — no compose file, no service, no supported
-      # ecosystem. This worktree's override is still wanted by every run.sh call and every bare
-      # `docker compose` the worker types, so make it best-effort, then defer to the worker.
+      # Nothing docker-install.sh can do. The override is still wanted by every run.sh call and bare
+      # `docker compose`, so write it best-effort and defer to the worker.
       [ -f "$DEP_SCRIPTS/gen-override.sh" ] &&
         bash "$DEP_SCRIPTS/gen-override.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" >/dev/null 2>&1 || true
       _report "docker"
@@ -516,36 +376,23 @@ if [ "$MODE" = "USE_DOCKER" ]; then
       ;;
   esac
 elif [ -z "$SLUG" ]; then
-  # Host gets the same "trusted indefinitely" cache install/env/credential_target and the
-  # docker branch above already get — without this, every worktree/issue this sprint re-runs
-  # detect-mode.sh's Makefile dry-run loop (up to 9 targets) to reach the same host answer
-  # already settled at this MAIN_ROOT call.
+  # Cache the host verdict too, so later calls skip detect-mode.sh's Makefile dry-run loop.
   _merge_mode_cache host
 fi
 
-# ─── 5. install ──────────────────────────────────────────────────────────────
-# Capped, because an install that hangs would hang the whole sprint behind it. `timeout`
-# is not on every host (macOS ships none), so run uncapped rather than fail when it is
-# absent — the cap is a safety net, not the contract.
+# Capped, because a hung install would hang the sprint. macOS ships no `timeout`: run uncapped
+# then — the cap is a safety net, not the contract.
 TIMEOUT_BIN=""
 for _t in timeout gtimeout; do
   command -v "$_t" >/dev/null 2>&1 && { TIMEOUT_BIN="$_t"; break; }
 done
 
-# $CACHED_INSTALL was already resolved at step 1b, from the same command-discovery cache the
-# presence guard's manifest override (step 3) already consulted.
 OUT_FILE="$(mktemp)"
 trap 'rm -f "$OUT_FILE"' EXIT
 
 if [ -n "$CACHED_INSTALL" ]; then
-  # $CACHED_INSTALL is a documented override (step 1b) — it can itself be a Makefile
-  # target whose recipe invokes `docker compose run`. This is host mode overall, so no crew
-  # override exists and the docker shim on PATH passes such a call through unchanged.
-  # Run in $DIR, not $MAIN_ROOT_EFFECTIVE — this call installs into whichever directory
-  # was passed as --dir (a worktree, or the main root itself), the same target
-  # host-install.sh would have used.
-  # Streamed live via tee (see the docker path above for why) — $OUT_FILE still gets the
-  # full output for the failure diagnostic below.
+  # Run in $DIR, the target host-install.sh would use. A Makefile target that calls docker compose
+  # passes through the docker shim unchanged: this is host mode, with no crew override.
   if [ -n "$TIMEOUT_BIN" ]; then
     "$TIMEOUT_BIN" "$TIMEOUT" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" \
       2>&1 | tee "$OUT_FILE"
@@ -558,9 +405,7 @@ if [ -n "$CACHED_INSTALL" ]; then
   if [ "$RC" -eq 0 ]; then
     _report "installed $CMD" ok
   fi
-  # A discovered command that fails is a real failure, not host-install.sh's "no install
-  # method found" (exit 2) — that signal only means something to the fallback path below,
-  # so any non-zero exit here is reported as failed rather than reinterpreted as `none`.
+  # Any non-zero exit is a failure: exit 2 means "no method found" only from host-install.sh.
   DEPS_LOG="$(_debug_log_path)"
   _persist_log "$DEPS_LOG" "$OUT_FILE"
   echo "--- discovered install command output (tail) ---" >&2
@@ -569,8 +414,6 @@ if [ -n "$CACHED_INSTALL" ]; then
   _report "failed $CMD (exit $RC) (see $DEPS_LOG)" skip
 fi
 
-# Streamed live via tee (see the docker path above for why) — $OUT_FILE still gets the full
-# output for the failure diagnostic below.
 if [ -n "$TIMEOUT_BIN" ]; then
   "$TIMEOUT_BIN" "$TIMEOUT" bash "$DEP_SCRIPTS/host-install.sh" --project-root "$DIR" \
     --main-root "$MAIN_ROOT_EFFECTIVE" 2>&1 | tee "$OUT_FILE"
@@ -580,8 +423,6 @@ else
 fi
 RC=${PIPESTATUS[0]}
 
-# host-install.sh announces what it ran ("Running: npm ci"), so the command in the DEPS:
-# line is its own report of it rather than a second guess at the package manager.
 CMD="$(grep -m1 '^Running: ' "$OUT_FILE" 2>/dev/null | sed 's/^Running: //')"
 [ -n "$CMD" ] || CMD="host-install.sh"
 
@@ -589,8 +430,6 @@ case "$RC" in
   0) _report "installed $CMD" ok ;;
   2) _report "none" skip ;;
   *)
-    # The verbatim tail, so whoever reads the round's log sees the package manager's own
-    # words and not a paraphrase of them.
     DEPS_LOG="$(_debug_log_path)"
     _persist_log "$DEPS_LOG" "$OUT_FILE"
     echo "--- host-install.sh output (tail) ---" >&2

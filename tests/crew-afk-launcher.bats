@@ -44,84 +44,6 @@ launcher_body() {
   done
 }
 
-@test "launcher: it launches the program for its own platform and does not orchestrate" {
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$(launcher_body "$p")"
-    # The path is resolved into a variable (repo copy, else the user-level install), so what
-    # is asserted is that it runs *that* program for its own platform, not a literal path.
-    grep -q 'coding-crew/crew-afk/main.mjs' "$body" || {
-      echo "$p does not resolve the orchestrator's main.mjs" >&2; return 1; }
-    grep -q "node \"\$CREW_AFK\" run --platform $p" "$body" || {
-      echo "$p does not launch the orchestrator with --platform $p" >&2; return 1; }
-    grep -qi 'you do not orchestrate' "$body"
-  done
-}
-
-@test "launcher: the program lookup falls back to the main checkout's copy before the user-level install, for a linked worktree" {
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$(launcher_body "$p")"
-    fallback='[ -f "$CREW_AFK" ] || CREW_AFK="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.coding-crew/crew-afk/main.mjs"'
-    grep -qF -- "$fallback" "$body" || { echo "$p: no main-checkout fallback line" >&2; return 1; }
-    toplevel="$(grep -nF 'git rev-parse --show-toplevel)/.coding-crew/crew-afk/main.mjs' "$body" | head -1 | cut -d: -f1)"
-    common="$(grep -nF -- "$fallback" "$body" | head -1 | cut -d: -f1)"
-    home="$(grep -nF '$HOME/.coding-crew/crew-afk/main.mjs' "$body" | head -1 | cut -d: -f1)"
-    [ -n "$toplevel" ] && [ -n "$home" ]
-    [ "$toplevel" -lt "$common" ] && [ "$common" -lt "$home" ] || { echo "$p: lookup order is not toplevel, main checkout, \$HOME" >&2; return 1; }
-  done
-}
-
-@test "launcher: step 2 is one instruction for every mode, with no pane-host carve-out" {
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$(launcher_body "$p")"
-    step="$(awk '/^2\. /{on=1} /^3\. /{on=0} on' "$body")"
-    [ -n "$step" ] || { echo "$p: no step 2" >&2; return 1; }
-    grep -qi "completion notification" <<<"$step" || { echo "$p: step 2 does not wait for the completion notification" >&2; return 1; }
-    ! grep -qi "orca" <<<"$step" || { echo "$p: step 2 names orca" >&2; return 1; }
-    ! grep -qi "herdr" <<<"$step" || { echo "$p: step 2 names herdr" >&2; return 1; }
-    ! grep -q "PANE-HOST" "$body" || { echo "$p: the launcher still reads PANE-HOST" >&2; return 1; }
-  done
-}
-
-@test "launcher: it stays a launcher - no pipeline, no state, no receipts prose" {
-  # Each of these was a step the body used to perform. Naming the pipeline once, as the
-  # program's contract, is fine; issuing its commands is not.
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$(launcher_body "$p")"
-    for banned in state.sh receipts.sh merge-branches.sh close-issue.sh \
-                  promote-findings.sh verify-worktree.sh ensure-deps.sh 'git worktree add'; do
-      if grep -q "$banned" "$body"; then
-        echo "$p launcher names $banned — it is describing the pipeline again" >&2
-        return 1
-      fi
-    done
-  done
-}
-
-@test "launcher: it is under the launcher word budget (it replaced ~2,400)" {
-  local words
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    words=$(wc -w < "$(launcher_body "$p")")
-    [ "$words" -lt "$AFK_LAUNCHER_WORD_BUDGET" ] || { echo "$p launcher is $words words" >&2; return 1; }
-  done
-}
-
-@test "launcher: it maps every exit code the program can return" {
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    for code in 0 2 3 1; do
-      grep -q "\`$code\`" "$(launcher_body "$p")" || {
-        echo "$p leaves exit code $code unexplained" >&2; return 1; }
-    done
-  done
-}
-
-@test "launcher: it forbids finishing a failed sprint by hand" {
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$(launcher_body "$p")"
-    grep -qi 'never finish the sprint by hand' "$body"
-    grep -qi 'receipt gates' "$body"
-  done
-}
-
 # ─── the program's install ───────────────────────────────────────────────────
 
 @test "assets: registry declares the orchestrator at a platform-neutral path" {
@@ -205,4 +127,42 @@ launcher_body() {
 @test "launcher: no platform ships a bash dispatcher" {
   [ ! -e "$REPO_ROOT/skills/crew-afk/scripts/dispatch-agent.sh" ]
   [ ! -e "$REPO_ROOT/skills/crew-afk/scripts/dispatch-codex-agent.sh" ]
+}
+
+# ─── the launcher's program lookup ──────────────────────────────────────────
+
+# run_lookup <platform> <dir> — runs the body's launch block (the one setting CREW_AFK) in <dir> with node stubbed to print the path it got.
+run_lookup() {
+  local block
+  block="$(awk '/^```bash$/{f=1; b=""; next} f && /^```$/{f=0; if (b ~ /CREW_AFK=/) { printf "%s", b; exit } next} f {b = b $0 "\n"}' "$(launcher_body "$1")")"
+  run bash -c "cd '$2' && node() { printf '%s\n' \"\$1\"; }; $block"
+}
+
+@test "launcher: the program lookup tries the repo, then the main checkout, then the user-level install" {
+  # Resolved with pwd -P: git reports the main checkout's real path, and macOS's temp dir sits behind the /var → /private/var symlink.
+  local tmp; tmp="$(cd "$BATS_TEST_TMPDIR" && pwd -P)"
+  local home="$tmp/home" main="$tmp/main" wt="$tmp/wt"
+  mkdir -p "$home" "$main"
+  git -C "$main" init -q -b main
+  git -C "$main" -c user.email=t@test -c user.name=T commit -q --allow-empty -m init
+  git -C "$main" worktree add -q "$wt"
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    HOME="$home" run_lookup "$p" "$wt"
+    [ "$output" = "$home/.coding-crew/crew-afk/main.mjs" ] || { echo "$p: no copy → $output" >&2; return 1; }
+
+    mkdir -p "$main/.coding-crew/crew-afk" && touch "$main/.coding-crew/crew-afk/main.mjs"
+    HOME="$home" run_lookup "$p" "$wt"
+    [ "$output" = "$main/.coding-crew/crew-afk/main.mjs" ] || { echo "$p: worktree → $output" >&2; return 1; }
+
+    mkdir -p "$wt/.coding-crew/crew-afk" && touch "$wt/.coding-crew/crew-afk/main.mjs"
+    HOME="$home" run_lookup "$p" "$wt"
+    [ "$output" = "$wt/.coding-crew/crew-afk/main.mjs" ] || { echo "$p: own copy → $output" >&2; return 1; }
+    rm -r "$main/.coding-crew" "$wt/.coding-crew"
+  done
+}
+
+@test "launcher: copilot pre-approves the shell, so an unattended sprint never stalls on a permission prompt" {
+  run grep -m1 '^allowed-tools:' "$(launcher_body copilot)"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shell"* ]]
 }

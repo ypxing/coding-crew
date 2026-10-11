@@ -151,23 +151,6 @@ EOF
   [[ "$output" == *"afk.fixFindings, or --fix-findings"* ]]
 }
 
-# ─── one source for the threshold ────────────────────────────────────────────
-
-@test "nothing outside this script and sprint.env states the promotion threshold" {
-  # The threshold is passed to defer as --severities and read from CREW_FIX_FINDINGS. A second statement of
-  # it — in a launcher, or hard-coded in the pipeline — is a source that can disagree with the
-  # script the moment the default changes again. The wiring end to end (the default promotes
-  # a HIGH into a Phase 2 fix issue, `medium` a MEDIUM) is asserted in
-  # tests/orchestrator/sprint-settings.test.mjs.
-  for f in "$REPO_ROOT"/skills/crew-afk/SKILL.md; do
-    if grep -qiE 'Never promote MEDIUM or LOW|severities: CRITICAL' "$f"; then
-      echo "$(basename "$f") states the threshold itself" >&2; return 1
-    fi
-  done
-  grep -q 'CREW_FIX_FINDINGS' "$REPO_ROOT/orchestrator/lib/sprint.mjs"
-  ! grep -qE '"CRITICAL"\s*,\s*"HIGH"' "$REPO_ROOT/orchestrator/lib/pipeline.mjs" "$REPO_ROOT"/orchestrator/lib/pipeline/*.mjs
-}
-
 # ─── actionable: triage's verdicts sit beside each finding ───────────────────
 
 # A review whose findings carry the verdict and rationale crew-afk's triage wrote.

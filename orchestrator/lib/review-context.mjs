@@ -1,10 +1,6 @@
 /**
- * review-context.mjs — the reviewer's stack checklists, resolved once per sprint.
- *
- * `review-context.sh` names the STACK and the reference files that apply to the repo; that answer
- * does not change between reviews of one sprint, so it runs once and its result is inlined in
- * every review prompt. When the script is missing or fails, every file in the assets'
- * `references/` is used instead (the protocol's own fallback), and the prompt says so.
+ * review-context.mjs — the reviewer's stack checklists, resolved once per sprint and inlined in
+ * every review prompt. When review-context.sh is missing or fails, every file in `references/` is used.
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -22,7 +18,6 @@ function readRefs(paths) {
   });
 }
 
-/** Pure: resolve the context for `assets` (the reviewer's asset dir) against `root`. */
 export function resolveReviewContext(effects, assets, root) {
   const script = join(assets, "scripts", "review-context.sh");
   const refDir = join(assets, "references");
@@ -50,7 +45,6 @@ export function sprintReviewContext(sprint, effects, assets, root) {
   return cache.get(sprint);
 }
 
-/** Prompt text for a context; empty when there is none. */
 export function renderReviewContext(ctx) {
   if (!ctx) return [];
   const out = ["Review context (provided — do not run review-context.sh, do not fetch the references):"];

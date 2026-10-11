@@ -434,11 +434,6 @@ EOF
   [[ "$output" != *".bak"* ]]
 }
 
-@test "tracker template documents no non-portable in-place sed" {
-  TEMPLATE="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/tracker/docs/local.md"
-  ! grep -vE '^\s*(#|>)' "$TEMPLATE" | grep -qE "sed +-i( |'')"
-}
-
 # ─── missing branch must fail, not read as already-merged ────────────────────
 # `git log HEAD..<branch>` errors on an unknown ref; with stderr suppressed that
 # leaves PENDING empty, which is indistinguishable from "already merged". A typo'd

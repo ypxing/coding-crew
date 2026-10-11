@@ -1,37 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# open-pr.sh — push the feature branch and create, or update, its pull request.
-#
-# Usage: open-pr.sh [--closes-file <file>] [--body-file <file>] [--title <title>] [--draft]
-#                   [--note-file <file>] [--no-push] [--draft-marker <line>]
-#   FEATURE_BRANCH and FEATURE_SLUG come from the environment (the orchestrator's childEnv).
-#   --closes-file holds the tracker's closing lines (`Closes #n`), one per line; absent or
-#   empty, the PR closes nothing.
-#   --body-file holds the body for a reviewer (pipeline/pr-body.mjs: write-pr's Why, What
-#   changes, Risk and Tested, else the checks line alone); it opens the block, above the closing lines.
-#   --title is the PR's title (the writer's, else the PRD's); default the slug. An open PR keeps
-#   a title a human gave it — one other than the slug this script used to default to.
-#
-#   --draft: the run did not finish green. A new PR is created as a draft, an open ready one is
-#   converted (`gh pr ready --undo`); without it an open draft is marked ready (`gh pr ready`).
-#   A failed conversion is reported as `PR-STATE-FAILED: <why>` and never fails this script.
-#   --note-file holds the not-green text (blocked issues, reason) for the crew-afk block.
-#   --no-push: push nothing, create nothing and edit no body — only an open PR's draft state is
-#   set. For a red merged branch: the PR a green run opened must not stay ready.
-#   --draft-marker (with --no-push): the one body edit it makes — the open PR's block gets this
-#   `<!-- crew-afk:draft <kinds> -->` line in place of its own (or added before its end marker),
-#   so a marker an earlier run wrote (say, `findings` alone) does not outlive the red branch.
-#
-# The body's crew-afk block — between the two markers below — is the only part this writes:
-# a new PR gets just that block, and an open one has it replaced (or appended), so what a
-# human wrote around it survives every re-run. The PR is opened against the repo's default
-# branch, the only base GitHub honours `Closes #n` for.
-#
-# The push is a plain one. A rejected (non-fast-forward) push fails this script rather than
-# forcing over the remote; the caller reports it.
-#
-# Prints `PR: <url>` on success, then `PR-STATE: draft|ready` (and `PR-STATE-FAILED: <why>`).
+# open-pr.sh — push the feature branch and create or update its PR; prints `PR: <url>`, then
+# `PR-STATE: draft|ready` (and `PR-STATE-FAILED: <why>`, which never fails the script).
+# Usage: open-pr.sh [--closes-file <f>] [--body-file <f>] [--title <t>] [--draft] [--note-file <f>]
+#                   [--no-push] [--draft-marker <line>]   (FEATURE_BRANCH, FEATURE_SLUG from the env)
+# Only the crew-afk block between the markers is written, so a human's text around it survives.
+# --no-push only sets an open PR's draft state and swaps its draft marker: a red branch's PR must not stay ready.
 
 CLOSES_FILE=""
 BODY_FILE=""
@@ -63,8 +38,7 @@ _trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" ${FEATUR
 
 BEGIN_MARK="<!-- crew-afk:begin -->"
 END_MARK="<!-- crew-afk:end -->"
-# Names the sprint the PR belongs to: the head branch's name (afk.branchPrefix, --jira) no longer
-# says which .scratch/<slug>/ it is, so address-pr-comments reads the slug from here.
+# address-pr-comments reads the sprint's slug here: the head branch's name need not contain it.
 SLUG_MARK="<!-- crew-afk:slug $FEATURE_SLUG -->"
 
 state_failed=""

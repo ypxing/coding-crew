@@ -31,7 +31,7 @@
   ],
   "skills": {
     "crew-afk": {
-      "version": "2.38.0",
+      "version": "2.38.1",
       "source-dir": "crew-afk",
       "description": "Run an unattended sprint: implement, review and merge every ready-for-agent issue into one feature branch.",
       "assets": {
@@ -58,13 +58,13 @@
       ]
     },
     "tdd": {
-      "version": "1.2.3",
+      "version": "1.2.4",
       "source-dir": "tdd",
       "description": "Test-driven development with red-green-refactor loop, vertical slices.",
       "source": "mattpocock/skills"
     },
     "dep-install": {
-      "version": "1.6.0",
+      "version": "1.6.1",
       "source-dir": "dep-install",
       "description": "Install the project's dependencies once, on the host or in docker.",
       "assets": {
@@ -73,7 +73,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.14.4",
+      "version": "1.14.5",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "assets": {
@@ -90,7 +90,7 @@
       ]
     },
     "crew-address-findings": {
-      "version": "1.6.0",
+      "version": "1.6.1",
       "source-dir": "crew-address-findings",
       "description": "Triage and fix findings from a crew-afk code review report using TDD.",
       "scripts": [
@@ -103,7 +103,7 @@
       ]
     },
     "address-pr-comments": {
-      "version": "1.5.2",
+      "version": "1.5.3",
       "source-dir": "address-pr-comments",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "scripts": [
@@ -117,7 +117,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.20.0",
+      "version": "1.20.1",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
@@ -152,7 +152,7 @@
       ]
     },
     "add-tests": {
-      "version": "1.1.10",
+      "version": "1.1.11",
       "source-dir": "add-tests",
       "description": "Discover the project's coverage command, rank under-covered files by risk, resolve a mocking convention per ecosystem, and hand findings to to-issues as ready-for-agent issues.",
       "scripts": [

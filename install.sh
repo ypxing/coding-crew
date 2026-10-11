@@ -1,10 +1,6 @@
 #!/bin/bash
-# macOS ships bash 3.2 at /bin/bash (Apple froze it there after the GPLv2 -> GPLv3
-# switch) and this script's own `#!/bin/bash` shebang is resolved by the kernel from
-# that hardcoded path, not from $PATH — so a newer Homebrew bash already on a user's
-# PATH is never picked up just by running this file directly. The registry-read cache
-# below needs `declare -A` (bash >= 4), so hop to a newer bash if one is findable
-# before anything else runs, and fail with actionable advice if none is.
+# The kernel resolves `#!/bin/bash` to macOS's frozen bash 3.2, never a newer one on PATH, and the
+# registry cache below needs `declare -A` (bash >= 4): re-exec under a newer bash before anything runs.
 if [[ "${BASH_VERSINFO[0]:-0}" -lt 4 && -z "${_CODING_CREW_REEXEC:-}" ]]; then
   for _candidate in /opt/homebrew/bin/bash /usr/local/bin/bash /usr/local/opt/bash/bin/bash $(command -v bash 2>/dev/null); do
     [[ -x "$_candidate" ]] || continue
@@ -37,7 +33,6 @@ else
   AGENT="${2:-all}"       # all | --skill <name> | --skills a,b
 fi
 
-# --skills a,b,c  (multi-skill shorthand, replaces --skill for multiple names)
 if [[ "$AGENT" == "--skills" ]]; then
   SKILLS_LIST="${3:-}"
   if [[ -z "$SKILLS_LIST" ]]; then
@@ -83,40 +78,23 @@ usage() {
   exit 1
 }
 
-# Help needs no dependency: platforms.sh (which reads platforms.json with jq) fills in the
-# platform list when jq is there, and usage() says where the list lives when it is not.
+# Help needs no dependency: usage() says where the platform list lives when jq is missing.
 PLATFORMS=(); _PF_ENV=()
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   command -v jq >/dev/null 2>&1 && source "$SCRIPT_DIR/scripts/lib/platforms.sh"
   usage
 fi
 
-# ── Dependency checks ──────────────────────────────────────────────────────────
 _required_cmds=("jq" "git")
 for cmd in "${_required_cmds[@]}"; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Error: required command '$cmd' not found" >&2; exit 1; }
 done
 
-# ── jq output normalisation (Windows) ──────────────────────────────────────────
-# jq on Windows (Git Bash) writes stdout in text mode, so every line arrives with a
-# trailing \r that then lives *inside* the value. A skill name read as
-# 'tdd\r' misses `.skills[$n]` in registry.json and the skill is skipped with
-# "not found in registry" — the install silently does nothing. Individual read loops
-# used to strip it one at a time, which left every loop added later (the manifest
-# loop) broken again. Normalise once, here, so no call site can forget.
-# Defined after the dependency check so `command -v jq` still sees a missing binary.
-#
-# Command substitution, NOT `command jq "$@" | tr -d '\r'`: that pipeline spawned two
-# extra processes per lookup (subshell + tr) on top of jq itself, and one full install
-# makes ~1,500 jq calls. Git Bash has no fork() — it emulates it — so those spawns were
-# the dominant cost of the Windows CI job (27+ min against 2 min elsewhere). Bash
-# strips the CR itself for free, and `$?` after an assignment is jq's own status, so
-# callers that rely on it (`if ! jq empty`) keep working without PIPESTATUS.
-#
-# Probe once and define the wrapper only where it is needed: on a jq that already
-# writes LF, the wrapper itself would cost one extra process per lookup for nothing.
-# The probe reads through `read`, not `$(…)`: Git Bash's command substitution drops the CR
-# itself, so a `$(jq …)` probe never saw one and left every `< <(jq …)` loop unwrapped.
+# jq on Windows (Git Bash) leaves a trailing \r inside every value, so a skill read as 'tdd\r'
+# silently misses registry.json: normalise once, after the dependency check (`command -v jq`).
+# Command substitution, not `| tr -d '\r'`: Git Bash emulates fork(), so extra processes over
+# ~1,500 jq calls dominate an install; `$?` after the assignment is still jq's own status.
+# The probe reads through `read`: `$(…)` strips the CR itself, so it would never see one.
 _jq_probe=""
 IFS= read -r _jq_probe < <(command jq -rn '"probe"' 2>/dev/null) || true
 if [[ "$_jq_probe" == *$'\r' ]]; then
@@ -124,17 +102,14 @@ if [[ "$_jq_probe" == *$'\r' ]]; then
     local _jq_out _jq_rc
     _jq_out=$(command jq "$@")
     _jq_rc=$?
-    # No output must stay no output: a bare newline would give every `while read` loop
-    # one blank iteration where jq emitted nothing at all.
+    # No output must stay no output, or every `while read` loop gets one blank iteration.
     [[ -n "$_jq_out" ]] && printf '%s\n' "${_jq_out//$'\r'/}"
     return "$_jq_rc"
   }
 fi
 
-# The platform list and every platform's skill paths, from orchestrator/platforms.json.
 source "$SCRIPT_DIR/scripts/lib/platforms.sh"
 
-# ── Input validation ───────────────────────────────────────────────────────────
 if [[ "$UPDATE_MODE" == "false" ]]; then
   if [[ "${1:-}" == "--skill" ]]; then
     echo "Error: platform argument required before flag (e.g. ./install.sh claude --skill to-issues)" >&2
@@ -160,9 +135,7 @@ assert_safe_path() {
   fi
 }
 
-# A project install used to write Copilot resources to .copilot/, which Copilot does not
-# scan at project scope. Remove that dead copy once the same resource lands in .github/,
-# so a repo does not keep an unmaintained SKILL.md or agent file that nothing updates.
+# Copilot does not scan .copilot/ at project scope: remove that dead copy once the resource lands in .github/.
 prune_legacy_copilot_path() {
   local platform="$1" original="$2"
   [[ "$platform" == "copilot" ]] || return 0
@@ -174,10 +147,8 @@ prune_legacy_copilot_path() {
   rmdir "$REPO_ROOT/.copilot/agents" "$REPO_ROOT/.copilot/skills" "$REPO_ROOT/.copilot" 2>/dev/null || true
 }
 
-# crew-afk's roles (coder, reviewer, triage) used to install as per-platform agent files, and before
-# that crew-reviewer was crew-code-reviewer. Those files are now stale definitions a host still lists,
-# so every install removes each, on every platform, by exact path (registry.json `retired-agents`),
-# plus the .coding-crew/ dirs that held their protocols and assets. Once per run.
+# Retired role agent files are stale definitions a host still lists: every install removes each,
+# on every platform, by exact path (registry.json `retired-agents`), plus their .coding-crew/ dirs.
 prune_retired_agents() {
   [[ "$INSTALLED" != *"|retired-agents|"* ]] || return 0
   INSTALLED="${INSTALLED}|retired-agents|"
@@ -210,10 +181,8 @@ prune_retired_agents() {
   done < <(jq -r '."retired-agents".dirs // [] | .[]' "$SCRIPT_DIR/registry.json")
 }
 
-# The tracker's shell wrappers (tracker-config.sh, mark-issue-done.sh) used to install to
-# .coding-crew/scripts/; every caller now runs tracker/cli.mjs itself, so a copy left behind is a
-# second answer that can go stale. Every install removes each by exact path (registry.json
-# `retired-scripts`), then the directory once nothing else is in it. Once per run.
+# Retired tracker shell wrappers are a second answer that can go stale: every install removes each
+# by exact path (registry.json `retired-scripts`), then the directory once nothing else is in it.
 prune_retired_scripts() {
   [[ "$INSTALLED" != *"|retired-scripts|"* ]] || return 0
   INSTALLED="${INSTALLED}|retired-scripts|"
@@ -248,29 +217,17 @@ assert_identifier() {
   fi
 }
 
-# ── registry.json read cache ────────────────────────────────────────────────────
-# `install_single_skill` recurses once per platform when PLATFORM=all (four calls for
-# one skill), and most of what it reads from registry.json per skill — source-dir,
-# version, scripts, deps, assets.source/dest —
-# does not vary by platform at all. Read unconditionally, that was 4 jq spawns (one per
-# platform recursion) for a value that is the same all four times; a full default
-# install spawns ~2,400 jq processes, and this is where most of them went. Memoized here
-# by skill, so a value already read for this skill this run is a bash lookup, not a jq spawn.
-# Git Bash has no real fork(), so a spawn avoided here is disproportionately cheap there.
+# install_single_skill recurses once per platform under PLATFORM=all, and most registry fields do
+# not vary by platform, so they are memoized by skill: a full install would spawn ~2,400 jq
+# processes otherwise, and Git Bash has no real fork().
 declare -A _SKILL_META_SCALAR
 declare -A _SKILL_META_LIST
 
-# _skill_scalar/_skill_list set a global result variable rather than printing for a
-# caller to capture with `$(...)`/`<(...)`: both fork a subshell, and a subshell's
-# writes to the cache arrays above vanish the moment it exits, so every call would be a
-# cache miss and the memoization below would do nothing. A plain function call forks
-# nothing, so this is the only way the value gets back to the caller without losing the
-# cache write with it.
+# _skill_scalar/_skill_list set a global result rather than print for `$(...)`/`<(...)`: a subshell's
+# writes to the cache arrays vanish when it exits, so every call would miss.
 #
 # _skill_scalar <skill> <cache-suffix> <jq-filter> [<extra-arg-name> <extra-arg-value>]...
-# `$s` is always bound to <skill>; pass additional --arg pairs (e.g. a platform) after
-# the filter — they are folded into the cache key too, so a per-platform field caches
-# per platform rather than colliding across platforms. Sets $_SKILL_SCALAR.
+# Extra --arg pairs are folded into the cache key, so a per-platform field caches per platform.
 _SKILL_SCALAR=""
 _skill_scalar() {
   local skill="$1" suffix="$2" filter="$3"; shift 3
@@ -282,9 +239,7 @@ _skill_scalar() {
   _SKILL_SCALAR="${_SKILL_META_SCALAR[$key]}"
 }
 
-# _skill_list — same, for a filter whose result is a 0+ line list (`.foo // [] | .[]`).
-# Sets $_SKILL_LIST; a caller feeds it to a `while read` loop with `<<< "$_SKILL_LIST"`,
-# never with `<(...)` — see above.
+# _skill_list — same, for a 0+ line list; feed $_SKILL_LIST to `while read` with `<<<`, never `<(...)`.
 _SKILL_LIST=""
 _skill_list() {
   local skill="$1" suffix="$2" filter="$3"; shift 3
@@ -296,10 +251,7 @@ _skill_list() {
   _SKILL_LIST="${_SKILL_META_LIST[$key]}"
 }
 
-# Helper: report whether an incoming file is new, identical, or changed
-# Args: $1=incoming_content_file $2=dest_path
-# Returns: 0=new, 1=identical, 2=changed
-# Side effect: prints a one-line notice for changed files
+# Returns 0=new, 1=identical, 2=changed; prints a one-line notice for a changed file.
 check_dest_status() {
   local incoming="$1" dest="$2"
   if [[ ! -f "$dest" ]]; then
@@ -316,11 +268,8 @@ check_dest_status() {
 # Paths the current copy wrote into the tree being installed; prune_unwritten removes the rest.
 declare -A _WRITTEN
 
-# Make an installed tree an exact copy of what this run wrote into it: remove every file not in
-# _WRITTEN, then every directory left empty (never $root itself). The kept set is the paths
-# written, not a re-derivation of the source, so the prune can never disagree with the copy's
-# filters. Prune after copy, never wipe-then-copy: a sprint running during an install still finds
-# every file the new version ships.
+# Make an installed tree an exact copy of what this run wrote into it. Prune after copy, never
+# wipe-then-copy: a sprint running during an install still finds every file the new version ships.
 prune_unwritten() {
   local root="$1" f
   while IFS= read -r -d '' f; do
@@ -331,11 +280,8 @@ prune_unwritten() {
   find "$root" -mindepth 1 -depth -type d -empty -delete
 }
 
-# Assets are platform-neutral runtime files a skill or role reads or executes itself. They install
-# once, to a shared path outside any platform directory, so four platforms do not get four copies. Like
-# .coding-crew/tracker they are mechanism, not user text, so they are always overwritten: a stale
-# reference would be a checklist that no longer matches the protocol pointing at it. A file the
-# source no longer has is removed, so a stale module never shadows the one that replaced it.
+# Assets are platform-neutral runtime files, installed once to a shared path and always
+# overwritten; a file the source no longer has is removed so a stale module never shadows its replacement.
 install_assets_tree() {
   local src="$1" dest_rel="$2" label="$3"
   [[ -d "$src" ]] || { echo "Error: $label assets source not found: $src" >&2; exit 1; }
@@ -358,10 +304,8 @@ install_assets_tree() {
   prune_unwritten "$REPO_ROOT/$dest_rel"
 }
 
-# A skill's assets source is repo-root-relative,
-# because an executable a skill only launches (the crew-afk orchestrator) is not skill text and
-# does not belong inside skills/. Installed once per run, not once per platform — four platforms
-# launching one program must launch the same copy of it, or a fixed bug is only fixed on one.
+# Installed once per run, not per platform: four platforms launching one program must launch the
+# same copy, or a fixed bug is only fixed on one.
 install_skill_assets() {
   local skill_name="$1"
   local src_rel dest_rel
@@ -394,7 +338,6 @@ install_single_skill() {
   local skill_name="$1"
   assert_identifier "$skill_name" "skill"
 
-  # For platform=all, fan out to every platform independently
   if [[ "$PLATFORM" == "all" ]]; then
     local saved_platform="$PLATFORM"
     local fan_platform
@@ -405,7 +348,6 @@ install_single_skill() {
     return
   fi
 
-  # Dedup per platform
   if [[ "$INSTALLED" == *"|skill:$skill_name:$PLATFORM|"* ]]; then
     return
   fi
@@ -424,7 +366,6 @@ install_single_skill() {
   platform_skills_dir "$PLATFORM" user
   prune_legacy_copilot_path "$PLATFORM" "$_PLATFORM_SKILLS/$skill_name"
 
-  # Resolve source directory: use source-dir field if present, otherwise use skill name
   local source_dir
   _skill_scalar "$skill_name" source_dir '.skills[$s]["source-dir"] // $s'
   source_dir="$_SKILL_SCALAR"
@@ -435,14 +376,12 @@ install_single_skill() {
   mkdir -p "$skill_root"
   _WRITTEN=()
 
-  # Copy files with diff output for changed files
   while IFS= read -r -d '' src_file; do
     local rel_path="${src_file#$SCRIPT_DIR/skills/$source_dir/}"
     local dest_file="$skill_root/$rel_path"
     local rel_dest="${dest_file#$REPO_ROOT/}"
     mkdir -p "$(dirname "$dest_file")"
 
-    # The body is rendered (placeholders expanded); every other file copies verbatim.
     local staged="$src_file" render_tmp=""
     if [[ "$rel_path" == "SKILL.md" ]]; then
       render_tmp=$(mktemp)
@@ -457,13 +396,11 @@ install_single_skill() {
     _WRITTEN["$dest_file"]=1
     [[ -n "$render_tmp" ]] && rm -f "$render_tmp"
 
-    # Print path for new files (status=0)
     if [[ $status -eq 0 ]]; then
       echo "  $rel_dest"
     fi
   done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -not -name "test-*.sh" -print0)
 
-  # Copy scripts from scripts/skill-utils/git-workflow/ if this skill declares any
   local scripts
   _skill_list "$skill_name" scripts '.skills[$s].scripts // [] | .[]'
   scripts="$_SKILL_LIST"
@@ -483,8 +420,7 @@ install_single_skill() {
     done
     echo "  $skill_dest/scripts/ (${#scripts_arr[@]} scripts from skill-utils/git-workflow)"
   fi
-  # Whatever this run did not write is a file an earlier version shipped (or a stale per-platform
-  # body): an agent listing the skill directory would read it, so it goes.
+  # Whatever this run did not write is a file an earlier version shipped: an agent listing the directory would read it.
   prune_unwritten "$skill_root"
 
   local skill_version
@@ -495,7 +431,6 @@ install_single_skill() {
   # Runtime files the skill launches rather than reads (the crew-afk orchestrator).
   install_skill_assets "$skill_name"
 
-  # Resolve skill-level deps declared in registry.json
   local deps
   _skill_list "$skill_name" deps '.skills[$s].deps // [] | .[]'
   deps="$_SKILL_LIST"
@@ -507,14 +442,9 @@ install_single_skill() {
 
 }
 
-# The tracker choice used to be the front matter of .coding-crew/docs/issue-tracker.md, a copy of
-# a template install never overwrote, beside per-repo template copies under
-# .coding-crew/docs/templates/trackers/ — so their prose froze at first install. The choice now
-# lives in config.json's `tracker` section and the prose in the installer-owned
-# .coding-crew/tracker/docs/. Move the choice over (an existing `tracker` section wins), then
-# delete the legacy files. At $HOME (a user-level install, no repo to configure) only the files
-# go. A front matter naming `repo:` is left alone: that override is gone, and migrating without
-# it would silently retarget the tracker.
+# Move a legacy issue-tracker.md front-matter choice into config.json's `tracker` section (an
+# existing section wins), then delete the legacy files; at $HOME only the files go. A front matter
+# naming `repo:` is left alone: migrating without that override would silently retarget the tracker.
 migrate_legacy_tracker_doc() {
   local legacy_rel=".coding-crew/docs/issue-tracker.md"
   local templates_rel=".coding-crew/docs/templates/trackers"
@@ -562,8 +492,7 @@ install_docs() {
     migrate_legacy_tracker_doc
   fi
 
-  # Copy shared directory trees (the tracker CLI and its backends). Mechanism, not
-  # user-customisable text, installed whichever skill is, and kept an exact copy (install_assets_tree).
+  # The tracker CLI and its backends: installed whichever skill is, and kept an exact copy.
   local trees
   trees=$(jq -r '.docs.trees // {} | keys[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
   local trees_arr=()
@@ -582,10 +511,8 @@ install_docs() {
   done
 }
 
-# A user-level install of the same skill (or a retired agent file) can take precedence over the copy we
-# just wrote into the project, so a project install silently has no effect and the
-# consumer debugs against a stale definition. We cannot change the host agent's
-# resolution order, so say so plainly instead.
+# A user-level copy of the same skill can take precedence over the project's, and we cannot change
+# the host's resolution order, so say so plainly.
 warn_shadowing_user_installs() {
   [[ "$REPO_ROOT" == "$HOME" ]] && return 0
 
@@ -621,7 +548,6 @@ write_manifest() {
   source_sha=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")
   source_remote=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo "local")
 
-  # Build skills JSON from collected entries
   local skills_json="{}"
   for entry in "${MANIFEST_SKILL_ENTRIES[@]+"${MANIFEST_SKILL_ENTRIES[@]}"}"; do
     local name version
@@ -630,9 +556,7 @@ write_manifest() {
       '$base | .[$n] = {version: $v}')
   done
 
-  # Merge with existing manifest so entries from prior installs are preserved. Its `agents` (an
-  # install from before the roles moved into crew-afk) is dropped: prune_retired_agents removed
-  # their files on every platform this run.
+  # Merge with the existing manifest. Its legacy `agents` key is dropped: prune_retired_agents removed their files.
   local existing_skills="{}"
   if [[ -f "$manifest" ]]; then
     existing_skills=$(jq '.skills // {}' "$manifest")
@@ -656,12 +580,9 @@ write_manifest() {
   echo "  .coding-crew/manifest.json"
 }
 
-# --skills a,b,c is a declaration of the full desired skill set, but write_manifest's
-# merge only adds/updates keys — it never drops one, so a skill dropped from a repeat
-# --skills call would keep living on disk with nothing to remove it. This is install.sh's
-# only removal path; it shells out to uninstall.sh's --skill (the single writer of skill
-# files) rather than duplicating that removal logic here, then deletes the pruned key from
-# the manifest on disk so the write_manifest() merge below doesn't resurrect it.
+# --skills a,b,c declares the full skill set, but write_manifest's merge never drops a key, so a
+# skill left out is removed here through uninstall.sh --skill (the single writer of skill files)
+# and its key deleted so the merge below does not resurrect it.
 prune_skills_not_in() {
   local requested="$1"
   local manifest="$REPO_ROOT/.coding-crew/manifest.json"
@@ -699,15 +620,13 @@ run_update() {
 
   local updated=0
 
-  # An install from before crew-afk owned its roles lists them as agents: they now come with
-  # crew-afk, which also prunes their old files.
+  # An install from before crew-afk owned its roles lists them as agents; crew-afk now prunes them.
   if [[ -n "$(jq -r '.agents // {} | keys[]' "$manifest")" ]]; then
     echo "  agents (crew-coder, crew-reviewer, crew-triage): now part of crew-afk — installing crew-afk"
     install_single_skill crew-afk
     updated=$((updated + 1))
   fi
 
-  # Check skills
   while IFS= read -r name; do
     local installed_version current_version
     installed_version=$(jq -r --arg n "$name" '.skills[$n].version // "unknown"' "$manifest")
@@ -735,8 +654,8 @@ if [[ "$UPDATE_MODE" == "true" ]]; then
   run_update
   prune_retired_agents
   prune_retired_scripts
-  # The tracker CLI and docs carry no version of their own, so an update that skips this
-  # keeps a stale gate forever; it also migrates a legacy issue-tracker.md into config.json.
+  # The tracker CLI and docs carry no version of their own, so an update that skipped this would
+  # keep a stale gate forever.
   install_docs
   if [[ "${#MANIFEST_SKILL_ENTRIES[@]}" -gt 0 ]]; then
     write_manifest
@@ -749,7 +668,6 @@ echo "Platform: $PLATFORM"
 
 if [[ "$AGENT" == "--skill" ]]; then
   if [[ -n "$SKILLS_LIST" ]]; then
-    # --skills a,b,c  path
     echo "Skills: $SKILLS_LIST"
     echo "---"
     IFS=',' read -ra _skills_arr <<< "$SKILLS_LIST"
@@ -764,7 +682,6 @@ if [[ "$AGENT" == "--skill" ]]; then
     prune_skills_not_in "$_requested_skills"
     unset _skills_arr _s _requested_skills
   else
-    # --skill <name>  path
     SKILL_NAME="${3:-}"
     if [[ -z "$SKILL_NAME" ]]; then
       echo "Error: --skill requires a skill name"

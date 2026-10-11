@@ -1,30 +1,11 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# resolve-merge-conflicts.sh — finish a conflicted `git merge` when its only conflicts are the
-# two kinds parallel issue branches always produce on one shared skill:
-#
-#   - registry.json: the `version` of an agents.*/skills.* entry both sides bumped. The higher
-#     semver wins, per entry. Every other field is merged by git as usual; any conflict there,
-#     or any other conflicted line, leaves the merge unresolved.
-#   - CHANGELOG.md: entries both sides appended at the same place. Both are kept, the side being
-#     merged INTO (the feature branch) first. A conflict that changes existing lines is not one.
-#
-# Usage: resolve-merge-conflicts.sh [--head-is-branch]   (run inside the repo, mid-merge)
-#
-# By default HEAD is the feature branch and the branch being merged in is the issue branch
-# (merge-branches.sh). With --head-is-branch the merge runs the other way — the feature branch
-# is merged INTO an issue branch's worktree (a sync) — so "ours" is the issue branch: the
-# decision labels and the CHANGELOG order (feature entries first) follow the sides, not the stages.
-#
-# All-or-nothing: if any unmerged path is not resolvable, nothing is written or staged and the
-# exit code is 1, so the caller aborts the merge exactly as it would have without this script.
-# On success every resolved file is staged (the caller commits) and one line per decision is
-# printed:
-#   registry.json: skills.crew-afk version 2.6.1 (feature) vs 2.7.0 (branch) -> 2.7.0
-#   CHANGELOG.md: kept 1 entry from the feature side and 2 from the branch side
-#
-# Exit code: 0 resolved and staged; 1 not resolvable (or nothing is unmerged).
+# resolve-merge-conflicts.sh — finish a conflicted merge whose only conflicts are registry.json
+# `version` bumps (higher semver wins, per entry) and CHANGELOG.md appends (both kept, feature first).
+# Usage: resolve-merge-conflicts.sh [--head-is-branch]   (mid-merge; the flag: HEAD is the issue branch)
+# All-or-nothing: if anything is unresolvable, nothing is written and it exits 1, so the caller aborts
+# as it would without this. On success every file is staged (the caller commits) and each decision printed.
 
 HEAD_IS_BRANCH=0
 case "${1:-}" in

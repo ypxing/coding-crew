@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 /**
- * What a worker terminal shows (worker-terminal.mjs): follows one of the child's output
- * files (see runScript for which) until its rc file lands. A JSON event stream is shown as the same `[TOOL]` lines the trace log
- * gets, plus the assistant's text when its adapter declares `liveText`; anything else is shown as-is. Display only — the
- * child never writes through this process, so it can fail without touching the dispatch.
+ * What a worker terminal shows: follows one of the child's output files until its rc file lands, a
+ * JSON event stream as `[TOOL]` lines. Display only, so it can fail without touching the dispatch.
  *
  *   follow-output.mjs <out> <rc> [<jsonEvents platform>] [<agent>]
  */

@@ -2,8 +2,6 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
 #   curl -fsSL .../bootstrap.sh | bash -s -- copilot
-#   curl -fsSL .../bootstrap.sh | bash -s -- pi
-#   curl -fsSL .../bootstrap.sh | bash -s -- codex
 #   curl -fsSL .../bootstrap.sh | bash -s -- copilot --skills tdd,to-issues
 #   curl -fsSL .../bootstrap.sh | bash -s -- --project
 #   curl -fsSL .../bootstrap.sh | bash -s -- --update
@@ -16,7 +14,6 @@ SKILLS="${SKILLS:-}"
 PROJECT="${PROJECT:-}"
 UPDATE="${UPDATE:-}"
 
-# Positional args override env vars
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project) PROJECT=1; shift ;;
@@ -29,7 +26,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Default to user-level ($HOME); --project installs into the current git repo instead
 if [[ -z "$PROJECT" ]]; then
   export TARGET_REPO="$HOME"
 fi

@@ -37,6 +37,7 @@ import {
   extractFinalText,
   extractResultMeta,
   preflight,
+  renderRolePrompt,
 } from "../../orchestrator/lib/dispatch.mjs";
 import { ADAPTERS, DEFAULT_PARALLEL, PLATFORMS } from "../../orchestrator/lib/adapters/index.mjs";
 import { formatJsonTraceLine } from "../../orchestrator/lib/adapters/trace.mjs";
@@ -232,7 +233,7 @@ test("every platform's protocol dispatch writes <outFile>.protocol.md; a plain o
   for (const platform of PLATFORMS) {
     const outFile = join(root, `dispatch/${platform}.report.md`);
     buildDispatch(platform, spec(root, promptFile, { outFile }));
-    assert.match(readFileSync(`${outFile}.protocol.md`, "utf8"), /^# Coder/, platform);
+    assert.equal(readFileSync(`${outFile}.protocol.md`, "utf8"), renderRolePrompt("coder", platform, { mainRoot: root }), platform);
     const plainOut = join(root, `dispatch/${platform}.plain.md`);
     buildDispatch(platform, spec(root, promptFile, { agent: "plain", outFile: plainOut }));
     assert.equal(existsSync(`${plainOut}.protocol.md`), false, platform);
@@ -404,6 +405,34 @@ test("a missing fragment fails the dispatch before spawning, naming the fragment
   assert.equal(spawned, false);
   assert.notEqual(r.code, 0);
   assert.match(r.stderr, /no-such-frag/);
+});
+
+test("a missing protocol part fails the dispatch before spawning, naming the part's file", async () => {
+  const { root, promptFile } = fixture();
+  const rolesDir = join(root, "roles");
+  mkdirSync(rolesDir, { recursive: true });
+  writeFileSync(join(rolesDir, "reviewer.md"), "# R\n");
+  const reviewer = spec(root, promptFile, { agent: "crew-reviewer", rolesDir, protocolPart: "feature" });
+  assert.throws(() => buildDispatch("claude", reviewer), /reviewer\/feature\.md/);
+  let spawned = false;
+  const effects = { spawnWithTimeout: async () => ((spawned = true), { code: 0, stdout: "", stderr: "" }) };
+  const r = await dispatch(effects, "claude", reviewer, {});
+  assert.equal(spawned, false);
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /reviewer\/feature\.md/);
+});
+
+test("a protocol part lands in the dispatch's .protocol.md; without it the role file renders alone", () => {
+  const { root, promptFile } = fixture();
+  const rolesDir = join(root, "roles");
+  mkdirSync(join(rolesDir, "reviewer"), { recursive: true });
+  writeFileSync(join(rolesDir, "reviewer.md"), "# Branch part\n");
+  writeFileSync(join(rolesDir, "reviewer", "feature.md"), "# Feature part\n");
+  const outFile = join(root, "dispatch/alpha.report.md");
+  buildDispatch("claude", spec(root, promptFile, { agent: "crew-reviewer", rolesDir }));
+  assert.doesNotMatch(readFileSync(`${outFile}.protocol.md`, "utf8"), /# Feature part/);
+  buildDispatch("claude", spec(root, promptFile, { agent: "crew-reviewer", rolesDir, protocolPart: "feature" }));
+  assert.match(readFileSync(`${outFile}.protocol.md`, "utf8"), /# Branch part[\s\S]*# Feature part/);
 });
 
 test("an argv prompt over 128 KiB fails the dispatch naming the limit, never truncated", async () => {
@@ -978,7 +1007,6 @@ test("the coder's protocol ends with each named skill's installed SKILL.md, per 
     assert.ok(text.includes(`\`solve-issue\`: ${join(main, ".agents/skills/solve-issue/SKILL.md")}`), "the project install");
     assert.ok(text.includes(`\`dep-install\`: ${join(home, ".agents/skills/dep-install/SKILL.md")}`), "the user-level install");
     assert.match(text, /`tdd`: not installed/);
-    assert.match(text, /BLOCKED: solve-issue skill not installed/);
   } finally {
     process.env.HOME = saved;
   }

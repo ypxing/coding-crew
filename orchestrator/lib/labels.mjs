@@ -1,15 +1,9 @@
 /**
- * labels.mjs — crew-afk's `in-progress` display label, under `tracker: github`.
- *
- * Display only: it tells a human on GitHub which issues a run is working, and never decides
- * what is dispatched — the feature lease does. Every write goes through issue-labels.sh (a
- * no-op under `tracker: local`), and a failed write warns and never stops the sprint.
+ * labels.mjs — crew-afk's `in-progress` display label under `tracker: github`. Display only: the
+ * feature lease decides what is dispatched, and a failed write only warns.
  */
 
-/**
- * Run one label effect for `issue`. True when the write succeeded; false when skipped or failed.
- * A local issue (it has a file) has no label to write, so it never spawns the script.
- */
+/** True when the write succeeded. A local issue (it has a file) has no label to write. */
 export function labelIssue(ctx, action, issue) {
   const { effects, sprint } = ctx;
   if (effects.dryRun || issue.number == null || issue.path) return false;
@@ -21,10 +15,7 @@ export function labelIssue(ctx, action, issue) {
   return true;
 }
 
-/**
- * Right after the lease is acquired: drop `in-progress` from every issue in the milestone. The
- * lease says no other run is alive, so what still carries it was left by one that died.
- */
+/** Right after the lease: no other run is alive, so any `in-progress` label left was left by a dead one. */
 export function sweepInProgress({ effects, sprint, log }) {
   if (effects.dryRun) return;
   const r = effects.bash("issue-labels.sh", ["sweep", sprint.featureSlug], { env: sprint.childEnv() });

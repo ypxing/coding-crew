@@ -94,7 +94,3 @@ refs() { git -C "$W/origin.git" for-each-ref; }
 @test "script never pushes or calls gh" {
   ! grep -Eq 'git push|(^|[^a-z])gh ' "$REPO_ROOT/scripts/sync-pr-with-main.sh"
 }
-
-@test "CLAUDE.md names the script" {
-  grep -q 'scripts/sync-pr-with-main.sh <branch>' "$REPO_ROOT/CLAUDE.md"
-}

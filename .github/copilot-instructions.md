@@ -38,7 +38,7 @@ There are no installable agents: crew-coder, crew-reviewer and crew-triage are c
 
 ### Key Components
 
-- **`orchestrator/`** — crew-afk's program; `orchestrator/roles/` holds its three roles' protocols: `coder.md` (implements one issue using TDD in an isolated worktree), `reviewer.md` (+ `reviewer/{references,scripts}`; reviews each branch before merge, then the whole feature) and `triage.md` (classifies verify failures, findings and integration failures)
+- **`orchestrator/`** — crew-afk's program; `orchestrator/roles/` holds its three roles' protocols: `coder.md` (implements one issue using TDD in an isolated worktree), `reviewer.md` (+ `reviewer/{feature.md,references,scripts}`; reviews each branch before merge, then the whole feature, whose dispatch alone gets `feature.md`) and `triage.md` (classifies verify failures, findings and integration failures)
 - **`skills/`** — Reusable skill files (tdd, solve-issue, domain-modeling, crew-grill, etc.); `skills/_shared/fragments/` holds shared fragments
 - **`registry.json`** — Source of truth for install paths, dependencies, skill bundles, and the shared trees and scripts under `.coding-crew/`
 - **`install.sh`** — Single installer that reads `registry.json` and copies files into target repos

@@ -1,18 +1,11 @@
 #!/usr/bin/env bash
-# Detect which docker compose service a project's own Makefile targets use, by dry-running
-# known targets and extracting the service token from an expanded `docker compose run`/`exec`
-# recipe. Prints the service name to stdout if found; prints nothing (exit 0) otherwise.
+# Print the compose service a project's Makefile targets use (from their `make -n` docker compose
+# run/exec recipes), or nothing (exit 0).
 #
 # Usage:
 #   bash scripts/detect-service.sh --project-root /path/to/worktree [--main-root /path]
-#
-# This is a signal *for* the cache, not a read of it: verify-worktree.sh and docker-install.sh
-# already check `git config agent.install-service`, then dev-commands.json's "docker_service"
-# field, before ever falling back to gen-override.sh's own first-service-in-file-order guess.
-# This script is what feeds that cache when a Makefile target names its service explicitly —
-# a stronger signal than file order alone, since a human wrote that target knowing which
-# service its command needs (e.g. a repo with unrelated "node" and "compass" services, where
-# only "node" has the project's package manager).
+# Feeds the "docker_service" cache: a Makefile target naming its service is a stronger signal than
+# gen-override.sh's first-service-in-file-order guess.
 
 set -euo pipefail
 
@@ -38,17 +31,11 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GEN_OVERRIDE="$SELF_DIR/gen-override.sh"
 [ -f "$GEN_OVERRIDE" ] || exit 0
 
-# The real services declared in the compose file — a candidate token from a Makefile recipe is
-# only trusted if it names one of these. Without this cross-check, a value-taking flag before
-# the actual service (`-e KEY=val`, `--entrypoint sh`) could be mistaken for the service itself.
+# A recipe token counts only if it names a real service, so a flag's value (`-e KEY=val`) never does.
 KNOWN_SERVICES="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query services 2>/dev/null || true)"
 [ -n "$KNOWN_SERVICES" ] || exit 0
 
-# _service_from_recipe <recipe text> — walks the tokens after the first `docker compose run`/
-# `exec` on any line, skipping flag tokens (anything starting with `-`, including a value-taking
-# flag's own value token, e.g. "KEY=val" after `-e`), and returns the first remaining token that
-# is also a real compose service. Stops at the first match rather than assuming a fixed number of
-# leading flags, since `--rm`, `-T`, `--remove-orphans`, etc. vary per Makefile.
+# _service_from_recipe <recipe text> — the first non-flag token after `docker compose run`/`exec` that is a real service.
 _service_from_recipe() {
   local rest tok
   rest="$(printf '%s\n' "$1" | grep -oE 'docker[ -]compose[[:space:]]+(run|exec)[[:space:]]+.*' | head -1)" || true
@@ -67,9 +54,7 @@ _service_from_recipe() {
 }
 
 for _target in install deps setup depend bootstrap prepare up build dev lint test typecheck; do
-  # No exit-code gate — see detect-mode.sh's own Makefile scan for why: a recipe
-  # containing the literal word "make" can make some GNU Make builds (macOS's default
-  # 3.81 included) actually run it under -n instead of only printing it.
+  # No exit-code gate: some GNU Make builds (3.81) run a recipe containing "make" even under -n.
   _recipe="$(cd "$PROJECT_ROOT" && make -n "$_target" 2>/dev/null || true)"
   grep -qE 'docker (compose|run|exec)' <<<"$_recipe" || continue
   _found="$(_service_from_recipe "$_recipe")"

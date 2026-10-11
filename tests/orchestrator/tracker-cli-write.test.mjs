@@ -9,7 +9,8 @@ import { run } from "../../tracker/cli.mjs";
 
 // tracker/cli.mjs — the write ops (`publish-issues`, `publish-prd`, `rewrite`, `mark-done`) on
 // both backends, `gh` stubbed through the injected `exec`, as tracker-cli.test.mjs does for the
-// read ops. mark-done's refusals are pinned by the bats suites (worker-close-guard, tracker-mark-done-github).
+// read ops. mark-done's backend-agnostic guards (sprint marker, CREW_ORCHESTRATED, unchecked criteria)
+// live here only; tracker-mark-done-github.bats keeps what is GitHub's own (the label edits).
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -492,8 +493,16 @@ test("mark-done (local) exits 0 for an issue already in done/, by either path", 
   const dir = root();
   const path = localIssue(dir);
   await cli(dir, ["mark-done", path]);
-  assert.equal((await cli(dir, ["mark-done", path])).code, 0);
+  const again = await cli(dir, ["mark-done", path]);
+  assert.equal(again.code, 0);
+  assert.match(again.stdout + again.stderr, /already closed/);
   assert.equal((await cli(dir, ["mark-done", join(dir, ".scratch/feat/issues/done/01-t.md")])).code, 0);
+});
+
+test("mark-done with no issue ref is a usage error", async () => {
+  const r = await cli(root(), ["mark-done"]);
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /usage:/);
 });
 
 test("mark-done exits 3 when an orchestrator owns the close — env or marker — on both backends", async () => {
@@ -503,9 +512,20 @@ test("mark-done exits 3 when an orchestrator owns the close — env or marker �
     writeFileSync(join(marker, ".scratch/feat/.orchestrated"), "");
     const ref = github ? "12" : localIssue(marker);
     const env = github ? { FEATURE_SLUG: "feat" } : {};
+    // The issue is pre-ticked (MET): exit 3 fires before the criteria guard, so a worker's own ticks buy nothing.
     const viaMarker = await cli(marker, ["mark-done", ref], undefined, env);
     assert.equal(viaMarker.code, 3, `marker github=${github}`);
     assert.match(viaMarker.stderr, /REFUSED.*orchestrat/);
+    if (!github) assert.match(readFileSync(ref, "utf8"), /^Status: ready-for-agent$/m);
+
+    if (github) {
+      // A github ref names no feature dir, so the marker is found through SPRINT_DIR too.
+      const viaSprintDir = root({ github });
+      mkdirSync(join(viaSprintDir, ".scratch/alpha"), { recursive: true });
+      writeFileSync(join(viaSprintDir, ".scratch/alpha/.orchestrated"), "");
+      const sprintDirEnv = { SPRINT_DIR: join(viaSprintDir, ".scratch/alpha") };
+      assert.equal((await cli(viaSprintDir, ["mark-done", "12"], undefined, sprintDirEnv)).code, 3, "SPRINT_DIR");
+    }
 
     const plain = root({ github });
     const ref2 = github ? "12" : localIssue(plain);
@@ -520,14 +540,32 @@ test("mark-done exits 4 while a criterion is unchecked in a fresh read, on both 
   const path = localIssue(dir, UNMET);
   const local = await cli(dir, ["mark-done", path]);
   assert.equal(local.code, 4);
+  assert.match(local.stderr, /unchecked criteria/);
   assert.match(local.stderr, /- \[ \] docs/);
   assert.equal(existsSync(path), true);
 
-  const exec = fakeGh({ "issue view 12": { stdout: UNMET } });
-  const gh = await cli(root({ github: true }), ["mark-done", "12"], exec);
+  const acRoot = root();
+  const ac = await cli(acRoot, ["mark-done", localIssue(acRoot, `${MET}- [ ] three\n`)]);
+  assert.equal(ac.code, 4, "an unchecked acceptance criterion");
+  assert.match(ac.stderr, /three/);
+
+  // Fetched live on each call: the same ref refuses on the unmet body, then succeeds once it is met.
+  let body = UNMET;
+  const exec = fakeGh({ "issue view 12": () => ({ stdout: body }), "label create": {}, "issue edit 12": {} });
+  const ghRoot = root({ github: true });
+  const gh = await cli(ghRoot, ["mark-done", "12"], exec);
   assert.equal(gh.code, 4);
   assert.deepEqual(exec.calls[0], ["gh", "issue", "view", "12", "--json", "body", "--jq", ".body"]);
   assert.equal(exec.find("issue edit").length, 0);
+  body = MET;
+  assert.equal((await cli(ghRoot, ["mark-done", "12"], exec)).code, 0);
+  assert.equal(exec.find("issue edit 12").length, 1);
+});
+
+test("mark-done ignores unchecked boxes outside the criteria sections", async () => {
+  const dir = root();
+  const r = await cli(dir, ["mark-done", localIssue(dir, `${MET}\n## Notes\n\n- [ ] someone else's todo\n`)]);
+  assert.equal(r.code, 0, r.stderr);
 });
 
 test("mark-done --force skips both guards", async () => {
@@ -538,6 +576,11 @@ test("mark-done --force skips both guards", async () => {
   const r = await cli(dir, ["mark-done", path, "--force"], undefined, { CREW_ORCHESTRATED: "1" });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(existsSync(join(dir, ".scratch/feat/issues/done/01-t.md")), true);
+
+  const exec = fakeGh({ "issue view 12": { stdout: UNMET }, "label create": {}, "issue edit 12": {} });
+  const gh = await cli(root({ github: true }), ["mark-done", "12", "--force"], exec, { CREW_ORCHESTRATED: "1" });
+  assert.equal(gh.code, 0, gh.stderr);
+  assert.equal(exec.find("issue edit 12").length, 1);
 });
 
 test("mark-done (github) adds awaiting-merge, removes in-progress, and leaves the issue open", async () => {

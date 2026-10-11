@@ -143,11 +143,6 @@ J
   [[ "$output" != *"expected 3-8"* ]]
 }
 
-@test "header comment states the criteria WARN as over 10, a context-budget check" {
-  grep -q '^# WARN:  more than 10 acceptance criteria (a context-budget check' "$LINT"
-  ! grep -q '3-8' "$LINT"
-}
-
 @test "WARN: PRD ID no issue Implements" {
   printf -- '- **D9** Orphan decision.\n' >> "$W/PRD.md"
   lint_clean --prd "$W/PRD.md"
@@ -449,11 +444,6 @@ shared_issue() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"src/a.ts (advisory: add a Blocked by only if to-issues' edge rule row 1 or 2 matches)" ]]
   [[ "$output" != *"may conflict"* ]]
-  ! grep -q 'may conflict' "$LINT"
-}
-
-@test "header comment lists the shared-file WARN" {
-  sed -n '1,/^set -uo/p' "$LINT" | grep -q -i 'same file'
 }
 
 @test "no --prd: a draft with ## Decisions and an Implements naming its own IDs exits 0 with no WARN" {

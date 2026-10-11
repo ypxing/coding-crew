@@ -14,11 +14,8 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      # No native Windows job: Windows is supported through WSL2 (README), which the
-      # ubuntu job covers. Git Bash emulates fork(), so the suite took four 14-35 minute
-      # shards there, and its failures were mostly Git Bash quirks, not user-facing bugs.
-      # scripts/ci-test-shard.sh splits tests/ by measured time (tests/ci-shard-weights.tsv)
-      # for any "k/n" shard below; tests/ci-test-shard.bats proves the split is complete.
+      # No native Windows job: Windows is supported through WSL2 (README), which the ubuntu job
+      # covers; under Git Bash's emulated fork() the suite is slow and fails mostly on its quirks.
       matrix:
         include:
           - os: ubuntu-latest
@@ -37,16 +34,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      # macOS ships bash 3.2 at /bin/bash (Apple froze it there after the GPLv2 -> GPLv3
-      # switch). install.sh's own re-exec guard and several scripts (declare -A, empty
-      # array expansion under `set -u`) need bash >= 4, so give the runner one on PATH
-      # before anything else runs bash.
+      # macOS ships bash 3.2 at /bin/bash; install.sh's re-exec guard and several scripts
+      # need bash >= 4, so put one on PATH before anything else runs bash.
       - name: Install bash >= 4 (macOS)
         if: runner.os == 'macOS'
         run: brew install bash
 
-      # bats-core is pure bash — cloning a pinned tag avoids `npm install -g bats`
-      # (and the Node setup it needed).
+      # bats-core is pure bash: a pinned tag clone avoids `npm install -g bats` and its Node setup.
       - name: Install bats-core
         shell: bash
         run: |
@@ -69,8 +63,7 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           set -o pipefail
-          # Read the shard as index/total; the script fails loudly on a bad pair rather
-          # than printing an empty file list and passing having tested nothing.
+          # The script fails loudly on a bad index/total pair rather than testing nothing.
           index="${SHARD%%/*}"
           total="${SHARD##*/}"
           # while-read, not mapfile: the macOS runner's /bin/bash is 3.2.

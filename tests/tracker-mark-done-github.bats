@@ -5,8 +5,9 @@
 # mark-done re-fetches the issue body live (never a cached copy the caller
 # might be holding) and marks it done by swapping ready-for-agent for awaiting-merge —
 # never `gh issue close`: the work is only on a branch, and the PR's `Closes #n` closes
-# the issue on merge. close-issue.sh closes through it (--force). The local backend's
-# `.orchestrated`-marker / `--force` / exit-3-and-4 contract holds identically.
+# the issue on merge. close-issue.sh closes through it (--force). The guards every backend
+# shares (sprint marker, CREW_ORCHESTRATED, unchecked criteria) are tested once, in
+# tests/orchestrator/tracker-cli-write.test.mjs; this file keeps what is GitHub's own.
 #
 # `gh` is stubbed on PATH throughout: these tests pin argument shape and call
 # count, not real GitHub behaviour.
@@ -91,17 +92,6 @@ Status: ready-for-agent
 EOF
 }
 
-write_body_unmet() {
-  cat > "$GH_BODY_FILE" <<'EOF'
-Status: ready-for-agent
-
-## Acceptance criteria
-
-- [x] one
-- [ ] two
-EOF
-}
-
 # The done-marking edit: the awaiting-merge label swap.
 done_calls() {
   grep -c '^issue edit .*--add-label awaiting-merge' "$GH_LOG" || true
@@ -111,17 +101,7 @@ close_calls() {
   grep -c '^issue close' "$GH_LOG" || true
 }
 
-# ─── mark-done: criteria against a fresh fetch ──────────────────────
-
-@test "mark-done (github): unmet criteria exits 4 without labelling the issue" {
-  stub_gh 0
-  write_body_unmet
-
-  run mark_done 42
-  [ "$status" -eq 4 ]
-  [[ "$output" == *"unchecked criteria"* ]]
-  [ "$(done_calls)" -eq 0 ]
-}
+# ─── mark-done: the label edits ─────────────────────────────────────
 
 @test "mark-done (github): in-progress comes off in the one edit that adds awaiting-merge, and is created first" {
   stub_gh 0
@@ -214,33 +194,6 @@ EOF
   grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label in-progress$' "$GH_LOG"
 }
 
-@test "mark-done (github): checks the freshly fetched body, not a stale local copy" {
-  # A criterion unmet in the *fresh* fetch must still refuse, even though the
-  # caller passes nothing but the bare issue number — there is no cache to fool.
-  stub_gh 0
-  write_body_unmet
-
-  run mark_done 42
-  [ "$status" -eq 4 ]
-  [ "$(done_calls)" -eq 0 ]
-
-  # Now the issue is fixed upstream (the fresh fetch changes) — same invocation,
-  # same script, must now succeed: proof the body is fetched live each call.
-  write_body_met
-  run mark_done 42
-  [ "$status" -eq 0 ]
-  [ "$(done_calls)" -eq 1 ]
-}
-
-@test "mark-done (github): --force marks done despite an unchecked criterion" {
-  stub_gh 0
-  write_body_unmet
-
-  run mark_done 42 --force
-  [ "$status" -eq 0 ]
-  [ "$(done_calls)" -eq 1 ]
-}
-
 @test "mark-done (github): rejects a non-numeric argument instead of shelling out to gh" {
   stub_gh 0
   write_body_met
@@ -259,27 +212,7 @@ EOF
   [[ "$output" == *"gh issue edit failed"* ]]
 }
 
-# ─── mark-done: guard 1 (orchestrator ownership), same semantics ─────
-
-@test "mark-done (github): refuses when CREW_ORCHESTRATED is set" {
-  stub_gh 0
-  write_body_met
-
-  CREW_ORCHESTRATED=1 run mark_done 42
-  [ "$status" -eq 3 ]
-  [ "$(done_calls)" -eq 0 ]
-}
-
-@test "mark-done (github): refuses while the sprint marker exists under SPRINT_DIR" {
-  stub_gh 0
-  write_body_met
-  mkdir -p "$MAIN_ROOT/.scratch/alpha"
-  touch "$MAIN_ROOT/.scratch/alpha/.orchestrated"
-
-  SPRINT_DIR="$MAIN_ROOT/.scratch/alpha" run mark_done 42
-  [ "$status" -eq 3 ]
-  [ "$(done_calls)" -eq 0 ]
-}
+# ─── mark-done: --force against the sprint marker ───────────────────
 
 @test "mark-done (github): --force overrides the sprint marker" {
   stub_gh 0

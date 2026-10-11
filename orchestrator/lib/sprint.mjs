@@ -1,10 +1,6 @@
 /**
- * sprint.mjs — sprint.env and sprint-state.json, read through the scripts that own them.
- *
- * The slug is derived exactly once, by session-init.sh, where the issues were found.
- * Nothing here re-derives it: no branch-name parsing, and above all no
- * `ls .scratch/*​/sprint-state.json | head -1` glob, which picks the
- * alphabetically-first feature and silently points a whole sprint at the wrong dir.
+ * sprint.mjs — sprint.env and sprint-state.json, read through the scripts that own them. The slug
+ * is derived once, by session-init.sh, and never re-derived here: a glob would pick the wrong sprint.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -14,11 +10,7 @@ import { fileURLToPath } from "node:url";
 import { pathWithShim } from "./install-dir.mjs";
 import { depsLine } from "./report.mjs";
 
-// review-rollup.mjs is always this module's sibling one level up (lib/sprint.mjs ->
-// ../review-rollup.mjs), whether that's the repo's own orchestrator/ during dev/test or
-// an installed .coding-crew/crew-afk/ in production — so childEnv() can hand every
-// bash() child the exact path to the one parser of the aggregate review report, instead
-// of crew-summary.sh/promote-findings.sh guessing an install location themselves.
+// Handed to every bash() child, so crew-summary.sh and promote-findings.sh never guess an install location.
 const REVIEW_ROLLUP_PATH = join(dirname(dirname(fileURLToPath(import.meta.url))), "review-rollup.mjs");
 
 const ENV_KEYS = [
@@ -51,45 +43,26 @@ export function readSprintEnv(mainRoot, slug) {
 }
 
 export class Sprint {
-  /**
-   * @param {import("./effects.mjs").Effects} effects
-   * @param {Record<string,string>} env  the parsed sprint.env
-   */
   constructor(effects, env) {
     this.effects = effects;
     this.env = env;
-    // slug -> count, in-memory only, this invocation's own retry-cap counter (see
-    // bumpAttempt). Deliberately never read back from sprint-state.json: crew-summary.sh's
-    // "STALLED: resolve blockers and re-run" is the documented recovery path for a blocked
-    // issue, and a persisted, ever-growing count would make that re-run permanently refuse
-    // to retry it. What's written to disk (`.attempts`, `.round`, `.rounds`) is a mirror
-    // for reporting only, never read back to decide anything.
+    // In-memory: a persisted count would make "resolve blockers and re-run" refuse to retry.
     this._attempts = new Map();
-    // slug -> attempts refunded to a coder that timed out after committing (grantFreeAttempt),
-    // in-memory for the same reason.
+    // slug -> attempts refunded to a coder that timed out after committing (grantFreeAttempt).
     this._freeAttempts = new Map();
     // slug set: issues whose one deferred-run refund (claimDeferredRefund) is spent.
     this._deferredRefunds = new Set();
-    // slug set, in-memory only, this invocation's own record of which issues finishBlocked
-    // has already given up on (see markBlockedThisRun) — what loop.mjs's claimNext() checks
-    // instead of the persisted `blocked_slugs`, for the same cross-invocation reason above.
+    // slug set: issues finishBlocked gave up on this invocation, in-memory for the same reason.
     this._blockedThisRun = new Set();
-    // Findings triage that left no usable verdict (`actionable` fell back to the `high` rule):
-    // [{ scope, reason }], for the summary to say so.
+    // Findings triages that fell back to the `high` rule: [{ scope, reason }], for the summary.
     this.triageFallbacks = [];
-    // `<branch>@<commit>` set, in-memory only: the commits verify-worktree.sh passed during
-    // this invocation (see markVerifiedThisRun). A pass from an earlier run is not reused.
+    // `<branch>@<commit>` set: what verify-worktree.sh passed this invocation (markVerifiedThisRun).
     this._verifiedThisRun = new Set();
-    // slug set, in-memory only: the issues whose `## Requires` this invocation already ran
-    // (preflight.mjs's checkRequires). Each is probed once per run; a re-run probes again.
+    // slug set: issues whose `## Requires` this invocation already probed (checkRequires).
     this._requiresProbed = new Set();
   }
 
-  /**
-   * Which branch and slug session-init.sh would use, before it (or anything) touches disk —
-   * what the orchestrator needs to put the feature branch in its worktree. Throws with
-   * session-init.sh's own message when it refuses (a bad `--jira`, no issues to derive a slug from).
-   */
+  /** The branch and slug session-init.sh would use, before anything touches disk. */
   static resolveBranch(effects, { featureSlug, branchPrefix = null, passthrough = [] }) {
     const args = ["--print-branch"];
     if (featureSlug) args.push("--feature-slug", featureSlug);
@@ -120,38 +93,14 @@ export class Sprint {
     if (!env) throw new Error("session-init.sh did not produce a readable sprint.env");
     const sprint = new Sprint(effects, env);
 
-    // Deps are provisioned by installDeps() below, not here — a caller that also wants
-    // one-time command discovery (commands.mjs) must run that first, so a documented
-    // install override it caches at .coding-crew/dev-commands.json is already on disk the first
-    // time ensure-deps.sh runs: commands finding before deps installing, so the finding
-    // can be used rather than raced. main.mjs is that caller; init() itself no longer
-    // installs so that ordering is possible.
+    // main.mjs runs command discovery first, so its cached install override is on disk for ensure-deps.sh.
     if (deps) await sprint.installDeps(log);
     return sprint;
   }
 
   /**
-   * Deps, once, serially, against `effects.mainRoot` — before any worker or worktree
-   * exists. N parallel workers provisioning N fresh worktrees would otherwise be N cold
-   * downloads of the same packages; this warms whatever cache the package manager keeps
-   * so the per-worktree installs are local copies. On the host this is advisory — every
-   * worktree installs again, and verify-worktree.sh is the gate — so the outcome is only
-   * logged. In docker mode it installs nothing either: it records the mode, and each worktree's
-   * own `--slug` call (an issue, `_baseline`, `_integration`) installs into the volumes its
-   * lockfiles name. The returned DEPS: line is for the caller's log.
-   *
-   * Call this after one-time command discovery (see commands.mjs), not before: discovery
-   * may cache a documented install override at `.coding-crew/dev-commands.json`, and
-   * `ensure-deps.sh` only reads that cache, it never waits for one to appear.
-   *
-   * Streamed through `log` line-by-line as ensure-deps.sh runs (via spawnWithTimeout's
-   * `onLine`, the same mechanism dispatch()'s headless path already uses for a worker's own
-   * trace) rather than captured wholesale and reported once at the end — a cold-cache
-   * install of hundreds of packages used to produce zero visible output for however long it
-   * took, since the previous effects.bash()/spawnSync call only ever surfaced ensure-deps.sh's
-   * own final summary line. ensure-deps.sh's own `DEPS: ...` line is filtered out of the live
-   * stream and logged exactly once at the end (via depsLine() against the full captured
-   * stdout spawnWithTimeout already accumulates) so it is never printed twice.
+   * Deps, once, in mainRoot before any worktree exists, warming the package cache for the parallel
+   * worktree installs. Streamed, since a cold install is otherwise silent for minutes.
    */
   async installDeps(log = () => {}) {
     let lineBuffer = "";
@@ -174,7 +123,6 @@ export class Sprint {
     return line;
   }
 
-  /** Attach to an already-initialised sprint (resume, status, dry-run planning). */
   static attach(effects, featureSlug) {
     const env = readSprintEnv(effects.mainRoot, featureSlug);
     return env ? new Sprint(effects, env) : null;
@@ -204,12 +152,9 @@ export class Sprint {
     return this.env.CREW_FIX_FINDINGS || "actionable";
   }
 
-  /** Sprint-scoped env for every child: MAIN_ROOT + STATE_FILE + TRACE_LOG, and the docker shim first on PATH. */
   childEnv() {
     const { sprintEnvFile, ...rest } = this.env;
-    // Only set when unset: a caller (a test, a human debugging by hand) that already
-    // pins a different review-rollup.mjs is deliberately overriding it, not being
-    // overridden back.
+    // Only when unset: a caller pinning another review-rollup.mjs is overriding it on purpose.
     const env = { CREW_REVIEW_ROLLUP: REVIEW_ROLLUP_PATH, ...rest };
     if (this.installDir) env.PATH = pathWithShim(this.installDir, rest.PATH ?? process.env.PATH);
     return env;
@@ -248,15 +193,7 @@ export class Sprint {
   setModel(alias) {
     return this.state(["model", alias]);
   }
-  /**
-   * Spend one attempt at `slug` and return its 1-based number for this invocation. Called
-   * exactly once per dispatch, at claim time (see runOne in loop.mjs) — before runWorker/
-   * runHousekeeping run, so every pass (including the one that finally completes) is
-   * counted, and pipeline.mjs's retry cap (finishRetryOrBlock) can compare this same
-   * number against the cap with no separate read needed. The count itself lives only in
-   * memory (see the constructor) — what's written to disk here is a mirror for
-   * crew-summary.sh's "Rounds: N", not a value anything reads back.
-   */
+  /** Spent at claim time, so every pass counts toward the retry cap; returns its 1-based number. */
   bumpAttempt(slug) {
     const n = (this._attempts.get(slug) ?? 0) + 1;
     this._attempts.set(slug, n);
@@ -264,13 +201,7 @@ export class Sprint {
     return n;
   }
 
-  /**
-   * Read-only peek at the same in-memory counter, before spending another attempt — what
-   * claimNext() (loop.mjs) uses to enforce the per-issue attempt cap (CREW_MAX_ROUNDS) per issue: every issue may reach
-   * that many attempts, the same way a round-batch sprint gave every issue one attempt per
-   * round. Checking a global dispatch count instead would let the first issue claimed
-   * exhaust the whole budget while its siblings never ran even once.
-   */
+  /** Per issue, not a global count, which would let the first issue claimed exhaust the cap. */
   attemptCount(slug) {
     return this._attempts.get(slug) ?? 0;
   }
@@ -291,17 +222,11 @@ export class Sprint {
     return this._freeAttempts.get(slug) ?? 0;
   }
 
-  /** Recorded once finishBlocked gives up on `slug` — see claimNext() in loop.mjs. */
   markBlockedThisRun(slug) {
     this._blockedThisRun.add(slug);
   }
 
-  /**
-   * Whether `slug` has already been given up on *this invocation* — deliberately not the
-   * persisted `blocked_slugs` (see the constructor's comment): a fresh `crew-afk` run must
-   * always get a fresh attempt budget, so a human who fixes whatever blocked it can just
-   * re-run rather than needing some separate unblock step.
-   */
+  /** In-memory, so a fresh run gets a fresh attempt budget once a human fixes the blocker. */
   isBlockedThisRun(slug) {
     return this._blockedThisRun.has(slug);
   }
@@ -313,17 +238,11 @@ export class Sprint {
     return fresh;
   }
 
-  /** Recorded once verify-worktree.sh passes `branch` at `commit` — see gatesAtTip. */
   markVerifiedThisRun(branch, commit) {
     this._verifiedThisRun.add(`${branch}@${commit}`);
   }
 
-  /**
-   * Whether this invocation itself verified `branch` at `commit`. A receipt from an earlier
-   * run is bound to the commit but not to the environment it ran in: a human re-runs after
-   * fixing that environment (a service started), and a check that passed without it — its
-   * tests skipped — must run again, or the reviewer reads the old logs.
-   */
+  /** Only this invocation's verify counts: a receipt is bound to the commit, not the environment it ran in. */
   verifiedThisRun(branch, commit) {
     return this._verifiedThisRun.has(`${branch}@${commit}`);
   }
@@ -358,20 +277,11 @@ export class Sprint {
     return this.state(["deviation", "--slug", slug, "--reason", reason]);
   }
 
-  /** Drops a slug's recorded gap: the latest verify reported none. */
   coverageClear(slug) {
     return this.state(["coverage-clear", "--slug", slug]);
   }
 
-  /**
-   * Accumulates one dispatch's cost/duration/turns into the sprint's running totals —
-   * called unconditionally, since cost is incurred even on a blocked/timed-out dispatch.
-   * Claude-only for now (see extractResultMeta in dispatch.mjs); a dispatch with no metadata
-   * (pi/codex/copilot, or a dry run) passes 0s, which the additive state.sh command is a
-   * no-op for. `slug`/`role`/`attempt` also file it in this run's per-dispatch ledger;
-   * `head` (the branch tip a coder left) goes with the session, for a later resume.
-   * `costUnknown` (no `result` event — a timeout) files it as cost-unknown with its `tokens`.
-   */
+  /** Adds a dispatch's cost to the totals, blocked or timed out alike, and files it in the ledger. */
   recordDispatchCost({ costUsd, durationMs, numTurns, sessionId, contextTokens, costUnknown, tokens }, { slug, role, attempt, head } = {}) {
     const args = [
       "dispatch-cost",
@@ -402,7 +312,6 @@ export class Sprint {
     return this.state(["run-end", "--reason", reason, "--code", String(code)]);
   }
 
-  /** The latest ledger entry for `slug` in `role` (any run), or null. */
   lastDispatch(slug, role) {
     const list = this.readState().dispatches ?? [];
     for (let i = list.length - 1; i >= 0; i--) {
@@ -422,12 +331,7 @@ export class Sprint {
     return m ? m[1] : null;
   }
 
-  /**
-   * The reason the prior round retained this slug's branch (`verification-failed`,
-   * `criteria-unmet`, `review-not-run`, `merge-failed`, `close-refused`, ...), or `null`
-   * when nothing was retained for it. What tells `runWorker` whether the branch's content
-   * needs another worker pass or only another review attempt.
-   */
+  /** Why the prior round retained this slug's branch (`verification-failed`, `criteria-unmet`, …), or null. */
   retentionReason(slug) {
     return this.retentionRecord(slug).reason;
   }

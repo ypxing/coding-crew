@@ -18,35 +18,10 @@ set -uo pipefail
 #                   (honours CREW_WORKTREE_ROOT, as worktree.mjs does)
 #   --dry-run report what would happen and change nothing
 #   --force   delete a swept branch even when it has commits that are not in HEAD
-#
-# Why this exists
-#   Cleanup used to be prose: "remove the worktree, then delete the ref". Every
-#   platform spelled it out slightly differently, an orchestrator that ran out of
-#   loop iterations simply never got there, and Claude's runtime-managed
-#   worktrees (`.claude/worktrees/agent-*` on `worktree-agent-*` branches) were
-#   not covered by any of the variants at all — so a repo accumulated dozens of
-#   dead worktrees and branch refs across sprints. This makes teardown one
-#   mechanical, idempotent, re-runnable step.
-#
-# Safety rules (a skip is never an error)
-#   - A branch listed with --retain is never touched.
-#   - A worktree with uncommitted changes is never removed.
-#   - A *swept* branch (one nobody listed) whose tip is not contained in HEAD is
-#     never deleted without --force — unmerged work is not thrown away. Branches
-#     passed with --merged are exempt: squash rewrites the SHAs, so ancestry
-#     would reject every genuinely merged branch.
-#   - Order matters: the worktree goes first, because git refuses to delete a
-#     ref that some worktree still has checked out.
-#
-# Docker dependency volumes (docker mode)
-#   After the worktrees are gone, the volumes this repo's owner prefix names (`wt_<proj>_<owner4>_`,
-#   from dep-install's gen-override.sh --query owner-prefix) that no live worktree's or the main
-#   checkout's crew-compose.override.yml still names are removed. Volumes of another owner (another
-#   clone, host or sandbox) never match the prefix. A volume that cannot be removed (in use), or
-#   no `docker` on PATH, is skipped silently.
-#
-# Exit code: 0 on success (including "nothing to do"); 1 on bad arguments or a
-# git failure that left work behind.
+
+# Safety (a skip is never an error): a --retain branch, a worktree with uncommitted changes, and a
+# swept branch whose tip is not in HEAD (without --force) are kept. Docker mode then removes this
+# owner's dependency volumes no live override names. Exit 1 only on bad arguments or a git failure.
 
 MAIN_ROOT=""
 FEATURE_SLUG="${FEATURE_SLUG:-}"
@@ -73,14 +48,13 @@ while [ $# -gt 0 ]; do
     --retain) split_csv _ "${2:-}"; RETAIN+=(${SPLIT[@]+"${SPLIT[@]}"}); shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --force) FORCE=1; shift ;;
-    -h|--help) sed -n '3,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '4,/^$/p' "$0"; exit 0 ;;
     *) echo "ERROR: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
 
 if [ -z "$MAIN_ROOT" ]; then
-  # The main root, not the current worktree: --git-common-dir points at the
-  # shared .git directory even when invoked from inside a linked worktree.
+  # --git-common-dir points at the shared .git even from a linked worktree.
   COMMON_DIR=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
     || COMMON_DIR=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd) \
     || { echo "ERROR: not a git repository" >&2; exit 1; }
@@ -109,7 +83,6 @@ is_retained() {
   return 1
 }
 
-# ─── inventory: branch -> worktree path for every linked worktree ─────────────
 
 declare -a WT_PATHS=() WT_BRANCHES=()
 CUR_PATH=""
@@ -118,7 +91,6 @@ while IFS= read -r line; do
     worktree\ *) CUR_PATH="${line#worktree }" ;;
     branch\ *)
       b="${line#branch }"; b="${b#refs/heads/}"
-      # Skip the main worktree — never a cleanup candidate.
       if [ "$CUR_PATH" != "$MAIN_ROOT" ]; then
         WT_PATHS+=("$CUR_PATH"); WT_BRANCHES+=("$b")
       fi
@@ -134,7 +106,6 @@ worktree_for() {
   return 1
 }
 
-# ─── candidate set: explicit --merged plus swept leftovers ────────────────────
 
 CANDIDATES=()
 seen_candidate() {
@@ -148,15 +119,9 @@ add_candidate() { seen_candidate "$1" || CANDIDATES+=("$1"); }
 
 for b in ${MERGED[@]+"${MERGED[@]}"}; do add_candidate "$b"; done
 
-# Sweep: leftover worktrees from this sprint that nobody passed in. Two shapes
-# are recognised — the orchestrator-managed `crew/<feature-slug>/<issue>`
-# branches, and the runtime-managed worktrees Claude creates for
-# `isolation: worktree` agents (`worktree-agent-*`, checked out under
-# `.claude/worktrees/`). The latter are the ones that leaked historically: no
-# variant ever named them, so nothing removed them. Git records no owner for
-# them, so one counts as this sprint's only when it sits inside the sprint's own
-# `<worktree root>/crew/<feature-slug>/` directory (created from one of its issue
-# worktrees) — another sprint's, or the user's under the main checkout, is left alone.
+# Sweep this sprint's leftovers nobody passed in: `crew/<feature-slug>/*` branches, and Claude's
+# `worktree-agent-*` worktrees, which git records no owner for — so only those inside the sprint's
+# own `<worktree root>/crew/<feature-slug>/` count.
 SPRINT_WT_DIR=""
 if [ -n "$FEATURE_SLUG" ]; then
   WT_ROOT="${CREW_WORKTREE_ROOT:-.scratch/worktrees}"
@@ -180,7 +145,6 @@ for i in "${!WT_BRANCHES[@]}"; do
   fi
 done
 
-# ─── teardown ────────────────────────────────────────────────────────────────
 
 REMOVED=0
 KEPT=0
@@ -205,7 +169,6 @@ for b in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
     continue
   fi
 
-  # Never discard uncommitted work.
   if [ -n "$wt" ] && [ -d "$wt" ]; then
     if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
       echo "CLEANUP: kept $b (uncommitted changes in $wt)"
@@ -214,13 +177,8 @@ for b in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
     fi
   fi
 
-  # Never discard commits that are not in HEAD — but only for *swept* branches,
-  # whose provenance is unknown. An explicitly listed --merged branch is the
-  # orchestrator's own certified list, and ancestry is not checkable for it:
-  # cleanup runs after squash, which soft-resets the feature branch and rewrites
-  # the merge into a single new commit, so no merged branch tip is ever an
-  # ancestor of HEAD by then. Requiring ancestry here would keep every merged
-  # branch forever, which is the leak this script exists to stop.
+  # Swept branches only: squash rewrites the merge, so no --merged branch tip is an ancestor of HEAD,
+  # and requiring ancestry would keep every merged branch.
   if [ "$FORCE" -eq 0 ] && ! is_explicit_merged "$b" \
      && ! git -C "$MAIN_ROOT" merge-base --is-ancestor "$b" "${FEATURE_BRANCH:-HEAD}" 2>/dev/null; then
     echo "CLEANUP: kept $b (commits not in ${FEATURE_BRANCH:-HEAD} — merge status unknown, resolve by hand)"
@@ -251,14 +209,11 @@ for b in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
   fi
 done
 
-# Safe unconditionally: prune only clears metadata for worktrees whose directory
-# is already gone. It never removes a live, checked-out worktree.
+# Safe unconditionally: prune only clears metadata for worktrees whose directory is gone.
 [ "$DRY_RUN" -eq 1 ] || git -C "$MAIN_ROOT" worktree prune
 
-# ─── dependency volumes no worktree maps to ──────────────────────────────────
 
-# _find_gen_override — dep-install's gen-override.sh, found the way ensure-deps.sh and
-# verify-worktree.sh find the dep-install scripts.
+# _find_gen_override — dep-install's gen-override.sh, found as ensure-deps.sh finds its scripts.
 _find_gen_override() {
   local root candidate
   if [ -n "${CREW_DEP_INSTALL_SCRIPTS:-}" ]; then
@@ -293,8 +248,7 @@ _prune_dep_volumes() {
   prefix="$(bash "$gen" --project-root "$MAIN_ROOT" --main-root "$MAIN_ROOT" --query owner-prefix 2>/dev/null)" || return 0
   [ -n "$prefix" ] || return 0
 
-  # Every name a live override still maps: the main checkout's, and each worktree's (the git dir
-  # of every `git worktree list` entry, which covers every sprint of this repo).
+  # Names a live override still maps: the main checkout's and every worktree's (every sprint's).
   local overrides=()
   common="$(git -C "$MAIN_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
   [ -z "$common" ] || overrides+=("$common/crew-compose.override.yml")

@@ -4,9 +4,9 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { MAIN, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, runSprint, traceLog, state, fake, featureReviewFile, test } from "./helpers/sprint.mjs";
+import { REPO, MAIN, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, runSprint, traceLog, state, fake, featureReviewFile, test } from "./helpers/sprint.mjs";
 
 // ─── what the last prose bodies used to assert about themselves ──────────────
 //
@@ -235,4 +235,18 @@ test("session-init.sh's warning that --jira was ignored reaches the run's stderr
   const r = runSprint(root, ["--jira", "PROJ-12"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stderr, /--jira PROJ-12 ignored/);
+});
+
+test("the per-branch review's protocol file lacks the feature part; the feature review's has it", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const featureHeading = readFileSync(join(REPO, "orchestrator/roles/reviewer/feature.md"), "utf8").match(/^# .+$/m)[0];
+  const dispatchDir = join(root, ".scratch/demo/dispatch");
+  const protocols = readdirSync(dispatchDir, { recursive: true }).filter((f) => f.endsWith(".protocol.md"));
+  const reviewerProtocols = protocols.map((f) => readFileSync(join(dispatchDir, f), "utf8")).filter((t) => t.startsWith("# Code Reviewer Protocol"));
+  const withPart = reviewerProtocols.filter((t) => t.includes(featureHeading));
+  assert.equal(withPart.length, 1, `one feature review among ${protocols}`);
+  assert.equal(reviewerProtocols.length - withPart.length, 1, `one per-branch review among ${protocols}`);
 });

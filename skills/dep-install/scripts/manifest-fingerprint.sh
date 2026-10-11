@@ -2,36 +2,17 @@
 # Fingerprint a project's manifest/lockfiles so host-install.sh and docker-install.sh can
 # skip a redundant install when nothing has changed since their own last successful run.
 #
-# Deliberately independent of gen-override.sh's own ecosystem detection: that script commits
-# to a single ecosystem (first match wins) because it needs one CONTAINER_SRC/volume layout
-# per service. This script has no such constraint — it just needs to know whether *any*
-# recognised manifest changed, so it scans for every ecosystem's lockfile at once. That also
-# makes it correct for a mixed-ecosystem monorepo (e.g. a node service and a python service
-# side by side), which gen-override.sh's single-ecosystem detection does not attempt.
-#
 # Usage:
 #   manifest-fingerprint.sh compute --project-root <dir> [--max-depth N]
 #   manifest-fingerprint.sh check   --project-root <dir> --stamp <path> [--max-depth N]
 #   manifest-fingerprint.sh write   --project-root <dir> --stamp <path> [--max-depth N]
 #
-#   compute   prints one hash covering every recognised lockfile under --project-root
-#             (bounded depth, common vendor/output dirs excluded, and so is every
-#             dot-directory under it — the same set gen-override.sh's manifest scan skips).
-#   check     prints FRESH if --stamp's saved hash matches the current one, STALE otherwise
-#             (including when --stamp does not exist yet). Always exits 0 — the verdict is
-#             the stdout line, not the exit code.
-#   write     computes the current hash and atomically writes it to --stamp.
-#
-# What this proves, and what it does not: a FRESH verdict means the *inputs* to install are
-# unchanged — it says nothing about whether the installed output (node_modules, a docker
-# named volume, etc.) is still intact. That is a deliberate scope limit, not an oversight —
-# see docker-install.sh/host-install.sh's own --force flag and dep-install/SKILL.md's retry
-# rule, which is the actual correctness backstop: it reacts to a real module-not-found error
-# from a later command, forcing a real reinstall regardless of what this script says.
-#
-# Exit codes:
-#   0  success (all three subcommands)
-#   1  argument or filesystem error
+#   compute   one hash over every recognised lockfile (bounded depth; vendor, output and dot-dirs skipped)
+#   check     prints FRESH if --stamp's hash matches the current one, else STALE; always exits 0
+#   write     atomically writes the current hash to --stamp
+# FRESH means the install's inputs are unchanged, not that its output is intact: dep-install's
+# --force retry on a module-not-found error is the backstop.
+# Exit codes: 0 success, 1 argument or filesystem error
 
 set -euo pipefail
 
@@ -80,10 +61,7 @@ fi
 
 PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 
-# Every lockfile name host-install.sh's signal-file table and docker-install.sh's
-# _install_cmd_for_dir already recognise — kept as plain filenames here (no command mapping
-# needed, this script only hashes content) so a new ecosystem added to either of those tables
-# should be added here too.
+# Kept in step with host-install.sh's and docker-install.sh's lockfile tables.
 _LOCKFILE_NAMES=(
   package.json uv.lock bun.lockb pnpm-lock.yaml package-lock.json yarn.lock poetry.lock
   go.sum go.mod requirements.txt requirements-dev.txt dev-requirements.txt pyproject.toml
@@ -105,10 +83,8 @@ _sha256_file() {
   _sha256 < "$1" | awk '{print $1}'
 }
 
-# _compute — one hash over every "<relative-path>:<content-hash>" pair, sorted by path so the
-# result is independent of filesystem iteration order. The path is part of the hashed input,
-# not just the content, so a brand-new manifest directory (a subpackage nobody has installed
-# yet) changes the fingerprint even before its own lockfile content is what changed.
+# _compute — one hash over sorted "<relative-path>:<content-hash>" pairs. The path is hashed too, so
+# a new, never-installed manifest directory changes the fingerprint.
 _compute() {
   local name_args=()
   local name

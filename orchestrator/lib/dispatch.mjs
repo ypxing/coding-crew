@@ -1,25 +1,7 @@
 /**
- * dispatch.mjs — four platforms, one contract.
- *
- * A dispatch is: run <agent> with <prompt> in <cwd>, capture its final message to
- * <outFile>, with a hard timeout. Every platform can do this headlessly:
- *
- *   pi       pi -p --mode json --append-system-prompt <protocol> …   (adapters/pi.mjs)
- *   codex    codex exec --cd … --json <protocol + prompt>             (adapters/codex.mjs)
- *   claude   claude -p <prompt> --append-system-prompt-file <protocol> …   (adapters/claude.mjs)
- *   copilot  copilot -p <protocol + prompt> -C … --output-format json        (adapters/copilot.mjs)
- *
- * No platform needs an agent file or a bash dispatcher: each adapter's `build()` gets the role's
- * protocol rendered from orchestrator/roles/<role>.md (adapters/render.mjs), both as text and as
- * `<outFile>.protocol.md`, and the role's ROLE_POLICY, which its `policyArgs()` turns into flags.
- *
- * All four emit a JSON event stream. Recognised tool calls become `[TOOL]`/`[TOOL-ERROR]`
- * lines in the trace log while the worker runs; the raw stream is kept as
- * `<outFile>.events.jsonl`, and only the final assistant text goes into outFile (the one
- * thing report.mjs parses).
- *
- * Permissions are explicit per platform: an unattended sprint that stops on a
- * tool-permission prompt never finishes.
+ * dispatch.mjs — run one role's agent headlessly on any platform: <prompt> in <cwd>, final message
+ * to <outFile>, hard timeout. The raw event stream is kept as `<outFile>.events.jsonl`. Permissions
+ * are explicit per platform: an unattended sprint that stops on a permission prompt never finishes.
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -34,12 +16,8 @@ import { formatJsonTraceLine } from "./adapters/trace.mjs";
 
 export { ARGV_PROMPT_LIMIT_BYTES, renderRolePrompt };
 
-/**
- * Build the argv for one dispatch.
- * @returns {{cmd: string, args: string[], cwd: string, env: object, capture: "stdout"|"file"}}
- */
 export function buildDispatch(platform, spec) {
-  const { agent, cwd, promptFile, outFile, model, mainRoot, slug, reportPath, resumeSessionId, maxBudgetUsd } = spec; // spec.effort: afk.effort over ROLE_POLICY
+  const { agent, cwd, promptFile, outFile, model, mainRoot, slug, reportPath, resumeSessionId, maxBudgetUsd } = spec; // spec.effort: afk.effort over ROLE_POLICY; spec.protocolPart: renderRolePrompt's `part`
   const shared = {
     cwd,
     env: {
@@ -47,11 +25,21 @@ export function buildDispatch(platform, spec) {
     CREW_ORCHESTRATED: "1",
     // The docker shim first: a bare `docker compose run` the agent types loads its worktree's override.
     ...(process.env.CREW_INSTALL_DIR ? { PATH: pathWithShim(process.env.CREW_INSTALL_DIR, process.env.PATH) } : {}),
-    // The coder defers the full suite to the verify gate, and runs the tests it changed since
-    // the feature branch it was cut from (`run-checks.sh --targeted`); reviewer/triage run no checks.
+    // The coder defers the full suite to the verify gate and runs only the tests it changed.
     ...(agent === "crew-coder" ? { CREW_DEFER_FULL_CHECKS: "1", ...(spec.baseRef ? { CREW_BASE_REF: spec.baseRef } : {}) } : {}),
     },
   };
+
+  const role = roleOfAgent(agent);
+  // Rendered here, before anything spawns: a missing protocol or fragment fails the dispatch.
+  const protocol = role ? renderRolePrompt(role, platform, { mainRoot, rolesDir: spec.rolesDir, part: spec.protocolPart }) : null;
+  // Every protocol is on disk as well as in hand: the adapter places whichever its CLI takes.
+  let protocolFile = null;
+  if (protocol) {
+    protocolFile = `${outFile}.protocol.md`;
+    mkdirSync(dirname(protocolFile), { recursive: true });
+    writeFileSync(protocolFile, protocol);
+  }
 
   // Test/CI seam: one script stands in for every model dispatch, so the whole state
   // machine runs for zero tokens. --report-path lets it write the sidecar report.mjs reads.
@@ -79,17 +67,7 @@ export function buildDispatch(platform, spec) {
 
   const adapter = ADAPTERS[platform];
   if (!adapter) throw new Error(`unknown platform: ${platform}`);
-  const role = roleOfAgent(agent);
-  // Rendered here, before anything spawns: a missing protocol or fragment fails the dispatch.
-  const protocol = role ? renderRolePrompt(role, platform, { mainRoot, rolesDir: spec.rolesDir }) : null;
   const prompt = readFileSync(promptFile, "utf8");
-  // Every protocol is on disk as well as in hand: the adapter places whichever its CLI takes.
-  let protocolFile = null;
-  if (protocol) {
-    protocolFile = `${outFile}.protocol.md`;
-    mkdirSync(dirname(protocolFile), { recursive: true });
-    writeFileSync(protocolFile, protocol);
-  }
   const label = basename(promptFile, ".md").replace(/\.prompt$/, "");
   const { args, input } = adapter.build({
     cwd,
@@ -104,7 +82,6 @@ export function buildDispatch(platform, spec) {
   });
   // A CLI that reads its prompt on stdin carries no size limit; every argv string is capped.
   assertArgvFits(args, adapter.cmd);
-  // A fix round continuing the coder's own earlier session (pipeline.mjs decides when).
   if (resumeSessionId && adapter.resume) args.push(...adapter.resume(resumeSessionId));
   // afk.limits.<role>.usd: a backstop, checked after each turn, so it can overshoot one turn.
   if (maxBudgetUsd && adapter.budget) args.push(...adapter.budget(maxBudgetUsd));
@@ -119,22 +96,14 @@ export function buildDispatch(platform, spec) {
   };
 }
 
-/**
- * onTrace heartbeat throttle: every Nth tool call or every INTERVAL_MS, whichever first, so
- * the live signal to the parent stays bounded over a long worker. The fake seam's
- * dispatch-time throttle applies to every platform.
- */
+// Heartbeat throttle: every Nth tool call or every INTERVAL_MS, whichever first.
 const HEARTBEAT_EVERY_N = 5;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
 /** The fake seam's own already-throttled [TOOL]/[TOOL-ERROR] line, forwarded on its stdout. */
 const BASH_HEARTBEAT = /^\[(?:TOOL|TOOL-ERROR)\] /;
 
-/**
- * The worker's final message from the raw event lines (the adapter knows the stream's shape).
- * Returns "" when nothing is found — an empty report is a handled state, and safer than leaking
- * raw JSONL.
- */
+/** "" when nothing is found: an empty report is a handled state, safer than leaking raw JSONL. */
 export function extractFinalText(platform, lines) {
   return ADAPTERS[platform]?.finalText(lines) ?? "";
 }
@@ -144,17 +113,12 @@ export function extractResultMeta(platform, lines) {
   return ADAPTERS[platform]?.resultMeta?.(lines) ?? EMPTY_RESULT_META;
 }
 
-/** The distinct tool names in claude's `permission_denials` (`tool_name`), comma-joined; `?` when unnamed. */
 function deniedTools(denials) {
   const names = [...new Set(denials.map((d) => d?.tool_name ?? d?.tool ?? "?"))];
   return names.join(",");
 }
 
-/**
- * Move an earlier dispatch's event stream at `file` aside, to the first free
- * `<stem>.events.<n>.jsonl`, so every attempt's stream (and its cost) outlives the retry
- * that reuses the path. The latest stays at `file`.
- */
+/** Keep an earlier attempt's event stream (and its cost) at the first free `<stem>.events.<n>.jsonl`. */
 function keepPriorEvents(file) {
   if (!existsSync(file)) return;
   const stem = file.replace(/\.events\.jsonl$/, "");
@@ -167,11 +131,7 @@ function keepPriorEvents(file) {
   }
 }
 
-/**
- * Run one dispatch to completion. Always leaves a report file on disk (empty when the
- * child produced nothing), because "no report" is a state the pipeline must be able
- * to read rather than infer.
- */
+/** Always leaves a report file (empty when nothing came back): "no report" must be read, not inferred. */
 export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } = {}) {
   mkdirSync(dirname(spec.outFile), { recursive: true });
   const adapter = ADAPTERS[platform];
@@ -185,8 +145,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     return { ...EMPTY_RESULT_META, code: 1, timedOut: false, dryRun: false, stderr: e.message, text: "", costUnknown: false };
   }
 
-  // spawnWithTimeout's onLine hands back raw chunks, not lines — a long JSON line can span
-  // two. lineBuffer holds the trailing partial line; the remainder is flushed after close.
+  // onLine hands back raw chunks: lineBuffer holds a trailing partial line until close.
   const lines = [];
   let lineBuffer = "";
   let heartbeatCount = 0;
@@ -215,8 +174,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
       }
       return;
     }
-    // The fake seam writes spec.logFile itself; of its
-    // stdout, only its already-throttled [TOOL] lines are heartbeats — the raw stream is not.
+    // The fake seam writes spec.logFile itself; only its already-throttled [TOOL] lines are heartbeats.
     if (onTrace && BASH_HEARTBEAT.test(line)) onTrace(line);
   };
   const onLine = (chunk) => {
@@ -254,11 +212,8 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
   }
   const text = existsSync(spec.outFile) ? readFileSync(spec.outFile, "utf8") : "";
 
-  // A failure before anything is traced (a missing CLI → ENOENT/127, a killed
-  // child) otherwise leaves its reason only in stderr. claude can also report isError while
-  // still exiting 0 with text. Permission denials on an otherwise normal dispatch are not a
-  // failure — the agent went on without that call — so they get their own label, naming the
-  // tools denied, which a FAIL line with only a count left to guesswork.
+  // claude can report isError while exiting 0 with text. Permission denials alone are not a
+  // failure (the agent went on without that call), so they get a WARN naming the tools.
   const failed = r.code !== 0 || r.timedOut || !text.trim() || meta.isError;
   const denials = meta.permissionDenials.length
     ? ` permissionDenials=${meta.permissionDenials.length} tools=${deniedTools(meta.permissionDenials)}`
@@ -294,11 +249,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
   };
 }
 
-/**
- * A role with no protocol (commandFinder, prWriter): one reasoning pass through the
- * platform's adapter like every other role, its prompt alone. `fakeAgent` names the role to the
- * CREW_FAKE_DISPATCH seam (fake-dispatch.sh's canned answers) and in the trace.
- */
+/** A role with no protocol (commandFinder, prWriter); `fakeAgent` names it to CREW_FAKE_DISPATCH and the trace. */
 export async function dispatchPlain(
   effects,
   platform,
@@ -321,7 +272,6 @@ function helpLists(text, flag) {
   return forms.some((f) => new RegExp(`(^|[^\\w-])${esc(f)}(?![\\w-])`).test(text));
 }
 
-/** Preflight: is this platform's CLI actually present? */
 export function preflight(effects, platform, { paneHost = null, probeFlags = false } = {}) {
   if (process.env.CREW_FAKE_DISPATCH) return [];
   const adapter = ADAPTERS[platform];
@@ -335,7 +285,6 @@ export function preflight(effects, platform, { paneHost = null, probeFlags = fal
     const missing = (adapter.requiredFlags ?? []).filter((f) => !helpLists(text, f));
     for (const f of missing) problems.push(`${cli} \`${(adapter.helpArgs ?? ["--help"]).join(" ")}\` does not list ${f}, which the ${platform} adapter needs for a full-permission headless run`);
   }
-  // Every platform is dispatched from the rendered protocol: no agent file to find.
   problems.push(...preflightPaneHost(effects, paneHost));
   return problems;
 }

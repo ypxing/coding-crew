@@ -763,25 +763,3 @@ MK
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --lock-timeout 1
   [ "$status" -eq 1 ]
 }
-
-# ─── docker-install.md delegates install execution to docker-install.sh's lock ───────────
-# docker-install.md used to hand-run `docker compose run` itself for the install step —
-# unlocked, unlike docker-install.sh's own mkdir-based lock (pinned above at "an already-held
-# lock is exit 4..."). Multiple coders reaching that hand-run step around the same time each
-# started their own container against the same shared named volume with no coordination at
-# all. Fixed by having docker-install.md's own install step call docker-install.sh instead of
-# reimplementing its logic — docker-in-docker nesting guard included, since it's already
-# tested against docker-install.sh's own --install-cmd path above. Pinned here the same way
-# worker-close-guard.bats pins solve-issue's prose sections.
-
-@test "docker-install.md's install step delegates to docker-install.sh's lock instead of hand-running docker compose" {
-  local doc="$SCRIPTS_DIR/../references/docker-install.md"
-  [ -f "$doc" ]
-  grep -q 'scripts/docker-install.sh' "$doc"
-  grep -q -- '--timeout' "$doc"
-  ! grep -q -- '--lock-timeout' "$doc"
-  grep -qi 'do not fall back to running .docker compose. yourself' "$doc"
-  # No hand-rolled docker compose run for install — only the documented recovery paths
-  # (entrypoint override under "Install failures") still construct one directly.
-  ! grep -q 'GIT_ENV_ARGS' "$doc"
-}

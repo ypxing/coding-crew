@@ -8,20 +8,6 @@ A distributable collection of AI skills (and crew-afk, the program that runs the
 Nothing here runs on its own — this repo is the source; consuming projects are the target.
 For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → crew-address-findings), see `README.md`.
 
-## Layout
-
-- `skills/<skill>/SKILL.md` — one skill per directory, one body for every platform (`{{PLATFORM}}` is the one per-platform substitution). `crew-afk`'s skill is a thin launcher; its actual logic is the `orchestrator/` program.
-- `orchestrator/` — the crew-afk state machine (rounds, worktrees, deps → dispatch → verify → review → merge → close, receipts). One implementation, run by all four platform launchers via `orchestrator/lib/dispatch.mjs`.
-- `orchestrator/roles/` — the role protocols crew-afk dispatches (`coder.md`, `reviewer.md` + `reviewer/` checklists and scripts, `triage.md`). They ship with the orchestrator to `.coding-crew/crew-afk/roles/` (crew-afk also installs `skills/_shared/fragments/` to `.coding-crew/skills/_shared/fragments/` for their `{{FRAGMENT:…}}` lines) and are rendered per dispatch; no platform gets an agent file. `registry.json`'s `retired-agents` lists the agent files older installs wrote, which install and uninstall remove.
-- `tracker/` — the issue-tracker backends (`local.mjs`, `github.mjs`, `body-format.mjs`), their docs (`docs/{local,github}.md`), `tracker-config.mjs`, `getTracker()` (`index.mjs`) and `cli.mjs`, the tracker CLI skills call. `registry.json`'s `docs.trees` installs it to `.coding-crew/tracker/` on every install, always overwritten; the orchestrator imports it relatively (`../../tracker/…`), so source and installed trees resolve alike.
-- `orchestrator/platforms.json` — the platform list and where each platform keeps skills (`projectSkills`, `userSkills`, `configDir`, `configDirEnv`); a skill installs to `<projectSkills|userSkills>/<skill>`.
-- `registry.json` — source of truth for skills (`version`, `deps`, `assets`), `retired-agents`, and doc templates.
-- `install.sh` / `uninstall.sh` — installer; both source `scripts/lib/platforms.sh`, which reads the platform list and skill destinations from `orchestrator/platforms.json`.
-- `scripts/` — shared build-time scripts copied into skills (`skills/skill-utils/git-workflow/`) and maintainer-only scripts that ship to no consumer (`ci-test-shard.sh`, `ci-run-bats.sh`, `render-skill.sh`, `cut-release.sh`, `sync-pr-with-main.sh`, `smoke-sprint.sh` + `smoke-sprint/`, `eval-design-skills.mjs` + `eval-design-skills/`, `eval-reviewer-misses.mjs` + `eval-reviewer-misses/`). Skill-local runtime scripts live with their skill (e.g. `skills/crew-afk/scripts/`).
-- `tests/` — bats tests, run against **rendered/installed** output via `tests/helpers/render.bash`, not source variants.
-- `docs/` — the dev team guide (`guide.md`) and optional workflow templates. The tracker docs (`local.md`, `github.md`) live in `tracker/docs/` and install with the tracker tree.
-- `.claude/rules/` — detail loaded only when working on matching paths: `crew-afk.md` (orchestrator and crew-afk scripts behaviour, adding a role), `to-issues-linter.md`. Update them alongside the code they describe.
-
 ## Working in this repo
 
 ```bash
@@ -31,7 +17,7 @@ TARGET_REPO=/tmp/test-repo ./install.sh claude --skill crew-afk
 # Render a skill body without a full install
 bash scripts/render-skill.sh crew-afk codex | less
 
-# Run tests: one bats process per file, CPU-count at a time (plain `bats tests/*.bats` runs files one by one, ~6x slower)
+# Run tests: one bats process per file, CPU-count at a time, heaviest first (plain `bats tests/*.bats` runs files one by one, ~6x slower)
 bash scripts/ci-run-bats.sh tests/*.bats
 
 # After editing crew-grill/crew-brainstorm/to-issues: behavioural A/B (base ref vs worktree), judged blind; costs API money
@@ -41,7 +27,7 @@ node scripts/eval-design-skills.mjs --skill crew-grill --runs 2 --dry-run   # dr
 scripts/smoke-sprint.sh copilot              # --setup-only builds the repo without calling the CLI
 scripts/smoke-sprint.sh claude --demo > /tmp/smoke.log   # the same on the pinned demo repo (scripts/smoke-sprint/demo/); appends a row to scripts/smoke-sprint/RESULTS.md — commit it before cutting the release
 
-# After editing orchestrator/roles/reviewer.md: replay the two bugs PR #208 shipped with against base and head, judged blind; costs API money
+# After editing orchestrator/roles/reviewer.md or reviewer/feature.md: replay the two bugs PR #208 shipped with against base and head, judged blind; costs API money
 node scripts/eval-reviewer-misses.mjs --runs 2 --dry-run   # writes each ref's prompts, calls no model; drop --dry-run to run
 
 # Bring a PR branch up to date with origin/main (local only, never pushes): merge it, resolve registry version / CHANGELOG append conflicts, bump versions to sit above main's
@@ -53,8 +39,8 @@ scripts/cut-release.sh --dry-run --demo-smoke /tmp/smoke.log   # or --no-demo-sm
 ```
 
 - Version bump (D4): a change to any file a `skills.*` entry in `registry.json` ships (its `source-dir` tree, `assets.source` tree, `scripts[]`) or to that entry's own registry fields needs that entry's `version` in `registry.json` strictly above `origin/main`'s version for it — `install.sh --update` skips an entry whose version is unchanged, and two branches bumping to the same number would collide. An entry the branch did not change (measured from the merge-base) is exempt even if main bumped it. `tests/registry-version-bump.bats` enforces it against `origin/main` (skips when it is not found) and fails the verify gate otherwise.
-  In an issue's acceptance criteria, state it as the invariant ("`<entry>`'s version is above origin/main's"), never as "version bumped": issues in one sprint run in parallel, and once a sibling has bumped the entry, the bump drops out of a later branch's diff after it syncs with the feature branch, so the reviewer finds it unmet.
-- A crew-afk mechanism change cites how many times its incident happened (from the logs or the tracker): a gate, retry or promotion rule added for one incident costs every sprint, so the count is what justifies it.
+- A crew-afk mechanism change cites how many times its incident happened (from the logs or the tracker): a gate, retry or promotion rule added for one incident costs every sprint, so the count is what justifies it. The count belongs in the PR or commit message, never in code.
+- Code comments follow solve-issue's comment rule (`skills/solve-issue/SKILL.md`, Step 4).
 - One writer per issue file: don't add code paths where a worker/agent edits an issue's `Status:`/checkboxes directly — that's `close-issue.sh`'s job, gated by receipts.
 - `CHANGELOG.md`: add one entry at the top of `[Unreleased]` (component prefix, what changed for a user, issue/PR number). Read only its first ~20 lines to do it, not the whole file.
 - Issues (this repo's own dev use) live in `.scratch/<feature-slug>/issues/{open,done}/`; the tracker is set in `.coding-crew/config.json` (`{"tracker": {"kind": …}}`); see `tracker/docs/<kind>.md`.

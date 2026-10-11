@@ -1,40 +1,17 @@
 #!/usr/bin/env bash
 # run.sh — run one project command where this project's checks actually run.
 #
-# Docker mode mounts a named volume over the dependency directory (node_modules, .venv, …), so
-# its contents never exist on the host: a check has to run inside `docker compose run`, with
-# this worktree's crew override loaded, or it fails on deps that are really there. The override
-# is added by the `docker` shim (shim/docker) on PATH, not built here: this is the one place that
-# runs a project command, and it only has to say `docker compose run --rm <service> …`.
-#
 # Usage:
 #   bash scripts/run.sh --project-root <path> [--main-root <path>] -- <command>
 #   bash scripts/run.sh --project-root <path> [--main-root <path>] --describe [-- <command>]
 #   bash scripts/run.sh ... --via docker|host -- <command>
 #
-# <command> is one shell string (`npm test`, `make lint`), run from PROJECT_ROOT on the host or
-# from the service's container-side source dir in docker. Exit code is the command's own.
-#
-# Where it runs:
-#   host    resolve-mode.sh says host, or docker mode but <command> already invokes docker itself
-#           (detect-docker-nesting.sh): its own `docker compose` calls are not nested in another
-#           container, and they get the override because the shim is first on PATH and
-#           CREW_COMPOSE_OVERRIDE is set
-#   docker  resolve-mode.sh says docker: `docker compose run --rm <service> sh -c 'cd <src> && <command>'`
-#           through the shim
-# `--via nested` (an older --describe's verdict for the second case) runs as host.
-#
-# Docker mode that cannot be resolved (no compose file, no override yet, no service) runs on the
-# host with one `run.sh: …` warning on stderr: a gate must never stall on docker introspection,
-# and a worker sees the warning next to the missing-module error dep-install's retry rule fixes.
-#
-# --describe prints the verdict as KEY=VALUE lines instead of running anything: RUN=docker|host,
-# then for docker SERVICE, CONTAINER_SRC, COMPOSE_FILE, OVERRIDE; FALLBACK=<reason> when docker
-# fell back to host; and VIA=docker|host when a command was given.
-#
-# --via runs a command where an earlier --describe said it goes, without deciding again —
-# verify-worktree.sh prints where each check runs before running it. `--via host` never
-# resolves anything, which is also how that gate's CREW_VERIFY_DOCKER=off switch is honoured.
+# Docker mode runs <command> as `docker compose run --rm <service> sh -c 'cd <src> && <command>'`
+# through the docker shim, which adds this worktree's override (its dep volumes). A command that runs
+# docker itself, or docker mode that cannot be resolved (a stderr warning), runs on the host instead.
+# --describe prints RUN=docker|host [SERVICE, CONTAINER_SRC, COMPOSE_FILE, OVERRIDE] [FALLBACK=<reason>]
+# [VIA=docker|host] instead of running; --via runs where an earlier --describe said, without resolving.
+# Exit code is the command's own.
 
 set -uo pipefail
 
@@ -78,8 +55,7 @@ fi
 if [ ! -d "$PROJECT_ROOT" ]; then echo "Error: directory does not exist: $PROJECT_ROOT" >&2; exit 2; fi
 PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 
-# This worktree's crew override: <its git dir>/crew-compose.override.yml, where gen-override.sh
-# writes it. Empty when PROJECT_ROOT is not a git checkout.
+# Where gen-override.sh writes it; empty when PROJECT_ROOT is not a git checkout.
 OVERRIDE=""
 _gitdir="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
 [ -z "$_gitdir" ] || OVERRIDE="$_gitdir/crew-compose.override.yml"
@@ -96,11 +72,9 @@ _host() {
   bash -c 'cd "$1" && eval "$2"' _ "$PROJECT_ROOT" "$CMD"
 }
 
-# The shortcut that needs no resolution at all.
 if [ "$VIA" = host ] && [ "$DESCRIBE" -eq 0 ]; then _host; exit $?; fi
 
-# _main_root_of <dir> — same as resolve-mode.sh's: `pwd -P` form, so the override path built
-# here compares equal to the compose path built from PROJECT_ROOT.
+# _main_root_of <dir> — `pwd -P` form, so the override path compares equal to the compose path.
 _main_root_of() {
   local dir="$1" common
   common=$(cd "$dir" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
@@ -122,7 +96,6 @@ SERVICE=""
 CONTAINER_SRC=""
 COMPOSE_FILE=""
 
-# _resolve_docker — fills the docker globals, or sets FALLBACK to the first missing piece.
 _resolve_docker() {
   local verdict name
   verdict="$(bash "$SELF_DIR/resolve-mode.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --no-heuristic 2>/dev/null)"
@@ -154,7 +127,7 @@ if [ -z "$VIA" ] && [ -n "$CMD" ]; then
     if bash "$SELF_DIR/detect-docker-nesting.sh" --dir "$PROJECT_ROOT" --cmd "$CMD"; then VIA=host; else VIA=docker; fi
   fi
 fi
-# A --via docker from an earlier describe that no longer resolves can only run on the host.
+# A --via docker from an earlier --describe that does not resolve now can only run on the host.
 [ "$RUN" = docker ] || VIA=host
 
 if [ "$DESCRIBE" -eq 1 ]; then
@@ -172,8 +145,7 @@ fi
 
 [ -z "$FALLBACK" ] || echo "run.sh: docker mode, but $FALLBACK — running on the host" >&2
 
-# MAIN_ROOT is passed to compose for a compose file that interpolates ${MAIN_ROOT}. Compose runs
-# from PROJECT_ROOT so the shim finds its compose file the way compose itself would.
+# ${MAIN_ROOT} is for a compose file that interpolates it; compose runs from PROJECT_ROOT, as the shim expects.
 case "$VIA" in
   docker)
     _shim_env

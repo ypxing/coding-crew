@@ -61,6 +61,9 @@ GREEN: Write minimal code to pass → test passes
 
 **Before writing any source code: run the test and paste the failure output.** A test that cannot be shown to fail is not a red test. Do not touch source files until you have visible evidence of failure; the one exception is the temporary break below, for code that already exists.
 
+**An edit that is only docs or prompt text** (a README, a SKILL.md, a role protocol) is exempt: no
+red test, and no new test — a test that greps that text pins wording, not behaviour.
+
 It must fail **for the intended reason**: on the assertion you wrote, because the behaviour is
 absent. An import error, syntax error or broken fixture is not red yet — fix the test until the
 assertion is what fails.

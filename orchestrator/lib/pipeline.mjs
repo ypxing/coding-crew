@@ -1,18 +1,7 @@
 /**
- * pipeline.mjs — the per-branch gate chain, in one place, in one order:
- *
- *     worktree → include → deps → dispatch → prefilter → verify → review → AC receipt
- *     → merge → close
- *
- * The order is a function body, so no model can reorder or skip it, and each gate's
- * refusal is a return value rather than a paragraph asking to be obeyed.
- *
- * Every failure demotes to `partial` and retains the branch. Nothing merges on an
- * absent check.
- *
- * The order lives here (runWorker, runHousekeeping); each stage's body lives in
- * pipeline/: verify.mjs (triage), review.mjs (review), merge.mjs (merge +
- * close), finish.mjs (partial/blocked endings), shared.mjs (reason tags, helpers).
+ * pipeline.mjs — the per-branch gate chain in one order: worktree → include → deps → dispatch →
+ * prefilter → verify → review → AC receipt → merge → close. The order is a function body, so no
+ * model can reorder or skip it; every failure demotes to `partial` and retains the branch.
  */
 
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -61,17 +50,10 @@ function branchHasCommits(effects, featureBranch, branch) {
   return r.code === 0 && parseInt(r.stdout.trim(), 10) > 0;
 }
 
-/**
- * The largest coder context a fix round resumes rather than starting fresh. Past this, every
- * resumed turn re-sends more history than a fresh, narrow fix dispatch would ever build up.
- */
+/** Past this context, a resumed fix round re-sends more history than a fresh, narrow one would build. */
 export const RESUME_MAX_CONTEXT_TOKENS = 100_000;
 
-/**
- * The coder session a fix round may continue, or why not (`{ sessionId }` | `{ reason }`).
- * Only the session that left the branch exactly where it is: once the tip has moved (a sync
- * merged the feature branch in, another session committed), its picture of the code is stale.
- */
+/** The coder session a fix round may continue: only the one that left the branch where it is. */
 export function resumableSession(prior, tip) {
   if (!prior?.session_id) return { reason: "no earlier coder session recorded" };
   if (!prior.head || prior.head !== tip) return { reason: "the branch moved since that session" };
@@ -82,54 +64,10 @@ export function resumableSession(prior, tip) {
 }
 
 /**
- * Where a retry re-enters the pipeline, by the reason the prior attempt retained its branch
- * (finishRetryOrBlock writes it; state.sh records it). The one table of resume targets:
- *
- *   merge   `merge-failed`, `close-refused …` — verify, review and the AC receipt already
- *           passed; only merge/close runs again. Safe because merge-branches.sh and
- *           close-issue.sh re-check the SHA-bound receipts themselves on every run.
- *           `main-tree-dirty` — blocked at once (no retry could clean the main checkout);
- *           the route once a human has committed or stashed the files and re-run.
- *   verify  `review-not-run …` — the branch is done; only the review dispatch failed.
- *           `criteria-unmet:environment …` — the reviewer blamed the environment, which
- *           blocked at once; the route once a human has fixed it and re-run. Verify and
- *           review re-run on the unchanged branch, with no coder.
- *           `verification-failed:not-fixable` — triage ruled out recoding, so skip the
- *           coder and re-run deps + verify once, in case the failure was transient. Also
- *           the route once a human reruns after the retry cap blocked it: no coder can
- *           fix what triage already ruled environmental.
- *           `ac-receipt-failed …` — review was all-met; only the receipt write failed. The
- *           receipt is rewritten only after a fresh all-met review, never on this note's
- *           word. Also the route once a human reruns after the retry cap blocked it.
- *   fix     `verification-failed:fixable`, `criteria-unmet` — the coder runs on fixPrompt,
- *           told exactly what failed, instead of re-reading the whole issue. Also the
- *           route once a human reruns after the retry cap blocked it.
- *           `merge-conflict` — the feature branch moved on under this one. The sync step
- *           auto-resolves what it can (registry versions, CHANGELOG appends); any other
- *           conflict is left in the worktree for its own conflict-only coder dispatch, whose
- *           success is read from git. Verify and review then re-run on the new commit. If
- *           the sync merges cleanly after all, no coder runs and only verify + review re-run.
- *           Also the route once a human reruns after the retry cap blocked it: a restart
- *           would only hit the same conflict at the sync step.
- *   An edited issue overrides `fix` (`conflict` included) and `verify`: when the issue's
- *   fingerprint (What to build + Acceptance criteria, checkboxes normalised; crew-afk's own
- *   writes are outside it) differs from the one recorded when the branch was retained, a human
- *   changed what the coder works from, so the route is `restart` — workerPrompt on the
- *   retained branch, commits kept — never fixPrompt's "do not re-read the issue". A kept sync
- *   conflict still gets its conflict-only dispatch first; the restart replaces the verify a
- *   conflict retry would otherwise end in. A record with no fingerprint, and the `merge`
- *   route, ignore it.
- *
- *   restart anything else, including no reason — the coder runs on workerPrompt. An issue
- *           blocked as `requires-failed` retains no branch, so it has no reason here and
- *           restarts once check-requires.sh passes it.
- *
- * Whatever the route, a retry's sync with the feature branch has three steps: auto-resolve,
- * then a conflict-only coder dispatch for any other conflict, then the original route with
- * a prompt that has no conflict text (a verify route stays a verify route).
- *
- * The retry cap (MAX_ATTEMPTS_PER_ISSUE, pipeline/finish.mjs) bounds every route alike;
- * a coder that timed out after committing gets a free retry, up to MAX_DISPATCHES_PER_ISSUE.
+ * Where a retry re-enters the pipeline, by the reason its branch was retained (baseRoute). `merge`
+ * is safe because merge-branches.sh and close-issue.sh re-check the SHA-bound receipts; `verify`
+ * re-runs the gates with no coder; `fix` runs the coder on fixPrompt. An edited issue (fingerprint
+ * changed since retention) turns `fix` and `verify` into `restart`: a human changed the work.
  */
 export function resumeRoute(reason, { edited = false } = {}) {
   const route = baseRoute(reason);
@@ -160,7 +98,6 @@ function baseRoute(reason) {
   return { route: "restart" };
 }
 
-/** The verify route's labels: what each skipped-worker attempt logs and records. */
 const SKIPPED_WORKER = {
   "review-not-run": {
     what: "retrying review only, no coder dispatch",
@@ -223,10 +160,7 @@ function mergeOnlyWorker(issue, branch, attempt, notes) {
   };
 }
 
-/**
- * Phase 1 of an issue: worktree + worker dispatch. Runs concurrently across issues.
- * `attempt` is this issue's own 1-based attempt number (sprint.attemptCount in loop.mjs).
- */
+/** Phase 1 of an issue: worktree + worker dispatch. `attempt` is this issue's own 1-based attempt number. */
 export async function runWorker(ctx, issue, attempt) {
   const { sprint, effects, options } = ctx;
   const tracker = await getTracker(effects.mainRoot);
@@ -237,9 +171,8 @@ export async function runWorker(ctx, issue, attempt) {
   const dispatchDir = sprint.dispatchDir;
   mkdirSync(dispatchDir, { recursive: true });
 
-  // State says whether a prior attempt retained a branch (and the ref still exists). Not
-  // gated on the issue's Progress/Blocked sections: under tracker: github those live in
-  // comments the issue body does not carry, so the flags would hide a retained branch.
+  // From state, not the issue's Progress/Blocked sections: under github those live in comments the
+  // issue body does not carry.
   const priorBranch = sprint.resumeBranch(issue.slug);
   const retention = priorBranch != null ? sprint.retentionRecord(issue.slug) : { reason: null, fingerprint: null };
   const retentionReason = retention.reason;
@@ -256,10 +189,8 @@ export async function runWorker(ctx, issue, attempt) {
     return mergeOnlyWorker(issue, branch, attempt, "merge/close retry: the prior round's only failure was the merge or close step itself");
   }
 
-  // expectReuse only for a branch this issue's own earlier attempt retained: any other
-  // existing branch is leftover from an abandoned attempt and may carry a base predating
-  // work this sprint has since merged. A reused branch is synced with the feature branch
-  // below, where a real conflict still blocks.
+  // expectReuse only for a branch this issue's own earlier attempt retained: any other may carry a
+  // base predating work this sprint has merged.
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=worktree`);
   const wt = ensureWorktree(effects, {
     mainRoot: effects.mainRoot,
@@ -295,13 +226,9 @@ export async function runWorker(ctx, issue, attempt) {
   // A conflict retry needs its retained branch; without it there is nothing to reconcile.
   if (resume.kind === "conflict" && !wt.reusedBranch) resume = { route: "restart" };
 
-  // A reused branch may predate other issues' merges: sync it now, so the gap surfaces
-  // here rather than as a conflict at the merge gate. A sync is three steps, whatever this
-  // retry was for (a sibling can merge while any retry waits): mergeFeatureBranch commits
-  // what resolve-merge-conflicts.sh resolves (registry versions, CHANGELOG appends); any
-  // other conflict is left in the worktree for its own conflict-only coder dispatch, checked
-  // mechanically (conflictResolved); only then does the original route run, with a prompt
-  // that has no conflict text. The conflict dispatch spends no attempt and no dispatch.
+  // A reused branch may predate other issues' merges: sync it now rather than conflict at the merge
+  // gate. A conflict resolve-merge-conflicts.sh cannot settle gets its own conflict-only coder
+  // dispatch before the original route runs; that dispatch spends no attempt.
   let synced = false;
   let pendingConflict = null;
   if (wt.reusedBranch) {
@@ -323,8 +250,7 @@ export async function runWorker(ctx, issue, attempt) {
     }
     if (sync.conflict && !sync.kept) {
       ctx.log(`[SYNC-CONFLICT] slug=${issue.slug} branch=${branch} — ${sync.reason}`);
-      // worktree, not null: finishBlocked's removeWorktree needs the real path. Only the
-      // branch ref is retained.
+      // worktree, not null: finishBlocked's removeWorktree needs the real path.
       return {
         issue,
         branch,
@@ -348,8 +274,7 @@ export async function runWorker(ctx, issue, attempt) {
     synced = Boolean(sync.merged || sync.kept);
   }
 
-  // A coder-free retry re-runs only the gates this commit has not already passed: their
-  // receipts are bound to the commit, so a gate re-run on it could only repeat its answer.
+  // A coder-free retry re-runs only the gates whose commit-bound receipts this tip lacks.
   let skipVerify = false;
   if (resume.route === "verify" && !pendingConflict) {
     const gates = gatesAtTip(ctx, branch);
@@ -365,13 +290,8 @@ export async function runWorker(ctx, issue, attempt) {
 
   applyWorktreeInclude(effects.mainRoot, worktree);
 
-  // Deps sit after the include (an inherited node_modules costs nothing) and before both
-  // consumers: the worker, and verify-worktree.sh, a gate that cannot invoke dep-install.
-  // The skipped-worker path needs them too — its worktree is recreated bare. A failed
-  // install stops the issue here: nothing after it — the coder, the verify gate — can do
-  // useful work in an unprovisioned worktree, so letting them run only rediscovers it later.
-  // Review alone needs no deps: skipped with the verify it would have fed.
-  // Its outcome goes into the coder's prompt, so the coder does not re-run the same install.
+  // Deps precede both consumers, the worker and verify-worktree.sh (which cannot invoke dep-install);
+  // review needs none. The outcome goes into the coder's prompt so it does not install again.
   let depsOutcome = null;
   if (options.installDeps !== false && !skipVerify) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=deps`);
@@ -406,9 +326,8 @@ export async function runWorker(ctx, issue, attempt) {
 
   const issueDir = dispatchIssueDir(dispatchDir, issue);
   mkdirSync(issueDir, { recursive: true });
-  // A red baseline (loop.mjs) stopped this attempt before any coder (the conflict one included) started — during deps, whose
-  // kill leaves no DEPS line to stop on. runHousekeeping keeps the branch for the next run; a coder-free retry
-  // (skippedWorker) keeps the reason that routed it, so the next run is not handed to a coder.
+  // A red baseline stopped this attempt before any coder started (during deps, whose kill leaves no
+  // DEPS line). A coder-free retry keeps the reason that routed it, so the next run gets no coder.
   const baselineRedWorker = () => ({
     issue,
     branch,
@@ -454,8 +373,7 @@ export async function runWorker(ctx, issue, attempt) {
           raw: "",
         },
         conflictUnresolved: resolved.why,
-        // The edited issue was never worked from this attempt: keep the record's fingerprint so the
-        // next retry still sees the edit and restarts once the conflict is resolved.
+        // The edit was never worked from: keep its fingerprint so the next retry still restarts.
         keepFingerprint: retention.fingerprint,
       };
     }
@@ -526,26 +444,21 @@ export async function runWorker(ctx, issue, attempt) {
         }),
   );
 
-  // A review fix starts from the very commit this run's previous attempt judged unmet —
-  // unless the sync just moved it. runHousekeeping compares the coder's tip with it: no new
-  // commit, same verdict. Not across runs: the environment that review saw may have changed.
+  // A review fix starts from the tip this run judged unmet: no new commit, same verdict.
   const reviewedTip =
     attempt > 1 && resume.route === "fix" && resume.kind === "review" && !synced
       ? effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim() || null
       : null;
 
-  // The same for a verify fix: the tip the last verify failed at. A fix round that commits
-  // nothing leaves that commit, so re-running verify (and triage) could only repeat the failure.
+  // The same for a verify fix: no new commit means verify could only repeat the failure.
   const verifyFailedTip =
     attempt > 1 && resume.route === "fix" && resume.kind === "verify" && !synced
       ? effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim() || null
       : null;
 
   const coder = roleBinding(ctx, "coder");
-  // Opt-in (afk.resumeCoderSession): a fix round continues the session that wrote the branch
-  // instead of re-exploring it, when that session is small and the branch has not moved.
-  // Not after a conflict dispatch: it is recorded under CONFLICT_ROLE, so its session is never
-  // picked, and the merge it committed moved the branch on under the coder's last session.
+  // Opt-in (afk.resumeCoderSession): a fix round continues the session that wrote the branch, when
+  // that session is small and the branch has not moved.
   let resumeSessionId = null;
   if (mayResumeCoderSession({ enabled: options.resumeCoderSession, route: resume.route, runtime: coder.runtime, conflictDispatched: Boolean(pendingConflict) })) {
     const tip = effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim();
@@ -595,9 +508,7 @@ export async function runWorker(ctx, issue, attempt) {
   flagFullSuiteRuns(ctx, { slug: dispatchStem(issue), attempt, outFile, platform: coder.runtime });
 
   const sidecar = readSidecar(sidecarFile);
-  // A worker that ran to completion (no timeout, non-empty output) but left no sidecar is
-  // otherwise silent until the pipeline reports "blocked" several steps later — by then
-  // result.stderr, the only clue why the Write never happened, is gone. Surface it now.
+  // A worker that finished but left no sidecar: log stderr now, the only clue, before it is gone.
   if (!sidecar && !result.timedOut && result.text.trim()) {
     const stderrSnippet = (result.stderr ?? "").trim().slice(0, 500).replace(/\s+/g, " ");
     ctx.log(
@@ -612,19 +523,14 @@ export async function runWorker(ctx, issue, attempt) {
 /** The ledger role of a conflict-only dispatch, apart from "coder" so a fix round never resumes its session. */
 export const CONFLICT_ROLE = "conflict";
 
-/**
- * Whether a fix round may continue the coder's recorded session. Never after a conflict
- * dispatch ran this attempt: that dispatch is recorded under CONFLICT_ROLE (its session saw
- * only the conflict), and the merge it committed moved the branch on under the coder's.
- */
+/** Never after a conflict dispatch: its merge moved the branch on under the coder's session. */
 export function mayResumeCoderSession({ enabled, route, runtime, conflictDispatched }, adapters = ADAPTERS) {
   return Boolean(enabled) && route === "fix" && Boolean(adapters[runtime]?.resume) && !conflictDispatched;
 }
 
 /**
- * The conflict-only coder dispatch for a sync merge left conflicted in the worktree: one per
- * attempt, outside the retry cap and MAX_DISPATCHES_PER_ISSUE (it is not a worker round). Its
- * success is read from git, never from its report.
+ * The conflict-only coder dispatch for a sync merge left conflicted: outside the retry cap and
+ * MAX_DISPATCHES_PER_ISSUE. Its success is read from git, never from its report.
  */
 async function dispatchConflict(ctx, { issue, worktree, branch, attempt, issueDir, deps, files, featureSha, context }) {
   const { sprint, effects, options } = ctx;
@@ -681,10 +587,8 @@ async function dispatchConflict(ctx, { issue, worktree, branch, attempt, issueDi
 }
 
 /**
- * Is the merge really concluded: no MERGE_HEAD, nothing unmerged, and HEAD contains the
- * feature-branch commit the sync merge was started from (featureSha, recorded before the
- * dispatch). Never the live ref: a sibling can merge into the feature branch while the
- * dispatch runs, and that newer commit is the next sync's job, not a failed resolution.
+ * The merge is concluded: no MERGE_HEAD, nothing unmerged, and HEAD contains `featureSha`, never
+ * the live ref — a sibling can merge meanwhile, and that commit is the next sync's job.
  */
 export function conflictResolved(effects, worktree, featureBranch, featureSha) {
   const git = (args) => effects.gitRead(args, { cwd: worktree });
@@ -699,19 +603,16 @@ export function conflictResolved(effects, worktree, featureBranch, featureSha) {
 }
 
 /**
- * Phase 2 of an issue: everything after the worker. Runs concurrently across issues, but
- * merge and close shell out via spawnSync, which blocks this process, so two issues'
- * merge-and-close never interleave. Merge order is completion order; merge-branches.sh
- * tolerates any.
+ * Phase 2 of an issue: everything after the worker. Merge and close block on spawnSync, so two
+ * issues' merge-and-close never interleave.
  */
 export async function runHousekeeping(ctx, worker) {
   const { sprint, effects, options } = ctx;
   const { issue, branch } = worker;
   const outcome = { slug: issue.slug, branch, status: null, reason: null, coverageGaps: [], findings: [], reviewReport: null };
 
-  // A red baseline stopped this attempt (loop.mjs): the branch is kept as it stands and the
-  // attempt is free. A coder-free retry keeps the reason that routed it; an attempt whose coder
-  // was stopped (or never started) is a coder's job again next run, never a verify-only one.
+  // A red baseline stopped this attempt: the branch is kept and the attempt is free. A coder-free
+  // retry keeps the reason that routed it; any other is a coder's job again next run.
   if (ctx.baselineRed) {
     ctx.log(`[BASELINE-RED] slug=${issue.slug} round=${worker.attempt} — the baseline failed; branch kept, not verified`, "warn");
     const reason = worker.skippedWorker
@@ -728,13 +629,10 @@ export async function runHousekeeping(ctx, worker) {
     return finishRetryOrBlock(ctx, worker, outcome, taggedReason(MERGE_CONFLICT_TAG, `the conflict dispatch left the sync merge unresolved: ${worker.conflictUnresolved}`));
   }
 
-  // --- dispatch health -------------------------------------------------------
-  // The coder's dollar cap ends the attempt for a human, whatever it committed: a retry would
-  // spend the same cap again.
+  // A dollar cap ends the attempt for a human: a retry would spend the same cap again.
   const capped = limitExceeded(worker.dispatch, "coder", roleBinding(ctx, "coder"));
   if (capped) return finishBlocked(ctx, worker, outcome, capped);
-  // A dead dispatch (timeout, crash) with commits on the branch is resumed, not discarded;
-  // with none, there is nothing to resume and it blocks. A timeout that committed this
+  // A dead dispatch with commits is resumed, with none it blocks. A timeout that committed this
   // attempt was still making progress, so its retry is free.
   if (worker.dispatch.timedOut) {
     const reason = `worker timed out after ${Math.round(options.timeoutMs.coder / 60000)}m`;
@@ -742,23 +640,19 @@ export async function runHousekeeping(ctx, worker) {
     if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishRetryOrBlock(ctx, worker, outcome, reason, { free });
     return finishBlocked(ctx, worker, outcome, reason);
   }
-  // A bad exit (or claude's `is_error`) counts only with no usable report: a worker that
-  // exited badly but reported a reason knows more than the process signal does.
+  // A bad exit counts only with no usable report: a reported reason knows more than the signal.
   if ((worker.dispatch.code !== 0 || worker.dispatch.isError) && worker.report.unparseable) {
     const reason = "worker process failed — see traces/";
     if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishRetryOrBlock(ctx, worker, outcome, reason);
     return finishBlocked(ctx, worker, outcome, reason);
   }
 
-  // --- schema pre-filter -----------------------------------------------------
   const pre = applySchemaPrefilter(worker.report);
   // The coder's own `not_run` is a claim, not a fact: coverage gaps are what verify reports.
 
-  // A coder that stopped short but committed has made a claim about its branch, not a verdict:
-  // `partial`, or `blocked` on the environment. The gates decide — verify, then on a failure
-  // triage, which is handed the coder's own evidence to check against the diff (a code bug
-  // misread as the environment is caught there). Restarting the coder instead re-derived the
-  // same blocker from scratch. A plain `blocked`, or one with nothing committed, stays a stop.
+  // A coder that stopped short but committed made a claim, not a verdict: verify decides, and on a
+  // failure triage weighs the coder's evidence against the diff. A plain `blocked`, or one with
+  // nothing committed, stays a stop.
   const claim =
     (pre.status === "partial" || (pre.status === "blocked" && worker.report.cause === "environment")) &&
     branchHasCommits(effects, sprint.featureBranch, branch);
@@ -789,10 +683,8 @@ export async function runHousekeeping(ctx, worker) {
       ),
     );
   }
-  // A coder that called itself done but reported a failing or un-run check is overruled by
-  // the gate the same way: verify runs every check itself, and its verdict, not the coder's,
-  // decides whether another coder round is needed — a narrow fix one, if so. With nothing
-  // committed there is nothing to verify, and the retry restarts.
+  // A coder that called itself done but reported a failing check is overruled the same way: verify
+  // runs every check itself. With nothing committed, the retry restarts.
   if (claim && pre.demoted) {
     ctx.log(`[PREFILTER-OVERRULED] slug=${issue.slug} round=${worker.attempt} — the coder reported ${pre.reason}; the branch has commits, so verify decides`);
   } else if (claim) {
@@ -805,22 +697,18 @@ export async function runHousekeeping(ctx, worker) {
   // Not a verdict yet, but the coder is the longest step: a mid-pipeline heartbeat.
   notifyMilestone(ctx, issue, `coder finished (round ${worker.attempt}) — verifying`);
 
-  // --- gate 1: independent verification in the worktree ----------------------
-  // Skipped when this exact commit already has a passing record — a retry whose coder made
-  // no commit, or a coder-free one runWorker already checked.
+  // Skipped when this commit already passed this run (a no-commit retry, or a coder-free one).
   if (worker.skipVerify || gatesAtTip(ctx, branch).verifiedThisRun) {
     ctx.log(`[SKIP-VERIFY] slug=${issue.slug} round=${worker.attempt} branch=${branch} — verification already passed at this commit, in this run`);
   } else {
-    // No verify starts before the baseline's verdict (it runs alongside the coders). A red one
-    // keeps this branch as it stands, to be verified by the next run.
+    // No verify before the baseline's verdict; a red one keeps the branch for the next run.
     const baseline = await ctx.baseline;
     if (baseline?.status === "fail") {
       ctx.log(`[BASELINE-RED] slug=${issue.slug} round=${worker.attempt} — the baseline failed; branch kept, not verified`, "warn");
       return finishRetryOrBlock(ctx, worker, outcome, taggedReason(VERIFY_INTERRUPTED_TAG, "baseline failed"), { free: true });
     }
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);
-    // Awaited, not spawnSync: a verify runs the project's whole test suite for minutes, and the
-    // other worker loops (their verifies, their coder dispatches) must keep running meanwhile.
+    // Awaited: a verify runs for minutes, and the other worker loops must keep running.
     const runVerify = async () => {
       const v = await effects.bashAsync("verify-worktree.sh", ["--dir", worker.worktree, "--stem", dispatchStem(issue)], {
         env: sprint.childEnv(),
@@ -828,12 +716,10 @@ export async function runHousekeeping(ctx, worker) {
       logVerifyOutput(ctx, dispatchIssueDir(sprint.dispatchDir, issue), `slug=${issue.slug}`, worker.attempt, v);
       return v;
     };
-    // What verify ran on beyond the committed tree: an untracked or modified file the branch does
-    // not carry. A pass on such a worktree says nothing about the tree that merges.
+    // A pass over uncommitted files says nothing about the tree that merges.
     const dirtyBefore = effects.gitRead(["status", "--porcelain"], { cwd: worker.worktree });
     let verify = await runVerify();
-    // Output that names no failing check is no evidence against the branch: run the gate
-    // once more before triage can call it fixable and a coder is paid to chase it.
+    // Output naming no failing check is no evidence: verify once more before triage pays a coder.
     if (verify.code !== 0 && !verify.interrupted && !verify.dryRun && !hasVerifyFailure(verify.stdout)) {
       ctx.log(`[VERIFY-INCONCLUSIVE] slug=${issue.slug} round=${worker.attempt} — exit ${verify.code} with no failing check in the output; verifying once more`, "warn");
       verify = await runVerify();
@@ -842,8 +728,7 @@ export async function runHousekeeping(ctx, worker) {
       return await handleVerificationFailure(ctx, worker, outcome, verify);
     }
     sprint.markVerifiedThisRun(branch, effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim());
-    // Lets a feature branch of this exact tree skip its baseline / integration check — only when
-    // the worktree verify ran on was that tree and nothing else.
+    // Lets a feature branch of this tree skip its checks, only if verify saw that tree alone.
     const passedTree = effects.gitRead(["rev-parse", `${branch}^{tree}`]).stdout.trim();
     if (dirtyBefore.code !== 0 || dirtyBefore.stdout.trim()) {
       ctx.log(`[TREE-NOT-CACHED] slug=${issue.slug} round=${worker.attempt} — verify ran with uncommitted files in the worktree; its pass does not stand for the committed tree`, "warn");
@@ -862,17 +747,12 @@ export async function runHousekeeping(ctx, worker) {
     }
   }
 
-  // --- gate 2: independent review (acceptance-criteria verdict; no findings) ---
-  // The worktree stays alive across review (which needs none of it): an `AC: unmet`
-  // verdict sends the coder back to fix this branch.
-  // The gate's own record, not its stdout: the reviewer is pointed at the same file.
+  // The worktree outlives review: an `AC: unmet` verdict sends the coder back to it.
   const verifyFile = join(dispatchIssueDir(sprint.dispatchDir, issue), "verify.json");
   const verifyRecord = { ...readVerifyRecord(verifyFile), file: verifyFile };
   let review = await runReview(ctx, worker, verifyRecord);
   if (review.limitExceeded) return finishBlocked(ctx, worker, outcome, review.limitExceeded);
-  // A reviewer that ended without a verdict gets one more dispatch in this round: cheaper
-  // than a retry round, which would rebuild the worktree and re-verify an unchanged branch.
-  // Not after a timeout — a second would double an already-long wait.
+  // One more dispatch for a reviewer with no verdict (cheaper than a retry round), not after a timeout.
   if (!review.completed && !review.timedOut && !review.violation) {
     ctx.log(`[REVIEW-RETRY] slug=${issue.slug} round=${worker.attempt} — ${review.reason}`);
     review = await runReview(ctx, worker, verifyRecord);

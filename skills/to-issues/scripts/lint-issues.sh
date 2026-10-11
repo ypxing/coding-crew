@@ -1,42 +1,10 @@
 #!/usr/bin/env bash
-# lint-issues.sh — read-only checker for a feature's issue set.
-#
-# Usage:
-#   bash lint-issues.sh --issue <file> [--issue <file> …] [--known <file> …] [--deps <issues-deps.json>] [--prd <file>]
-#
-# --known names an issue outside the set being linted (already done, or published by an earlier
-# run) that a `## Blocked by` ref may resolve to, by basename. It is never linted; when the file
-# exists, its `## Implements` counts toward the PRD coverage check.
-#
-# Prints one line per problem:
-#   ERROR <file>: <problem>   breaks dispatch or the gates
-#   WARN  <file>: <problem>   a judgement call
-# Exit 0 = no ERROR (warnings allowed), 1 = at least one ERROR, 2 = usage error (unknown flag,
-# no --issue, unreadable file).
-#
-# ERROR: a dependency cycle; a `## Blocked by` ref (filename, or `Issue #<n>`) matching no issue in
-#        the set; --deps edges between issues in the set that differ from the `## Blocked by` prose (an
-#        edge to a --known issue is ignored on both sides); no `## Acceptance criteria`.
-# WARN:  more than 10 acceptance criteria (a context-budget check — does it fit one coder session?
-#        never a rule to split); a **D<n>**/**B<n>** ID in --prd that no issue's (nor --known
-#        file's) `## Implements` names, unless its PRD line ends in `(no slice)`; an issue another issue blocks on with no `### Exposes:` under
-#        `## Interfaces`; no `## What to build`; no `## Implements`. A `Status: ready-for-human`
-#        issue instead gets: no `## For a human` section, or that section missing one of its five
-#        `###` parts (Why a person, What changes, Steps, If skipped or done wrong, Done when), or a
-#        ticked `- [x]` under `## Acceptance criteria` (one WARN each; fenced lines skipped); it is
-#        exempt from the `## What to build` / `## Implements` warnings. Two issues that name the
-#        same file (a path with a `/`, `:<line>` dropped) with neither reaching the other through
-#        `## Blocked by` (directly or via other issues in the set). Advisory: a Blocked by edge comes
-#        only from to-issues' edge rule rows 1–2, never from this WARN alone.
-#        One WARN per pair, on the first file. Paths under `## Blocked by` / `## Context Documents`,
-#        under `.scratch/`, and in URLs do not count; --known issues are never read.
-#
-# The PRD ID contract: a line starting `- **D<n>**` or `- **B<n>**`. A line ending in `(no slice)`
-# marks a decision no issue needs to implement (already true, or only constrains other slices).
-# Without --prd (or with a PRD that has no such IDs) the coverage check is skipped silently.
-#
-# Issue files are data. Their text is only ever read by grep/awk/read — never evaluated — and a
-# `## Blocked by` entry is only compared, by basename, with the --issue/--known files, never opened.
+# lint-issues.sh — read-only checker for a feature's issue set. Prints `ERROR <file>: <problem>` (breaks
+# dispatch or the gates) or `WARN <file>: <problem>` (a judgement call); exit 0 no ERROR, 1 some, 2 usage.
+# Usage: bash lint-issues.sh --issue <file> [--issue <file> …] [--known <file> …] [--deps <issues-deps.json>] [--prd <file>]
+# --known: an issue outside the set a `## Blocked by` ref may resolve to by basename; never linted, but its
+# `## Implements` counts toward PRD coverage (lines starting `- **D<n>**` / `- **B<n>**`, bar `(no slice)`).
+# Issue files are data: only read by grep/awk/read, never evaluated; Blocked by refs are never opened.
 
 set -uo pipefail
 set -f # no globbing of anything read from an issue file
@@ -79,9 +47,8 @@ ERRORS=0
 err() { printf 'ERROR %s: %s\n' "$1" "$2"; ERRORS=$((ERRORS + 1)); }
 warn() { printf 'WARN %s: %s\n' "$1" "$2"; }
 
-# section <file> <heading> — body of a `## <heading>` section (### subsections included), up to the
-# next `## ` heading. Headings inside code fences are ignored. Empty when the section is absent;
-# use has_section to tell absent from empty.
+# section <file> <heading> — body of a `## <heading>` section (### included) up to the next `## `,
+# ignoring headings in code fences. Empty when absent; has_section tells absent from empty.
 section() {
   SECTION_NAME="$2" awk '
     BEGIN { want = tolower(ENVIRON["SECTION_NAME"]); on = 0 }
@@ -106,7 +73,6 @@ has_section() {
   ' "$1"
 }
 
-# --- the set: basename -> path ---
 in_set() {
   local n
   for n in "${NAMES[@]+"${NAMES[@]}"}"; do [[ "$n" == "$1" ]] && return 0; done
@@ -137,8 +103,7 @@ is_ref() {
   return 1
 }
 
-# strip_markup <token> — sets STRIPPED to the token minus every leading/trailing markup or
-# punctuation character (`**x.md**.` -> x.md). Pure parameter expansion: no subshell, no globbing.
+# strip_markup <token> — sets STRIPPED to the token minus leading/trailing markup (`**x.md**.` -> x.md), without a subshell.
 strip_markup() {
   STRIPPED="$1"
   local prev=""
@@ -149,7 +114,6 @@ strip_markup() {
   done
 }
 
-# Resolve `Issue #n` to the set member whose filename starts with the number.
 resolve_number() {
   local n="$1" name
   for name in "${NAMES[@]}" "${KNOWN[@]+"${KNOWN[@]}"}"; do
@@ -158,7 +122,6 @@ resolve_number() {
   return 1
 }
 
-# --- per-issue checks + prose edges ---
 PROSE_EDGES=()    # by index in NAMES: newline-separated resolved blocker filenames
 BLOCKED_ON="|"    # |name|name|… — issues another issue blocks on
 EDGE_LIST=""
@@ -167,7 +130,6 @@ for idx in "${!NAMES[@]}"; do
   name="${NAMES[$idx]}"
   file="${PATHS[$idx]}"
 
-  # Acceptance criteria
   if has_section "$file" "Acceptance criteria"; then
     count=$(section "$file" "Acceptance criteria" | grep -c -E '^[[:space:]]*[-*][[:space:]]+\[[ xX]\]' || true)
     if ((count > 10)); then
@@ -200,7 +162,6 @@ for idx in "${!NAMES[@]}"; do
     has_section "$file" "Implements" || warn "$file" "no ## Implements section"
   fi
 
-  # Blocked by
   resolved=""
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
@@ -216,15 +177,14 @@ for idx in "${!NAMES[@]}"; do
     case "$lower" in none* | n/a* | nothing*) continue ;; esac
 
     found=0
-    # `Issue #n` / `Issue n` / bare `#n` references (the set github.mjs's blockerNumbers reads) — scanned over the entry minus its *.md filename tokens, so a
-    # filename like fix-issue-3-thing.md is not also read as "Issue #3"
+    # Issue refs (`Issue #n`, bare `#n`), read without *.md tokens so fix-issue-3-thing.md is not one.
     read -r -a toks <<< "$entry"
     rest=""
     for tok in "${toks[@]+"${toks[@]}"}"; do
       strip_markup "$tok"
       [[ "$STRIPPED" == *.md ]] || rest+="$tok "
     done
-    # A `PR #n` / `pull #n` / `pull request #n` mention is prose, not a ref (github.mjs strips the same).
+    # A pull-request mention (`PR`, `pull` or `pull request` before a #number) is prose, not a ref.
     rest=$(printf '%s' "$rest" | sed -E 's/(^|[^[:alnum:]])([Pp][Rr]|[Pp][Uu][Ll][Ll]([[:space:]]+[Rr][Ee][Qq][Uu][Ee][Ss][Tt])?)[[:space:]]*#[0-9]+/\1/g')
     while [[ "$rest" =~ ([Ii][Ss][Ss][Uu][Ee][[:space:]-]*#?|#)0*([0-9]+) ]]; do
       found=1
@@ -236,9 +196,8 @@ for idx in "${!NAMES[@]}"; do
         err "$file" "## Blocked by ref matches no issue in the set: Issue #$n"
       fi
     done
-    # Filename references: whitespace-separated *.md tokens, stripped of markup. A path or a
-    # markdown link (`[01-x.md](../open/01-x.md)`) resolves by its basename only — never opened.
-    # Any other token is prose (`schema/API`); an entry with no ref at all is reported below.
+    # Filename refs: *.md tokens minus markup. A path or markdown link resolves by its basename only,
+    # never opened. Any other token is prose; an entry with no ref at all is reported below.
     for tok in "${toks[@]+"${toks[@]}"}"; do
       strip_markup "$tok"
       tok="$STRIPPED"
@@ -265,7 +224,6 @@ for idx in "${!NAMES[@]}"; do
   done <<< "$resolved"
 done
 
-# --- Exposes on anything another issue blocks on ---
 for idx in "${!NAMES[@]}"; do
   [[ "$BLOCKED_ON" == *"|${NAMES[$idx]}|"* ]] || continue
   if ! section "${PATHS[$idx]}" "Interfaces" | grep -q -E '^###[[:space:]]+Exposes'; then
@@ -273,14 +231,12 @@ for idx in "${!NAMES[@]}"; do
   fi
 done
 
-# --- --deps JSON vs prose ---
 if [[ -n "$DEPS_FILE" ]]; then
   for idx in "${!NAMES[@]}"; do
     name="${NAMES[$idx]}"
     json_list=$(jq -r --arg k "$name" '(.[$k] // []) | map(tostring) | unique | .[]' "$DEPS_FILE" 2>/dev/null | sort -u | sed '/^$/d')
-    # An edge to an existing (--known) issue lives only in ## Blocked by (publish refuses it in
-    # deps.json), yet a resumed sprint's deps.json still lists one: compare drafts only, so
-    # neither its presence nor its absence is an error.
+    # An edge to a --known issue lives only in ## Blocked by (publish refuses it in deps.json), yet a
+    # resumed sprint's deps.json may list one: compare drafts only, so neither side errors.
     prose_list=""
     while IFS= read -r blocker; do
       [[ -n "$blocker" ]] && in_set "$blocker" && prose_list+="${prose_list:+$'\n'}$blocker"
@@ -298,14 +254,12 @@ if [[ -n "$DEPS_FILE" ]]; then
       pl=$(printf '%s' "$prose_list" | paste -sd, - | sed 's/,/, /g')
       err "${PATHS[$idx]}" "--deps edges differ from ## Blocked by: deps=[${jl}] prose=[${pl}]"
     fi
-    # JSON edges join the graph for cycle detection
     while IFS= read -r blocker; do
       [[ -n "$blocker" ]] && in_set "$blocker" && EDGE_LIST+="$name $blocker"$'\n'
     done <<< "$json_list"
   done
 fi
 
-# --- cycles: DFS over "issue blocker" edges ---
 if [[ -n "$EDGE_LIST" ]]; then
   while IFS= read -r cyc; do
     [[ -z "$cyc" ]] && continue
@@ -334,7 +288,6 @@ if [[ -n "$EDGE_LIST" ]]; then
   ')
 fi
 
-# --- same file named by two issues with no Blocked by path between them ---
 # paths_of <file> — sorted unique file paths the issue names: a token with a `/` whose last part has
 # an extension. `src/a.ts:10` counts as src/a.ts; Blocked by / Context Documents, URLs and .scratch/ do not.
 paths_of() {
@@ -384,7 +337,6 @@ if ((${#NAMES[@]} > 1)); then
   done
 fi
 
-# --- PRD coverage ---
 if [[ -n "$PRD_FILE" ]]; then
   # A `(no slice)` line needs no issue; it never errors when one implements it anyway.
   ids=$(grep -E '^[[:space:]]*[-*][[:space:]]+\*\*[DB][0-9]+\*\*' "$PRD_FILE" \

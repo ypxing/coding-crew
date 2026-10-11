@@ -261,44 +261,6 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   [ "$status" -eq 0 ]
 }
 
-# The rendered reviewer role
-
-role() {
-  (cd "$REPO_ROOT" && node --input-type=module -e '
-    import { renderRolePrompt } from "./orchestrator/lib/adapters/render.mjs";
-    process.stdout.write(renderRolePrompt("reviewer", "claude"));')
-}
-
-@test "the reviewer role opens with the goal-first question" {
-  first=$(role | grep -m1 '^## ')
-  [ "$first" = "## The Question" ]
-  role | sed -n '/^## The Question/,/^## What You Receive/p' | grep -q 'what does it break'
-}
-
-@test "the reviewer role puts affected unchanged code in scope and reads callees and state" {
-  r=$(role)
-  grep -q 'unchanged code whose correctness the' <<<"$r"
-  grep -q 'at any severity' <<<"$r"
-  grep -qi 'callers' <<<"$r"
-  grep -q 'what it calls' <<<"$r"
-  grep -q 'state it' <<<"$r"
-}
-
-@test "the reviewer role no longer limits unchanged code to CRITICAL classes or presents triage as a filter" {
-  r=$(role)
-  ! grep -q 'directly triggers a CRITICAL' <<<"$r"
-  ! grep -q '>80% confident' <<<"$r"
-  ! grep -qi 'triage' <<<"$r"
-}
-
-@test "to-prd requires cited facts for what relies on a changed behaviour" {
-  f="$(rendered_skill to-prd claude)"
-  grep -q 'callers' "$f"
-  grep -q 'state it reads or writes' "$f"
-  grep -q 'older' "$f"
-  grep -q 'is not a fact' "$f"
-}
-
 @test "the judge is asked for distinct findings, the summary names the models and gives both means" {
   run run_eval --runs 1
   d=$(out_dir)

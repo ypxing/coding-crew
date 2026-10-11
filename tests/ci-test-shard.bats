@@ -97,3 +97,19 @@ _all_test_files() {
     done
   done
 }
+
+@test "without a weights file the shards still partition the suite, with no error" {
+  export CI_SHARD_WEIGHTS="$TEMP_DIR/missing.tsv"
+  local i
+  : > "$TEMP_DIR/union"
+  for i in 1 2 3; do
+    run bash "$SHARD" "$i" 3
+    [ "$status" -eq 0 ]
+    [ -n "$output" ]
+    printf '%s\n' "$output" >> "$TEMP_DIR/union"
+  done
+  sort "$TEMP_DIR/union" > "$TEMP_DIR/got"
+  _all_test_files > "$TEMP_DIR/want"
+  run diff "$TEMP_DIR/want" "$TEMP_DIR/got"
+  [ "$status" -eq 0 ]
+}

@@ -3,108 +3,22 @@
 #
 # Usage:
 #   bash scripts/gen-override.sh --project-root /path/to/worktree --main-root /path/to/main
+#     [--sandbox] [--dry-run] [--query <field>]
 #
-# Options:
-#   --project-root   Absolute path to the worktree (where manifest files live)
-#   --main-root      Absolute path to the main checkout (the project name and volume names key off it)
 #   --sandbox        Add proxy env vars + CA bundle. Default: read IS_SANDBOX env var.
 #   --dry-run        Print generated YAML to stdout instead of writing the file.
-#   --query <field>  Print one detected fact and exit, instead of writing the override.
-#                    <field> is one of: services | ecosystem | container-src | manifest-dirs |
-#                    platform | project-name | vendor-paths | state-path | owner-prefix
-#                    Lets a caller that needs to *run* an install (not just generate the
-#                    override) reuse this script's own detection instead of re-parsing the
-#                    compose file and manifests a second time. `vendor-paths` is the container
-#                    path of each named dep volume, one per line — where an install must have
-#                    written for the checks to see it. `owner-prefix` is `wt_<proj>_<owner4>_`,
-#                    the prefix every dependency volume of this MAIN_ROOT on this host starts
-#                    with (it needs no compose file). `state-path` is the container path
-#                    of the install lock's volume.
-#
-# Where it is written: <PROJECT_ROOT's git dir>/crew-compose.override.yml, i.e.
-#   $(git -C <project-root> rev-parse --path-format=absolute --git-dir)/crew-compose.override.yml
-# A linked worktree's lands in .git/worktrees/<name>/ and goes away with the worktree; the main
-# checkout's lands in .git/. Nothing named docker-compose.override.yml is written or linked into
-# the repo, so a project's own committed one is never touched. The shim (shim/docker) adds this
-# file as the last `-f` of every `docker compose` call on PATH; nothing else needs to name it.
-#
-# Dependency volume names: every one gets an explicit top-level `name:`
-#   wt_<proj>_<owner4>_<eco>_<dir>_<lock8>
-# <owner4> is a hash of this host's name and MAIN_ROOT's realpath, so another clone or sandbox
-# never matches (or removes) this one's volumes. <lock8> is a hash over every manifest and lockfile
-# manifest-fingerprint.sh finds under the project (dot-directories excluded, as the manifest scan
-# below excludes them), since one install writes every volume: a
-# worktree, sprint or sandbox with the same lockfiles names the same, already populated volumes,
-# and a different lockfile names fresh ones. Being explicit, `name:` is not prefixed by compose's
-# project name, so -p / COMPOSE_PROJECT_NAME no longer rename a volume.
-#
-# Install lock: docker-install.sh serialises installs per lockfile hash with a lock directory in one
-# more named volume, wt_<proj>_<owner4>_state_<lock8>, mounted at /crew-state. It is not kept in a
-# dependency volume because an install may empty that volume's root (`npm ci` removes every entry of
-# node_modules), taking the lock with it and letting a second run install concurrently.
-#
-# Project name: the generated file carries a top-level `name:`. Compose resolves the project name
-# from the last `-f` file's `name:` key when neither `-p` nor COMPOSE_PROJECT_NAME is set, and the
-# shim makes this file the last one. Without that key compose falls back to the basename of the
-# *first* `-f` file's directory — the worktree's own compose file — so the same volume name
-# (wt_<slug>_...) would end up siloed per worktree, e.g. "component-with-mock_wt_myproj_nm_root"
-# instead of a single shared "wt_myproj_nm_root".
-#
-# Platform: the project's own compose file (or the image it builds/pulls) may pin
-# `platform: linux/amd64`. On an arm64 host that forces every `docker compose run` — install
-# and every later verify check alike — under qemu emulation, which is where "requested
-# image's platform does not match the detected host platform" warnings and the slow/flaky
-# runs behind them come from. Default: read CREW_DOCKER_PLATFORM env var (default "host"),
-# and emit a `platform:` key per service in the generated override so the override's later
-# `-f` wins the compose merge and the project's own pin is never reached.
-#   CREW_DOCKER_PLATFORM=host        (default) match the detected host architecture
-#   CREW_DOCKER_PLATFORM=amd64|arm64 force that architecture regardless of host
-#   CREW_DOCKER_PLATFORM=linux/...   passed through verbatim (e.g. linux/arm64/v8)
-#   CREW_DOCKER_PLATFORM=off         emit no platform key — the project's own pin wins,
-#                                    for images that genuinely are single-arch and a host
-#                                    that has emulation deliberately set up for them
-#
-# Git metadata mount: a *linked* worktree's `.git` is a file (`gitdir: /abs/host/path/...`)
-# pointing at MAIN_ROOT's `.git/worktrees/<name>`, which in turn needs MAIN_ROOT's `.git`
-# (objects, refs, hooks) via its own `commondir` pointer. A container never has that absolute
-# host path, so any git command run inside one — most commonly a package manager's postinstall
-# hook (lefthook/husky/simple-git-hooks running `git rev-parse --git-path hooks`) — fails with
-# `fatal: not a git repository: <path>`, which then fails the whole install step it was
-# incidental to. Fixed by mounting MAIN_ROOT's real `.git` dir read-only at a fixed container
-# path (`/git-common`), so git never needs to resolve the unmountable absolute host path at all.
-# The two subdirectories a hook installer writes to get a writable named volume each on top of
-# that read-only mount: `hooks/` (the hook scripts themselves) and `info/` (lefthook's
-# config-checksum file). Hooks never need to *run* inside the container, only install without
-# erroring, so an empty per-project volume is all either needs — and the host's real
-# `.git/hooks` is never touched. Both dirs are created on the host first when missing: docker
-# cannot create a mount point inside a read-only mount.
-#
-# The file is per worktree, so for a *linked* worktree it also carries that worktree's own
-# `environment:` values, pointing git in the container at its subdirectory under the mount:
-#   GIT_COMMON_DIR=/git-common
-#   GIT_DIR=/git-common/worktrees/<name>
-# A plain (non-worktree) checkout gets neither: its `.git` is already a real, writable directory
-# reachable through the project's normal bind mount, and pointing GIT_DIR there would only take
-# away write access that already worked.
-# Never GIT_CONFIG_COUNT/GIT_CONFIG_KEY_<n>/GIT_CONFIG_VALUE_<n>: that is a numbered list, and a
-# bare passthrough can only name a fixed set of its indices. A host shell with GIT_CONFIG_COUNT=2
-# (credential wrappers, IDE terminals and CI runners set these) would hand the container a count
-# with no matching KEY_1, and every git command in it aborts with "missing config key". The host's
-# git config points at host helpers and paths anyway, so none of it belongs in a container.
-#   CREW_GIT_MOUNT=on   (default) mount, and bake the worktree's GIT_* values
-#   CREW_GIT_MOUNT=off  never mount, no GIT_* entries
-#
-# Exit codes:
-#   0  success
-#   1  argument or filesystem error
-#   2  no compose file found at project-root
-#   3  no supported ecosystem detected
+#   --query <field>  Print one detected fact and exit: services | ecosystem | container-src |
+#                    manifest-dirs | platform | project-name | vendor-paths | state-path | owner-prefix
+# Writes <project-root's git dir>/crew-compose.override.yml; the docker shim adds it as the last -f.
+# Volumes are named wt_<proj>_<owner4>_<eco>_<dir>_<lock8>: <owner4> hashes host + MAIN_ROOT, <lock8>
+# every manifest and lockfile, so equal lockfiles share already populated volumes.
+# CREW_DOCKER_PLATFORM=host (default)|amd64|arm64|linux/...|off pins each service's platform:, so an
+# amd64 pin cannot force qemu on arm64. CREW_GIT_MOUNT=on (default)|off mounts MAIN_ROOT's .git read-only
+# at /git-common (with GIT_DIR for a linked worktree, whose .git names a host path no container has).
+# GIT_CONFIG_COUNT/KEY_<n> are never passed: a count without its keys aborts every git command.
+# Exit codes: 0 success, 1 argument or filesystem error, 2 no compose file, 3 no supported ecosystem
 
 set -euo pipefail
-
-# ---------------------------------------------------------------------------
-# Args
-# ---------------------------------------------------------------------------
 
 PROJECT_ROOT=""
 MAIN_ROOT=""
@@ -171,7 +85,6 @@ _sha256() {
   fi
 }
 
-# <proj>: MAIN_ROOT's basename; <owner4>: this host + MAIN_ROOT's realpath.
 PROJ_SLUG=$(basename "$MAIN_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_*$//')
 OWNER4="$(printf '%s\n%s\n' "$(hostname 2>/dev/null || uname -n)" "$(cd "$MAIN_ROOT" && pwd -P)" | _sha256 | awk '{print substr($1, 1, 4)}')"
 OWNER_PREFIX="wt_${PROJ_SLUG}_${OWNER4}_"
@@ -181,8 +94,7 @@ if [[ "$QUERY" == "owner-prefix" ]]; then
   exit 0
 fi
 
-# This worktree's override path and git-env entries, resolved from PROJECT_ROOT before the
-# sparse-worktree fallback below can swap PROJECT_ROOT for MAIN_ROOT.
+# Resolved before the sparse-worktree fallback below can swap PROJECT_ROOT for MAIN_ROOT.
 GIT_DIR_ABS="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
 OVERRIDE_PATH=""
 [[ -z "$GIT_DIR_ABS" ]] || OVERRIDE_PATH="$GIT_DIR_ABS/crew-compose.override.yml"
@@ -190,10 +102,6 @@ if [[ -z "$OVERRIDE_PATH" && -z "$QUERY" && "$DRY_RUN" -eq 0 ]]; then
   echo "Error: $PROJECT_ROOT is not a git checkout — the override is written to its git dir" >&2
   exit 1
 fi
-
-# ---------------------------------------------------------------------------
-# Locate compose file
-# ---------------------------------------------------------------------------
 
 COMPOSE_FILE=""
 for name in docker-compose.yml docker-compose.yaml compose.yml; do
@@ -209,11 +117,6 @@ if [[ -z "$COMPOSE_FILE" ]]; then
   exit 2
 fi
 
-# ---------------------------------------------------------------------------
-# Parse compose file: service names and CONTAINER_SRC
-# ---------------------------------------------------------------------------
-
-# Service names: 2-space-indented keys directly under "services:"
 SERVICES=()
 in_services=0
 while IFS= read -r line; do
@@ -221,7 +124,6 @@ while IFS= read -r line; do
     in_services=1
     continue
   fi
-  # A new top-level key ends the services block
   if [[ $in_services -eq 1 ]] && [[ "$line" =~ ^[a-zA-Z] ]]; then
     in_services=0
     continue
@@ -236,8 +138,7 @@ if [[ ${#SERVICES[@]} -eq 0 ]]; then
   exit 1
 fi
 
-# CONTAINER_SRC: container-side path of the project bind-mount (e.g. /opt/app)
-# Matches volume entries like:  - .:/opt/app  or  - ${PROJECT_ROOT}:/opt/app
+# CONTAINER_SRC: the container side of the project bind mount (`- .:/opt/app`).
 CONTAINER_SRC=$(grep -E '^\s+-\s+(\.|"\."|\$\{PROJECT_ROOT\}|\$\{APP_ROOT\}):' "$COMPOSE_FILE" \
   | head -1 \
   | grep -oE ':(\/[^: ]+)' \
@@ -248,10 +149,6 @@ if [[ -z "$CONTAINER_SRC" ]]; then
   CONTAINER_SRC="/app"
 fi
 
-# ---------------------------------------------------------------------------
-# Detect ecosystem (first match wins)
-# ---------------------------------------------------------------------------
-
 ECO_NAME=""
 ECO_VENDOR=""
 ECO_PREFIX=""
@@ -259,10 +156,8 @@ ECO_DEPTH=5
 ECO_EXCLUDE=""
 ECO_ENV_PASSTHROUGH=()
 
-# Dot-directories (.output, .claude/worktrees, …) hold build output and other checkouts, never the
-# project's own manifests; manifest-fingerprint.sh (the <lock8> hash) excludes the same paths.
-# `find -path`'s `*` spans `/`, so the two patterns cover a dot-dir at any depth.
-# Set from the current PROJECT_ROOT, which the sparse-worktree fallback below may swap for MAIN_ROOT.
+# Dot-directories hold build output and other checkouts, never manifests (manifest-fingerprint.sh skips
+# them too); rebuilt per call because the sparse-worktree fallback may swap PROJECT_ROOT.
 DOT_EXCLUDE=()
 _set_dot_exclude() {
   DOT_EXCLUDE=(-not -path "$PROJECT_ROOT/.*/*" -not -path "$PROJECT_ROOT/*/.*/*")
@@ -275,9 +170,7 @@ detect_ecosystem() {
       "${DOT_EXCLUDE[@]}" -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="node"; ECO_VENDOR="node_modules"; ECO_PREFIX="nm"
     ECO_DEPTH=5; ECO_EXCLUDE="node_modules"
-    # NPM_TOKEN: bare name only, never a value — see "the env vars ... are never *valued*
-    # in the file" above. Lets a project's .npmrc reference ${NPM_TOKEN} for private-registry
-    # auth during `npm install`, resolved from whatever process invokes `docker compose run`.
+    # NPM_TOKEN by name only, so a project's .npmrc ${NPM_TOKEN} resolves from the invoking shell.
     ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "NODE_EXTRA_CA_CERTS" 'YARN_HTTPS_PROXY=${HTTPS_PROXY}' "NPM_TOKEN")
     return
   fi
@@ -320,13 +213,7 @@ detect_ecosystem() {
 
 detect_ecosystem
 
-# ---------------------------------------------------------------------------
-# Resolve the platform key (see CREW_DOCKER_PLATFORM in the header comment)
-# ---------------------------------------------------------------------------
-
-# _host_platform — best-effort `uname -m` -> compose platform string. Unrecognized
-# output means "skip the override" (empty), never a guess: emitting the wrong
-# platform is worse than leaving the project's own pin in place.
+# An unrecognised arch emits no platform key: a wrong platform is worse than the project's own pin.
 _host_platform() {
   case "$(uname -m 2>/dev/null)" in
     x86_64|amd64)  echo "linux/amd64" ;;
@@ -348,11 +235,6 @@ case "$DOCKER_PLATFORM" in
     ;;
 esac
 
-# ---------------------------------------------------------------------------
-# Resolve the git-common mount (see CREW_GIT_MOUNT in the header comment), and, for a linked
-# worktree, the GIT_* values pointing a container at this worktree's own git dir under it.
-# ---------------------------------------------------------------------------
-
 GIT_COMMON_DIR_ABS=""
 if [[ "$GIT_MOUNT" == "on" ]]; then
   GIT_COMMON_DIR_ABS="$(git -C "$MAIN_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
@@ -366,7 +248,7 @@ if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
       ;;
   esac
 fi
-# Mount points for the writable overlays — see "Git metadata mount".
+# docker cannot create a mount point inside a read-only mount.
 if [[ -n "$GIT_COMMON_DIR_ABS" && "$DRY_RUN" -eq 0 ]]; then
   mkdir -p "$GIT_COMMON_DIR_ABS/hooks" "$GIT_COMMON_DIR_ABS/info" 2>/dev/null || true
 fi
@@ -383,16 +265,9 @@ if [[ -z "$ECO_NAME" ]]; then
   exit 3
 fi
 
-# ---------------------------------------------------------------------------
-# Find manifest directories and build volume list
-# ---------------------------------------------------------------------------
-
-# PROJECT_NAME — the compose top-level `name:` value (see the "Project name" header comment
-# above). It must be the name compose itself picks for the main checkout without our override,
-# or the project's own `docker compose up` and ours create two `<name>_default` networks whose
-# services cannot reach each other. So: the project's own top-level `name:` when it has a
-# literal one, else MAIN_ROOT's basename normalised as compose does — lowercased, characters
-# outside [a-z0-9_-] dropped, leading `_`/`-` trimmed. Not PROJ_SLUG: that turns `-` into `_`.
+# The top-level `name:` must be what compose picks for the main checkout on its own, or the two
+# create separate <name>_default networks: the file's literal `name:`, else MAIN_ROOT's basename
+# normalised as compose does. Not PROJ_SLUG: that turns `-` into `_`.
 PROJECT_NAME=$(sed -nE 's/^name:[[:space:]]*["'\'']?([^"'\''#[:space:]]+)["'\'']?[[:space:]]*(#.*)?$/\1/p' \
   "$COMPOSE_FILE" | head -1)
 if [[ -z "$PROJECT_NAME" || "$PROJECT_NAME" == *'$'* ]]; then
@@ -430,7 +305,6 @@ else
   )
 fi
 
-# The lock hash: one over every manifest and lockfile under the (possibly fallen-back) project root.
 LOCK8="$(bash "$(dirname "${BASH_SOURCE[0]}")/manifest-fingerprint.sh" compute --project-root "$PROJECT_ROOT" | cut -c1-8)"
 
 VOL_NAMES=()
@@ -449,15 +323,9 @@ for dir in "${MANIFEST_DIRS[@]}"; do
   VOL_PATHS+=("$container_path")
 done
 
-# The install lock's volume (see "Install lock" in the header): one per lockfile hash, beside the
-# dependency volumes, mounted outside every vendor directory so an install that empties one
-# (`npm ci` deletes node_modules' entries) cannot delete the lock that guards it.
+# Outside every vendor dir: an install that empties one (`npm ci`) must not delete its lock.
 STATE_VOL="${OWNER_PREFIX}state_${LOCK8}"
 STATE_PATH="/crew-state"
-
-# ---------------------------------------------------------------------------
-# --query short-circuit: print one detected fact, skip the override entirely
-# ---------------------------------------------------------------------------
 
 if [[ -n "$QUERY" ]]; then
   case "$QUERY" in
@@ -472,10 +340,6 @@ if [[ -n "$QUERY" ]]; then
   esac
   exit 0
 fi
-
-# ---------------------------------------------------------------------------
-# Generate YAML
-# ---------------------------------------------------------------------------
 
 generate_yaml() {
   echo "name: ${PROJECT_NAME}"
@@ -518,10 +382,6 @@ generate_yaml() {
     echo "  wt_${PROJ_SLUG}_git_info:"
   fi
 }
-
-# ---------------------------------------------------------------------------
-# Output
-# ---------------------------------------------------------------------------
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   generate_yaml

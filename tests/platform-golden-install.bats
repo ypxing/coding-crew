@@ -21,21 +21,27 @@
 # and must not churn every fixture.
 
 load helpers/isolate-env
+load helpers/shared-install
 
-setup() {
+REPO="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
+GOLDEN="$REPO/tests/fixtures/platform-golden/install"
+CASES=(claude codex copilot pi)
+SCOPES=(project user user-config)
+
+# Every platform and scope is recorded once, concurrently, before any test; each test compares one.
+setup_file() {
   isolate_project_env
-  REPO="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
-  GOLDEN="$REPO/tests/fixtures/platform-golden/install"
-  WORK="$(cd "$(mktemp -d)" && pwd -P)"
-  mkdir -p "$WORK/repo" "$WORK/home" "$WORK/config"
   # A developer's own config-dir override must not move what this records.
-  local v
+  local v p scope
   while IFS= read -r v; do unset "$v"; done < <(jq -r '.[].configDirEnv' "$REPO/orchestrator/platforms.json")
+  for p in "${CASES[@]}"; do
+    for scope in "${SCOPES[@]}"; do bg_start "$p-$scope" golden_record "$p" "$scope"; done
+  done
+  bg_wait
 }
 
-teardown() {
-  chmod -R u+w "$WORK" 2>/dev/null || true
-  rm -rf "$WORK"
+teardown_file() {
+  chmod -R u+w "$BATS_FILE_TMPDIR" 2>/dev/null || true
 }
 
 # _tree <label> <dir> — one line per entry under <dir>, sorted.
@@ -95,9 +101,15 @@ _compare() {
   fi
 }
 
-# golden_install <platform> <scope> — install, snapshot, uninstall, snapshot.
-golden_install() {
-  local platform="$1" scope="$2" target env_name
+# _work <platform> <scope> — that case's own repo, home and config dirs, and its snapshots.
+_work() { printf '%s/%s-%s\n' "$(cd "$BATS_FILE_TMPDIR" && pwd -P)" "$1" "$2"; }
+
+# golden_record <platform> <scope> — install, snapshot, uninstall, snapshot. A failed step is
+# written to <work>/error for its test to report, so it fails only that case.
+golden_record() {
+  local platform="$1" scope="$2" target env_name out
+  WORK="$(_work "$platform" "$scope")"
+  mkdir -p "$WORK/repo" "$WORK/home" "$WORK/config"
   env_name=$(jq -r --arg p "$platform" '.[$p].configDirEnv' "$REPO/orchestrator/platforms.json")
   local -a env=(HOME="$WORK/home")
   case "$scope" in
@@ -106,23 +118,29 @@ golden_install() {
     user-config) target="$WORK/home"; env+=("$env_name=$WORK/config") ;;
   esac
   cd "$REPO"
-  run env "${env[@]}" TARGET_REPO="$target" ./install.sh "$platform"
-  [ "$status" -eq 0 ] || { echo "install.sh $platform ($scope) failed: $output" >&2; return 1; }
+  out=$(env "${env[@]}" TARGET_REPO="$target" ./install.sh "$platform" 2>&1) \
+    || { echo "install.sh $platform ($scope) failed: $out" > "$WORK/error"; return 0; }
   _snapshot "$scope" > "$WORK/install.txt"
-  _compare "$platform" "$scope" install "$WORK/install.txt"
-
-  run env "${env[@]}" TARGET_REPO="$target" ./uninstall.sh
-  [ "$status" -eq 0 ] || { echo "uninstall.sh after $platform ($scope) failed: $output" >&2; return 1; }
+  out=$(env "${env[@]}" TARGET_REPO="$target" ./uninstall.sh 2>&1) \
+    || { echo "uninstall.sh after $platform ($scope) failed: $out" > "$WORK/error"; return 0; }
   _snapshot "$scope" > "$WORK/uninstall.txt"
+}
+
+# golden_install <platform> <scope> — compare the recorded install and uninstall trees.
+golden_install() {
+  local platform="$1" scope="$2"
+  WORK="$(_work "$platform" "$scope")"
+  [ ! -f "$WORK/error" ] || { cat "$WORK/error" >&2; return 1; }
+  _compare "$platform" "$scope" install "$WORK/install.txt"
   _compare "$platform" "$scope" uninstall "$WORK/uninstall.txt"
 }
 
 @test "install.sh's platforms are platforms.json's, and the cases below cover them all" {
   local want got
-  want=$(SCRIPT_DIR="$REPO" REPO_ROOT="$WORK/repo" bash -c 'source "$SCRIPT_DIR/scripts/lib/platforms.sh"; printf "%s\n" "${PLATFORMS[@]}"' | LC_ALL=C sort)
+  want=$(SCRIPT_DIR="$REPO" REPO_ROOT="$BATS_TEST_TMPDIR" bash -c 'source "$SCRIPT_DIR/scripts/lib/platforms.sh"; printf "%s\n" "${PLATFORMS[@]}"' | LC_ALL=C sort)
   got=$(jq -r 'keys[]' "$REPO/orchestrator/platforms.json" | LC_ALL=C sort)
   [ "$want" = "$got" ]
-  [ "$got" = "$(printf '%s\n' claude codex copilot pi)" ]
+  [ "$got" = "$(printf '%s\n' "${CASES[@]}")" ]
 }
 
 @test "install golden: claude, project" { golden_install claude project; }

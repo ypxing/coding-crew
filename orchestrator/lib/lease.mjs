@@ -1,8 +1,6 @@
 /**
- * lease.mjs — the feature lease's decisions: acquire, reclaim-or-refuse, release.
- *
- * The git effects are lease.sh's (one compare-and-swap push each); what to do about a lease
- * someone else holds is decided here. Only under `tracker: github` and never for --dry-run.
+ * lease.mjs — the feature lease's decisions; lease.sh does the git (one compare-and-swap push each).
+ * Only under `tracker: github` and never for --dry-run.
  */
 
 import { hostname } from "node:os";
@@ -64,10 +62,7 @@ function write(effects, verb, slug, message, expect) {
   return { code: r.code, sha, stderr: r.stderr.trim() };
 }
 
-/**
- * Acquire the lease for `slug`. Returns `{ lease: { slug, sha } }` or `{ error }` (the run must stop).
- * A dead pid on this host is reclaimed automatically; anything else needs `reclaim`.
- */
+/** `{ lease }` or `{ error }`; a dead pid on this host is reclaimed automatically, anything else needs `reclaim`. */
 export function acquireLease(effects, { slug, runId, reclaim = false, log = () => {}, host = hostname(), pid = process.pid, now = () => Date.now(), pidAlive = isPidAlive }) {
   const message = ownerMessage({ runId, host, pid, at: new Date(now()).toISOString() });
   const failure = (what, detail) => ({ error: `crew-afk: could not ${what} the feature lease ${leaseNamespace()}/${slug} on origin: ${detail}` });
@@ -99,10 +94,7 @@ export function acquireLease(effects, { slug, runId, reclaim = false, log = () =
   }
 }
 
-/**
- * Release with a CAS on our own SHA. Never throws, never deletes a lease another run now owns.
- * Returns `{ released: true }`, `{ superseded: true }` or `{ failed: <reason>, command }`.
- */
+/** A CAS on our own SHA: never throws, never deletes a lease another run now owns. */
 export function releaseLease(effects, lease) {
   if (!lease || lease.released) return { released: true };
   const command = `git push origin :${leaseNamespace()}/${lease.slug}`;

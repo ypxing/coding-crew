@@ -375,7 +375,6 @@ test("the review prompt asks for a fenced json verdict, not a bare AC:/FINDING: 
 test("the review prompt asks a branch review for findings: [] and leaves findings to the feature review", () => {
   const p = reviewPrompt({ branch: "crew/f/x", slug: "x", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r/x.review.report.json" });
   assert.match(p, /A per-branch review writes `findings: \[\]`/);
-  assert.match(p, /always-on classes and the design-standard checks apply only to a `Feature review:` dispatch/);
 });
 
 test("the review prompt makes the sidecar file the verdict channel, not an option", () => {
@@ -406,7 +405,6 @@ test("the worker prompt makes the sidecar file the result channel, not an option
   });
   assert.match(p, /Write your structured result to \/repo\/\.scratch\/f\/dispatch\/x\.report\.json as your last action/);
   assert.doesNotMatch(p, /may be written/);
-  assert.match(p, /read as `blocked`, never as a silent `complete`/);
   // The schema has one owner, the coder protocol: the prompt points at it rather than copying it.
   assert.match(p, /your protocol's\n\*\*Report\*\* section/);
   // The criteria still arrive verbatim and framed as data.

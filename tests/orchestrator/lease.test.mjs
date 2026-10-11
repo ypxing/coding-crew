@@ -1,5 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { acquireLease, releaseLease, parseOwner, refusalMessage, leaseNamespace } from "../../orchestrator/lib/lease.mjs";
 
 // A fake lease.sh: `held` is the one ref's { sha, message } or null.
@@ -71,15 +76,70 @@ test("parseOwner / refusalMessage tolerate an unparseable message", () => {
   assert.match(refusalMessage("f", null, "junk"), /unrecognised owner \(junk\).*--reclaim/);
 });
 
-test("the namespace follows CREW_LEASE_NAMESPACE, in the error and the manual release command", () => {
+// The namespace end to end: lease.mjs driving the real lease.sh against a bare repo as origin.
+const LEASE_SH = join(dirname(fileURLToPath(import.meta.url)), "../../skills/crew-afk/scripts/lease.sh");
+
+function leaseRepo() {
+  const dir = mkdtempSync(join(tmpdir(), "crew-lease-ns-"));
+  const remote = join(dir, "remote.git");
+  const repo = join(dir, "repo");
+  const git = (...args) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+  git("init", "-q", "--bare", remote);
+  git("init", "-q", "-b", "main", repo);
+  git("-C", repo, "-c", "user.email=t@test", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "init");
+  git("-C", repo, "remote", "add", "origin", remote);
+  const effects = {
+    bash(name, args) {
+      // The environment at call time, as the orchestrator's own effects pass it: lease.sh and
+      // lease.mjs read the one CREW_LEASE_NAMESPACE.
+      const env = { ...process.env, MAIN_ROOT: repo };
+      const r = spawnSync("bash", [LEASE_SH, ...args], { cwd: repo, env, encoding: "utf8" });
+      return { code: r.status, stdout: r.stdout, stderr: r.stderr };
+    },
+  };
+  const remoteRefs = (pattern) => execFileSync("git", ["ls-remote", remote, pattern], { encoding: "utf8" }).trim();
+  return { dir, remote, effects, remoteRefs };
+}
+
+function withNamespace(ns, fn) {
   const prev = process.env.CREW_LEASE_NAMESPACE;
-  process.env.CREW_LEASE_NAMESPACE = "refs/tags/crew-lock/";
+  if (ns === undefined) delete process.env.CREW_LEASE_NAMESPACE; else process.env.CREW_LEASE_NAMESPACE = ns;
   try {
-    const e = { bash: () => ({ code: 4, stdout: "", stderr: "origin rejected the lease ref; use CREW_LEASE_NAMESPACE" }) };
-    assert.match(acquireLease(e, base).error ?? "", /lease refs\/tags\/crew-lock\/f on origin: .*CREW_LEASE_NAMESPACE/);
-    assert.equal(releaseLease(e, { slug: "f", sha: "x" }).command, "git push origin :refs/tags/crew-lock/f");
+    return fn();
   } finally {
     if (prev === undefined) delete process.env.CREW_LEASE_NAMESPACE; else process.env.CREW_LEASE_NAMESPACE = prev;
+  }
+}
+
+test("CREW_LEASE_NAMESPACE moves the whole lease, and the manual release command with it", () => {
+  const { effects, remoteRefs, dir } = leaseRepo();
+  try {
+    withNamespace("refs/tags/crew-lock/", () => {
+      const { lease } = acquireLease(effects, base);
+      assert.ok(lease, "acquired");
+      assert.notEqual(remoteRefs("refs/tags/crew-lock/f"), "");
+      assert.equal(remoteRefs("refs/crew-lock/f"), "");
+      const failed = releaseLease({ bash: () => ({ code: 1, stdout: "", stderr: "boom" }) }, { ...lease });
+      assert.equal(failed.command, "git push origin :refs/tags/crew-lock/f");
+      assert.deepEqual(releaseLease(effects, lease), { released: true });
+      assert.equal(remoteRefs("refs/tags/crew-lock/f"), "");
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a host that refuses the namespace: the run stops naming the lease ref and the fallback, not a lost race", () => {
+  const { effects, remote, dir } = leaseRepo();
+  try {
+    const hook = join(remote, "hooks/pre-receive");
+    writeFileSync(hook, '#!/bin/sh\nwhile read old new ref; do case "$ref" in refs/crew-lock/*) echo "namespace not allowed" >&2; exit 1;; esac; done\n');
+    chmodSync(hook, 0o755);
+    const { error } = withNamespace(undefined, () => acquireLease(effects, base));
+    assert.match(error ?? "", /lease refs\/crew-lock\/f on origin: .*rejected the lease ref refs\/crew-lock\/f/s);
+    assert.match(error, /CREW_LEASE_NAMESPACE=refs\/tags\/crew-lock/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

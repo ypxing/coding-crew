@@ -3,17 +3,10 @@
 # `make <target>` recipe whose fully-expanded form does (`make -n` expands variables
 # too, e.g. `$(DOCKER) run ...`) — false (exit 1) otherwise.
 #
-# Shared by docker-install.sh (--install-cmd override), crew-afk's
-# verify-worktree.sh (discovered test/lint/typecheck commands), and ensure-env.sh
-# (discovered credential_target command): a command that already manages its own
-# docker call must never be nested inside an outer `docker compose run`, which has
-# no docker CLI of its own to nest into.
-#
+# A command that manages its own docker call must never be nested inside `docker compose run`,
+# which has no docker CLI to nest into.
 # Usage: detect-docker-nesting.sh --dir <path> --cmd <cmd>
-# Exit codes:
-#   0  <cmd> (or its make recipe) already invokes docker
-#   1  it does not
-#   2  argument error
+# Exit codes: 0 <cmd> (or its make recipe) already invokes docker, 1 it does not, 2 argument error
 
 set -uo pipefail
 
