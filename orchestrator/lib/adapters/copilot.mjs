@@ -1,7 +1,4 @@
-/**
- * copilot adapter: `copilot -p <prompt> --output-format json`. The CLI allows the prompt only as
- * the `-p` argument, so it is the one platform whose prompt must go via argv.
- */
+/** copilot adapter: `copilot -p <prompt> --output-format json`; the CLI takes the prompt only via argv. */
 import { lastEvent, normalized, safePreview, str } from "./common.mjs";
 
 export default {
@@ -12,10 +9,8 @@ export default {
   requiredFlags: ["--allow-all-tools", "--output-format", "--add-dir"],
 
   /**
-   * --allow-all-tools removes the confirmation prompt. --add-dir: the worker reads the issue and
-   * writes its report under .scratch/ in the main checkout, outside its worktree cwd. copilot has
-   * no system-prompt flag, so the role's protocol is prepended to the prompt. The json schema is
-   * copilot-sdk's session-events.d.ts.
+   * --add-dir: the worker writes its report under .scratch/ in the main checkout, outside its cwd.
+   * copilot has no system-prompt flag, so the protocol is prepended to the prompt.
    */
   build({ cwd, mainRoot, model, policy, protocol, prompt }) {
     const text = protocol ? `${protocol}\n\n---\n\n${prompt}` : prompt;
@@ -25,7 +20,7 @@ export default {
     return { args };
   },
 
-  /** `-i`: copilot's interactive mode, which runs the protocol as its first prompt; permission prompts stay on for the human in the pane. */
+  /** Permission prompts stay on for the human in the pane. */
   interactive({ mainRoot, model, protocol, policy }) {
     const argv = ["copilot", "-i", protocol, "--add-dir", mainRoot];
     if (model && model !== "inherit") argv.push("--model", model);
@@ -33,10 +28,8 @@ export default {
     return argv;
   },
 
-  /** The role's reasoning effort; read-only denies the write tool. */
   policyArgs: ({ readOnly, effort }) => [...(effort ? ["--reasoning-effort", effort] : []), ...(readOnly ? ["--deny-tool", "write"] : [])],
 
-  /** A tool start, a failed tool, a `session.error`, or an `assistant.message`'s text. */
   normalize(evt) {
     const d = evt.data ?? {};
     if (evt.type === "tool.execution_start") {
@@ -57,6 +50,6 @@ export default {
     return null;
   },
 
-  /** The last `assistant.message` (copilot has no terminal event); "" when none. */
+  /** copilot has no terminal event. */
   finalText: (lines) => lastEvent(lines, "assistant.message")?.data?.content ?? "",
 };

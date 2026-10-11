@@ -1,20 +1,7 @@
 /**
- * A headless dispatch hosted in a pane-host terminal, so a human can watch it live. The
- * child is the exact argv spawnWithTimeout would run, and resolves to the same
- * `{code, stdout, stderr, timedOut}`.
- *
- * Nothing is read from the terminal. A pane host's `--command` is typed into a login shell
- * that outlives it, so the host can report neither exit nor exit code. run.sh writes the
- * child's pid and exit code to files beside the dispatch's outFile, and this module polls
- * those:
- *
- *   rc present                        → done, with that code
- *   past timeoutMs                    → SIGKILL the pid; 124, as spawnWithTimeout
- *   pid dead and no rc after a grace  → the terminal died under it (host quit); 1
- *   no pid within startTimeoutMs      → the shell never ran run.sh; close it, 127
- *
- * The pid check needs the terminal on crew-afk's own host, which holds for the one case this
- * runs in: crew-afk launched from a pane-host terminal in the same checkout.
+ * A headless dispatch in a pane-host terminal, for watching; resolves like spawnWithTimeout. The host
+ * cannot report an exit code (`--command` is typed into a shell that outlives it), so run.sh writes the
+ * child's pid and rc beside outFile and this polls them. The pid check assumes crew-afk's own host.
  */
 
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs";
@@ -28,23 +15,13 @@ export const TIMING = { pollMs: 500, startTimeoutMs: 30000, exitGraceMs: 5000 };
 const FOLLOWER = fileURLToPath(new URL("./follow-output.mjs", import.meta.url));
 
 /**
- * The terminal's shell has its own env; the child must see crew-afk's, and only that: a
- * variable crew-afk unset (a GH_TOKEN copilot must not see) would otherwise come back from
- * the shell's profile. Left alone either way: names a shell can't export, the terminal's
- * own geometry and cwd, and the ambient ids that must keep naming the worker's terminal
- * rather than the triggering one.
+ * The child must see crew-afk's env and only that: a variable crew-afk unset (a GH_TOKEN copilot
+ * must not see) would otherwise come back from the shell's profile. Skipped: names a shell can't
+ * export, the terminal's geometry and cwd, and the ambient ids that must name the worker's terminal.
  */
 const ENV_SKIP = /^(TERM|COLUMNS|LINES|PWD|OLDPWD|SHLVL|_|ORCA_TERMINAL_HANDLE|ORCA_TAB_ID|ORCA_WORKTREE_ID|HERDR_PANE_ID|HERDR_TAB_ID|HERDR_WORKSPACE_ID)$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-/**
- * @param {object} adapter  `{openWorkerTerminal, closeWorkerTerminal}` from the pane host
- * @param {object} o
- * @param {string} o.stem          file prefix (the dispatch's outFile); files go in `<stem>.term/`
- * @param {string} o.title         terminal title
- * @param {string} [o.jsonEvents]  platform whose event stream the terminal shows as trace lines
- * @param {string} [o.agent]
- */
 export async function spawnInWorkerTerminal(
   effects,
   adapter,
@@ -90,10 +67,7 @@ export async function spawnInWorkerTerminal(
       registerExternalPid(pid);
     }
     const now = Date.now();
-    // A timeout with no pid yet doesn't mean there's nothing to kill — run.sh may just not
-    // have written it yet under load. Falling through here instead of returning keeps polling
-    // (still bounded by startTimeoutMs below) so the kill fires the moment the pid shows up,
-    // rather than being skipped because it wasn't there on this exact tick.
+    // No pid yet under load is no reason to skip the kill: keep polling (bounded by startTimeoutMs).
     if (timeoutMs && now - started >= timeoutMs && pid) {
       // run.sh's job control made the child its group's leader: the group goes with it.
       killGroup(pid);
@@ -140,13 +114,9 @@ export async function spawnInWorkerTerminal(
 }
 
 /**
- * An interactive agent a host starts (the feature agent) gets that host's shell
- * env, not crew-afk's, so it runs through the same `env.sh` a worker terminal does. Writes
- * `<dir>/env.sh` (0600, sourced then deleted by the script) and `<dir>/launch.sh`: source it, cd to
- * `cwd`, then `exec` the argv, so the agent is the terminal's process. The argv (a protocol in it,
- * so too long to type) stays in the file; the host is given `command`, which just runs it.
- * @param {string[]} o.argv  the CLI and its arguments, `cmd` first
- * @param {object} [o.env]   per-launch additions to crew-afk's env (an adapter's `env`)
+ * A host-started interactive agent gets the host's shell env, so it runs through the same `env.sh`
+ * (0600, sourced then deleted) and `exec`s the argv. The argv holds a protocol too long to type, so
+ * the host is given `command`, which runs the script.
  */
 export function writeLaunchScript(effects, { dir, cwd, argv, env = {} }) {
   mkdirSync(dir, { recursive: true });
@@ -179,11 +149,9 @@ function envScript(env) {
 }
 
 /**
- * bash, whatever the terminal's login shell. `sh -c 'echo $$ …; exec'` records the pid the
- * child keeps (BASHPID is bash 4+; macOS ships 3.2). The child writes straight to `out`;
- * what the terminal shows is a separate follower process, so a display failure can never
- * reach the child. It follows `out` for an event stream it can parse (every platform), and
- * `err` otherwise (the fake test seam).
+ * bash, whatever the login shell. `sh -c 'echo $$ …; exec'` records the pid the child keeps
+ * (BASHPID is bash 4+; macOS ships 3.2). The display is a separate follower process, so a display
+ * failure never reaches the child.
  */
 function runScript({ f, cwd, cmd, args, jsonEvents, agent, stdin = false }) {
   const q = shellQuote;
@@ -194,8 +162,7 @@ function runScript({ f, cwd, cmd, args, jsonEvents, agent, stdin = false }) {
     `cd -P ${q(cwd)} || { echo 127 > ${p("rc")}; exit; }`,
     `: > ${p("out")}; : > ${p("err")}`,
     `${q(process.execPath)} ${q(FOLLOWER)} ${p(jsonEvents ? "out" : "err")} ${p("rc")} ${q(jsonEvents ?? "")} ${q(agent ?? "")} &`,
-    // Job control: the child runs as its own process group's leader, so killing the recorded pid's
-    // group (the interrupt path, a timeout) takes its children with it.
+    // Job control: the child leads its own process group, so killing the group takes its children.
     "set -m",
     `sh -c 'echo $$ > "$0.tmp" && mv "$0.tmp" "$0" && exec "$@"' ${p("pid")} ${[cmd, ...args].map(q).join(" ")} > ${p("out")} 2> ${p("err")} < ${stdin ? p("in") : "/dev/null"}`,
     `echo $? > ${p("rc.tmp")} && mv ${p("rc.tmp")} ${p("rc")}`,
@@ -204,7 +171,6 @@ function runScript({ f, cwd, cmd, args, jsonEvents, agent, stdin = false }) {
   ].join("\n");
 }
 
-/** Hands onLine raw chunks as the file grows, like spawnWithTimeout's stdout handler. */
 function tailer(file, onLine) {
   let fd = null;
   let offset = 0;
