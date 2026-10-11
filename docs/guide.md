@@ -118,7 +118,7 @@ Each issue's own branch review checks its acceptance criteria only: it raises no
 
 ### Changing a crew-afk Role
 
-A role's protocol is `orchestrator/roles/<role>.md`; it ships as part of crew-afk's `assets`, so a change to it needs crew-afk's `version` above origin/main's. Text shared with a skill goes in a `{{FRAGMENT:<key>}}` line backed by `skills/_shared/fragments/<key>.md`, and anything per-platform uses `{{PLATFORM}}` — never a per-platform copy of the protocol. Check the result:
+A role's protocol is `orchestrator/roles/<role>.md`; it ships as part of crew-afk's `assets`. Text shared with a skill goes in a `{{FRAGMENT:<key>}}` line backed by `skills/_shared/fragments/<key>.md`, and anything per-platform uses `{{PLATFORM}}` — never a per-platform copy of the protocol. Check the result:
 
 ```bash
 TARGET_REPO=/tmp/test-install ./install.sh claude --skill crew-afk
