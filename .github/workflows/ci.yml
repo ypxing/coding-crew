@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       # No native Windows job: Windows is supported through WSL2 (README), which the ubuntu job
-      # covers; under Git Bash's emulated fork() the suite was slow and failed mostly on its quirks.
+      # covers; under Git Bash's emulated fork() the suite is slow and fails mostly on its quirks.
       matrix:
         include:
           - os: ubuntu-latest
