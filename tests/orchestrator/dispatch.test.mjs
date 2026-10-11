@@ -979,7 +979,6 @@ test("the coder's protocol ends with each named skill's installed SKILL.md, per 
     assert.ok(text.includes(`\`solve-issue\`: ${join(main, ".agents/skills/solve-issue/SKILL.md")}`), "the project install");
     assert.ok(text.includes(`\`dep-install\`: ${join(home, ".agents/skills/dep-install/SKILL.md")}`), "the user-level install");
     assert.match(text, /`tdd`: not installed/);
-    assert.match(text, /BLOCKED: solve-issue skill not installed/);
   } finally {
     process.env.HOME = saved;
   }

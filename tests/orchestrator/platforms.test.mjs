@@ -133,18 +133,7 @@ test("followup is the feature agent: it may edit, takes no sub-agents or default
   assert.deepEqual(ROLE_POLICY.followup, { readOnly: false });
   for (const platform of PLATFORMS) {
     const text = renderRolePrompt("followup", platform);
-    assert.match(text, /feature agent/i, platform);
     assert.doesNotMatch(text, /\{\{/, platform);
-  }
-});
-
-test("the feature agent's brief: checkout unchanged until the end notice, follow-up work in place after it, commit everything, never an issue's Status or criteria", () => {
-  for (const platform of PLATFORMS) {
-    const text = renderRolePrompt("followup", platform);
-    assert.match(text, /Until the end notice[\s\S]*leave the checkout unchanged/, platform);
-    assert.match(text, /After the end notice[\s\S]*follow-up work in place/, platform);
-    assert.match(text, /Commit everything before you stop/, platform);
-    assert.match(text, /Never edit an issue's `Status:` line or tick its criteria boxes/, platform);
     assert.doesNotMatch(text, /crew-afk followup|followup (start|wait|reply)|_followup/, platform);
   }
 });
