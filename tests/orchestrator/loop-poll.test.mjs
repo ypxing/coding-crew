@@ -324,3 +324,53 @@ test("--open-pr: an issue blocked with no branch (a failing ## Requires) is list
   const note = pr.args[pr.args.indexOf("--note-file") + 1];
   assert.match(readFileSync(note, "utf8"), /- req — requires failed: docker not running/);
 });
+
+test("a poll whose tracker listing throws is logged as a warning and the next interval polls again", async () => {
+  const h = harness({ pollInterval: 5 });
+  const logs = [];
+  h.ctx.log = (m, level) => logs.push({ m: String(m), level });
+  const list = h.ctx.tracker.selectDispatchable;
+  let failNext = false;
+  h.ctx.tracker.selectDispatchable = (...a) => {
+    if (failNext) { failNext = false; throw new Error('gh issue list failed (exit 1): Post "https://api.github.com/graphql": EOF'); }
+    return list(...a);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  failNext = true;
+  h.sleeps.shift()();
+  await settle();
+  assert.ok(logs.some((l) => l.level === "warn" && l.m.includes("graphql\": EOF")), JSON.stringify(logs));
+  h.ready.push({ slug: "b", number: null });
+  h.sleeps.shift()();
+  await settle();
+  assert.deepEqual(h.started, ["a", "b"]);
+  h.gates.get("a")(); h.gates.get("b")();
+  await run;
+});
+
+test("a poll whose mid-run lint throws re-lints those issues on the next poll and never dispatches them unlinted", async () => {
+  const h = harness({ pollInterval: 5, lintBlocks: ["bad"] });
+  const logs = [];
+  h.ctx.log = (m, level) => logs.push({ m: String(m), level });
+  const lint = h.ctx.stages.lintMidRunIssues;
+  let failNext = true;
+  h.ctx.stages.lintMidRunIssues = async (c, issues) => {
+    if (failNext) { failNext = false; throw new Error('gh issue comment failed (exit 1): EOF'); }
+    return lint(c, issues);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  h.ready.push({ slug: "bad", number: null });
+  h.sleeps.shift()();
+  await settle();
+  assert.ok(logs.some((l) => l.level === "warn" && l.m.includes("EOF")), JSON.stringify(logs));
+  assert.deepEqual(h.started, ["a"]);
+  h.sleeps.shift()();
+  await settle();
+  assert.deepEqual(h.linted, ["bad"]);
+  assert.ok(h.blocked.has("bad"));
+  h.gates.get("a")();
+  await run;
+  assert.deepEqual(h.started, ["a"]);
+});

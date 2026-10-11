@@ -62,6 +62,47 @@ function shellOut(cmd, args) {
   }
 }
 
+/** A `gh` failure on the network or GitHub's side, not in the request itself: worth another try. */
+const TRANSIENT = /\bEOF\b|connection reset|connection refused|no such host|timeout|timed out|HTTP 5\d\d|secondary rate limit/i;
+/** Failed before the request left this machine, so even a write cannot have been applied. */
+const UNSENT = /dial tcp|no such host|connection refused|TLS handshake timeout/i;
+const RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+/** A call whose retry could create a second issue, comment or resource (`gh api` posts once given a field). */
+function createsSomething(args) {
+  const [group, sub] = args;
+  if (group === "issue") return sub === "create" || sub === "comment";
+  if (group !== "api") return false;
+  const m = args.findIndex((a) => a === "-X" || a === "--method");
+  if (m !== -1) return String(args[m + 1]).toUpperCase() === "POST";
+  return args.some((a) => ["-f", "-F", "--field", "--raw-field", "--input"].includes(a));
+}
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * `exec` with a transient failure retried after each of `delays`; the last result is returned as is.
+ * A write is retried only when the failure happened before it was sent.
+ */
+export function retryTransient(exec, { delays = RETRY_DELAYS_MS, sleep = sleepSync, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
+  return (cmd, args) => {
+    let r = exec(cmd, args);
+    for (const [i, ms] of delays.entries()) {
+      const stderr = r.stderr ?? "";
+      if (r.code === 0 || !TRANSIENT.test(stderr)) return r;
+      if (createsSomething(args) && !UNSENT.test(stderr)) return r;
+      warn(`gh ${args.slice(0, 2).join(" ")}: transient failure, retry ${i + 1}/${delays.length} in ${ms / 1000}s: ${stderr.trim().split("\n")[0]}`);
+      sleep(ms);
+      r = exec(cmd, args);
+    }
+    return r;
+  };
+}
+
+const gh = retryTransient(shellOut);
+
 /** The 4 pre-created triage labels. `done` is `awaiting-merge` or the closed state, and
  * `wontfix` a close-state, so neither is a triage label (see statusOf). */
 const TRIAGE_LABELS = ["needs-triage", "needs-info", "ready-for-agent", "ready-for-human"];
@@ -115,7 +156,7 @@ export function parseIssue(json) {
 }
 
 /** Every issue in the milestone, open and closed (a closed blocker is resolved), in one call. */
-export function listFeatureIssues(mainRoot, { featureSlug, exec = shellOut } = {}) {
+export function listFeatureIssues(mainRoot, { featureSlug, exec = gh } = {}) {
   const args = ["issue", "list", "--milestone", featureSlug, "--state", "all", "--json", "number,title,body,labels,state"];
 
   const r = exec("gh", args);
@@ -177,7 +218,7 @@ function ensureMilestone(featureSlug, { exec }) {
 }
 
 /** Every feature, one per milestone (a closed one is still a taken slug), sorted by title. */
-export function listFeatures(mainRoot, { exec = shellOut } = {}) {
+export function listFeatures(mainRoot, { exec = gh } = {}) {
   const fail = (r) => new Error((r.stderr || r.stdout || `gh exited ${r.code}`).replace(/\n$/, ""));
   const milestones = exec("gh", ["api", `${MILESTONES_PATH}?state=all`, "--paginate", "--jq", ".[] | [.number, .state, .title] | @tsv"]);
   if (milestones.code !== 0) throw fail(milestones);
@@ -197,7 +238,7 @@ export function listFeatures(mainRoot, { exec = shellOut } = {}) {
 }
 
 /** Create an issue in the feature's milestone, `body` unmodified. Returns `{number, url}`. */
-export function createIssue({ title, body, labels = [], featureSlug }, { mainRoot, exec = shellOut } = {}) {
+export function createIssue({ title, body, labels = [], featureSlug }, { mainRoot, exec = gh } = {}) {
   ensureMilestone(featureSlug, { exec });
 
   const bodyFile = join(tmpdir(), `crew-github-issue-${randomUUID()}.md`);
@@ -228,7 +269,7 @@ export function createIssue({ title, body, labels = [], featureSlug }, { mainRoo
  * Mirror `## Blocked by` as native `blocked_by` links. Best-effort: dispatch reads only the
  * body prose, so a failed link warns and never throws. Returns the count linked.
  */
-export function linkBlockers(number, { mainRoot, exec = shellOut, body, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
+export function linkBlockers(number, { mainRoot, exec = gh, body, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
   try {
     const apiBase = "repos/{owner}/{repo}";
     let text = body;
@@ -266,7 +307,7 @@ export function linkBlockers(number, { mainRoot, exec = shellOut, body, warn = (
  * its open `PRD:` issue once no open work issue is left (as `close-shipped.sh`). A PR that
  * ships nothing closes nothing.
  */
-export function closingRefs(mainRoot, { featureSlug, exec = shellOut } = {}) {
+export function closingRefs(mainRoot, { featureSlug, exec = gh } = {}) {
   const args = ["issue", "list", "--milestone", featureSlug, "--state", "open", "--limit", "500", "--json", "number,title,labels"];
   const r = exec("gh", args);
   if (r.code !== 0) throw new Error(`gh issue list failed (exit ${r.code}): ${r.stderr || r.stdout}`);
@@ -296,7 +337,7 @@ export function parseOrigins(body) {
 }
 
 /** Post `body` as a new comment under `## <heading>`, never an in-place edit. */
-export function writeProgress(issue, body, { heading = "Progress", mainRoot, exec = shellOut } = {}) {
+export function writeProgress(issue, body, { heading = "Progress", mainRoot, exec = gh } = {}) {
   const commentBody = `## ${heading}\n\n${body}`;
 
   const result = exec("gh", ["issue", "comment", String(issue.number), "--body", commentBody]);
@@ -315,7 +356,7 @@ export function validateRef(mainRoot, ref) {
 const NOT_FOUND = /could not resolve to an? (?:issue|pullrequest|pull request)/i;
 
 /** `{title, body, comments?}` for issue `number`, or null when it does not exist. */
-export function fetchIssue(mainRoot, number, { comments = false, exec = shellOut } = {}) {
+export function fetchIssue(mainRoot, number, { comments = false, exec = gh } = {}) {
   const fields = comments ? "title,body,comments" : "title,body";
   const r = exec("gh", ["issue", "view", String(number), "--json", fields]);
   if (r.code !== 0) {
@@ -331,7 +372,7 @@ export function fetchIssue(mainRoot, number, { comments = false, exec = shellOut
 }
 
 /** The milestone's PRD body, headed by an HTML comment naming its number and title; null when none. */
-export function readPrd(mainRoot, { featureSlug, exec = shellOut } = {}) {
+export function readPrd(mainRoot, { featureSlug, exec = gh } = {}) {
   const prd = listFeatureIssues(mainRoot, { featureSlug, exec }).find(isPrdIssue);
   return prd ? `<!-- PRD issue #${prd.number}: ${prd.title} -->\n${prd.text}\n` : null;
 }
@@ -375,7 +416,7 @@ function draftBody(text) {
 }
 
 /** `publish-issues`' github side. A milestone only accumulates, so there is no re-run guard. */
-export function beginPublish(mainRoot, { featureSlug, exec = shellOut } = {}) {
+export function beginPublish(mainRoot, { featureSlug, exec = gh } = {}) {
   return {
     create(draft) {
       const { number } = createIssue(
@@ -392,7 +433,7 @@ export function beginPublish(mainRoot, { featureSlug, exec = shellOut } = {}) {
  * Update the milestone's `PRD:` issue or create one, then pin it best-effort — GitHub caps
  * pinned issues at 3 a repo. Returns the issue number.
  */
-export function publishPrd(mainRoot, { featureSlug, title, body, exec = shellOut, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
+export function publishPrd(mainRoot, { featureSlug, title, body, exec = gh, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
   const existing = listFeatureIssues(mainRoot, { featureSlug, exec }).find(isPrdIssue);
   let number;
   if (existing) {
@@ -413,7 +454,7 @@ export function publishPrd(mainRoot, { featureSlug, title, body, exec = shellOut
  * triage label and move it into the feature's milestone. `--remove-label` fails on a label the
  * issue lacks, so only carried ones are named. Null when the issue does not exist.
  */
-export function rewriteIssue(mainRoot, number, { body, status, featureSlug, exec = shellOut } = {}) {
+export function rewriteIssue(mainRoot, number, { body, status, featureSlug, exec = gh } = {}) {
   const read = exec("gh", ["issue", "view", String(number), "--json", "labels", "--jq", ".labels[].name"]);
   if (read.code !== 0) {
     if (notFound(read)) return null;
@@ -439,7 +480,7 @@ export function doneTarget(mainRoot, number) {
 }
 
 /** Issue `number`'s body, fetched live — never a copy the caller may hold — for `mark-done`'s criteria guard. */
-export function readIssueBody(mainRoot, number, { exec = shellOut } = {}) {
+export function readIssueBody(mainRoot, number, { exec = gh } = {}) {
   const r = exec("gh", ["issue", "view", String(number), "--json", "body", "--jq", ".body"]);
   if (r.code !== 0) throw new Error(`ERROR: gh issue view failed for #${number}:\n${r.stderr || r.stdout}`);
   return r.stdout ?? "";
@@ -450,7 +491,7 @@ export function readIssueBody(mainRoot, number, { exec = shellOut } = {}) {
  * closes it. `--add-label`/`--remove-label` fail on a label the repo lacks, so each is created
  * first; `ready-for-human` without `--force`, keeping the project's colour.
  */
-export function markDone(mainRoot, number, { exec = shellOut, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
+export function markDone(mainRoot, number, { exec = gh, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
   const awaiting = exec("gh", ["label", "create", AWAITING_MERGE_LABEL, "--force",
     "--description", "Implemented on a feature branch; closes when its PR merges"]);
   if (awaiting.code !== 0) throw new Error(`ERROR: gh label create ${AWAITING_MERGE_LABEL} failed:\n${awaiting.stderr || awaiting.stdout}`);
