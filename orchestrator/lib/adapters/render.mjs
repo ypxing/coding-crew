@@ -49,16 +49,23 @@ export function installedSkillFile(mainRoot, platform, skill) {
 
 /**
  * The rendered protocol of `role` (or of its agent label, e.g. "crew-coder"); null for a role with none.
+ * `part` appends `<role>/<part>.md` (the reviewer's `feature`), which only that dispatch reads.
  * `rolesDir` is a test seam: a protocol other than the shipped one.
  */
-export function renderRolePrompt(role, platform, { mainRoot = null, rolesDir = ROLES_DIR } = {}) {
+export function renderRolePrompt(role, platform, { mainRoot = null, rolesDir = ROLES_DIR, part = null } = {}) {
   const name = ROLE_AGENTS[role] ? role : roleOfAgent(role);
   if (!name) return null;
   const src = join(rolesDir, `${name}.md`);
   if (!existsSync(src)) throw new Error(`protocol for ${ROLE_AGENTS[name]} not found (${src})`);
+  let source = readFileSync(src, "utf8");
+  if (part) {
+    const partSrc = join(rolesDir, name, `${part}.md`);
+    if (!existsSync(partSrc)) throw new Error(`protocol part '${part}' for ${ROLE_AGENTS[name]} not found (${partSrc})`);
+    source = `${source.replace(/\n*$/, "")}\n\n${readFileSync(partSrc, "utf8")}`;
+  }
 
   const out = [];
-  for (const line of readFileSync(src, "utf8").split("\n")) {
+  for (const line of source.split("\n")) {
     const m = line.match(/^\s*\{\{FRAGMENT:([A-Za-z0-9_-]+)\}\}\s*$/);
     if (!m) {
       out.push(line.replaceAll("{{PLATFORM}}", platform));
