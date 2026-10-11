@@ -26,14 +26,18 @@ export function preflightPaneHost(effects, paneHost) {
   return ADAPTERS[paneHost]?.preflight(effects) ?? [];
 }
 
-/** Tells a host of a worktree the orchestrator created (`{title, issue, parent}`). Logs, never throws. */
+/**
+ * Tells a host of a worktree the orchestrator created (`{title, issue, parent}`). Logs, never throws;
+ * returns the host's promise of whether it was named, for a caller that needs to wait on it.
+ */
 export function adoptWorktree(effects, path, meta) {
   const adapter = adapterFor(effects);
-  if (!adapter?.adoptWorktree || effects.dryRun) return;
+  if (!adapter?.adoptWorktree || effects.dryRun) return undefined;
   try {
-    adapter.adoptWorktree(effects, path, meta);
+    return adapter.adoptWorktree(effects, path, meta);
   } catch (err) {
     effects.log?.(`WARN pane host ${effects.paneHost}: could not adopt worktree ${path} — ${err.message}`);
+    return undefined;
   }
 }
 

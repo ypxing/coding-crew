@@ -12,6 +12,9 @@ const CALL_TIMEOUT_MS = 10000;
 /** `terminal send` into a live agent pane waits for turn start (~8s measured). */
 const SEND_TIMEOUT_MS = 20000;
 
+/** How long a new worktree may take to appear in orca after `git worktree add`, and how often to look. */
+export const ADOPT_WAIT = { pollMs: 500, timeoutMs: 10000 };
+
 export function preflight(effects) {
   const which = effects.exec("sh", ["-c", "command -v orca"], { mutating: false });
   if (which.code !== 0) return ["pane host orca, but the orca CLI was not found on PATH"];
@@ -36,18 +39,57 @@ export function preflight(effects) {
   return [];
 }
 
-/** Names a natively created worktree to orca, so it lists under the sprint; only an adopted one scopes a terminal. */
-export function adoptWorktree(effects, path, { title, issue, parent }) {
+/**
+ * Names a natively created worktree to orca, so it lists under the sprint; only a named one scopes a
+ * terminal. orca finds a new worktree on its own a moment after `git worktree add`, so this first
+ * waits (bounded) for `worktree show` to see it. Resolves whether it was named; never rejects.
+ */
+export function adoptWorktree(effects, path, meta) {
+  const adopting = nameWorktree(effects, path, meta).catch((err) => {
+    effects.log?.(`WARN orca could not name worktree ${path} — ${err.message}`);
+    return false;
+  });
+  (effects._paneAdoptions ??= new Map()).set(path, adopting);
+  return adopting;
+}
+
+async function nameWorktree(effects, path, { title, issue, parent }) {
+  if (!(await listedByOrca(effects, path))) {
+    effects.log?.(`WARN orca never listed worktree ${path} within ${ADOPT_WAIT.timeoutMs / 1000}s — not named, so no terminal opens in it`);
+    return false;
+  }
   const args = ["worktree", "set", "--worktree", `path:${path}`, "--display-name", title];
   if (issue != null) args.push("--issue", String(issue));
   if (parent) args.push("--parent-worktree", `path:${parent}`);
-  const r = effects.exec("orca", args, { timeoutMs: CALL_TIMEOUT_MS });
+  const r = await paneHostExec(effects, args, CALL_TIMEOUT_MS);
   if (r.code !== 0) {
     effects.log?.(`WARN orca worktree set ${path} exit=${r.code} ${failureDetail(r)}`);
-    return;
+    return false;
   }
   (effects._paneAdopted ??= new Set()).add(path);
+  return true;
 }
+
+async function listedByOrca(effects, path) {
+  const deadline = Date.now() + ADOPT_WAIT.timeoutMs;
+  for (;;) {
+    const left = deadline - Date.now();
+    if (left <= 0) return false;
+    const show = await paneHostExec(effects, ["worktree", "show", "--worktree", `path:${path}`, "--json"], Math.min(CALL_TIMEOUT_MS, left));
+    if (show.code === 0) return true;
+    if (Date.now() + ADOPT_WAIT.pollMs >= deadline) return false;
+    await sleep(ADOPT_WAIT.pollMs);
+  }
+}
+
+/** Whether `path` is named to orca, once any naming still under way has settled. */
+async function named(effects, path) {
+  if (!path) return false;
+  await effects._paneAdoptions?.get(path);
+  return Boolean(effects._paneAdopted?.has(path));
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** `_feature` once adopted, else the main checkout: orca refuses a terminal in a worktree it does not know. */
 const featureWorktree = (effects) => (effects.featureRoot && effects._paneAdopted?.has(effects.featureRoot) ? effects.featureRoot : effects.mainRoot);

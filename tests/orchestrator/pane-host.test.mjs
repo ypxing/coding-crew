@@ -1319,3 +1319,68 @@ test("settlePaneAgent (orca) drops an agent whose terminal is orphaned, not writ
   starting.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { terminal: { handle: "term_w", orphaned: false, writable: true, connected: true } } }), stderr: "" });
   assert.equal(settlePaneAgent(starting.effects), true, "a just-opened terminal with no agentIdentity yet still counts");
 });
+
+// orca learns of a natively created worktree from its own git watch, a moment after `git worktree
+// add`: a `worktree set` before then fails with selector_not_found.
+import { adoptWorktree } from "../../orchestrator/lib/pane-host/index.mjs";
+import { ADOPT_WAIT } from "../../orchestrator/lib/pane-host/orca.mjs";
+
+/** orca effects whose `worktree show` fails `failShows` times (Infinity: always), every other call succeeding. */
+function adoptingOrca(failShows) {
+  const calls = [];
+  const logs = [];
+  let shows = 0;
+  return {
+    paneHost: "orca",
+    mainRoot: "/root",
+    _calls: calls,
+    _logs: logs,
+    log: (l) => logs.push(l),
+    spawnWithTimeout: async (cmd, args) => {
+      calls.push([cmd, ...args]);
+      if (args[0] === "worktree" && args[1] === "show" && shows++ < failShows) return { code: 1, stdout: JSON.stringify({ error: { code: "selector_not_found", message: "no such worktree" } }), stderr: "" };
+      if (args[0] === "terminal" && args[1] === "create") return json({ result: { terminal: { handle: "term_x" } } });
+      return json({ result: {} });
+    },
+  };
+}
+
+async function withAdoptWait(wait, fn) {
+  const prior = { ...ADOPT_WAIT };
+  Object.assign(ADOPT_WAIT, wait);
+  try {
+    return await fn();
+  } finally {
+    Object.assign(ADOPT_WAIT, prior);
+  }
+}
+
+test("adoptWorktree (orca) polls `worktree show` until orca lists the worktree, then names it with `worktree set`", async () => {
+  const effects = adoptingOrca(2);
+  const named = await withAdoptWait({ pollMs: 10, timeoutMs: 5000 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", issue: 1, parent: "/wt/_feature" }));
+  assert.equal(named, true);
+  assert.deepEqual(effects._calls.map((c) => c.slice(1, 3).join(" ")), ["worktree show", "worktree show", "worktree show", "worktree set"]);
+  assert.deepEqual(effects._calls[0], ["orca", "worktree", "show", "--worktree", "path:/wt/alpha", "--json"]);
+  assert.deepEqual(effects._calls[3], ["orca", "worktree", "set", "--worktree", "path:/wt/alpha", "--display-name", "01-alpha", "--issue", "1", "--parent-worktree", "path:/wt/_feature"]);
+});
+
+test("adoptWorktree (orca) gives up within its bound when orca never lists the worktree: no `worktree set`, not named, a WARN naming it", async () => {
+  const effects = adoptingOrca(Infinity);
+  const started = Date.now();
+  const named = await withAdoptWait({ pollMs: 20, timeoutMs: 200 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" }));
+  assert.ok(Date.now() - started < 1500, `bounded: took ${Date.now() - started}ms`);
+  assert.equal(named, false);
+  assert.ok(effects._calls.length > 1, "it polled");
+  assert.ok(effects._calls.every((c) => c[2] === "show"), "never `worktree set`");
+  assert.equal(effects._logs.length, 1, effects._logs.join("\n"));
+  assert.match(effects._logs[0], /^WARN orca .*\/wt\/alpha/);
+});
+
+test("adoptWorktree (orca) logs a failed `worktree set` as a WARN naming the worktree, which stays unnamed", async () => {
+  const effects = adoptingOrca(0);
+  const spawn = effects.spawnWithTimeout;
+  effects.spawnWithTimeout = async (cmd, args, opts) => (args[1] === "set" ? (effects._calls.push([cmd, ...args]), { code: 1, stdout: "", stderr: "orca boom" }) : spawn(cmd, args, opts));
+  const named = await withAdoptWait({ pollMs: 10, timeoutMs: 1000 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" }));
+  assert.equal(named, false);
+  assert.match(effects._logs.join("\n"), /^WARN orca worktree set \/wt\/alpha exit=1 orca boom$/m);
+});
