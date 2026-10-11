@@ -145,6 +145,8 @@ With orca or herdr as the pane host, every dispatch (coder, reviewer, triage, fe
 whatever `spawnDispatch` routes) runs in a tab of its own titled `<slug> <agent>`, so every
 worker is a tab you can watch. orca scopes the terminal to the dispatch's own worktree when crew-afk
 named it to orca, else to `_feature` when that is named; with neither, the dispatch runs headless.
+A worktree orca listed only after the 60s naming wait is named at the next dispatch that asks
+for it (one `worktree show`, then `worktree set`); the startup log tab and feature agent are not reopened.
 herdr opens it as a tab of the sprint's `_feature` workspace, started in the dispatch's own cwd
 (an issue's worktree for its coder and reviewer), runs `run.sh` with `pane run`, and closes the tab
 with `tab close` when the dispatch ends (a close that fails or times out is a `WARN herdr tab <tabId>
