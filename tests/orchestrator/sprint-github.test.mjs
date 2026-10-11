@@ -377,6 +377,12 @@ test("github --open-pr: a run with a blocked issue opens a draft PR naming it, a
   const remote = join(root, ".scratch/remote.git");
   sh("git", ["init", "-q", "--bare", remote]);
   sh("git", ["-C", root, "remote", "set-url", "origin", remote]);
+  // An earlier run's merged work: a feature branch with nothing beyond main opens no PR at all.
+  sh("git", ["-C", root, "checkout", "-q", "feature/demo"]);
+  writeFileSync(join(root, "earlier.txt"), "earlier run\n");
+  sh("git", ["-C", root, "add", "earlier.txt"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "earlier run"]);
+  sh("git", ["-C", root, "checkout", "-q", "main"]);
   fake(root, "alpha.nocommit");
   fake(
     root,
@@ -395,6 +401,47 @@ test("github --open-pr: a run with a blocked issue opens a draft PR naming it, a
   } else {
     assert.fail(`no PR was created:\n${r.stdout}\n${r.stderr}`);
   }
+});
+
+test("github --open-pr: a feature branch with no commits beyond its base dispatches no PR writer, runs no open-pr.sh, and says why", () => {
+  const root = githubFixtureRepo();
+  const { stub, log } = stubGh(root, [GH_ALPHA]);
+  const remote = join(root, ".scratch/remote.git");
+  sh("git", ["init", "-q", "--bare", remote]);
+  sh("git", ["-C", root, "remote", "set-url", "origin", remote]);
+  fake(root, "alpha.nocommit");
+  fake(root, "alpha.worker", ["## Issue: alpha", "Status: blocked", "", "```json", '{"status":"blocked","checks":{"test":"not_run","lint":"not_run","typecheck":"not_run"},"notes":"needs a key"}', "```"].join("\n"));
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--open-pr"], {
+    cwd: root,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, CREW_FAKE_DIR: join(root, ".scratch/fake"), MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
+  });
+  const trace = traceLog(root);
+  assert.equal(sh("git", ["-C", root, "rev-list", "--count", "main..feature/demo"]).stdout.trim(), "0", "the fixture merged a commit");
+  assert.doesNotMatch(trace, /\[STEP\] step=pr-body|role=prWriter/);
+  assert.doesNotMatch(readFileSync(log, "utf8"), /pr create|pr edit/);
+  assert.doesNotMatch(trace, /\[PR\]/);
+  assert.match(r.stdout, /## Pull Request\s+\*\*Not opened:\*\* nothing was merged — `feature\/demo` has no commits beyond `main`\./, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /\*\*Failed:\*\*/);
+});
+
+test("github --open-pr: with no default branch to count commits from, the PR writer and open-pr.sh still run on the recorded base", () => {
+  const root = githubFixtureRepo();
+  const { stub, log } = stubGh(root, [GH_ALPHA]);
+  const remote = join(root, ".scratch/remote.git");
+  sh("git", ["init", "-q", "--bare", remote]);
+  sh("git", ["-C", root, "remote", "set-url", "origin", remote]);
+  sh("git", ["-C", root, "branch", "-m", "main", "trunk"]);
+  fake(root, "alpha.nocommit");
+  fake(root, "alpha.worker", ["## Issue: alpha", "Status: blocked", "", "```json", '{"status":"blocked","checks":{"test":"not_run","lint":"not_run","typecheck":"not_run"},"notes":"needs a key"}', "```"].join("\n"));
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--open-pr"], {
+    cwd: root,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, CREW_FAKE_DIR: join(root, ".scratch/fake"), MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
+  });
+  const trace = traceLog(root);
+  // Only the recorded base_sha is left: the writer describes from it, as before.
+  assert.match(trace, /\[STEP\] step=pr-body/, `${r.stdout}\n${r.stderr}`);
+  assert.match(readFileSync(log, "utf8"), /pr create --draft /);
+  assert.doesNotMatch(r.stdout, /nothing was merged/);
 });
 
 // ─── the summary's ## Waiting on a person ────────────────────────────────────
