@@ -1,28 +1,12 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# merge-branches.sh — merge a list of branches onto a feature branch
-#
+# merge-branches.sh — merge branches (--no-ff) into the feature branch; exit non-zero if any failed.
 # Usage: merge-branches.sh <feature-branch> <branch1> [branch2 ...]
-#
-# For each branch:
-#   - Refuses any crew/<feature>/<issue> branch without a current verification
-#     receipt (see receipts.sh). The check gate was prose-only before, so an
-#     orchestrator that skipped or ignored it could merge failing code; now the
-#     merge itself fails closed. Non-crew branches are not gated.
-#   - If already merged (git log HEAD..<branch> is empty), reports success with no action.
-#   - Otherwise performs a no-fast-forward merge.
-#   - On conflict: first lets resolve-merge-conflicts.sh finish the merge when the only conflicts
-#     are the registry.json `version` of an entry both sides bumped (higher semver wins) and
-#     CHANGELOG.md entries both sides appended (both kept) — mechanical, so no coder is
-#     redispatched for it. The decision is printed and traced. Any other conflict, including any
-#     other field of registry.json, aborts cleanly and reports failure; nothing else is resolved.
-#   - When git refuses before merging because uncommitted changes in this checkout (tracked,
-#     or untracked files in the way) would be overwritten, reports `main-tree-dirty` with the
-#     files instead of `conflict`: no change to the branch can fix it, only a human can.
-#   - A failed branch does not abort processing of remaining branches.
-#
-# Exit code: 0 if every branch succeeded, non-zero if any branch failed.
+# A crew branch without a current verification receipt is refused: the merge fails closed. Only
+# registry `version` bumps and CHANGELOG appends are auto-resolved (resolve-merge-conflicts.sh); any
+# other conflict aborts cleanly. Uncommitted changes git would overwrite report `main-tree-dirty`,
+# which no change to the branch can fix. One failed branch does not stop the rest.
 
 if [ $# -lt 2 ]; then
   echo "Usage: $0 <feature-branch> <branch1> [branch2 ...]" >&2
@@ -37,8 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECEIPTS_SCRIPT="$SCRIPT_DIR/receipts.sh"
 RESOLVE_SCRIPT="$SCRIPT_DIR/resolve-merge-conflicts.sh"
 
-# Each script traces its own step, so a merge that happened is always in the trace and
-# a merge that was skipped can never be traced as if it had run.
+# Traced by the step itself, so a skipped merge can never be traced as if it ran.
 _trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" ${FEATURE_SLUG:+--feature-slug "$FEATURE_SLUG"} "$@" 2>/dev/null || true; return 0; }
 
 # Runs in the checkout of the feature branch (the sprint's crew/<slug>/_feature worktree); it
@@ -49,14 +32,8 @@ if [ "$CURRENT" != "$FEATURE_BRANCH" ]; then
   exit 1
 fi
 
-# _do_merge <branch> <message> — always runs on the host. The merge commit's message is a
-# fixed template this script generates, not human prose, so there is nothing for a
-# commit-msg hook (lefthook -> commitlint -> pnpm, etc.) to usefully lint — --no-verify
-# skips pre-merge-commit/commit-msg hooks outright. That removes the reason an earlier
-# version of this function routed the merge through `docker compose run` when a project's
-# hook tooling only existed in its docker service: with hooks skipped, the merge no longer
-# needs that tooling at all, so it can run directly on the host, which also means no
-# cold ephemeral container re-fetching dependencies over the network on every merge.
+# _do_merge <branch> <message> — on the host with --no-verify: the message is a generated template,
+# so hooks have nothing to lint, and skipping them drops any need for the project's hook tooling.
 _do_merge() {
   local branch="$1" message="$2"
   git merge --no-ff --no-verify "$branch" -m "$message" 2>&1
@@ -65,10 +42,7 @@ _do_merge() {
 FAILED=0
 
 for BRANCH in "${BRANCHES[@]}"; do
-  # Resolve the ref first. Without this, `git log HEAD..<branch>` errors on an
-  # unknown ref and (with stderr suppressed) leaves PENDING empty — which is
-  # indistinguishable from "already merged", so a typo'd or deleted branch would
-  # report success and be silently skipped.
+  # Resolve the ref first: an unknown ref leaves PENDING empty, which reads as "already merged".
   if ! git rev-parse --verify --quiet "${BRANCH}^{commit}" >/dev/null; then
     echo "MERGE: $BRANCH failed (no such branch)" >&2
     _trace --level error MERGE "branch=$BRANCH success=false reason=no-such-branch"
@@ -76,9 +50,7 @@ for BRANCH in "${BRANCHES[@]}"; do
     continue
   fi
 
-  # Gate before touching the working tree. A branch that was never verified (or
-  # was verified at an earlier commit) is skipped, not merged — and skipping it
-  # is a failure, so the sprint cannot report it as merged.
+  # Gate before touching the tree; a skipped branch is a failure, never reported as merged.
   if [ -f "$RECEIPTS_SCRIPT" ]; then
     if ! bash "$RECEIPTS_SCRIPT" check verify --branch "$BRANCH"; then
       echo "MERGE: $BRANCH failed (unverified — see receipt error above)" >&2
@@ -88,7 +60,6 @@ for BRANCH in "${BRANCHES[@]}"; do
     fi
   fi
 
-  # Check if already merged: git log HEAD..<branch> is empty when already merged
   PENDING=$(git log "HEAD..${BRANCH}" --oneline 2>/dev/null)
   if [ -z "$PENDING" ]; then
     echo "MERGE: $BRANCH already-merged success"
@@ -96,7 +67,6 @@ for BRANCH in "${BRANCHES[@]}"; do
     continue
   fi
 
-  # Attempt merge
   MERGE_OUT=$(_do_merge "$BRANCH" "Merge branch '$BRANCH'")
   MERGE_RC=$?
   [ -n "$MERGE_OUT" ] && printf '%s\n' "$MERGE_OUT"
@@ -104,8 +74,7 @@ for BRANCH in "${BRANCHES[@]}"; do
     echo "MERGE: $BRANCH success"
     _trace MERGE "branch=$BRANCH success=true"
   elif grep -qE 'would be overwritten by (merge|checkout)' <<<"$MERGE_OUT"; then
-    # git refused before touching anything, so there is no merge to abort. The files it
-    # names are its indented lines.
+    # git refused before touching anything, so there is no merge to abort; its indented lines name the files.
     DIRTY=$(printf '%s\n' "$MERGE_OUT" | sed -n 's/^[[:space:]]\{1,\}//p' | paste -sd, - | sed 's/,/, /g')
     echo "MERGE: $BRANCH failed (main-tree-dirty — uncommitted changes in $(pwd) would be overwritten: ${DIRTY:-see git output above})" >&2
     _trace --level error MERGE "branch=$BRANCH success=false reason=main-tree-dirty"
@@ -118,12 +87,10 @@ for BRANCH in "${BRANCHES[@]}"; do
     _trace MERGE "branch=$BRANCH success=true auto-resolved=true"
     while IFS= read -r line; do [ -n "$line" ] && _trace MERGE "branch=$BRANCH auto-resolved: $line"; done <<<"$RESOLVED"
   else
-    # Abort the failed merge to leave a clean state
     git merge --abort 2>/dev/null || true
     echo "MERGE: $BRANCH failed (conflict — aborted cleanly)" >&2
     _trace --level error MERGE "branch=$BRANCH success=false reason=conflict"
     FAILED=1
-    # Continue to next branch
   fi
 done
 

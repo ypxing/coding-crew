@@ -1,30 +1,12 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# lease.sh — the feature lease: git ref refs/crew-lock/<slug> on origin, pointing at an
-# annotated tag whose message names the owner (`run=… host=… pid=… at=…`).
-#
-# Usage:
-#   lease.sh owner   --slug <f>                       print the holder, or NONE
-#   lease.sh acquire --slug <f> --owner <msg>         create the ref; fails if it exists
-#   lease.sh reclaim --slug <f> --expect <sha> --owner <msg>
-#                                                     take over the lease at <sha>
-#   lease.sh release --slug <f> --expect <sha>        delete the ref, only if still at <sha>
-#
-# Every write is a compare-and-swap: `git push --force-with-lease=<ref>:<expected-sha-or-empty>`.
-# A plain push would silently overwrite an existing lease, since tag objects skip the
-# fast-forward check.
-#
-# Output (stdout): owner → `NONE`, or `SHA <sha>` then `OWNER <message>`;
-# acquire/reclaim → `SHA <sha>` of the lease just written.
-# Exit: 0 done · 3 the compare-and-swap was rejected (someone else moved the ref) ·
-# 4 the host itself refuses the ref namespace (the message names the fallback) · 1 error.
-#
-# Namespace: refs/crew-lock/<slug> by default — verified against github.com (create, CAS-reclaim,
-# CAS-delete; see tracker/docs/github.md). A host that refuses it can be pointed at the
-# fallback with CREW_LEASE_NAMESPACE=refs/tags/crew-lock, which every host accepts. Set it for
-# lease.sh and the orchestrator alike (lease.mjs reads the same variable).
-# Runs in $MAIN_ROOT (default: the git toplevel).
+# lease.sh — the feature lease: ref refs/crew-lock/<slug> on origin, an annotated tag naming the owner.
+# Usage: lease.sh owner|acquire|reclaim|release --slug <f> [--owner <msg>] [--expect <sha>]
+# owner prints NONE, or `SHA <sha>` and `OWNER <msg>`; acquire/reclaim print the new `SHA <sha>`.
+# Writes are compare-and-swap (--force-with-lease): tag objects skip the fast-forward check. Exit 3:
+# CAS rejected; 4: the host refuses the namespace — CREW_LEASE_NAMESPACE=refs/tags/crew-lock, read
+# by lease.mjs too, is the fallback every host accepts; 1: error.
 
 CMD="${1:-}"; [ $# -gt 0 ] && shift
 SLUG=""; OWNER=""; EXPECT=""
@@ -65,9 +47,8 @@ cas_push() {
   return 1
 }
 
-# The tag points at a commit origin already has, so pushing the lease uploads nothing else: never
-# HEAD, which is the user's own branch in the main checkout and may hold commits they have not
-# pushed. origin's default branch, else any branch of origin's; HEAD only when origin has none yet.
+# Tag a commit origin already has, so the push uploads nothing else — never HEAD, which may hold
+# the user's unpushed commits.
 lease_target() {
   local target
   target=$(git rev-parse -q --verify "refs/remotes/origin/HEAD^{commit}" 2>/dev/null) && { echo "$target"; return 0; }
