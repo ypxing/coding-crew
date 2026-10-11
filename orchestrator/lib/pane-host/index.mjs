@@ -1,18 +1,19 @@
 /**
  * pane-host — the optional terminal-multiplexer integration (`effects.paneHost`: herdr | orca | null).
- * Dispatches stay headless; a host only gets a log tab, one interactive feature agent per slug and
- * best-effort pushes into it, and completion never comes from it. Run-scoped state lives on
- * `effects._pane*`; nothing here closes the feature agent or a workspace holding it.
+ * A host gets a log tab, one interactive feature agent per slug, best-effort pushes into it and a
+ * tab per dispatch to watch it in, all on the sprint's `_feature` worktree; completion never comes
+ * from it. Run-scoped state lives on `effects._pane*`; nothing here closes the feature agent or a
+ * workspace holding it.
  */
 
-import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative } from "node:path";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { ADAPTERS as PLATFORM_ADAPTERS } from "../adapters/index.mjs";
 import { ROLE_POLICY, renderRolePrompt } from "../adapters/render.mjs";
 import * as herdr from "./herdr.mjs";
 import * as orca from "./orca.mjs";
-import { shellQuote } from "./shared.mjs";
+import { insideDir, shellQuote } from "./shared.mjs";
 import { spawnInWorkerTerminal, writeLaunchScript } from "./worker-terminal.mjs";
 
 const ADAPTERS = { herdr, orca };
@@ -26,14 +27,18 @@ export function preflightPaneHost(effects, paneHost) {
   return ADAPTERS[paneHost]?.preflight(effects) ?? [];
 }
 
-/** Tells a host of a worktree the orchestrator created (`{title, issue, parent}`). Logs, never throws. */
+/**
+ * Tells a host of a worktree the orchestrator created (`{title, issue, parent}`). Logs, never throws;
+ * returns the host's promise of whether it was named, for a caller that needs to wait on it.
+ */
 export function adoptWorktree(effects, path, meta) {
   const adapter = adapterFor(effects);
-  if (!adapter?.adoptWorktree || effects.dryRun) return;
+  if (!adapter?.adoptWorktree || effects.dryRun) return undefined;
   try {
-    adapter.adoptWorktree(effects, path, meta);
+    return adapter.adoptWorktree(effects, path, meta);
   } catch (err) {
     effects.log?.(`WARN pane host ${effects.paneHost}: could not adopt worktree ${path} — ${err.message}`);
+    return undefined;
   }
 }
 
@@ -131,19 +136,6 @@ export function settlePaneAgent(effects) {
     effects._paneWatch = null;
   }
   return alive;
-}
-
-function insideDir(root, dir) {
-  const rel = relative(realpathOr(root), realpathOr(dir));
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
-
-function realpathOr(path) {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
 }
 
 /**

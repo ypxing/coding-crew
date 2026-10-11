@@ -70,7 +70,8 @@ Under orca or herdr, one interactive agent per slug runs in `_feature` with the 
 Its handle is `.scratch/<slug>/watch.json`, and every push targets `effects._paneWatch.handle` — nothing else reads
 `ORCA_TERMINAL_HANDLE` / `HERDR_PANE_ID` for a push. Nothing closes the agent: while one is live, `_feature` and the
 workspace are kept, and a failed create only warns and leaves the exit code unchanged. A pane-host adapter implements
-`openWatch`, `watchAlive`, `notify(effects, handle, message)` and `launcherHandle`.
+`openWatch`, `watchAlive`, `notify(effects, handle, message)` and `launcherHandle`, and `openWorkerTerminal` /
+`closeWorkerTerminal` to host every dispatch in a tab on `_feature`. No sprint tab opens in the main checkout.
 
 ## Adding a new crew-afk role
 

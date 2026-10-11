@@ -12,6 +12,7 @@ import { depsLine, parseRequiresFailures, readVerifyRecord } from "./report.mjs"
 import { sectionBody } from "../../tracker/body-format.mjs";
 import { dispatchIssueDir, logVerifyOutput, REQUIRES_FAILED_TAG, taggedReason, writeTrackerSection } from "./pipeline/shared.mjs";
 import { applyWorktreeInclude, removeWorktree, worktreePath } from "./worktree.mjs";
+import { adoptWorktree } from "./pane-host/index.mjs";
 
 /** The file whose presence says an asset dir is really installed, not just created. */
 const ASSET_PROBES = {
@@ -270,6 +271,7 @@ function prepareChecks(ctx, stem) {
     ctx.log(`${label}: skipped — could not create its worktree: ${add.stderr.trim()}`);
     return { result: { status: stem === INTEGRATION_STEM ? "skipped" : "pass", commit, failed: [], reason: "worktree add failed" } };
   }
+  adoptWorktree(effects, path, { title: `${sprint.featureSlug} ${step}`, parent: effects.featureRoot });
   applyWorktreeInclude(effects.mainRoot, path);
   return { stem, step, stateKey, commit, tree, branch, path, effects };
 }

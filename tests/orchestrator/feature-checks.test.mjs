@@ -5,6 +5,7 @@ import test from "node:test";
 
 import { isGreen } from "../../orchestrator/lib/loop.mjs";
 import { integrationSection, runFeatureChecks } from "../../orchestrator/lib/preflight.mjs";
+import { worktreePath } from "../../orchestrator/lib/worktree.mjs";
 
 function ctxWith() {
   const effects = {
@@ -75,5 +76,30 @@ test("a tree that only failed, was never checked, or sits in an older state file
     const { ctx, calls } = cacheCtx(state);
     assert.notEqual(runFeatureChecks(ctx, { stem: "_integration" }).status, "cached");
     assert.ok(calls.some((c) => c.startsWith("worktree add")));
+  }
+});
+
+test("under orca the baseline and integration worktrees are named as children of _feature", async () => {
+  for (const stem of ["_baseline", "_integration"]) {
+    const orca = [];
+    const effects = {
+      mainRoot: "/nonexistent-main",
+      featureRoot: "/nonexistent-main/_feature",
+      paneHost: "orca",
+      gitRead: () => ({ code: 0, stdout: "abcdef0123456789\n", stderr: "" }),
+      git: () => ({ code: 0, stdout: "", stderr: "" }),
+      bash: () => {
+        throw new Error("checks stop here");
+      },
+      spawnWithTimeout: async (cmd, args) => (orca.push(args), { code: 0, stdout: "{}", stderr: "" }),
+    };
+    const sprint = { featureBranch: "feature/demo", featureSlug: "demo", readState: () => ({}), childEnv: () => ({}) };
+    assert.throws(() => runFeatureChecks({ sprint, effects, options: { installDeps: false }, log: () => {} }, { stem }), /checks stop here/);
+    await effects._paneAdoptions?.values().next().value;
+    const set = orca.find((a) => a[0] === "worktree" && a[1] === "set");
+    assert.ok(set, `${stem}: ${JSON.stringify(orca)}`);
+    assert.equal(set[set.indexOf("--worktree") + 1], `path:${worktreePath("/nonexistent-main", `crew/demo/${stem}`)}`, stem);
+    assert.equal(set[set.indexOf("--parent-worktree") + 1], "path:/nonexistent-main/_feature", stem);
+    assert.ok(!set.includes("--issue"), stem);
   }
 });
