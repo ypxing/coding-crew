@@ -369,7 +369,7 @@ quiz() { awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE"; }
     grep -qF -- '- **Answered**' "$bt"
     grep -qF -- '- **Minor**' "$bt"
     grep -qF -- '- **Yours**' "$bt"
-    grep -qF '`(auto)` line, under the draft'"'"'s `## Decisions` when there is no PRD, and as the last line of `## What to build` when there is one' "$bt"
+    grep -qF '`(auto)` line as the last line of the draft'"'"'s `## What to build`' "$bt"
     grep -qF 'ranked by importance, then re-render, re-lint and publish' "$bt"
     grep -qF '`builder check: N answered, M (auto), K asked`' "$bt"
     grep -qF 'dispatch no second check' "$bt"
@@ -395,14 +395,13 @@ quiz() { awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE"; }
   done
 }
 
-@test "upgrade-deps: step 8 names to-issues' builder check between the lint and publish-issues, and where its 'yours' questions go, for every platform" {
+@test "upgrade-deps: step 8 names to-issues' builder check between the lint and publish-issues, for every platform" {
   local p f s8
   for p in "${PLATFORMS[@]}"; do
     run rendered_skill upgrade-deps "$p"
     [ "$status" -eq 0 ]
     f="$output"
     s8=$(awk '/^### 8\. Publish/{on=1;next} /^### 9\./{on=0} on' "$f" | tr '\n' ' ' | tr -s ' ')
-    [[ "$s8" == *"then the lint, then \`to-issues\`' builder check, then \`publish-issues\`"* ]]
-    [[ "$s8" == *"\"yours\" questions go to the user in one message ranked by importance before re-rendering, re-linting and publishing"* ]]
+    [[ "$s8" == *"then the lint, the builder check and \`publish-issues\`, exactly as that step runs them, its questions included"* ]]
   done
 }

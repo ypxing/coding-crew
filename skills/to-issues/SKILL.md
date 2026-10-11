@@ -152,7 +152,7 @@ You are the coder crew-afk will dispatch for these issues. You can read the repo
 Sort each question it returns into one of three piles, once:
 
 - **Answered** — the conversation or the code settles it: write the answer into the draft.
-- **Minor** — a sensible coder could settle it without changing what gets built: settle it and record one `(auto)` line, under the draft's `## Decisions` when there is no PRD, and as the last line of `## What to build` when there is one (`## Decisions` belongs to the PRD then).
+- **Minor** — a sensible coder could settle it without changing what gets built: settle it and record one `(auto)` line as the last line of the draft's `## What to build`.
 - **Yours** — only the user can answer it, and it changes what gets built: return to step 5 the way a lint `ERROR` does, which asks only these, in one message ranked by importance, then re-render, re-lint and publish.
 
 Print `builder check: N answered, M (auto), K asked`. One round: dispatch no second check after the answers, and re-lint any draft you changed.
