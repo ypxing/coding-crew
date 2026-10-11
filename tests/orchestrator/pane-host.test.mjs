@@ -1273,3 +1273,49 @@ test("settlePaneAgent drops an agent this run opened that the host still lists b
   assert.equal(settlePaneAgent(herdr.effects), false);
   assert.equal(herdr.effects._paneWatch, null);
 });
+
+// orca keeps reporting `agentIdentity` for a terminal whose PTY is gone or whose renderer
+// detached: such a terminal takes no input, so it is no live agent.
+const unhealthyOrcaTerminals = {
+  orphaned: { orphaned: true, writable: true, connected: true },
+  "not writable": { orphaned: false, writable: false, connected: true },
+  "not connected": { orphaned: false, writable: true, connected: false },
+};
+
+test("ensureWatchSession (orca) replaces a recorded agent whose terminal is orphaned, not writable or not connected, and logs it opened", async () => {
+  for (const [name, health] of Object.entries(unhealthyOrcaTerminals)) {
+    const { featureRoot, effects, record, saved } = watchFixture("orca", [json({ result: { terminal: { handle: "term_old", agentIdentity: "claude", ...health } } }), orcaCreated("term_new")]);
+    record({ host: "orca", handle: "term_old" });
+    await ensureWatchSession(effects, WATCH);
+    const create = effects._calls[1];
+    assert.equal(create[2], "create", name);
+    assert.equal(create[create.indexOf("--worktree") + 1], `path:${featureRoot}`, name);
+    assert.deepEqual(saved(), { host: "orca", handle: "term_new" }, name);
+    assert.ok(effects._logs.some((l) => l.startsWith("WATCH-SESSION opened host=orca handle=term_new")), `${name}: ${effects._logs.join("\n")}`);
+    assert.ok(!effects._logs.some((l) => l.startsWith("WATCH-SESSION reused")), name);
+  }
+  const healthy = watchFixture("orca", [json({ result: { terminal: { handle: "term_old", agentIdentity: "claude", orphaned: false, writable: true, connected: true } } })]);
+  healthy.record({ host: "orca", handle: "term_old" });
+  await ensureWatchSession(healthy.effects, WATCH);
+  assert.deepEqual(healthy.effects._calls.map((c) => c[2]), ["show"]);
+  assert.ok(healthy.effects._logs.some((l) => l.startsWith("WATCH-SESSION reused host=orca handle=term_old")), healthy.effects._logs.join("\n"));
+});
+
+test("settlePaneAgent (orca) drops an agent whose terminal is orphaned, not writable or not connected, even inside the start-up grace", () => {
+  for (const [name, health] of Object.entries(unhealthyOrcaTerminals)) {
+    for (const reused of [true, false]) {
+      const { effects } = watchFixture("orca", []);
+      effects._paneWatch = { host: "orca", handle: "term_w" };
+      effects._paneWatchReused = reused;
+      effects._paneWatchOpenedAt = Date.now();
+      effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { terminal: { handle: "term_w", agentIdentity: "claude", ...health } } }), stderr: "" });
+      assert.equal(settlePaneAgent(effects), false, `${name}, reused=${reused}`);
+      assert.equal(effects._paneWatch, null, `${name}, reused=${reused}`);
+    }
+  }
+  const starting = watchFixture("orca", []);
+  starting.effects._paneWatch = { host: "orca", handle: "term_w" };
+  starting.effects._paneWatchOpenedAt = Date.now();
+  starting.effects.exec = () => ({ code: 0, stdout: JSON.stringify({ result: { terminal: { handle: "term_w", orphaned: false, writable: true, connected: true } } }), stderr: "" });
+  assert.equal(settlePaneAgent(starting.effects), true, "a just-opened terminal with no agentIdentity yet still counts");
+});

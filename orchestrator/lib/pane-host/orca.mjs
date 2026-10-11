@@ -158,8 +158,18 @@ export async function openWorkerTerminal(effects, { title, command, worktree }) 
 
 export const closeWorkerTerminal = closeTerminal;
 
+/**
+ * A terminal that can take input: orca keeps listing one whose PTY is gone (`orphaned`) or whose
+ * renderer detached, `agentIdentity` included. An absent field is not read as a failure.
+ */
+function usableTerminal(show) {
+  const terminal = show.code === 0 ? paneHostJson(show)?.result?.terminal : null;
+  if (!terminal || terminal.orphaned === true || terminal.writable === false || terminal.connected === false) return null;
+  return terminal;
+}
+
 /** `agentIdentity` is set for an agent pane, absent for a shell or a closed terminal. */
-const terminalHostsAgent = (show) => show.code === 0 && Boolean(paneHostJson(show)?.result?.terminal?.agentIdentity);
+const terminalHostsAgent = (show) => Boolean(usableTerminal(show)?.agentIdentity);
 
 export async function watchAlive(effects, handle) {
   try {
@@ -182,7 +192,7 @@ export function watchAliveSync(effects, handle) {
 export function watchPresentSync(effects, handle) {
   try {
     const show = effects.exec("orca", ["terminal", "show", "--terminal", handle, "--json"], { mutating: false, timeoutMs: CALL_TIMEOUT_MS });
-    return show.code === 0 && Boolean(paneHostJson(show)?.result?.terminal);
+    return Boolean(usableTerminal(show));
   } catch {
     return false;
   }
