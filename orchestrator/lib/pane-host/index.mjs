@@ -1,8 +1,9 @@
 /**
  * pane-host — the optional terminal-multiplexer integration (`effects.paneHost`: herdr | orca | null).
  * A host gets a log tab, one interactive feature agent per slug, best-effort pushes into it and a
- * tab per dispatch to watch it in, all on the sprint's `_feature` worktree; completion never comes from it. Run-scoped state lives on
- * `effects._pane*`; nothing here closes the feature agent or a workspace holding it.
+ * tab per dispatch to watch it in, all on the sprint's `_feature` worktree; completion never comes
+ * from it. Run-scoped state lives on `effects._pane*`; nothing here closes the feature agent or a
+ * workspace holding it.
  */
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
