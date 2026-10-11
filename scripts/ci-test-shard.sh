@@ -16,8 +16,7 @@
 # minutes (an orchestrator-sprint topic file) on a par with a 1-test grep, and left one shard at
 # 3x another's time. Files run CPU-count at a time within a shard (ci-run-bats.sh), so no
 # single file should outweigh a shard's fair share either: that is why the orchestrator's
-# sprint suite is ten bats files, not one. An unlisted file is weighted 5s per @test, so a
-# new file still lands somewhere sensible.
+# sprint suite is split into many bats files, not one. scripts/ci-weights.sh owns the weight rule.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,22 +34,7 @@ shopt -s nullglob
 files=("$REPO_ROOT"/tests/*.bats)
 (( ${#files[@]} > 0 )) || { echo "Error: no test files found under tests/" >&2; exit 1; }
 
-WEIGHTS="$REPO_ROOT/tests/ci-shard-weights.tsv"
-[[ -f "$WEIGHTS" ]] || WEIGHTS=/dev/null
-
-# <@test count>\t<path> per file, then the weights file's value replaces the count-based
-# estimate where it has one. A file with zero @test lines still counts as work
-# (setup_file, harness), so floor at 1.
-for f in "${files[@]}"; do
-  printf '%s\t%s\n' "$(grep -c '^@test' "$f" || true)" "$f"
-done | awk -F'\t' '
-  NR == FNR { sub(/\r$/, ""); if ($1 ~ /^[0-9]+$/ && $2 != "") w[$2] = $1; next }
-  {
-    n = split($2, parts, "/"); base = parts[n]
-    weight = (base in w) ? w[base] : $1 * 5
-    printf "%d\t%s\n", (weight > 0 ? weight : 1), $2
-  }
-' "$WEIGHTS" - | sort -rn -k1,1 -k2,2 | awk -F'\t' -v idx="$INDEX" -v total="$TOTAL" '
+bash "$REPO_ROOT/scripts/ci-weights.sh" "${files[@]}" | sort -rn -k1,1 -k2,2 | awk -F'\t' -v idx="$INDEX" -v total="$TOTAL" '
 {
   best = 1
   for (i = 2; i <= total; i++) if (load[i] < load[best]) best = i
