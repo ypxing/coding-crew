@@ -1,6 +1,6 @@
 /**
  * feature-start.mjs — where a sprint's feature branch starts, from origin's view of it: a new branch
- * from the fetched `origin/<default>`, an origin-only one from origin's tip, a local one only when
+ * from the branch origin's HEAD names, an origin-only one from origin's tip, a local one only when
  * that is safe, and a shipped one (its own origin branch gone) renamed aside. Each git effect is one call.
  */
 
@@ -31,26 +31,52 @@ export function settleFeatureBranch(effects, { branch, defaultBranch, now = new 
     return { base: sha(effects, `refs/heads/${defaultBranch}`) ? defaultBranch : "HEAD", messages };
   }
 
-  // Never the remote-tracking refs: they are as old as the last fetch. No prompt: nobody is there to answer it.
+  // Never the remote-tracking refs: they are as old as the last fetch, and refs/remotes/origin/HEAD can
+  // name a branch origin no longer has. No prompt: nobody is there to answer it.
   const env = { GIT_TERMINAL_PROMPT: "0" };
-  const listed = effects.gitRead(["ls-remote", "origin", `refs/heads/${defaultBranch}`, `refs/heads/${branch}`], { env });
+  const listed = effects.gitRead(["ls-remote", "--symref", "origin", "HEAD", `refs/heads/${defaultBranch}`, `refs/heads/${branch}`], { env });
   if (listed.code !== 0) return { error: `crew-afk: cannot read origin (git ls-remote origin): ${listed.stderr.trim()}`, messages };
-  const tips = new Map(listed.stdout.split("\n").filter(Boolean).map((line) => line.split(/\s+/).reverse()));
-  const remoteDefault = tips.get(`refs/heads/${defaultBranch}`) ?? null;
+  const tips = new Map();
+  let headBranch = null;
+  for (const line of listed.stdout.split("\n").filter(Boolean)) {
+    const [left, ref] = line.split("\t");
+    if (!left.startsWith("ref: ")) tips.set(ref, left);
+    else if (ref === "HEAD") headBranch = left.slice("ref: refs/heads/".length);
+  }
+  // origin's own default branch; the local guess only when origin's HEAD names none.
+  const fromHead = Boolean(headBranch && tips.has("HEAD"));
+  const startBranch = fromHead ? headBranch : tips.has(`refs/heads/${defaultBranch}`) ? defaultBranch : null;
+  const remoteDefault = fromHead ? tips.get("HEAD") : (tips.get(`refs/heads/${defaultBranch}`) ?? null);
   const remote = tips.get(`refs/heads/${branch}`) ?? null;
 
-  const refspecs = [defaultBranch, branch].filter((b) => tips.has(`refs/heads/${b}`)).map((b) => `+refs/heads/${b}:refs/remotes/origin/${b}`);
+  const refspecs = [...new Set([startBranch, remote ? branch : null].filter(Boolean))].map((b) => `+refs/heads/${b}:refs/remotes/origin/${b}`);
   if (refspecs.length) {
     const fetched = effects.git(["fetch", "-q", "origin", ...refspecs], { env });
     if (fetched.code !== 0) return { error: `crew-afk: cannot fetch from origin (git fetch origin): ${fetched.stderr.trim()}`, messages };
   }
 
+  // Only an empty origin has no default branch to start from; a non-empty one without one stops the run.
+  const noStart = () => {
+    if (remoteDefault) return null;
+    const heads = effects.gitRead(["ls-remote", "--heads", "origin"], { env });
+    if (heads.code !== 0) return { error: `crew-afk: cannot read origin (git ls-remote --heads origin): ${heads.stderr.trim()}`, messages };
+    if (!heads.stdout.trim()) return null;
+    return {
+      error:
+        `crew-afk: origin has branches but none to start ${branch} from: its HEAD names no branch it has, and it has no ${defaultBranch}.\n` +
+        `Point origin's HEAD at its default branch, then re-run.`,
+      messages,
+    };
+  };
+
   const fresh = () => {
-    // An empty origin has no default branch to start from: the local one, as without origin.
+    const stop = noStart();
+    if (stop) return stop;
+    // An empty origin: the local default branch, as without origin.
     if (!remoteDefault) return { base: sha(effects, `refs/heads/${defaultBranch}`) ? defaultBranch : "HEAD", messages };
     // --no-track: autoSetupMerge would make origin/<default> its upstream, and a later run would read that as shipped.
     const r = effects.git(["branch", "--no-track", branch, remoteDefault]);
-    if (r.code !== 0) return { error: `crew-afk: could not create ${branch} at origin/${defaultBranch}: ${r.stderr.trim()}`, messages };
+    if (r.code !== 0) return { error: `crew-afk: could not create ${branch} at origin/${startBranch}: ${r.stderr.trim()}`, messages };
     return { base: branch, messages };
   };
 
@@ -85,6 +111,9 @@ export function settleFeatureBranch(effects, { branch, defaultBranch, now = new 
       messages,
     };
   }
+
+  const stop = noStart();
+  if (stop) return stop;
 
   // Renamed, never deleted: commits that never reached the PR stay reachable.
   const stem = `${branch}-shipped-${yyyymmdd(now)}`;

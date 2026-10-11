@@ -262,6 +262,30 @@ test("with no feature branch anywhere, it starts untracked at the fetched origin
   assert.doesNotMatch(again.stderr, /BRANCH-SHIPPED/);
 });
 
+for (const originHead of [null, "refs/remotes/origin/master"]) {
+  test(`with origin's default branch trunk and the local origin/HEAD ${originHead ? "naming origin/master, which origin lacks" : "unset"}, a new feature branch starts at origin's trunk`, () => {
+    const { root, origin } = withOrigin();
+    git(origin, "branch", "-m", "main", "trunk");
+    const trunk = pushFromElsewhere(origin, "trunk");
+    if (originHead) git(root, "symbolic-ref", "refs/remotes/origin/HEAD", originHead);
+    const r = runSprint(root);
+    assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+    assert.equal(git(root, "rev-parse", "feature/demo"), trunk);
+  });
+}
+
+test("an origin with branches but no default to start from (its HEAD names none it has, and no main) stops the run at setup, creating no branch", () => {
+  const { root, origin } = withOrigin();
+  git(origin, "branch", "-m", "main", "trunk");
+  git(origin, "symbolic-ref", "HEAD", "refs/heads/gone");
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /origin/);
+  assert.notEqual(sh("git", ["-C", root, "rev-parse", "--verify", "-q", "refs/heads/feature/demo"]).code, 0, "no feature branch created");
+  assert.equal(existsSync(featureWt(root)), false);
+});
+
 test("with feature/<slug> only on origin, the local branch is created at its tip, tracking it", () => {
   const { root, origin } = withOrigin();
   const tip = pushFromElsewhere(origin, "feature/demo", "main");

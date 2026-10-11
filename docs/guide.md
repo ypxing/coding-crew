@@ -479,11 +479,14 @@ on the branch it recorded and warns that `--jira` was ignored.
 
 **Where the branch starts.** With an `origin` remote, the run asks `origin` (`git ls-remote` /
 `git fetch`, never stale remote-tracking refs; an unreachable `origin` stops the run): a new branch
-starts, untracked, at origin's default branch, whatever your local one holds; a branch only on
+starts, untracked, at the branch origin's `HEAD` names (`git ls-remote --symref origin HEAD`),
+whatever your local one or a stale `origin/HEAD` holds — an `origin` with branches but no such one
+stops the run; a branch only on
 `origin` is created at its tip, tracking it; a local one is used as is, fast-forwarded when behind
 origin's, and a run whose local and origin branches diverged stops naming both tips. A local branch
 whose own `origin` branch is gone (it shipped) is renamed to `<branch>-shipped-<yyyymmdd>` (`-2`,
-`-3`… if taken), printed as `[BRANCH-SHIPPED]`, and the run starts fresh. Without `origin`, a new
+`-3`… if taken), printed as `[BRANCH-SHIPPED]`, and the run starts fresh — unless the main checkout
+or a worktree crew-afk did not make has it checked out, which stops the run naming that checkout. Without `origin`, a new
 branch forks from the local default branch, wherever the main checkout is.
 
 ---
