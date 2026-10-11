@@ -117,7 +117,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.19.1",
+      "version": "1.20.0",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
@@ -165,7 +165,7 @@
       ]
     },
     "upgrade-deps": {
-      "version": "1.5.1",
+      "version": "1.5.2",
       "source-dir": "upgrade-deps",
       "description": "Audit outdated npm/yarn/pnpm dependencies and plan safe upgrades as issues.",
       "deps": [

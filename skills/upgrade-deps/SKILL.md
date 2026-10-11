@@ -319,8 +319,8 @@ criteria / Blocked by / Interfaces where relevant).
 Write and publish the issues through `to-issues`' step 6 ("Write the issues") and its step 7
 dependency map: one draft per issue, its `Status:` line per this issue's own decision above
 (`ready-for-agent` or `ready-for-human`), its `## Blocked by` naming the blocking draft (the
-`Blocked by` edges from step 4's coupling analysis), the same edges in `deps.json`, then the lint
-and `publish-issues` exactly as that step runs them, its exit 4 and exit 5 questions included.
+`Blocked by` edges from step 4's coupling analysis), the same edges in `deps.json`, then the lint,
+the builder check and `publish-issues`, exactly as that step runs them, its questions included.
 
 ### 9. Summarize
 

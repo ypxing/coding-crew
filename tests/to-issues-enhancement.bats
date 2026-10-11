@@ -337,3 +337,71 @@ quiz() { awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE"; }
     grep -qF "It goes to the PRD's human steps or a \`ready-for-human\` issue" "$output"
   done
 }
+
+# --- Builder check: a fresh subagent reads the drafts cold between lint and publish ---
+
+@test "to-issues: the builder check sits between lint and publish, its prompt withholds the conversation, the three piles and the skip line are present, for every platform" {
+  local p f lint bc pub bt
+  bt="$BATS_TEST_TMPDIR/bc.txt"
+  for p in "${PLATFORMS[@]}"; do
+    run rendered_skill to-issues "$p"
+    [ "$status" -eq 0 ]
+    f="$output"
+    lint=$(grep -n '^\*\*Lint before publishing' "$f" | head -1 | cut -d: -f1)
+    bc=$(grep -n '^\*\*Builder check\.' "$f" | head -1 | cut -d: -f1)
+    pub=$(grep -n '^\*\*Publish\.' "$f" | head -1 | cut -d: -f1)
+    [ -n "$lint" ] && [ -n "$bc" ] && [ -n "$pub" ]
+    [ "$lint" -lt "$bc" ]
+    [ "$bc" -lt "$pub" ]
+    sed -n "${bc},$((pub - 1))p" "$f" > "$bt"
+    # a fresh subagent given the drafts, PRD and known/, and repo read access — never the conversation
+    grep -qF 'fresh subagent' "$bt"
+    grep -qF '.scratch/<feature-slug>/.drafts/PRD.md' "$bt"
+    grep -qF '`known/`' "$bt"
+    grep -qF 'Never give it the conversation, a design summary or the quiz answers' "$bt"
+    # its prompt is a fenced block naming omissions and ambiguities, and "nothing important left"
+    awk '/^```text$/{on=1;next} /^```$/{on=0} on' "$bt" > "$BATS_TEST_TMPDIR/prompt.txt"
+    grep -qF 'omissions and ambiguities you would have to guess at' "$BATS_TEST_TMPDIR/prompt.txt"
+    grep -qF 'cannot talk to whoever wrote them' "$BATS_TEST_TMPDIR/prompt.txt"
+    grep -qF '"nothing important left"' "$BATS_TEST_TMPDIR/prompt.txt"
+    ! grep -qiE 'conversation|quiz|summary' "$BATS_TEST_TMPDIR/prompt.txt"
+    # the three piles, the count line, one round
+    grep -qF -- '- **Answered**' "$bt"
+    grep -qF -- '- **Minor**' "$bt"
+    grep -qF -- '- **Yours**' "$bt"
+    grep -qF '`(auto)` line as the last line of the draft'"'"'s `## What to build`' "$bt"
+    grep -qF 'ranked by importance, then re-render, re-lint and publish' "$bt"
+    grep -qF '`builder check: N answered, M (auto), K asked`' "$bt"
+    grep -qF 'dispatch no second check' "$bt"
+    # the skip: findings already judged, and a session without a subagent tool (a capability, not platforms)
+    grep -qF 'every draft carries a column-0 `Source:` line' "$bt"
+    grep -qF '`builder check skipped: no subagent tool`' "$bt"
+    grep -qF 'never read the drafts yourself in its place' "$bt"
+    ! grep -qiE 'claude|copilot|codex|\bpi\b' "$bt"
+    # step 5 asks only the questions marked yours
+    grep -qF 'A return from step 6'"'"'s builder check asks only the questions it marked yours' "$f"
+  done
+}
+
+@test "to-issues: a PRD to-prd writes is saved to .drafts/PRD.md before step 6, so lint and the builder check get it, for every platform" {
+  local p f s2 s3
+  for p in "${PLATFORMS[@]}"; do
+    run rendered_skill to-issues "$p"
+    [ "$status" -eq 0 ]
+    f="$output"
+    s2=$(awk '/^### 2\. Check for a PRD/{on=1;next} /^### 3\./{on=0} on' "$f")
+    grep -qF 'resume with the PRD it wrote: run `node "$TRACKER" prd --feature-slug <feature-slug>` again and save its output to `.scratch/<feature-slug>/.drafts/PRD.md` before step 6' <<<"$s2"
+    grep -qF 'so the lint'"'"'s `--prd` and the builder check receive it on this path too' <<<"$s2"
+  done
+}
+
+@test "upgrade-deps: step 8 names to-issues' builder check between the lint and publish-issues, for every platform" {
+  local p f s8
+  for p in "${PLATFORMS[@]}"; do
+    run rendered_skill upgrade-deps "$p"
+    [ "$status" -eq 0 ]
+    f="$output"
+    s8=$(awk '/^### 8\. Publish/{on=1;next} /^### 9\./{on=0} on' "$f" | tr '\n' ' ' | tr -s ' ')
+    [[ "$s8" == *"then the lint, the builder check and \`publish-issues\`, exactly as that step runs them, its questions included"* ]]
+  done
+}
