@@ -1,14 +1,7 @@
 #!/usr/bin/env bash
 # ci-run-bats.sh [--log-dir <dir>] <file>... — run each bats file as its own process, several
 # at once and heaviest first, then print every file's output in the order given and exit non-zero if any failed.
-# Without --log-dir the per-file logs go to a temp dir removed on exit. CI and the
-# dev-commands.json `test` both run the suite through it.
-#
-# Why: bats runs one file at a time, and its own --jobs needs GNU parallel, which the
-# Windows runner lacks — so each Windows job used one of its four cores. xargs -P is in
-# every runner's base tools. The files are independent: each makes its own temp dirs, and
-# the one cache they share (tests/helpers/render.bash) is written by rename.
-#
+# bats' own --jobs needs GNU parallel, which not every runner has; xargs -P is in every base image.
 # BATS names the bats binary (default: bats); CI_BATS_JOBS the concurrency (default: CPUs).
 set -uo pipefail
 

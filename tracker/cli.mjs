@@ -1,36 +1,9 @@
 #!/usr/bin/env node
 /**
  * cli.mjs — the tracker CLI: the one way a skill touches an issue tracker.
- *
- *   node "$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs" <op> … [--main-root DIR]
- *   (fallback: $HOME/.coding-crew/tracker/cli.mjs)
- *
- *   fetch <ref> [--comments]            "# <title>\n\n<body>" (+ comments)
- *   features                            one "<slug>\t<open|closed>\t<ready-count>" line per feature, by slug
- *   prd --feature-slug S                the feature's PRD
- *   known --feature-slug S --out DIR    one file per feature issue, open and done, named by its lint ref
- *   publish-issues --feature-slug S --drafts DIR [--replace]
- *                                       create the drafts in dependency order; one "<draft> <ref>" line each
- *   publish-prd --feature-slug S --title T --body-file F
- *                                       create or update the feature's PRD; prints its ref
- *   rewrite <ref> --body-file F --status ST --feature-slug S
- *                                       replace a single-slice source issue's body and set its status
- *   mark-done <ref> [--force]           mark an issue done, behind the two close guards
- *   config                              "tracker=<kind>\nconfigured=yes|no" (tracker-config.mjs)
- *
- * Each op dispatches through `getTracker(mainRoot)` to the configured backend, so a new tracker is
- * one backend module; a backend's own extra ops (`cliOps`, e.g. github's `create-issue`) are
- * reachable here too. The main root is `--main-root`, else the main checkout of the git repo the
- * cwd is in (a linked worktree's too), else the cwd.
- *
- * Exit codes, every op: 0 ok, 1 the op failed (stderr carries the tool's own error, verbatim),
- * 2 usage or an invalid ref, 3 not found. `publish-issues` adds 4 (local: the feature has done issues) and
- * 5 (local: open issues exist and `--replace` is absent). `mark-done`'s 3 is "an orchestrator owns
- * the close" and its 4 "a criterion is unchecked"; an issue that does not exist is 1 there.
- *
- * Refs are data from user arguments: a backend's `validateRef` accepts only what it may read
- * (local: a path under the main root's `.scratch/`, symlinks resolved; github: all digits), and
- * anything else exits 2 before any file read or `gh` call.
+ *   node .coding-crew/tracker/cli.mjs <op> … [--main-root DIR]   (ops and their usage: USAGE below)
+ * Each op dispatches to the configured backend. Exit codes are EXIT below. A ref is user data:
+ * the backend's `validateRef` rejects anything it may not read (exit 2) before any file read or `gh` call.
  */
 
 import { spawnSync } from "node:child_process";
@@ -49,11 +22,7 @@ class UsageError extends Error {}
 /** A feature slug names a directory under `.scratch/`: one path segment, never `.`/`..`. */
 const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-/**
- * Parse `argv` against `spec` (`{positionals, values, flags}`): exactly `positionals` bare
- * arguments, `--name value` for each of `values`, bare `--name` for each of `flags`. Every
- * value is required unless listed in `optional`.
- */
+/** Parse `argv` against `spec` (`{positionals, values, flags}`); every value is required unless in `optional`. */
 function parseArgs(op, argv, { positionals = 0, values = [], flags = [], optional = [] }) {
   const out = { _: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -112,9 +81,8 @@ function parseDraft(file, text) {
 }
 
 /**
- * The drafts in `dir` and the order to create them in: every blocker before its dependents, else
- * filename order. A missing directory or `deps.json` is a usage error; a malformed draft, an edge
- * naming a draft that is not there, or a cycle fails the op — all before anything is created.
+ * The drafts in `dir`, every blocker before its dependents, else filename order. A malformed draft,
+ * an edge to a missing draft, or a cycle fails the op before anything is created.
  */
 function readDrafts(dir) {
   if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new UsageError(`publish-issues: no drafts directory: ${dir}`);
@@ -176,10 +144,9 @@ function blockedByFiles(text) {
 }
 
 /**
- * `text` with every draft filename under `## Blocked by` replaced by the ref its issue was created
- * under (`refs`: draft filename → that backend's blocker ref), and every other filename — a `known`
- * file, `<lint ref>.md` — by `knownRef(name)` when the backend maps it (null leaves it as written).
- * A draft not created yet is never mapped as a known file. Nothing outside the section changes.
+ * `text` with every draft filename under `## Blocked by` replaced by its created issue's ref, and
+ * every `known` filename by `knownRef(name)` when the backend maps it. A draft not created yet is
+ * never mapped as a known file.
  */
 function rewriteBlockedBy(text, refs, { drafts = new Set(), knownRef = () => null } = {}) {
   const span = blockedBySpan(text);
@@ -189,10 +156,9 @@ function rewriteBlockedBy(text, refs, { drafts = new Set(), knownRef = () => nul
 }
 
 /**
- * Fail unless every non-draft filename a draft's `## Blocked by` names (`existing`) is an issue of
- * the feature, compared by the backend's blocker ref (github: the number, so a retitled issue still
- * matches) or else by name. A typo would otherwise become a blocker that never resolves, or under
- * github `Issue #<n>` of an unrelated issue.
+ * Fail unless every non-draft filename under a draft's `## Blocked by` is an issue of the feature,
+ * compared by blocker ref (so a retitled github issue still matches) or else by name: a typo would
+ * otherwise become a blocker that never resolves, or under github an unrelated `Issue #<n>`.
  */
 function checkExistingBlockers(existing, { tracker, mainRoot, featureSlug, exec, dir }) {
   const key = (name) => tracker.knownBlockerRef?.(name) ?? name;
@@ -218,7 +184,6 @@ function orchestratedReason(env, mainRoot, sprintDir) {
   return null;
 }
 
-/** The read ops every backend has. Each returns an exit code. */
 const OPS = {
   async fetch(argv, { tracker, mainRoot, exec, cwd, out }) {
     const args = parseArgs("fetch", argv, { positionals: 1, flags: ["comments"] });
@@ -318,9 +283,9 @@ const OPS = {
   },
 
   /**
-   * The two close guards, once for every backend — an orchestrator owns the close (exit 3); a
-   * criterion is still unchecked in a fresh read (exit 4) — then the backend's own done write.
-   * `--force` skips both: a crashed sprint's stale marker, or a criterion descoped on purpose.
+   * The two close guards, for every backend: an orchestrator owns the close (exit 3); a criterion is
+   * unchecked in a fresh read (exit 4). `--force` skips both: a crashed sprint's stale marker, or a
+   * criterion descoped on purpose.
    */
   async "mark-done"(argv, { tracker, mainRoot, exec, cwd, out, err, env }) {
     const args = parseArgs("mark-done", argv, { positionals: 1, flags: ["force"] });
@@ -369,7 +334,6 @@ function defaultMainRoot(cwd) {
   return basename(commonDir) === ".git" ? dirname(commonDir) : cwd;
 }
 
-/** Pull `--main-root DIR` out of `argv`, wherever it is. */
 function takeMainRoot(argv) {
   const i = argv.indexOf("--main-root");
   if (i === -1) return { argv, mainRoot: null };
@@ -377,11 +341,7 @@ function takeMainRoot(argv) {
   return { argv: [...argv.slice(0, i), ...argv.slice(i + 2)], mainRoot: argv[i + 1] };
 }
 
-/**
- * Run one op; resolves to its exit code. `io` is injectable for tests: `exec` stands in for
- * `gh` (the backend's `(cmd, args) => {code, stdout, stderr}`), `out`/`err` for the streams, `env`
- * for `process.env`.
- */
+/** Run one op; resolves to its exit code. `io` (`exec`, `out`, `err`, `env`) is injectable for tests. */
 export async function run(argv, io = {}) {
   const cwd = io.cwd ?? process.cwd();
   const out = io.out ?? ((s) => process.stdout.write(s));

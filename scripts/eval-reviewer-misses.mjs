@@ -1,39 +1,10 @@
 #!/usr/bin/env node
-// eval-reviewer-misses.mjs — replay eval: does the reviewer protocol now report the bugs a review
-// once missed?
-//
-// Why this exists: PR #208 shipped two bugs that a reviewer reading only the diff could not see,
-// both in unchanged code the change affected. Whether a protocol or PRD edit makes a reviewer look
-// there needs a replay: run each case's review at a base ref and at the head, several times, then
-// have a judge check every output blind against the case's expected misses. Maintainer-only; ships
-// to no consumer. Costs real API money (each run's cost is printed), so it is run by hand after
-// editing orchestrator/roles/reviewer.md, never in CI.
-//
+// eval-reviewer-misses.mjs — replay eval: does the reviewer report bugs in unchanged code a change
+// affected? Base and head review each case; a judge checks outputs blind. Maintainer-only, costs API money.
 // Usage: node scripts/eval-reviewer-misses.mjs [--base <git ref>] [--head <git ref>|worktree]
-//          [--case <name>]... [--runs N] [--model opus] [--effort <level>] [--subagents]
-//          [--judge-model opus] [--parallel 4]
-//          [--dry-run] [--resume <out dir>]
-//
-// --effort passes the reviewer's `--effort` (low|medium|high|xhigh|max; omitted: the CLI's default) and
-// --subagents lets the reviewer use the Agent tool (denied otherwise), so a model, effort or sub-agent
-// setting can be compared on the same cases. crew-afk's own reviewer runs at ROLE_POLICY's
-// (orchestrator/lib/adapters/render.mjs): effort high, sub-agents allowed.
-//
-// Each ref builds its prompts from its OWN files (build-prompts.mjs runs inside that ref's checkout):
-// reviewPrompt / featureReviewPrompt and the rendered orchestrator/roles/reviewer.md. The reviewer
-// then runs against the case's tree (a detached worktree at the case's head_sha) with file-writing
-// tools disallowed, so its report is read from its final message. A `feature` case is one reviewer
-// over the whole feature, given the case's PRD file; a `branch` case is the criteria-only review.
-//
-// Cases live in scripts/eval-reviewer-misses/cases/*.md: front matter (mode: feature|branch,
-// base_sha, head_sha, slug), free text, then `## PRD` (a frozen copy), `## Expected misses`
-// (`- <id>: <defect>`), `## Reference judgement`, and for `branch` cases `## Issue` and
-// `## Acceptance criteria`. A `feature` case may add `## Notes` (``- `<path>:<line>` — <concern>``): what
-// the per-issue reviewers noted outside their criteria, passed to featureReviewPrompt as it lists them. A SHA that does not resolve names the case and skips
-// only it (exit 1). Results land in .scratch/eval-reviewer-misses/<timestamp>/ (summary.md,
-// results.json, every prompt and output). A reviewer or judge CLI failure is a failed run, never
-// "not caught". --resume <out dir> reruns into a stopped run's directory: a reviewer output already
-// there (not a RUN FAILED one) is reused, not re-run, and counts $0 toward the cost.
+//   [--case <name>]... [--runs N] [--model opus] [--effort <level>] [--subagents]
+//   [--judge-model opus] [--parallel 4] [--dry-run] [--resume <out dir>]
+// Each ref builds its prompts from its own files; a reviewer or judge CLI failure is a failed run.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";

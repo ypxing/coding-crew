@@ -1,35 +1,10 @@
 #!/usr/bin/env bash
-# cut-release.sh — mechanize the deterministic parts of releasing this repo.
-#
-# Why this exists: "commit, tag, push, release" on this repo had no tooling behind it, so doing
-# it meant rediscovering the whole procedure from scratch every time — grep CHANGELOG.md for the
-# versioning convention, compute the next semver number from git tags, eyeball registry.json for
-# entries that need a version bump (the exact check tests/registry-version-bump.bats already
-# automates), hand-craft `git tag -a` with the right subject, and remember to push both the
-# branch and the tag. None of that is judgement, just "read git history" or "run the existing
-# test" — so a release should cost one command, not a dozen exploratory reads and greps.
-#
+# cut-release.sh — tag and push a milestone release once its checks pass.
 # Usage: scripts/cut-release.sh [--dry-run] (--demo-smoke <log> | --no-demo-smoke "<reason>")
-#
-# Preconditions this enforces (fails fast, does not guess):
-#   - working tree clean, HEAD's branch has an upstream to push to
-#   - CHANGELOG.md's first "## [X.Y.Z]" heading (after [Unreleased]) names the version this HEAD ships as — you still
-#     write that entry; this script only reads the version number back out of it, so there is
-#     exactly one place the version is decided, not two that can disagree
-#   - that version is greater than the nearest previous release tag
-#   - tests/registry-version-bump.bats passes against that previous tag (install.sh --update
-#     silently skips any agent/skill whose shipped files changed without its own version bumping
-#     — see that test for the full story)
-#   - HEAD is not already tagged
-#   - a demo smoke (scripts/smoke-sprint.sh <platform> --demo) passed for this crew-afk version:
-#     --demo-smoke <log> names that run's output, which must hold a `SMOKE: PASS (<platform>, demo)` line
-#     (a non-demo smoke's `SMOKE: PASS (<platform>)` is refused) and a
-#     `crew-afk-version:` equal to HEAD's registry.json crew-afk version, and a `crew-afk-commit:` from a clean
-#     checkout that HEAD descends from with nothing changed since but CHANGELOG.md and the smoke's RESULTS.md
-#     (the row it appended); --no-demo-smoke
-#     "<reason>" releases without one and prints why. One of the two is required.
-#
-# --dry-run runs every check above and prints what would be tagged/pushed, without doing either.
+# The version is read back from CHANGELOG.md's first "## [X.Y.Z]" heading, so it is decided in one
+# place. A demo smoke log must hold `SMOKE: PASS (<platform>, demo)` for HEAD's crew-afk version,
+# from a clean checkout with nothing but CHANGELOG.md and RESULTS.md changed since.
+# --dry-run runs every check and prints what would be tagged/pushed, without doing either.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

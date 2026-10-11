@@ -1,10 +1,7 @@
 name: Release
 
-# Publishes a GitHub Release whenever a vX.Y.Z tag is pushed.
-#
-# Releases are milestone markers only: users install from `main` (bootstrap.sh) and
-# `install.sh --update` follows registry.json's per-entry versions, not tags. Cut one with
-# scripts/cut-release.sh, which tags the version named by CHANGELOG.md's top `## [X.Y.Z]`.
+# Publishes a GitHub Release whenever a vX.Y.Z tag is pushed (scripts/cut-release.sh pushes one).
+# Releases are milestone markers only: `install.sh --update` follows registry.json's versions, not tags.
 
 on:
   push:
@@ -30,9 +27,7 @@ jobs:
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
 
-          # Pull the body of this version's CHANGELOG section (stop at the next
-          # "## [" heading). Missing section is fatal: a release with no notes is
-          # the thing we're trying to stop shipping.
+          # A missing CHANGELOG section is fatal: a release with no notes is what this stops shipping.
           awk -v v="$version" '
             $0 ~ "^## \\[" v "\\]" { f = 1; next }
             f && /^## \[/          { exit }
@@ -44,7 +39,6 @@ jobs:
             exit 1
           fi
 
-          # Title: the tag's annotation subject if it has one, else the version.
           title=$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME")
           echo "title=${title:-$GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
@@ -53,8 +47,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # Idempotent: a re-pushed tag or a re-run updates the existing release
-          # rather than failing the workflow.
+          # A re-pushed tag or a re-run updates the existing release rather than failing.
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" \
               --title "${{ steps.notes.outputs.title }}" \

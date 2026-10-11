@@ -10,7 +10,6 @@ BRANCH="${BRANCH:-main}"
 SKILLS="${SKILLS:-}"
 PROJECT="${PROJECT:-}"
 
-# Positional args override env vars
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project) PROJECT=1; shift ;;

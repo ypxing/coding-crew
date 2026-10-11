@@ -90,7 +90,7 @@
       ]
     },
     "crew-address-findings": {
-      "version": "1.6.0",
+      "version": "1.6.1",
       "source-dir": "crew-address-findings",
       "description": "Triage and fix findings from a crew-afk code review report using TDD.",
       "scripts": [
@@ -103,7 +103,7 @@
       ]
     },
     "address-pr-comments": {
-      "version": "1.5.2",
+      "version": "1.5.3",
       "source-dir": "address-pr-comments",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "scripts": [
@@ -152,7 +152,7 @@
       ]
     },
     "add-tests": {
-      "version": "1.1.10",
+      "version": "1.1.11",
       "source-dir": "add-tests",
       "description": "Discover the project's coverage command, rank under-covered files by risk, resolve a mocking convention per ecosystem, and hand findings to to-issues as ready-for-agent issues.",
       "scripts": [

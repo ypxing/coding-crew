@@ -1,30 +1,10 @@
 #!/usr/bin/env node
-// eval-design-skills.mjs — behavioural A/B check for crew-grill / crew-brainstorm / to-issues.
-//
-// Why this exists: these skills shape every PRD, and their tests can only grep that a rule's text
-// is present. Whether a rule changes what the model *does* needs a replay: run each case against
-// the skill at a base ref and at the head, several times, then have a judge score every output
-// blind against a fixed rubric. Maintainer-only; ships to no consumer. Costs real API money — it
-// prints each run's cost — so it is run by hand after editing a design skill, never in CI.
-//
-// Usage: node scripts/eval-design-skills.mjs [--skill crew-grill|crew-brainstorm|to-issues|all]
-//          [--base <git ref>] [--head <git ref>|worktree] [--case <name>]... [--runs N]
-//          [--model sonnet] [--judge-model opus] [--parallel 4] [--dry-run]
-//
-// Cases live in scripts/eval-design-skills/cases/*.md: front matter (skill, stage, repo_ref), then
-// `## Request`, optional `## Transcript` (stage: close), and `## Reference judgement`, which only
-// the judge sees. A `to-issues` case uses stage `slice` and inlines the PRD body in its Request; its
-// judge scores against rubric-to-issues.md and the to-issues metrics (SKILL_SCORING), not the
-// grill/brainstorm ones. Stage `prepublish` (to-issues step 6, after lint exit 0) inlines the drafts
-// and PRD in its Request and is scored per stage (STAGE_SCORING): rubric-prepublish.md with
-// gap_raised / noise, not the slicing metrics. skillText renders each version's SKILL.md as claude receives it, `{{FRAGMENT:…}}`
-// lines expanded from that version's fragments, so a rule that lives in a fragment is what the A/B
-// measures. --dry-run calls no model: it writes every subject prompt and stops. A reference
-// judgement is a set of claims about the repo at repo_ref: verify every fact in it against that
-// commit before committing the case — the judge scores against it, so a
-// wrong reference silently inverts the result. State facts that live outside git (a count in a
-// gitignored dir, an open PR) in the Request, as the user would. Results land in .scratch/eval-design-skills/<timestamp>/ (summary.md,
-// results.json, every prompt and output).
+// eval-design-skills.mjs — behavioural A/B check for crew-grill / crew-brainstorm / to-issues,
+// scored blind by a judge; maintainer-only, costs API money. Usage: node scripts/eval-design-skills.mjs
+//   [--skill crew-grill|crew-brainstorm|to-issues|all] [--base <git ref>] [--head <git ref>|worktree]
+//   [--case <name>]... [--runs N] [--model sonnet] [--judge-model opus] [--parallel 4] [--dry-run]
+// The judge scores against a case's `## Reference judgement`: verify every fact in it at the case's
+// repo_ref before committing, or a wrong reference silently inverts the result.
 
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -50,7 +30,6 @@ const METRICS = ["sized", "do_least", "asked_well", "overbuilt", "underbuilt", "
 const GOOD_HIGH = new Set(["sized", "do_least", "asked_well", "chain_priced"]);
 const TO_ISSUES_METRICS = ["count_ok", "splits_justified", "overmerged", "oversplit"];
 
-// Per skill: the metrics its judge scores, which of them are better high, and its rubric file.
 export const SKILL_SCORING = {
   "crew-grill": { metrics: METRICS, goodHigh: GOOD_HIGH, rubric: "rubric.md" },
   "crew-brainstorm": { metrics: METRICS, goodHigh: GOOD_HIGH, rubric: "rubric.md" },
@@ -58,8 +37,7 @@ export const SKILL_SCORING = {
     rubric: "rubric-to-issues.md" },
 };
 
-// Per stage, overriding the skill's: a stage that judges something other than what the skill's
-// other stages do (a `prepublish` output is not a slicing breakdown) has its own rubric and metrics.
+// Per stage, overriding the skill's: a `prepublish` output is not a slicing breakdown.
 export const STAGE_SCORING = {
   prepublish: { metrics: ["gap_raised", "noise"], goodHigh: new Set(["gap_raised"]), rubric: "rubric-prepublish.md" },
 };
@@ -121,9 +99,7 @@ function readAt(ref, rel) {
   return execFileSync("git", ["show", `${ref}:${rel}`], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
-// The SKILL.md body as the claude platform receives it, rendered the way scripts/render-skill.sh
-// renders it: a whole `{{FRAGMENT:<key>}}` line becomes skills/_shared/fragments/<key>.md (from the
-// same ref), `{{PLATFORM}}` becomes claude, and a placeholder left over is an error.
+// The SKILL.md body as claude receives it, rendered as scripts/render-skill.sh does, from the same ref.
 function skillText(skill, ref) {
   const rel = `skills/${skill}/SKILL.md`;
   const out = readAt(ref, rel).split("\n").map((line) => {
@@ -196,10 +172,8 @@ export function summarize(rows, metrics = METRICS, goodHigh = GOOD_HIGH) {
   return lines.join("\n");
 }
 
-// Transient failures are retried with a growing pause, then become a failed run; they must never
-// take the whole matrix down. Transient = a spawn error (e.g. ENOENT while claude's auto-updater
-// replaces the binary) or an API throttle/overload ("Too many requests", 429, 529, overloaded).
-// A usage limit is not transient and is handled by the caller.
+// Transient failures (a spawn error while claude's auto-updater replaces the binary, a 429/529 or
+// overload) are retried with a growing pause, then become a failed run, never a crashed matrix.
 export const TRANSIENT_RE = /too many requests|rate limit|throttl|overloaded|\b(429|529)\b|ECONNRESET|ETIMEDOUT/i;
 
 export async function runClaude(args, input, cwd) {
@@ -234,8 +208,8 @@ function runClaudeOnce(args, input, cwd) {
   });
 }
 
-// A usage/session limit (a plain API "rate limit" is transient and retried by runClaude) fails every later run the same way; recording them as per-run failures made a
-// 60-run matrix look finished. It stops the whole evaluation instead.
+// A usage/session limit fails every later run the same way, so it stops the whole evaluation
+// rather than leaving a matrix of per-run failures that looks finished.
 export const LIMIT_RE = /(session|usage) limit|limit reached|resets \d/i;
 
 export async function pool(tasks, n, stop) {

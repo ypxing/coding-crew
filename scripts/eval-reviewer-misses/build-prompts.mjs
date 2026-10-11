@@ -1,13 +1,8 @@
 #!/usr/bin/env node
-// build-prompts.mjs <tree> — the review prompts of ONE ref, built from that ref's own modules.
-//
-// eval-reviewer-misses.mjs runs this once per ref with <tree> = that ref's checkout, so the prompt
-// builders (orchestrator/lib/prompts.mjs) and the rendered reviewer role are the ref's, never the
-// head's. stdin: JSON {mode, base, tip, branch, slug, issue, criteria, notes?, prdPath?, prdText, reportPath};
-// stdout: JSON {role, reviews: [{name, prompt}]}. A feature case is one whole-feature reviewer given
-// the PRD's path (`prdPath`, else `prdText` written to a temp file) and the case's `notes` (a ref whose
-// featureReviewPrompt predates them ignores them); a branch case is the
-// criteria-only branch review.
+// build-prompts.mjs <tree> — the review prompts of ONE ref, built from that ref's own modules, so
+// the prompt builders and rendered reviewer role are the ref's, never the head's.
+// stdin: JSON {mode, base, tip, branch, slug, issue, criteria, notes?, prdPath?, prdText, reportPath};
+// stdout: JSON {role, reviews: [{name, prompt}]}.
 
 import fs from "node:fs";
 import os from "node:os";

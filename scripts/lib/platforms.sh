@@ -1,14 +1,7 @@
 # platforms.sh — every per-platform fact install.sh and uninstall.sh need, read from
-# orchestrator/platforms.json (the one source of the platform list and of where each platform
-# keeps skills). Sourced, never run; bash 3.2-compatible (uninstall.sh does not re-exec).
-#
-# The sourcing script sets SCRIPT_DIR (the coding-crew checkout) and REPO_ROOT (the install
-# target; $HOME means user scope) and has jq on PATH. Adding a platform is one platforms.json
-# entry: nothing here names one.
-#
-# A skill installs to <projectSkills>/<skill> at project scope and <userSkills>/<skill> at user
-# scope. At user scope a path under <configDir>/ moves to $<configDirEnv> when that is set —
-# the platform's own CLI reads its config from there — and anything else stays under $HOME.
+# orchestrator/platforms.json. Sourced, never run; bash 3.2-compatible (uninstall.sh does not re-exec).
+# The sourcing script sets SCRIPT_DIR and REPO_ROOT ($HOME means user scope) and has jq on PATH.
+# At user scope a path under <configDir>/ moves to $<configDirEnv> when set: the platform's CLI reads it there.
 
 # CODING_CREW_PLATFORMS_JSON points at another copy of the file (tests add a platform with it).
 PLATFORMS_JSON="${CODING_CREW_PLATFORMS_JSON:-$SCRIPT_DIR/orchestrator/platforms.json}"
@@ -45,8 +38,7 @@ platform_known() { _platform_index "$1"; }
 
 _platform_user_scope() { [[ "$REPO_ROOT" == "$HOME" ]]; }
 
-# platform_skills_dir <platform> [project|user] — sets $_PLATFORM_SKILLS to the platform's
-# skills dir, relative to the target root, for the given scope (default: this run's).
+# platform_skills_dir <platform> [project|user] — sets $_PLATFORM_SKILLS, relative to the target root.
 _PLATFORM_SKILLS=""
 platform_skills_dir() {
   local platform="$1" scope="${2:-}"
@@ -57,10 +49,8 @@ platform_skills_dir() {
   if [[ "$scope" == user ]]; then _PLATFORM_SKILLS="${_PF_USER[$_PF_I]}"; else _PLATFORM_SKILLS="${_PF_PROJECT[$_PF_I]}"; fi
 }
 
-# platform_scope_path <platform> <path> [project|user] — <path> rewritten to the given scope
-# (default: this run's): a path under one scope's base (the dir holding its skills dir) moves
-# to the other's, so `.pi/agents/x` is `.pi/agent/agents/x` at user scope. Anything else is
-# returned unchanged. Used for paths the registry writes once for both scopes (retired agents).
+# platform_scope_path <platform> <path> [project|user] — <path> moved from one scope's base to the
+# other's (`.pi/agents/x` is `.pi/agent/agents/x` at user scope); anything else unchanged.
 platform_scope_path() {
   local platform="$1" path="$2" scope="${3:-}" project_base user_base target rest
   _platform_index "$platform" || { printf '%s' "$path"; return 0; }
@@ -83,11 +73,8 @@ platform_scope_path() {
   printf '%s/%s' "$target" "$rest"
 }
 
-# platform_scope_paths <platform> <path> — every path <path> may occupy in this target: this
-# scope's, then the other scope's when an earlier install wrote it here. Earlier installs wrote
-# under .<platform>/ at both scopes, so the other scope's path is a dead copy only when that
-# scope's base is .<platform> (Copilot's .copilot/ at project scope, pi's .pi/ at user scope);
-# any other is a live install of its own (a repo's .github/ under $HOME), left in place.
+# platform_scope_paths <platform> <path> — this scope's path, then the other scope's only when that
+# scope's base is .<platform> (a dead copy an earlier install wrote); any other is a live install, left alone.
 platform_scope_paths() {
   local platform="$1" path="$2" here there other=user
   here=$(platform_scope_path "$platform" "$path")
@@ -100,10 +87,8 @@ platform_scope_paths() {
   return 0
 }
 
-# resolve_dest <platform> <path> — sets $_DEST_ROOT (absolute base dir, in place of $REPO_ROOT)
-# and $_DEST_REL (the path's remainder under it). Differs from ($REPO_ROOT, <path>) only at user
-# scope, for a path under the platform's configDir, with its configDirEnv set. A caller joins
-# them once and reuses the result rather than calling this per file (fork count on Git Bash).
+# resolve_dest <platform> <path> — sets $_DEST_ROOT and $_DEST_REL. Join them once per caller, not
+# per file: forks are expensive on Git Bash.
 _DEST_ROOT=""; _DEST_REL=""
 resolve_dest() {
   local platform="$1" path="$2"
@@ -126,9 +111,7 @@ resolve_skill_dest() {
   resolve_dest "$1" "$_SKILL_DEST"
 }
 
-# platform_user_dirs — the user-level dirs a host may resolve a skill or agent definition from,
-# one absolute path per line: each platform's user skills dir and <configDir>/agents, relocated
-# as a user-scope install would be.
+# platform_user_dirs — the user-level dirs a host may resolve a skill or agent from, one per line.
 platform_user_dirs() {
   local i env_name env_val config user
   for i in "${!PLATFORMS[@]}"; do

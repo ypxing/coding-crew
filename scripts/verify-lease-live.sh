@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# verify-lease-live.sh — maintainer-only: does the real `origin` accept the feature lease's
-# refs? Runs lease.sh (create, CAS-reclaim, stale-CAS rejection, CAS-delete) against a throwaway
-# slug and deletes it afterwards. It pushes to the remote, so it is opt-in:
-#
-#   CREW_LEASE_LIVE=1 scripts/verify-lease-live.sh [--remote-url <url>]
-#
-# With --remote-url the check runs in a scratch clone-less repo pointed at that URL (use a
-# scratch repository); without it, the current repo's `origin` is used.
+# verify-lease-live.sh — maintainer-only: does the real `origin` accept the feature lease's refs?
+# Runs lease.sh's create, CAS-reclaim, stale-CAS rejection and CAS-delete on a throwaway slug.
+# It pushes to the remote, so it is opt-in:
+#   CREW_LEASE_LIVE=1 scripts/verify-lease-live.sh [--remote-url <url>]   (use a scratch repository)
 # Exit: 0 every step accepted · 1 a step failed (the namespace is rejected or unreachable) · 2 not opted in.
 
 [ "${CREW_LEASE_LIVE:-}" = "1" ] || { echo "verify-lease-live: set CREW_LEASE_LIVE=1 to push a throwaway lease ref to origin" >&2; exit 2; }

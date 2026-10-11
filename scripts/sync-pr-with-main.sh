@@ -2,16 +2,10 @@
 set -uo pipefail
 
 # sync-pr-with-main.sh — merge origin/main into a PR branch and repair registry.json versions (D4).
-#
 # Usage: scripts/sync-pr-with-main.sh <branch>
-#
-# Fetches origin, checks out <branch>, merges origin/main (no fast-forward). Conflicts confined to
-# registry.json entry `version`s and CHANGELOG.md appends are resolved by
-# skills/crew-afk/scripts/resolve-merge-conflicts.sh; any other conflict leaves the merge in
-# progress (nothing committed) and exits 1. Then every agents.*/skills.* entry this branch changed
-# (measured from the merge-base) whose version is not strictly above origin/main's is bumped to one
-# above it — at the level the branch itself bumped (major/minor), else patch. The merge commit is
-# created with the repaired registry.json. Nothing is pushed; no remote is written to.
+# Registry `version` and CHANGELOG.md append conflicts are resolved; any other conflict leaves the
+# merge in progress and exits 1. Every entry this branch changed whose version is not above
+# origin/main's is bumped one above it, at the level the branch bumped (else patch). Never pushes.
 
 REMOTE=origin
 MAIN="$REMOTE/main"

@@ -1,29 +1,7 @@
 /**
- * github.mjs — the GitHub Issues tracker backend.
- *
- * Backed by the `gh` CLI via `execFile`-style argv shelling-out (no shell string, no REST
- * client dependency) — the same argv-array pattern `dispatch.mjs`'s `effects.exec` uses.
- * `exec` is an injectable `(cmd, args) => {code, stdout, stderr}` so tests stub `gh`
- * without touching `PATH`; it defaults to a real `execFileSync`-backed shell-out.
- *
- * Read path (issue 04): `listFeatureIssues` is the one place a network round trip happens for
- * dispatchability: exactly one `gh issue list` call per invocation, `--state all` and
- * parsed client-side, never a call per issue — the N+1 this design exists to avoid (see
- * `.scratch/github-issue-tracker/PRD.md`). `parseIssue` stays pure and I/O-free over one
- * already-fetched issue's JSON, sharing the markdown-body parsing in `./body-format.mjs`
- * with the local backend so both backends' output shape is identical without duplicating
- * the parsing.
- *
- * Write path (issue 05): `createIssue`, `writeProgress`. `createIssue` lazily
- * bootstraps the feature's milestone (list-first, idempotent) and passes the caller's
- * `body` through to `gh issue create --body-file` unmodified — the producer side of the
- * `## Blocked by`/`Source:` prose flow issues 07/08 write and issue 04's `parseIssue` reads
- * back. Marking an issue done is `markDone`'s alone, reached through `tracker/cli.mjs mark-done`
- * (close-issue.sh and the ready-for-human steps call it), so there is one implementation of the label
- * swap. `writeProgress`
- * always posts a new `gh issue comment` — a GitHub comment thread is a timeline, not an
- * in-place-edited section, so every call is a new comment, deliberately, including for a
- * `## Blocked` write (there is no `blocked` label anywhere in this module).
+ * github.mjs — the GitHub Issues tracker backend, shelling out to `gh` with argv arrays.
+ * `exec` is injectable so tests stub `gh` without touching PATH. `listFeatureIssues` makes one
+ * `gh issue list` call per invocation, never one per issue.
  */
 
 import { execFileSync } from "node:child_process";
@@ -52,15 +30,12 @@ export const AWAITING_MERGE_LABEL = "awaiting-merge";
  * issue keeps `ready-for-agent`, but selectDispatchable skips it until a human removes this. */
 export const BLOCKED_LABEL = "blocked";
 
-/** POSIX single-quoting for the CREW_FAKE_GH command string below — same convention as
- * pane-host's shellQuote, kept local rather than imported so this tracker has no dependency
- * on the pane-host feature. */
+/** POSIX single-quoting, kept local so the tracker does not depend on pane-host. */
 function shQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
-/** Real `gh` invocation: argv array, no shell. Normalizes a thrown non-zero exit the same
- * shape as a clean one, so callers only ever branch on `.code`. */
+/** Real `gh`: argv array, no shell. A thrown non-zero exit returns the same shape as a clean one. */
 function shellOut(cmd, args) {
   // Test/CI seam, like CREW_FAKE_DISPATCH: a bash script stands in for `gh`. Run through bash
   // explicitly — on Windows execFileSync never reads a shebang and refuses a .cmd, so a stub
@@ -68,14 +43,9 @@ function shellOut(cmd, args) {
   const fake = cmd === "gh" ? process.env.CREW_FAKE_GH : "";
   let env;
   if (fake) {
-    // A single quoted `-c` string, not an argv array: `gh api`'s own `{owner}`/`{repo}`
-    // placeholders (see milestonesPath below) are literal argv content that must survive
-    // Windows' two-step translation into this MSYS-linked child — Node re-encodes the argv
-    // array as one Win32 command-line string, then bash's MSYS runtime re-parses that string
-    // into argv before bash itself starts, and that second parse has been observed to drop
-    // an unquoted brace pair (`{owner}` -> `owner`) even though bash's own parser never would.
-    // Quoting each word ourselves, and MSYS2_ARG_CONV_EXCL="*" turning off that runtime's own
-    // argument conversion for this child, keeps the content intact end to end.
+    // One quoted `-c` string, not argv: on Windows the MSYS runtime re-parses the command line
+    // before bash starts and can drop an unquoted brace pair (`{owner}` -> `owner`).
+    // MSYS2_ARG_CONV_EXCL="*" turns off its argument conversion for this child.
     cmd = "bash";
     args = ["-c", [shQuote(fake), ...args.map(shQuote)].join(" ")];
     env = { ...process.env, MSYS2_ARG_CONV_EXCL: "*" };
@@ -96,8 +66,7 @@ function shellOut(cmd, args) {
  * `wontfix` a close-state, so neither is a triage label (see statusOf). */
 const TRIAGE_LABELS = ["needs-triage", "needs-info", "ready-for-agent", "ready-for-human"];
 
-/** Deterministic kebab-case slug derived from an issue title — GitHub has no filename to
- * derive one from, and nothing here needs caching (see PRD's Slug/branch mapping decision). */
+/** GitHub has no filename to derive a slug from, so the title is the source. */
 function titleSlug(title) {
   return title
     .toLowerCase()
@@ -105,16 +74,15 @@ function titleSlug(title) {
     .replace(/^-+|-+$/g, "");
 }
 
-/** Blocker numbers in a `## Blocked by` section: `Issue NN` / `Issue #NN` entries and bare `#NN` refs, in order.
- * A `PR #NN` / `pull #NN` / `pull request #NN` mention is prose, not a blocker (lint-issues.sh strips the same). */
+/** Blocker numbers in a `## Blocked by` section: `Issue NN` / `Issue #NN` entries and bare refs, in order.
+ * A PR or pull-request mention is prose, not a blocker (lint-issues.sh strips the same). */
 function blockerNumbers(section) {
   const prose = section.replace(/(^|[^a-z0-9])(?:pr|pull(?:\s+request)?)\s*#[0-9]+/gi, "$1");
   return [...prose.matchAll(/(?:\bissue[\s-]*#?|#)0*([0-9]+)\b/gi)].map((m) => Number(m[1]));
 }
 
 /** `done` is a closed issue or an open one labelled `awaiting-merge`; other open issues take
- * their status from whichever triage label is present, or "" when none is (matches local's
- * untriaged issues). */
+ * their status from their triage label, or "" when none (as local's untriaged issues). */
 function statusOf({ state, labels = [] }) {
   if (String(state).toUpperCase() === "CLOSED") return "done";
   const names = new Set((labels ?? []).map((l) => (typeof l === "string" ? l : l.name)));
@@ -122,16 +90,10 @@ function statusOf({ state, labels = [] }) {
   return TRIAGE_LABELS.find((name) => names.has(name)) ?? "";
 }
 
-/**
- * A pure, no-I/O transform over one already-fetched `gh issue list --json ...` entry.
- * Produces the exact same shape as `local.mjs`'s `parseIssue`; `blockedBy`/`criteria`/
- * `sourceGuarded` are computed by calling into `body-format.mjs` on the issue body, not
- * reimplemented. Unlike local, a matched `## Blocked by` number *is* the blocker's ref
- * already — no filename lookup — so `blockedBy` holds bare issue numbers.
- */
 /** The feature's PRD: a milestone issue by title convention, not a work issue (to-prd). */
 export const isPrdIssue = (issue) => /^PRD:/.test(issue.title ?? "");
 
+/** Same shape as local.mjs's `parseIssue`; `blockedBy` holds bare issue numbers. */
 export function parseIssue(json) {
   const text = json.body ?? "";
   const blockedBySection = sectionBody(text, "Blocked by") ?? "";
@@ -152,19 +114,13 @@ export function parseIssue(json) {
   };
 }
 
-/**
- * Every issue in the feature's milestone, `--state all` (open and closed — a closed or
- * `awaiting-merge` issue is how a blocker resolves), fetched and parsed via exactly one `gh issue list` call.
- * `gh` infers the repo from the git remote. A milestone that does not exist yet is an empty
- * sprint, not an error.
- */
+/** Every issue in the milestone, open and closed (a closed blocker is resolved), in one call. */
 export function listFeatureIssues(mainRoot, { featureSlug, exec = shellOut } = {}) {
   const args = ["issue", "list", "--milestone", featureSlug, "--state", "all", "--json", "number,title,body,labels,state"];
 
   const r = exec("gh", args);
   if (r.code !== 0) {
-    // A milestone not created yet (nothing has written to this feature's tracker) is a
-    // valid empty sprint, not a failure — `gh` reports it as an unresolvable filter.
+    // gh reports a milestone not created yet as an unresolvable filter: an empty sprint.
     if (/milestone/i.test(r.stderr ?? "")) return [];
     throw new Error(`gh issue list failed (exit ${r.code}): ${r.stderr || r.stdout}`);
   }
@@ -176,14 +132,7 @@ export function listFeatureIssues(mainRoot, { featureSlug, exec = shellOut } = {
 /** GitHub has no `issues-deps.json`: `## Blocked by` prose (mirrored as native links) is the map. */
 export const featureDepsFile = () => null;
 
-/**
- * Ready and unblocked. One `listFeatureIssues` fetch (all states) builds an in-memory
- * `number → status` map reused to resolve every candidate's blockers — mirrors how local's
- * `doneFiles()` is one directory read reused across every issue in the same call. A blocker
- * counts as resolved once its own status is `done` (closed); anything else, including a
- * blocker number absent from this milestone entirely, still blocks. `includeBlocked` keeps the
- * ready issues still waiting on one, as local's does.
- */
+/** Ready and unblocked: a blocker resolves once `done`; one absent from this milestone still blocks. */
 export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlug, exec, includeBlocked = false } = {}) {
   const issues = listFeatureIssues(mainRoot, { featureSlug, exec });
   const statusByNumber = new Map(issues.map((i) => [i.number, i.status]));
@@ -198,11 +147,9 @@ export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlu
 const MILESTONES_PATH = "repos/{owner}/{repo}/milestones";
 
 /**
- * Ensure a milestone named `featureSlug` exists, list-first so a second call for the
- * same slug makes no create request — idempotent, as `createIssue` needs since it calls
- * this on every publish, not just the feature's first. The list paginates (30 per page) and
- * includes closed milestones: either one missed reads as missing, and its create 422s on the
- * taken title. A closed match is reopened, so a finished feature's milestone can be closed.
+ * Ensure a milestone named `featureSlug` exists, list-first so repeat calls create nothing.
+ * The list paginates and includes closed milestones: a missed one reads as missing and its
+ * create 422s on the taken title. A closed match is reopened.
  */
 function ensureMilestone(featureSlug, { exec }) {
   const list = exec("gh", ["api", `${MILESTONES_PATH}?state=all`, "--paginate", "--jq", ".[] | [.number, .state, .title] | @tsv"]);
@@ -229,11 +176,7 @@ function ensureMilestone(featureSlug, { exec }) {
   }
 }
 
-/**
- * Every feature: one per milestone, open and closed (a closed one is still a taken slug), sorted by
- * title. `ready` counts the milestone's open `ready-for-agent` issues. A `gh` failure throws
- * `gh`'s stderr verbatim.
- */
+/** Every feature, one per milestone (a closed one is still a taken slug), sorted by title. */
 export function listFeatures(mainRoot, { exec = shellOut } = {}) {
   const fail = (r) => new Error((r.stderr || r.stdout || `gh exited ${r.code}`).replace(/\n$/, ""));
   const milestones = exec("gh", ["api", `${MILESTONES_PATH}?state=all`, "--paginate", "--jq", ".[] | [.number, .state, .title] | @tsv"]);
@@ -253,14 +196,7 @@ export function listFeatures(mainRoot, { exec = shellOut } = {}) {
     .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
 }
 
-/**
- * Create a work (or PRD) issue in the feature's milestone, bootstrapping the milestone
- * first. `body` is written through unmodified via a throwaway `--body-file` — this
- * function does not add or strip `## Blocked by`/`Source:` prose; that is the caller's
- * (issues 07/08's) job. Returns `{number, url}` parsed from `gh issue create`'s printed
- * URL, so a caller citing this issue as a blocker (issue 06's `to-issues` flow) has the
- * number without a second fetch.
- */
+/** Create an issue in the feature's milestone, `body` unmodified. Returns `{number, url}`. */
 export function createIssue({ title, body, labels = [], featureSlug }, { mainRoot, exec = shellOut } = {}) {
   ensureMilestone(featureSlug, { exec });
 
@@ -284,16 +220,13 @@ export function createIssue({ title, body, labels = [], featureSlug }, { mainRoo
     try {
       unlinkSync(bodyFile);
     } catch {
-      // best-effort cleanup of a throwaway temp file — nothing depends on it surviving.
     }
   }
 }
 
 /**
- * Mirror issue `number`'s `## Blocked by` numbers as native GitHub `blocked_by` relationships,
- * each by the blocker's numeric id. Best-effort and additive: dispatch still reads only the
- * body prose, so a failed or already-existing link warns on stderr (or is silent) and never
- * throws. An issue with no `## Blocked by` makes no dependency call. Returns the count linked.
+ * Mirror `## Blocked by` as native `blocked_by` links. Best-effort: dispatch reads only the
+ * body prose, so a failed link warns and never throws. Returns the count linked.
  */
 export function linkBlockers(number, { mainRoot, exec = shellOut, body, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
   try {
@@ -329,12 +262,9 @@ export function linkBlockers(number, { mainRoot, exec = shellOut, body, warn = (
 }
 
 /**
- * The feature PR's closing lines, `Closes #n`: one per issue in the milestone still open and
- * labelled `awaiting-merge` — every issue a sprint of this feature merged, whichever run did —
- * plus the milestone's open `PRD: …` issue once no open work issue is left (the rule
- * `close-shipped.sh` applies), and only when something is awaiting merge: a PR that ships
- * nothing closes nothing. Merging the PR into the default branch closes them. Optional per
- * backend: a tracker without one has nothing for a PR to close.
+ * The feature PR's `Closes #n` lines: every open `awaiting-merge` issue in the milestone, plus
+ * its open `PRD:` issue once no open work issue is left (as `close-shipped.sh`). A PR that
+ * ships nothing closes nothing.
  */
 export function closingRefs(mainRoot, { featureSlug, exec = shellOut } = {}) {
   const args = ["issue", "list", "--milestone", featureSlug, "--state", "open", "--limit", "500", "--json", "number,title,labels"];
@@ -365,13 +295,7 @@ export function parseOrigins(body) {
   return m ? [...m[1].matchAll(/#(\d+)/g)].map((x) => Number(x[1])) : [];
 }
 
-/**
- * Post `body` as a new `gh issue comment` under `## <heading>` — never an in-place edit
- * of an existing comment or the issue body; local's `{append}` splice/append distinction
- * (see `local.mjs`'s `writeIssueSection`) does not apply here. `heading` is typically
- * `"Progress"` or `"Blocked"`; a `## Blocked` write is not special-cased — it is this
- * same comment path, and there is no `blocked` label anywhere in this module.
- */
+/** Post `body` as a new comment under `## <heading>`, never an in-place edit. */
 export function writeProgress(issue, body, { heading = "Progress", mainRoot, exec = shellOut } = {}) {
   const commentBody = `## ${heading}\n\n${body}`;
 
@@ -390,10 +314,7 @@ export function validateRef(mainRoot, ref) {
 /** `gh` reports an issue number with no issue behind it this way; anything else is a failure. */
 const NOT_FOUND = /could not resolve to an? (?:issue|pullrequest|pull request)/i;
 
-/**
- * `{title, body, comments?}` for issue `number`, or null when it does not exist. One `gh issue
- * view`; `comments` (with `{author, createdAt, body}` each) only when asked for.
- */
+/** `{title, body, comments?}` for issue `number`, or null when it does not exist. */
 export function fetchIssue(mainRoot, number, { comments = false, exec = shellOut } = {}) {
   const fields = comments ? "title,body,comments" : "title,body";
   const r = exec("gh", ["issue", "view", String(number), "--json", fields]);
@@ -409,11 +330,7 @@ export function fetchIssue(mainRoot, number, { comments = false, exec = shellOut
   return out;
 }
 
-/**
- * The milestone's PRD issue body, headed by an HTML comment naming its number and title (prd.mjs
- * saves it as `prd-issue.md`, so the saved copy still says which issue it came from); null when
- * the milestone has none.
- */
+/** The milestone's PRD body, headed by an HTML comment naming its number and title; null when none. */
 export function readPrd(mainRoot, { featureSlug, exec = shellOut } = {}) {
   const prd = listFeatureIssues(mainRoot, { featureSlug, exec }).find(isPrdIssue);
   return prd ? `<!-- PRD issue #${prd.number}: ${prd.title} -->\n${prd.text}\n` : null;
@@ -445,7 +362,6 @@ function withBodyFile(text, fn) {
     try {
       unlinkSync(bodyFile);
     } catch {
-      // best-effort cleanup of a throwaway temp file — nothing depends on it surviving.
     }
   }
 }
@@ -458,11 +374,7 @@ function draftBody(text) {
     .replace(/^(?:[ \t]*\r?\n)+/, "");
 }
 
-/**
- * `publish-issues`' github side: each draft becomes an issue through `createIssue` (milestone
- * ensured, blockers linked), titled by its `# <title>` line and labelled by its `Status:`. A
- * milestone only accumulates, so there is no re-run guard: github never refuses with 4 or 5.
- */
+/** `publish-issues`' github side. A milestone only accumulates, so there is no re-run guard. */
 export function beginPublish(mainRoot, { featureSlug, exec = shellOut } = {}) {
   return {
     create(draft) {
@@ -477,9 +389,8 @@ export function beginPublish(mainRoot, { featureSlug, exec = shellOut } = {}) {
 }
 
 /**
- * The feature's PRD issue: the milestone's existing `PRD:` issue gets `body`, else `PRD: <title>`
- * is created in it. Then a best-effort pin — GitHub caps pinned issues at 3 a repo, so a failed
- * pin only warns. Returns the issue number.
+ * Update the milestone's `PRD:` issue or create one, then pin it best-effort — GitHub caps
+ * pinned issues at 3 a repo. Returns the issue number.
  */
 export function publishPrd(mainRoot, { featureSlug, title, body, exec = shellOut, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
   const existing = listFeatureIssues(mainRoot, { featureSlug, exec }).find(isPrdIssue);
@@ -498,12 +409,9 @@ export function publishPrd(mainRoot, { featureSlug, title, body, exec = shellOut
 }
 
 /**
- * Rewrite a single-slice source issue: `body` — a draft's `# <title>` and `Status:` lines taken
- * off, as `publish-issues` does — replaces its body (a `Source:` line kept), `status` goes on as
- * its only triage label (every other triage label the issue carries comes off in the same edit;
- * `--remove-label` fails on a label the issue lacks, so only carried ones are named), and it moves
- * into the feature's milestone, created — or reopened when closed — first. Null when the issue
- * does not exist.
+ * Rewrite a single-slice source issue's body (a `Source:` line kept), set `status` as its only
+ * triage label and move it into the feature's milestone. `--remove-label` fails on a label the
+ * issue lacks, so only carried ones are named. Null when the issue does not exist.
  */
 export function rewriteIssue(mainRoot, number, { body, status, featureSlug, exec = shellOut } = {}) {
   const read = exec("gh", ["issue", "view", String(number), "--json", "labels", "--jq", ".labels[].name"]);
@@ -538,12 +446,9 @@ export function readIssueBody(mainRoot, number, { exec = shellOut } = {}) {
 }
 
 /**
- * Mark issue `number` done — not closed: the work is only on a branch. `awaiting-merge` (read as
- * done) replaces `ready-for-agent`, and the PR's `Closes #n` closes the issue when it merges.
- * crew-afk's display label `in-progress` and a person's `ready-for-human` come off in the same
- * edit. Each label is created first, idempotently: `--add-label`/`--remove-label` fail on a label
- * the repo lacks. `ready-for-human` is the project's own (configure-tracker made it), so it is
- * created without `--force`, keeping its colour, and gh's "already exists" refusal counts as made.
+ * Mark issue `number` done, not closed: the work is only on a branch, and the PR's `Closes #n`
+ * closes it. `--add-label`/`--remove-label` fail on a label the repo lacks, so each is created
+ * first; `ready-for-human` without `--force`, keeping the project's colour.
  */
 export function markDone(mainRoot, number, { exec = shellOut, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
   const awaiting = exec("gh", ["label", "create", AWAITING_MERGE_LABEL, "--force",
@@ -569,10 +474,8 @@ function usage(message) {
 }
 
 /**
- * `create-issue --title T --body-file F --feature-slug S [--label L]… [--main-root DIR]` — the
- * shape `promote-findings.sh`'s `_defer_github` calls through `tracker/cli.mjs`, so the bash
- * script never hand-rolls a second `gh issue create` + milestone bootstrap that can drift from
- * `createIssue` (it did). Prints the created issue's URL, as `gh issue create` does.
+ * `create-issue --title T --body-file F --feature-slug S [--label L]… [--main-root DIR]`, so
+ * `promote-findings.sh` never hand-rolls a second milestone bootstrap. Prints the issue URL.
  */
 function cliCreateIssue(argv, { exec, out }) {
   const opts = { labels: [] };

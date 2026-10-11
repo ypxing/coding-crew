@@ -1,19 +1,7 @@
 /**
- * tracker-config.mjs — reads which issue-tracker backend a repo uses.
- *
- * The tracker choice is the `tracker` section of the repo's .coding-crew/config.json:
- *
- *   { "tracker": { "kind": "github" } }     // or "local"
- *
- * Precedence: that section, else the legacy YAML front matter atop
- * .coding-crew/docs/issue-tracker.md (`tracker: github|local`; a repo relying on a user-level
- * install is never migrated off it), else `local`. `configured` says whether a choice was made:
- * the section exists, or the legacy file does (with or without front matter).
- *
- * Never a silent `local` for a broken config: a config.json that is not JSON, an unknown
- * `tracker.kind`, or a legacy front matter naming `repo:` (removed: `gh` targets the git remote)
- * throws. Pure read — no network calls, no file writes. `cli.mjs config` prints the result, and
- * crew-afk's tracker-cli.sh reads it from there.
+ * tracker-config.mjs — reads which tracker backend a repo uses: config.json's `tracker.kind`, else
+ * the legacy front matter of .coding-crew/docs/issue-tracker.md, else `local`. A broken config
+ * throws rather than falling back to a silent `local`.
  */
 
 import { existsSync, readFileSync } from "node:fs";
