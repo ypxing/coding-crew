@@ -403,7 +403,7 @@ test("notifyWatchSession (herdr) swallows a failed prompt — the sprint's own o
 // Confirmed live against a running orca runtime this session: a git checkout's own root is
 // already an Orca-managed worktree with no `repo add`/`worktree create` needed (`orca
 // worktree current` resolves it directly from cwd), so `terminal create --worktree
-// path:<mainRoot>` is the whole story — there is no herdr-style workspace object to create, reuse, or close.
+// path:<_feature>` is the whole story — there is no herdr-style workspace object to create, reuse, or close.
 
 test("ensurePaneWorkspace (orca) creates a log terminal directly — no separate workspace-create call exists", async () => {
   const { root } = fixture();
@@ -481,9 +481,9 @@ test("every orca call is bounded by a timeout", async () => {
 // The triggering terminal's own tab still shows whatever it was called before crew-afk
 // started running in it — orca also injects that terminal's own handle as
 // ORCA_TERMINAL_HANDLE, alongside ORCA_WORKTREE_ID for the enclosing worktree — so this is
-// the one chance to relabel it, the same way herdr's reuse path does. Unlike herdr, no
+// the one chance to relabel it, when it was launched inside `_feature`. Unlike herdr, no
 // separate "reuse the workspace" call is needed: every terminal create is already scoped by
-// --worktree path:<mainRoot>, so the ambient ORCA_WORKTREE_ID is returned for symmetry with herdr's
+// --worktree path:<_feature>, so the ambient ORCA_WORKTREE_ID is returned for symmetry with herdr's
 // return value, not because orca ever needs it again.
 test("ensurePaneWorkspace (orca) renames the triggering terminal via ORCA_TERMINAL_HANDLE, and reuses ORCA_WORKTREE_ID implicitly", async () => {
   const { root } = fixture();

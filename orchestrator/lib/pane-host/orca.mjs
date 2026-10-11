@@ -1,7 +1,8 @@
 /**
  * orca (https://onorca.dev): flat — a worktree is the container and a terminal the pane, so there
  * is no workspace to create or close. Terminals are scoped by `--worktree path:<dir>`, which orca
- * refuses for a worktree it does not know. See docs/orca-support.md.
+ * refuses for a worktree it does not know; crew-afk uses only `_feature` and the worktrees it named.
+ * See docs/orca-support.md.
  */
 
 import { failureDetail, insideDir, paneHostExec, paneHostJson, paneWorkspaceLabel, shellQuote } from "./shared.mjs";
@@ -29,8 +30,8 @@ export function preflight(effects) {
   } catch {
     return ["pane host orca, but `orca status --json` returned unparseable output"];
   }
-  // Every terminal is scoped to mainRoot. In a checkout orca doesn't manage, each create
-  // fails and every dispatch quietly falls back to headless, so no tab ever appears.
+  // orca names only worktrees of a repo it manages: in a checkout it doesn't, nothing is named
+  // and every dispatch quietly falls back to headless, so no tab ever appears.
   const show = effects.exec("orca", ["worktree", "show", "--worktree", `path:${effects.mainRoot}`, "--json"], { mutating: false, timeoutMs: CALL_TIMEOUT_MS });
   if (show.code === 124) return [`pane host orca, but \`orca worktree show\` timed out after ${CALL_TIMEOUT_MS / 1000}s — is orca responding?`];
   if (show.code !== 0) {
