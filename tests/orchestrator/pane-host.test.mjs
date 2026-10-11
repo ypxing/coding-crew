@@ -1509,3 +1509,47 @@ test("an orca worker terminal names and opens in a worktree orca listed only aft
   assert.equal(effects._calls[2][effects._calls[2].indexOf("--worktree") + 1], "path:/wt/alpha");
   assert.equal(effects._logs.length, 1, "only the adoption's own WARN");
 });
+
+test("an orca worker terminal for a worktree orca never lists runs headless, with no `worktree set` and only the adoption's WARN", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const effects = orcaListingWhenToggled();
+  await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" }));
+  for (let spawn = 0; spawn < 2; spawn++) {
+    const opened = await openWorkerTerminal(effects, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+    assert.equal(opened.handle, undefined);
+    assert.match(opened.failure, /\/wt\/alpha/);
+  }
+  assert.ok(effects._calls.every((c) => c[2] === "show"), "never `worktree set` or `terminal create`");
+  assert.equal(effects._logs.length, 1, effects._logs.join("\n"));
+  assert.match(effects._logs[0], /^WARN orca never listed worktree \/wt\/alpha/);
+});
+
+test("concurrent orca worker terminals on a worktree listed after the adopt wait issue one `worktree set`", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const effects = orcaListingWhenToggled();
+  await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" }));
+  effects.listed = true;
+  effects._calls.length = 0;
+  const opened = await Promise.all(["coder", "reviewer", "triage"].map((role) => openWorkerTerminal(effects, { title: `alpha ${role}`, command: "true", worktree: "/wt/alpha" })));
+  assert.deepEqual(opened.map((o) => o.handle), ["term_x", "term_x", "term_x"]);
+  assert.equal(effects._calls.filter((c) => c[2] === "set").length, 1, JSON.stringify(effects._calls));
+  assert.equal(effects._calls.filter((c) => c[2] === "show").length, 1, "one shared probe");
+});
+
+test("an orca re-probe whose `worktree show` fails, times out or throws leaves the worktree unnamed and the spawn headless", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  for (const [label, show] of [
+    ["non-zero", async () => ({ code: 1, stdout: "", stderr: "orca boom" })],
+    ["timeout", async () => ({ code: 124, stdout: "", stderr: "" })],
+    ["throw", async () => { throw new Error("spawn orca ENOENT"); }],
+  ]) {
+    const effects = orcaListingWhenToggled();
+    await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" }));
+    const spawn = effects.spawnWithTimeout;
+    effects.spawnWithTimeout = (cmd, args, opts) => (args[1] === "show" ? (effects._calls.push([cmd, ...args]), show()) : spawn(cmd, args, opts));
+    const opened = await openWorkerTerminal(effects, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+    assert.equal(opened.handle, undefined, label);
+    assert.match(opened.failure, /neither \/wt\/alpha/, label);
+    assert.ok(!effects._calls.some((c) => c[2] === "set"), label);
+  }
+});
