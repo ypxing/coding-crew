@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { closingRefs, createIssue, linkBlockers, listFeatureIssues, parseIssue, selectDispatchable, writeProgress } from "../../tracker/github.mjs";
+import { closingRefs, createIssue, linkBlockers, listFeatureIssues, parseIssue, retryTransient, selectDispatchable, writeProgress } from "../../tracker/github.mjs";
 
 // github.mjs's read path (issue 04): listFeatureIssues/parseIssue/selectDispatchable, all `gh`
 // calls stubbed via an injected fake exec — no real network access, no PATH stubbing.
@@ -543,4 +543,63 @@ test("listFeatureIssues retries a gh issue list that failed with a GraphQL EOF a
     if (prev === undefined) delete process.env.CREW_FAKE_GH;
     else process.env.CREW_FAKE_GH = prev;
   }
+});
+
+const quiet = { sleep: () => {}, warn: () => {} };
+
+for (const stderr of [
+  "gh: To get started with GitHub CLI, please run:  gh auth login\n",
+  "GraphQL: Could not resolve to an Issue with the number of 999. (repository.issue)\n",
+  "unknown flag: --bogus\n\nUsage:  gh issue list [flags]\n",
+]) {
+  test(`a non-transient gh failure is thrown on the first attempt with gh's stderr verbatim: ${stderr.split("\n")[0]}`, () => {
+    const exec = scriptedExec([{ code: 1, stdout: "", stderr }]);
+    assert.throws(
+      () => listFeatureIssues(repo(), { featureSlug: "feat", exec: retryTransient(exec, quiet) }),
+      (err) => err.message.includes(stderr),
+    );
+    assert.equal(exec.calls.length, 1);
+  });
+}
+
+test("a transient gh failure that outlasts the retries throws the last gh error", () => {
+  const exec = scriptedExec([
+    { code: 1, stdout: "", stderr: EOF_STDERR },
+    { code: 1, stdout: "", stderr: "read: connection reset by peer\n" },
+    { code: 1, stdout: "", stderr: "HTTP 502: Bad Gateway (https://api.github.com/graphql)\n" },
+  ]);
+  const slept = [];
+  const retrying = retryTransient(exec, { sleep: (ms) => slept.push(ms), warn: () => {} });
+  assert.throws(
+    () => listFeatureIssues(repo(), { featureSlug: "feat", exec: retrying }),
+    (err) => err.message.includes("HTTP 502: Bad Gateway") && !err.message.includes("EOF"),
+  );
+  assert.equal(exec.calls.length, 4);
+  assert.deepEqual(slept, [1000, 2000, 4000]);
+});
+
+for (const [what, args] of [
+  ["gh issue create", ["issue", "create", "--title", "T", "--body-file", "f"]],
+  ["gh issue comment", ["issue", "comment", "7", "--body", "b"]],
+  ["gh api -X POST", ["api", "-X", "POST", "repos/{owner}/{repo}/issues/9/dependencies/blocked_by", "-F", "issue_id=1"]],
+  ["gh api with a field (an implicit POST)", ["api", "repos/{owner}/{repo}/milestones", "-f", "title=feat"]],
+]) {
+  test(`${what} is not retried after an ambiguous failure, but is after one before the request was sent`, () => {
+    const ambiguous = scriptedExec([{ code: 1, stdout: "", stderr: EOF_STDERR }, { code: 0, stdout: "ok", stderr: "" }]);
+    assert.equal(retryTransient(ambiguous, quiet)("gh", args).code, 1);
+    assert.equal(ambiguous.calls.length, 1);
+
+    const unsent = scriptedExec([
+      { code: 1, stdout: "", stderr: 'Post "https://api.github.com/graphql": dial tcp: lookup api.github.com: no such host\n' },
+      { code: 0, stdout: "ok", stderr: "" },
+    ]);
+    assert.equal(retryTransient(unsent, quiet)("gh", args).code, 0);
+    assert.equal(unsent.calls.length, 2);
+  });
+}
+
+test("an idempotent gh write (issue edit) is retried after an ambiguous failure", () => {
+  const exec = scriptedExec([{ code: 1, stdout: "", stderr: EOF_STDERR }, { code: 0, stdout: "", stderr: "" }]);
+  assert.equal(retryTransient(exec, quiet)("gh", ["issue", "edit", "7", "--add-label", "x"]).code, 0);
+  assert.equal(exec.calls.length, 2);
 });
