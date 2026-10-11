@@ -8,6 +8,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- crew-afk: under orca, a worktree whose parent (`_feature`) orca does not list yet is named without it (a `WARN`) and given that parent once orca names `_feature`, instead of staying unnamed after the refused `worktree set`; removing `_feature` at the end of a run with the feature agent gone first names in a `WARN` each terminal orca still lists inside it, which is left in a deleted directory (#435)
 - crew-afk: under orca, a worker terminal's look at a worktree orca listed after the naming wait no longer logs a `WARN` when its `worktree set` is refused (the adoption's own `WARN` is the only one), and the `never listed` `WARN` says the next terminal for the worktree looks again instead of that no terminal opens in it (#433)
 - crew-afk: under orca, a new worktree may take up to 60s (was 10s) to be listed before it is given up as unnamed, and one orca lists only after that wait is named at the next worker terminal that opens in it, instead of every later dispatch for it (and for an unnamed `_feature`) running headless for the rest of the sprint (#431)
 - crew-afk: with `--open-pr`, a feature branch with no commits beyond its default-branch merge-base dispatches no PR writer and runs no `open-pr.sh`; the summary's Pull Request section reads `**Not opened:** nothing was merged — <branch> has no commits beyond <base ref>.` instead of `**Failed:** … No commits between …` (#414)

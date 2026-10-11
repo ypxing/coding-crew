@@ -59,7 +59,7 @@ confirmed with a live spike against a running orca runtime (not just the CLI ref
 
 | operation                         | herdr                                                        | orca                                                                        |
 | ---------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| name a new worktree                | — (`_feature` is the workspace; issue worktrees get no call) | `worktree show --worktree path:<dir> --json`, polled until orca lists it (bounded, 60s), then `worktree set --worktree path:<dir> --display-name <title> [--issue <n>] [--parent-worktree path:<_feature>]` |
+| name a new worktree                | — (`_feature` is the workspace; issue worktrees get no call) | `worktree show --worktree path:<dir> --json`, polled until orca lists it (bounded, 60s), then `worktree set --worktree path:<dir> --display-name <title> [--issue <n>] [--parent-worktree path:<_feature>]`; a set refused (`selector_not_found`) because orca does not list `_feature` yet is repeated without `--parent-worktree` (a `WARN`), and the parent is set once orca names `_feature` |
 | ensure workspace + log tab         | `worktree open --path <_feature> --cwd <mainRoot> --label <slug> --no-focus` (the sprint's feature worktree, even from inside another workspace; `workspace create --cwd <mainRoot> …` with none), then `tab create --workspace <id> --cwd <_feature> --label <slug>-log --no-focus` + `pane run <pane> tail -f <log>` | `terminal create --worktree path:<_feature> --title <slug>-log --command "tail -f '<log>'" --json` (one call); with `_feature` not named to orca, no log tab (`WARN`) |
 | close log tab                      | `tab close <tabId>`                                          | `terminal close --terminal <handle> --json`                                |
 | close workspace                    | `workspace close <id>` (no-op while the feature agent lives) | no-op always — no workspace object exists                                  |
@@ -101,7 +101,9 @@ never edits an issue's `Status:` or criteria boxes.
 - **`_feature` is kept.** While the agent still passes the host's liveness check at the end of
   the run (a signal included) the `_feature` worktree stays registered and on disk, and herdr's
   workspace holding the agent is not closed. A run with no host, under `--dry-run`, or whose agent
-  failed to open or is gone by the end removes `_feature` as before; herdr's workspace is closed
+  failed to open or is gone by the end removes `_feature` as before, first naming in a `WARN` each
+  terminal `orca terminal list --json` still shows with a `worktreePath` inside it (its shell is left
+  in a deleted directory; a failed or timed-out list logs nothing and the removal goes ahead); herdr's workspace is closed
   only when this run made it (`worktree open`'s `already_open` is false), never one a developer
   already had open (a signal ending closes it too). An agent this run opened that the host lists but has
   not yet identified counts as live only in its first two minutes: herdr's pane outlives a CLI that exited.
