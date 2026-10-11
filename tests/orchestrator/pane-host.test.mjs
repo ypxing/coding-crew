@@ -1450,3 +1450,106 @@ test("an orca worker terminal waits for its worktree's naming still under way", 
   assert.deepEqual(effects._calls.map((c) => c[2]), ["show", "set", "create"]);
   assert.equal(effects._calls[2][effects._calls[2].indexOf("--worktree") + 1], "path:/wt/alpha");
 });
+
+/** `adoptingOrca` whose `worktree show` fails until `listedAt` ms after it was made. */
+function orcaListingAt(listedAt) {
+  const effects = adoptingOrca(0);
+  const created = Date.now();
+  const spawn = effects.spawnWithTimeout;
+  effects.spawnWithTimeout = async (cmd, args, opts) =>
+    args[1] === "show" && Date.now() - created < listedAt ? (effects._calls.push([cmd, ...args]), { code: 1, stdout: "", stderr: "selector_not_found" }) : spawn(cmd, args, opts);
+  return effects;
+}
+
+/** Steps mocked timers a poll at a time until `promise` settles. */
+async function settleOnMockClock(t, promise) {
+  let settled = false;
+  promise.finally(() => (settled = true));
+  while (!settled) {
+    await new Promise(setImmediate);
+    t.mock.timers.tick(ADOPT_WAIT.pollMs);
+  }
+  return promise;
+}
+
+test("adoptWorktree (orca) names a worktree orca lists only after 10s, and the log tab opens in it", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const effects = orcaListingAt(17300);
+  effects.featureRoot = "/wt/_feature";
+  const named = await settleOnMockClock(t, adoptWorktree(effects, effects.featureRoot, { title: "alpha" }));
+  assert.equal(named, true, effects._logs.join("\n"));
+  assert.ok(effects._calls.some((c) => c[2] === "set"), "worktree set called");
+  await ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile: "/logs/trace.log" });
+  const create = effects._calls.at(-1);
+  assert.deepEqual(create.slice(1, 3), ["terminal", "create"]);
+  assert.equal(create[create.indexOf("--worktree") + 1], "path:/wt/_feature");
+});
+
+/** `adoptingOrca` whose `worktree show` fails until `effects.listed` is set. */
+function orcaListingWhenToggled() {
+  const effects = adoptingOrca(0);
+  effects.listed = false;
+  const spawn = effects.spawnWithTimeout;
+  effects.spawnWithTimeout = async (cmd, args, opts) =>
+    args[1] === "show" && !effects.listed ? (effects._calls.push([cmd, ...args]), { code: 1, stdout: "", stderr: "selector_not_found" }) : spawn(cmd, args, opts);
+  return effects;
+}
+
+test("an orca worker terminal names and opens in a worktree orca listed only after the adopt wait", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const effects = orcaListingWhenToggled();
+  const adopted = await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", issue: 1, parent: "/wt/_feature" }));
+  assert.equal(adopted, false);
+  effects.listed = true;
+  effects._calls.length = 0;
+  const opened = await openWorkerTerminal(effects, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+  assert.equal(opened.handle, "term_x", opened.failure);
+  assert.deepEqual(effects._calls.map((c) => c[2]), ["show", "set", "create"]);
+  assert.deepEqual(effects._calls[1], ["orca", "worktree", "set", "--worktree", "path:/wt/alpha", "--display-name", "01-alpha", "--issue", "1", "--parent-worktree", "path:/wt/_feature"]);
+  assert.equal(effects._calls[2][effects._calls[2].indexOf("--worktree") + 1], "path:/wt/alpha");
+  assert.equal(effects._logs.length, 1, "only the adoption's own WARN");
+});
+
+test("an orca worker terminal for a worktree orca never lists runs headless, with no `worktree set` and only the adoption's WARN", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const effects = orcaListingWhenToggled();
+  await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" }));
+  for (let spawn = 0; spawn < 2; spawn++) {
+    const opened = await openWorkerTerminal(effects, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+    assert.equal(opened.handle, undefined);
+    assert.match(opened.failure, /\/wt\/alpha/);
+  }
+  assert.ok(effects._calls.every((c) => c[2] === "show"), "never `worktree set` or `terminal create`");
+  assert.equal(effects._logs.length, 1, effects._logs.join("\n"));
+  assert.match(effects._logs[0], /^WARN orca never listed worktree \/wt\/alpha/);
+});
+
+test("concurrent orca worker terminals on a worktree listed after the adopt wait issue one `worktree set`", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const effects = orcaListingWhenToggled();
+  await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" }));
+  effects.listed = true;
+  effects._calls.length = 0;
+  const opened = await Promise.all(["coder", "reviewer", "triage"].map((role) => openWorkerTerminal(effects, { title: `alpha ${role}`, command: "true", worktree: "/wt/alpha" })));
+  assert.deepEqual(opened.map((o) => o.handle), ["term_x", "term_x", "term_x"]);
+  assert.equal(effects._calls.filter((c) => c[2] === "set").length, 1, JSON.stringify(effects._calls));
+  assert.equal(effects._calls.filter((c) => c[2] === "show").length, 1, "one shared probe");
+});
+
+test("an orca re-probe whose `worktree show` fails, times out or throws leaves the worktree unnamed and the spawn headless", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  for (const [label, show] of [
+    ["non-zero", async () => ({ code: 1, stdout: "", stderr: "orca boom" })],
+    ["timeout", async () => ({ code: 124, stdout: "", stderr: "" })],
+    ["throw", async () => { throw new Error("spawn orca ENOENT"); }],
+  ]) {
+    const effects = orcaListingWhenToggled();
+    await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" }));
+    const spawn = effects.spawnWithTimeout;
+    effects.spawnWithTimeout = (cmd, args, opts) => (args[1] === "show" ? (effects._calls.push([cmd, ...args]), show()) : spawn(cmd, args, opts));
+    const opened = await openWorkerTerminal(effects, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+    assert.equal(opened.handle, undefined, label);
+    assert.match(opened.failure, /neither \/wt\/alpha/, label);
+    assert.ok(!effects._calls.some((c) => c[2] === "set"), label);
+  }
+});

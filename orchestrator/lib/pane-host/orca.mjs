@@ -14,7 +14,7 @@ const CALL_TIMEOUT_MS = 10000;
 const SEND_TIMEOUT_MS = 20000;
 
 /** How long a new worktree may take to appear in orca after `git worktree add`, and how often to look. */
-export const ADOPT_WAIT = { pollMs: 500, timeoutMs: 10000 };
+export const ADOPT_WAIT = { pollMs: 500, timeoutMs: 60000 };
 
 export function preflight(effects) {
   const which = effects.exec("sh", ["-c", "command -v orca"], { mutating: false });
@@ -51,14 +51,19 @@ export function adoptWorktree(effects, path, meta) {
     return false;
   });
   (effects._paneAdoptions ??= new Map()).set(path, adopting);
+  (effects._paneAdoptMeta ??= new Map()).set(path, meta);
   return adopting;
 }
 
-async function nameWorktree(effects, path, { title, issue, parent }) {
+async function nameWorktree(effects, path, meta) {
   if (!(await listedByOrca(effects, path))) {
     effects.log?.(`WARN orca never listed worktree ${path} within ${ADOPT_WAIT.timeoutMs / 1000}s — not named, so no terminal opens in it`);
     return false;
   }
+  return setWorktree(effects, path, meta);
+}
+
+async function setWorktree(effects, path, { title, issue, parent }) {
   const args = ["worktree", "set", "--worktree", `path:${path}`, "--display-name", title];
   if (issue != null) args.push("--issue", String(issue));
   if (parent) args.push("--parent-worktree", `path:${parent}`);
@@ -87,11 +92,32 @@ async function listedByOrca(effects, path) {
   }
 }
 
-/** Whether `path` is named to orca, once any naming still under way has settled. */
+/**
+ * Whether `path` is named to orca, once any naming still under way has settled. One whose adoption
+ * ended unnamed gets one more look, so a worktree orca lists only after the wait is named at the next
+ * spawn; a miss is not cached, so the spawn after that looks again.
+ */
 async function named(effects, path) {
   if (!path) return false;
-  await effects._paneAdoptions?.get(path);
-  return Boolean(effects._paneAdopted?.has(path));
+  const adoption = effects._paneAdoptions?.get(path);
+  await adoption;
+  if (effects._paneAdopted?.has(path)) return true;
+  return adoption ? nameIfListedNow(effects, path) : false;
+}
+
+/** Concurrent spawns share one probe, so a worktree gets one `worktree set`. Silent: the adoption already warned. */
+function nameIfListedNow(effects, path) {
+  const probes = (effects._paneReprobes ??= new Map());
+  if (!probes.has(path)) {
+    const probe = (async () => {
+      const show = await paneHostExec(effects, ["worktree", "show", "--worktree", `path:${path}`, "--json"], CALL_TIMEOUT_MS);
+      return show.code === 0 && setWorktree(effects, path, effects._paneAdoptMeta.get(path));
+    })()
+      .catch(() => false)
+      .finally(() => probes.delete(path));
+    probes.set(path, probe);
+  }
+  return probes.get(path);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

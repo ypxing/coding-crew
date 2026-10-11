@@ -59,7 +59,7 @@ confirmed with a live spike against a running orca runtime (not just the CLI ref
 
 | operation                         | herdr                                                        | orca                                                                        |
 | ---------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| name a new worktree                | — (`_feature` is the workspace; issue worktrees get no call) | `worktree show --worktree path:<dir> --json`, polled until orca lists it (bounded, 10s), then `worktree set --worktree path:<dir> --display-name <title> [--issue <n>] [--parent-worktree path:<_feature>]` |
+| name a new worktree                | — (`_feature` is the workspace; issue worktrees get no call) | `worktree show --worktree path:<dir> --json`, polled until orca lists it (bounded, 60s), then `worktree set --worktree path:<dir> --display-name <title> [--issue <n>] [--parent-worktree path:<_feature>]` |
 | ensure workspace + log tab         | `worktree open --path <_feature> --cwd <mainRoot> --label <slug> --no-focus` (the sprint's feature worktree, even from inside another workspace; `workspace create --cwd <mainRoot> …` with none), then `tab create --workspace <id> --cwd <_feature> --label <slug>-log --no-focus` + `pane run <pane> tail -f <log>` | `terminal create --worktree path:<_feature> --title <slug>-log --command "tail -f '<log>'" --json` (one call); with `_feature` not named to orca, no log tab (`WARN`) |
 | close log tab                      | `tab close <tabId>`                                          | `terminal close --terminal <handle> --json`                                |
 | close workspace                    | `workspace close <id>` (no-op while the feature agent lives) | no-op always — no workspace object exists                                  |
@@ -145,6 +145,8 @@ With orca or herdr as the pane host, every dispatch (coder, reviewer, triage, fe
 whatever `spawnDispatch` routes) runs in a tab of its own titled `<slug> <agent>`, so every
 worker is a tab you can watch. orca scopes the terminal to the dispatch's own worktree when crew-afk
 named it to orca, else to `_feature` when that is named; with neither, the dispatch runs headless.
+A worktree orca listed only after the 60s naming wait is named at the next dispatch that asks
+for it (one `worktree show`, then `worktree set`); the startup log tab and feature agent are not reopened.
 herdr opens it as a tab of the sprint's `_feature` workspace, started in the dispatch's own cwd
 (an issue's worktree for its coder and reviewer), runs `run.sh` with `pane run`, and closes the tab
 with `tab close` when the dispatch ends (a close that fails or times out is a `WARN herdr tab <tabId>
