@@ -333,6 +333,13 @@ export async function openWatch(effects, { slug, command }) {
   }
 }
 
+/** Terminals orca lists whose worktree is `dir` or inside it; none when the list fails. Blocking. */
+export function terminalsInSync(effects, dir) {
+  const list = effects.exec("orca", ["terminal", "list", "--json"], { mutating: false, timeoutMs: CALL_TIMEOUT_MS });
+  const terminals = list.code === 0 ? paneHostJson(list)?.result?.terminals : null;
+  return Array.isArray(terminals) ? terminals.filter((t) => t?.worktreePath && insideDir(dir, t.worktreePath)) : [];
+}
+
 /** In a plain shell `terminal send` runs the message as a command, so send only to an `agentIdentity`. */
 export async function notify(effects, handle, message) {
   let show;
