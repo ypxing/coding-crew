@@ -20,6 +20,7 @@ import {
   queuePaneNotice,
   queueRunStartNotice,
   settlePaneAgent,
+  warnPaneTerminalsIn,
   AGENT_START_GRACE_MS,
 } from "../../orchestrator/lib/pane-host/index.mjs";
 import { levelFor } from "../../orchestrator/lib/log.mjs";
@@ -1567,4 +1568,140 @@ test("an orca re-probe whose `worktree set` is refused logs nothing: the adoptio
   assert.equal(effects._calls.filter((c) => c[2] === "set").length, 3, "each spawn re-probed");
   assert.equal(effects._logs.length, 1, effects._logs.join("\n"));
   assert.match(effects._logs[0], /^WARN orca worktree set \/wt\/alpha exit=1 orca boom$/);
+});
+
+/**
+ * orca effects that list exactly the paths in `effects.listed`. As probed live, a `worktree set`
+ * whose `--parent-worktree` orca does not list is refused with `selector_not_found`, naming the child.
+ */
+function orcaListing(...paths) {
+  const effects = adoptingOrca(0);
+  effects.listed = new Set(paths);
+  const selected = (args, flag) => args[args.indexOf(flag) + 1]?.replace(/^path:/, "");
+  const notFound = (path) => ({ code: 1, stdout: JSON.stringify({ error: { code: "selector_not_found", message: `No worktree matches path:${path}` } }), stderr: "" });
+  effects.spawnWithTimeout = async (cmd, args) => {
+    effects._calls.push([cmd, ...args]);
+    const worktree = selected(args, "--worktree");
+    if (args[0] === "worktree" && !effects.listed.has(worktree)) return notFound(worktree);
+    if (args[1] === "set" && args.includes("--parent-worktree") && !effects.listed.has(selected(args, "--parent-worktree"))) return notFound(worktree);
+    if (args[0] === "terminal" && args[1] === "create") return json({ result: { terminal: { handle: "term_x" } } });
+    return json({ result: {} });
+  };
+  return effects;
+}
+
+const sets = (effects, path) => effects._calls.filter((c) => c[2] === "set" && c[c.indexOf("--worktree") + 1] === `path:${path}`);
+
+test("adoptWorktree (orca) names a child whose parent orca does not list yet, and sets its parent once orca lists and names that", async () => {
+  const effects = orcaListing("/wt/alpha");
+  const named = await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", issue: 1, parent: "/wt/_feature" }));
+  assert.equal(named, true, effects._logs.join("\n"));
+  effects.listed.add("/wt/_feature");
+  assert.equal(await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/_feature", { title: "alpha" })), true);
+  const last = sets(effects, "/wt/alpha").at(-1);
+  assert.deepEqual(last.slice(1), ["worktree", "set", "--worktree", "path:/wt/alpha", "--display-name", "01-alpha", "--issue", "1", "--parent-worktree", "path:/wt/_feature"]);
+});
+
+test("adoptWorktree (orca) names a child whose parent orca lists but never named in one `worktree set` with that parent", async () => {
+  const effects = orcaListing("/wt/alpha", "/wt/_feature");
+  const named = await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", issue: 1, parent: "/wt/_feature" }));
+  assert.equal(named, true);
+  assert.deepEqual(effects._calls.map((c) => c.slice(1).join(" ")), [
+    "worktree show --worktree path:/wt/alpha --json",
+    "worktree set --worktree path:/wt/alpha --display-name 01-alpha --issue 1 --parent-worktree path:/wt/_feature",
+  ]);
+  assert.deepEqual(effects._logs, []);
+});
+
+test("an orca child whose parent orca never lists is named once without it, warned about once, and never retried", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const effects = orcaListing("/wt/alpha");
+  effects.featureRoot = "/wt/_feature";
+  await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () =>
+    Promise.all([adoptWorktree(effects, "/wt/_feature", { title: "alpha" }), adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", parent: "/wt/_feature" })]),
+  );
+  for (let spawn = 0; spawn < 3; spawn++) {
+    assert.equal((await openWorkerTerminal(effects, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" })).handle, "term_x");
+  }
+  assert.deepEqual(sets(effects, "/wt/alpha").map((c) => c.includes("--parent-worktree")), [true, false], "one refused, one named alone");
+  const warns = effects._logs.filter((l) => l.includes("/wt/alpha"));
+  assert.equal(warns.length, 1, effects._logs.join("\n"));
+  assert.match(warns[0], /^WARN orca named worktree \/wt\/alpha without its parent \/wt\/_feature/);
+});
+
+test("an orca child refused for a parent that orca names before the child is named alone gets that parent at once", async () => {
+  const effects = orcaListing("/wt/alpha");
+  const spawn = effects.spawnWithTimeout;
+  // orca lists and the run names `_feature` between the child's refused set and its set alone.
+  effects.spawnWithTimeout = async (cmd, args, opts) => {
+    if (args[1] === "set" && !args.includes("--parent-worktree") && !effects._paneAdopted?.has("/wt/_feature")) {
+      effects.listed.add("/wt/_feature");
+      effects._paneAdopted = new Set(["/wt/_feature"]);
+    }
+    return spawn(cmd, args, opts);
+  };
+  assert.equal(await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", parent: "/wt/_feature" })), true);
+  assert.deepEqual(sets(effects, "/wt/alpha").map((c) => c.includes("--parent-worktree")), [true, false, true]);
+});
+
+/** orca effects whose blocking `exec` answers `terminal list` with `list()`, recording each call's options. */
+function orcaListingTerminals(list) {
+  const logs = [];
+  const calls = [];
+  return {
+    paneHost: "orca",
+    mainRoot: "/root",
+    _calls: calls,
+    _logs: logs,
+    log: (l) => logs.push(l),
+    exec: (cmd, args, opts) => {
+      calls.push({ argv: [cmd, ...args], opts });
+      return list();
+    },
+  };
+}
+
+test("warnPaneTerminalsIn (orca) names each terminal orca lists in the worktree or below it, with a bounded blocking list", () => {
+  const effects = orcaListingTerminals(() =>
+    json({
+      result: {
+        terminals: [
+          { handle: "term_a", title: "zsh", worktreePath: "/wt/_feature" },
+          { handle: "term_b", title: "claude", worktreePath: "/wt/_feature/sub" },
+          { handle: "term_c", title: "vi", worktreePath: "/wt/_feature-other" },
+          { handle: "term_d", title: "vi", worktreePath: "/root" },
+          { handle: "term_e", title: "x" },
+        ],
+      },
+    }),
+  );
+  warnPaneTerminalsIn(effects, "/wt/_feature");
+  assert.deepEqual(effects._calls.map((c) => c.argv), [["orca", "terminal", "list", "--json"]]);
+  assert.ok(effects._calls[0].opts.timeoutMs > 0, "bounded");
+  assert.deepEqual(effects._logs, [
+    "WARN orca terminal term_a (zsh) is still open in /wt/_feature, which is being removed — its shell is left in a deleted directory",
+    "WARN orca terminal term_b (claude) is still open in /wt/_feature, which is being removed — its shell is left in a deleted directory",
+  ]);
+});
+
+test("warnPaneTerminalsIn (orca) logs nothing and returns when the list fails, times out, throws or is unreadable", () => {
+  for (const [label, list] of [
+    ["none listed", () => json({ result: { terminals: [] } })],
+    ["non-zero", () => ({ code: 1, stdout: "", stderr: "orca boom" })],
+    ["timeout", () => ({ code: 124, stdout: "", stderr: "" })],
+    ["throw", () => { throw new Error("spawn orca ENOENT"); }],
+    ["unparseable", () => ({ code: 0, stdout: "not json", stderr: "" })],
+  ]) {
+    const effects = orcaListingTerminals(list);
+    assert.doesNotThrow(() => warnPaneTerminalsIn(effects, "/wt/_feature"), label);
+    assert.deepEqual(effects._logs, [], label);
+  }
+});
+
+test("warnPaneTerminalsIn asks no host under --dry-run or with no pane host", () => {
+  for (const effects of [{ ...orcaListingTerminals(() => json({ result: { terminals: [{ handle: "t", worktreePath: "/wt/_feature" }] } })), dryRun: true }, { ...orcaListingTerminals(() => ok()), paneHost: null }]) {
+    warnPaneTerminalsIn(effects, "/wt/_feature");
+    assert.deepEqual(effects._calls, []);
+    assert.deepEqual(effects._logs, []);
+  }
 });
