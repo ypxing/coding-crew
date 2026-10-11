@@ -60,7 +60,7 @@ export default {
    * a headless run that waits on one ends its turn and is lost.
    */
   policyArgs({ readOnly, subagents, skills, effort }) {
-    const tools = ["Bash", "Read", ...(readOnly ? [] : ["Edit", "Write"]), ...(subagents ? ["Agent"] : []), ...(skills ? ["Skill"] : []), "ToolSearch"];
+    const tools = ["Bash", "Read", ...(readOnly ? [] : ["Edit", "Write", "NotebookEdit"]), ...(subagents ? ["Agent"] : []), ...(skills ? ["Skill"] : []), "ToolSearch"];
     return [...(effort ? ["--effort", effort] : []), "--tools", ...tools];
   },
 
