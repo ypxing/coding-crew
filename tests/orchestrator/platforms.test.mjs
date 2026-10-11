@@ -90,12 +90,12 @@ test("ROLE_POLICY declares a policy for every role with a protocol", () => {
 // of `--disallowedTools`; its followup goes through interactive(), pinned below.
 const CLAUDE_READ_ONLY = ["--effort", "high", "--tools", "Bash", "Read", "Agent", "ToolSearch"];
 // The feature agent (followup): it edits, takes no sub-agents, and has no effort (its CLI's default applies).
+// claude has no followup row: its interactive() derives its own denylist instead of calling policyArgs.
 const EXPECTED_POLICY_ARGS = {
   claude: {
     coder: ["--effort", "high", "--tools", "Bash", "Read", "Edit", "Write", "NotebookEdit", "Skill", "ToolSearch"],
     reviewer: CLAUDE_READ_ONLY,
     triage: CLAUDE_READ_ONLY,
-    followup: ["--tools", "Bash", "Read", "Edit", "Write", "NotebookEdit", "ToolSearch"],
   },
   copilot: {
     coder: ["--reasoning-effort", "high"],
@@ -119,7 +119,7 @@ const EXPECTED_POLICY_ARGS = {
 
 for (const platform of Object.keys(EXPECTED_POLICY_ARGS)) {
   test(`${platform}: policyArgs(ROLE_POLICY[role]) is each role's flags`, () => {
-    for (const role of Object.keys(ROLE_POLICY)) {
+    for (const role of Object.keys(EXPECTED_POLICY_ARGS[platform])) {
       assert.deepEqual(ADAPTERS[platform].policyArgs(ROLE_POLICY[role]), EXPECTED_POLICY_ARGS[platform][role], `${platform} × ${role}`);
     }
   });
