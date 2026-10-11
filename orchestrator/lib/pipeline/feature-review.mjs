@@ -1,14 +1,7 @@
 /**
- * The feature review: one crew-reviewer in feature mode over the feature diff — the whole feature, or only
- * the commits since the last review — once at the first drain that merged something, and once more as
- * the report-only closing review before the PR (loop.mjs; a tip the last review covered dispatches nothing). A drain whose integration check is red skips it without
- * spending that one review; the next drain whose check passes retries it. It reads the whole PRD, so a requirement no merged code
- * implements is one of its findings. Each branch was
- * reviewed on its own diff, so what exists only across issues — a duplicated helper, inconsistent
- * error handling, a flow unsafe only combined — is seen nowhere else. Its findings join the sprint
- * review report under `feature` and flow through the same promotion (afk.fixFindings) as a branch's
- * until the feature has its one fix issue, across runs (loop.mjs passes `promote`: false once it has); later ones only report.
- * That fix issue holds the 8 most severe promotable findings; the rest stay open, report-only. It is advisory and never fails the sprint.
+ * The feature review: one crew-reviewer over the feature diff, seeing what exists only across issues
+ * and, from the whole PRD, a requirement no merged code implements. Its findings promote like a
+ * branch's until the feature has its one fix issue; later ones only report. Never fails the sprint.
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -24,10 +17,8 @@ import { promotedAs, selectPromotable } from "./findings-triage.mjs";
 import { defaultBranchBase, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
 /**
- * What this run's feature review covers: `{ mode, base, tip, exclude, reason? }`. `whole` starts at
- * the merge-base with the default branch (never this run's `base_sha`); `increment` starts at the
- * `reviewed_tip` an earlier review recorded and leaves out what `exclude` (the default branch) holds,
- * so commits merged in from it are not reviewed; `skip` has no range, `reason` says why.
+ * `whole` starts at the merge-base with the default branch; `increment` at the last review's
+ * `reviewed_tip`, excluding what the default branch holds so commits merged in from it are not reviewed.
  */
 export function featureReviewRange(ctx) {
   const { sprint, effects } = ctx;
@@ -50,11 +41,7 @@ export function featureReviewRange(ctx) {
   return { mode: "whole", base: def.sha, tip, exclude: null };
 }
 
-/**
- * Returns `{ report?, skipped?, failed?, findings?, promoted?, overflow?, promotedRef?, reportOnly? }`: `skipped` is why it
- * was deliberately not run, `failed` why a dispatch that was made left no review (recorded as
- * not-run in the report), `report` the review report file holding its block.
- */
+/** `skipped`: deliberately not run; `failed`: a dispatch left no review (recorded as not-run). */
 export async function runFeatureReview(ctx, { integration = null, wallCap = null, promote = true, drain = 1 } = {}) {
   const { sprint, effects } = ctx;
 
@@ -75,7 +62,6 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
   }
   const { base, exclude } = range;
 
-  // `dispatch/feature-d<drain>/`: the review's prompt, answer and verdict, and its findings triage.
   const dir = join(sprint.dispatchDir, `${FEATURE_REVIEW}-d${drain}`);
   mkdirSync(dir, { recursive: true });
   const reportFile = ctx.roundReviewFile();
@@ -94,7 +80,7 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
   const run = await reviewOnce(ctx, { reviewer, promptFile, outFile, sidecarFile });
 
   if (run.reason) {
-    // A gap on disk, so remind and the summary show it instead of reading as a clean review.
+    // Recorded on disk, so remind and the summary show a gap instead of a clean review.
     ctx.log(`FEATURE-REVIEW: ${FEATURE_REVIEW} not run — ${run.reason}`, "warn");
     effects.bash("promote-findings.sh", [
       "mark-not-run",
@@ -133,7 +119,6 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
   return { report: reportFile, findings, mode: range.mode, ...promotion };
 }
 
-/** Every branch's review blocks in the sprint review reports, each branch's folded into one record (report.mjs's foldReview), in first-seen order. */
 function foldedBlocks(reviewDir) {
   if (!existsSync(reviewDir)) return [];
   const byBranch = new Map();
@@ -147,12 +132,7 @@ function foldedBlocks(reviewDir) {
   return [...byBranch.values()];
 }
 
-/**
- * The notes per-issue reviewers left outside their criteria that this review's range covers: each
- * folded branch block's, when its `reviewed_sha` is reachable from the tip and not from the range's
- * base — the whole feature in `whole` mode, only the branches merged since `reviewed_tip` in
- * `increment`. A block with no recorded sha (an older report) or a sha git does not know is out.
- */
+/** Per-issue reviewers' notes on the branches this range covers; a block with no known `reviewed_sha` is out. */
 export function featureNotes(ctx, range) {
   const { sprint, effects } = ctx;
   const reaches = (sha, to) => effects.gitRead(["merge-base", "--is-ancestor", sha, to]).code === 0;
@@ -162,27 +142,17 @@ export function featureNotes(ctx, range) {
     .flatMap((rec) => rec.notes);
 }
 
-/**
- * The findings the sprint review reports last held under `feature` (earlier runs'), verdicts kept;
- * a not-run stub after them keeps them (report.mjs's foldReview).
- */
+/** A not-run stub after them keeps them (foldReview). */
 function earlierFeatureFindings(reviewDir) {
   return foldedBlocks(reviewDir).find((rec) => rec.branch === FEATURE_REVIEW)?.findings ?? [];
 }
 
-/**
- * The open findings a feature review left report-only (past the promotion cap): the `report_only`
- * ones in the last `feature` block on disk, which no fix issue covers — what promote-findings.sh
- * `open` reads — whichever run or drain wrote them.
- */
+/** Past the promotion cap: no fix issue covers them. */
 export function reportOnlyFeatureFindings(reviewDir) {
   return earlierFeatureFindings(reviewDir).filter((f) => f.report_only === true);
 }
 
-/**
- * Rewrites the report's last `feature` block through `edit(block)` (which returns the new findings);
- * the block is left alone when it cannot be located or parsed.
- */
+/** Left alone when the block cannot be located or parsed. */
 function rewriteFeatureFindings(reportFile, edit) {
   const text = readFileSync(reportFile, "utf8");
   const start = text.lastIndexOf(`## Branch: ${FEATURE_REVIEW} (${FEATURE_REVIEW})`);
@@ -200,9 +170,8 @@ function rewriteFeatureFindings(reportFile, edit) {
 }
 
 /**
- * The rollup keeps only a branch's last block, so the review just written would hide what an earlier
- * drain raised and left unfixed. Rewrites that block with those findings appended, `carried: true`,
- * verdicts kept; what the new review repeats (report.mjs's findingKey) is not duplicated.
+ * The rollup keeps only a branch's last block, so the new review would hide what an earlier drain
+ * raised and left unfixed: append those, `carried: true`, verdicts kept, without duplicates.
  */
 function carryEarlierFindings(reportFile, earlier) {
   if (!earlier.length) return;
@@ -212,16 +181,12 @@ function carryEarlierFindings(reportFile, earlier) {
   });
 }
 
-/**
- * Marks `report_only: true` on these findings in the report's last `feature` block: the fix issue an
- * earlier drain promoted leaves a `- feature: …` bullet that would otherwise read them as covered too.
- */
+/** An earlier drain's fix issue leaves a `- feature: …` bullet that would otherwise read these as covered too. */
 function markReportOnly(reportFile, findings) {
   const marked = new Set(findings.map(findingKey));
   rewriteFeatureFindings(reportFile, (all) => all.map((f) => (marked.has(findingKey(f)) ? { ...f, report_only: true } : f)));
 }
 
-/** The crew-reviewer dispatch: `{ parsed }`, or `{ reason }` when it left no review. */
 async function reviewOnce(ctx, { reviewer, promptFile, outFile, sidecarFile }) {
   const { sprint, effects, options } = ctx;
   const slug = FEATURE_REVIEW;
@@ -262,10 +227,9 @@ async function reviewOnce(ctx, { reviewer, promptFile, outFile, sidecarFile }) {
   return { parsed };
 }
 
-/** The most findings the feature's one fix issue holds (PRD D4). */
 const FIX_ISSUE_FINDINGS = 8;
 
-/** The same fixFindings rule as a branch's findings; the feature has no issue file, so no depth guard. */
+/** The feature has no issue file, so no depth guard. */
 async function promoteFeature(ctx, { findings, reportFile, dir, written, change, promote, range }) {
   const { sprint, effects } = ctx;
   const selected = await selectPromotable(ctx, {
@@ -288,18 +252,15 @@ async function promoteFeature(ctx, { findings, reportFile, dir, written, change,
     ctx.log(`FEATURE-REVIEW: promote: none — ${selected.rule === "actionable" ? "no Actionable finding" : "no findings at or above the threshold"}`);
     return {};
   }
-  // The report holds the unfolded findings; foldDuplicates' copies may differ in severity and location.
-  // Each promotable finding's own entry in the report, at the same position (foldDuplicates keeps the order).
+  // The report holds the unfolded findings, at the same positions (foldDuplicates keeps the order).
   const inReport = selected.rule === "actionable"
     ? selected.findings.filter((f) => f.verdict === "actionable" && (f.duplicate_of === undefined || selected.findings[f.duplicate_of].verdict !== "actionable"))
     : promotable;
-  // Past the promotion cap: what the rule would have promoted is only reported, never made a fix issue.
   if (!promote) {
     ctx.log(`FEATURE-REVIEW: ${promotable.length} finding(s) the rule would promote are report-only at this drain`);
     markReportOnly(reportFile, inReport);
     return { reportOnly: promotable };
   }
-  // The feature's one fix issue holds the most severe; the rest stay open, report-only (PRD D4).
   const ranked = bySeverity(promotable.map((f, i) => ({ ...f, at: i })));
   const fixed = ranked.slice(0, FIX_ISSUE_FINDINGS).map(({ at, ...f }) => f);
   const over = ranked.slice(FIX_ISSUE_FINDINGS);

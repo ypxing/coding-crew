@@ -1,11 +1,7 @@
 /**
- * orca (https://onorca.dev): flat — a worktree is the container, a terminal is the pane,
- * so there is no workspace object to create, reuse or close. The log terminal and the feature
- * agent are scoped to the sprint's `_feature` worktree by `--worktree path:<featureRoot>` (named
- * to orca by adoptWorktree when it was made); a worker terminal to the dispatch's own worktree
- * once adopted, else to the main checkout, which is already an orca-managed worktree.
- * Ambient ids: ORCA_WORKTREE_ID / ORCA_TAB_ID / ORCA_TERMINAL_HANDLE. See
- * docs/orca-support.md.
+ * orca (https://onorca.dev): flat — a worktree is the container and a terminal the pane, so there
+ * is no workspace to create or close. Terminals are scoped by `--worktree path:<dir>`, which orca
+ * refuses for a worktree it does not know. See docs/orca-support.md.
  */
 
 import { failureDetail, paneHostExec, paneHostJson, paneWorkspaceLabel, shellQuote } from "./shared.mjs";
@@ -40,11 +36,7 @@ export function preflight(effects) {
   return [];
 }
 
-/**
- * A worktree the orchestrator created with native git: name it, link its issue and parent, so
- * orca lists it under the sprint. Only an adopted worktree scopes a worker terminal (below).
- * Returns nothing and throws nothing worth stopping for — index.mjs's adoptWorktree logs a throw.
- */
+/** Names a natively created worktree to orca, so it lists under the sprint; only an adopted one scopes a terminal. */
 export function adoptWorktree(effects, path, { title, issue, parent }) {
   const args = ["worktree", "set", "--worktree", `path:${path}`, "--display-name", title];
   if (issue != null) args.push("--issue", String(issue));
@@ -57,21 +49,12 @@ export function adoptWorktree(effects, path, { title, issue, parent }) {
   (effects._paneAdopted ??= new Set()).add(path);
 }
 
-/**
- * The worktree the sprint's own terminals are scoped to: `_feature` once adoptWorktree named it to
- * orca, else the main checkout (no `_feature`, as in a dry run, or a `worktree set` that failed:
- * orca refuses a terminal in a worktree it does not know). The agent's cwd is `_feature` either
- * way: its launch script cds there.
- */
+/** `_feature` once adopted, else the main checkout: orca refuses a terminal in a worktree it does not know. */
 const featureWorktree = (effects) => (effects.featureRoot && effects._paneAdopted?.has(effects.featureRoot) ? effects.featureRoot : effects.mainRoot);
 
-/** The pane that launched this run, for D6's adoption: orca's ambient terminal handle. */
 export const launcherHandle = () => process.env.ORCA_TERMINAL_HANDLE || null;
 
-/**
- * Throws when the log terminal can't be created: with no workspace create to fail loudly,
- * a failure preflight didn't catch would otherwise leave no tab and no reason.
- */
+/** Throws: with no workspace create to fail loudly, a failure would otherwise leave no tab and no reason. */
 export async function ensureWorkspace(effects, { featureSlug, logFile }) {
   await renameTriggeringTerminal(effects, featureSlug);
   if (logFile) {
@@ -93,10 +76,7 @@ async function renameTriggeringTerminal(effects, featureSlug) {
   }
 }
 
-/**
- * `--command` is typed into the terminal's shell, so the path is shell-quoted. Returns a
- * failure reason instead of throwing.
- */
+/** `--command` is typed into the terminal's shell, so the path is shell-quoted. */
 async function openLogTerminal(effects, label, logFile) {
   try {
     const create = await paneHostExec(effects, [
@@ -119,17 +99,13 @@ async function openLogTerminal(effects, label, logFile) {
   }
 }
 
-/** How many close attempts a terminal gets before it is logged as stuck. */
 export const CLOSE_ATTEMPTS = 3;
 
 const track = (effects, handle) => (effects._paneTerminals ??= new Set()).add(handle);
 
 /**
- * `terminal close` can exit 0 and leave the tab listed (or orphaned), so each close is
- * followed by a `terminal show`: a show that fails means the terminal is gone. Still listed
- * → close again, up to CLOSE_ATTEMPTS. A terminal never confirmed gone stays in
- * `effects._paneTerminals` for the end-of-run sweep (closePaneTerminals) and is logged WARN
- * with the handle and orca's last output. Never throws.
+ * `terminal close` can exit 0 and leave the tab listed, so each close is checked with `terminal
+ * show` (a failing show means gone). One never confirmed gone stays tracked for the end-of-run sweep.
  */
 export async function closeTerminal(effects, handle) {
   let last = "";
@@ -153,17 +129,11 @@ export async function closeTerminal(effects, handle) {
 
 export const closeLogTab = closeTerminal;
 
-/** End of sprint: close every terminal this run opened that is still listed. */
 export async function closeTerminals(effects) {
   for (const handle of [...(effects._paneTerminals ?? [])]) await closeTerminal(effects, handle);
 }
 
-/**
- * One terminal per dispatch (worker-terminal.mjs), scoped to the dispatch's own worktree when
- * adoptWorktree named it to orca, else to the main checkout (the one worktree guaranteed to be
- * orca's already, like the log terminal). Returns
- * `{handle}` or `{failure}`, never throws.
- */
+/** Scoped to the dispatch's worktree once adopted, else the main checkout. Never throws. */
 export async function openWorkerTerminal(effects, { title, command, worktree }) {
   try {
     const create = await paneHostExec(effects, [
@@ -188,10 +158,7 @@ export async function openWorkerTerminal(effects, { title, command, worktree }) 
 
 export const closeWorkerTerminal = closeTerminal;
 
-/**
- * Whether `show` (`terminal show`'s result) has an `agentIdentity`: set for an agent pane, absent
- * for a shell, and missing once the terminal is closed or orca is gone.
- */
+/** `agentIdentity` is set for an agent pane, absent for a shell or a closed terminal. */
 const terminalHostsAgent = (show) => show.code === 0 && Boolean(paneHostJson(show)?.result?.terminal?.agentIdentity);
 
 export async function watchAlive(effects, handle) {
@@ -202,7 +169,7 @@ export async function watchAlive(effects, handle) {
   }
 }
 
-/** watchAlive, blocking: for the end of a run, where a signal handler cannot await. */
+/** Blocking: a signal handler cannot await. */
 export function watchAliveSync(effects, handle) {
   try {
     return terminalHostsAgent(effects.exec("orca", ["terminal", "show", "--terminal", handle, "--json"], { mutating: false, timeoutMs: CALL_TIMEOUT_MS }));
@@ -221,11 +188,7 @@ export function watchPresentSync(effects, handle) {
   }
 }
 
-/**
- * The feature agent: a terminal in the `_feature` worktree running `command`. Its handle is
- * deliberately never `track`ed, so no sweep (closeTerminals) can close it. Returns `{handle}` or
- * `{failure}`, never throws.
- */
+/** Its handle is deliberately never `track`ed, so no sweep can close the feature agent. */
 export async function openWatch(effects, { slug, command }) {
   try {
     const create = await paneHostExec(effects, [
@@ -247,11 +210,7 @@ export async function openWatch(effects, { slug, command }) {
   }
 }
 
-/**
- * `terminal send` types into any terminal, and in a plain shell the message plus Enter
- * runs as a command. So send only when `terminal show` reports an `agentIdentity` (set for
- * an agent pane, including mid-tool-call; absent for a shell). No identity, no send.
- */
+/** In a plain shell `terminal send` runs the message as a command, so send only to an `agentIdentity`. */
 export async function notify(effects, handle, message) {
   let show;
   try {

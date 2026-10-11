@@ -1,21 +1,16 @@
-/**
- * The one trace formatter: a normalized event (common.mjs `normalized`) becomes a `[TOOL]`,
- * `[TOOL-ERROR]` or `[AGENT-ERROR]` line, with no platform-specific code. Only the prefix is
- * parsed downstream (log.mjs `levelFor`); the text after it is for people.
- */
+/** The one trace formatter. Only the `[TOOL]`-style prefix is parsed downstream; the rest is for people. */
 import { safePreview } from "./common.mjs";
 import { normalizeLine } from "./index.mjs";
 
 const MARKERS = { tool: "TOOL", "tool-error": "TOOL-ERROR", "agent-error": "AGENT-ERROR" };
 
-/** `$ <command>` for a shell call, a bare path for a file tool, else a capped JSON preview of its args. */
 function subject(evt) {
   if (typeof evt.command === "string") return `$ ${evt.command}`;
   if (typeof evt.path === "string") return evt.path;
   return `args=${safePreview(evt.args)}`;
 }
 
-/** The trace line for a normalized event; null for "text", null, or an unknown kind. No timestamp or slug. */
+/** No timestamp or slug: dispatch() adds them. */
 export function formatTrace(agent, evt) {
   const marker = MARKERS[evt?.kind];
   if (!marker) return null;
@@ -26,10 +21,7 @@ export function formatTrace(agent, evt) {
   return parts.join(" ");
 }
 
-/**
- * One trace line per recognised raw event line, null for anything else including an unparseable
- * line — observability never fails the dispatch. dispatch() adds the timestamp and slug.
- */
+/** Observability never fails the dispatch: anything unrecognised is null. */
 export function formatJsonTraceLine(platform, agent, line) {
   return formatTrace(agent, normalizeLine(platform, line));
 }
