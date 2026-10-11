@@ -508,3 +508,39 @@ test("parseIssue does not read a PR / pull request number in ## Blocked by as a 
   const i = parseIssue({ number: 9, title: "t", body, labels: [], state: "OPEN" });
   assert.deepEqual(i.blockedBy, [3, 12, 2, 5]);
 });
+
+// Transient `gh` failures: retried with backoff; anything else surfaces on the first attempt.
+const EOF_STDERR = 'Post "https://api.github.com/graphql": EOF\n';
+
+/** A fake `exec` answering each call with the next of `results`; the last one repeats. */
+function scriptedExec(results) {
+  const calls = [];
+  const exec = (cmd, args) => {
+    calls.push([cmd, ...args]);
+    return results[Math.min(calls.length, results.length) - 1];
+  };
+  exec.calls = calls;
+  return exec;
+}
+
+test("listFeatureIssues retries a gh issue list that failed with a GraphQL EOF and returns the issues", () => {
+  const dir = repo();
+  const count = join(dir, "calls");
+  const gh = join(dir, "fake-gh.sh");
+  const listed = JSON.stringify([{ number: 1, title: "A", body: "", labels: [{ name: "ready-for-agent" }], state: "OPEN" }]);
+  writeFileSync(
+    gh,
+    `#!/usr/bin/env bash\necho x >> '${count}'\nif [ "$(wc -l < '${count}')" -eq 1 ]; then printf '%s' '${EOF_STDERR.trim()}' >&2; exit 1; fi\nprintf '%s' '${listed}'\n`,
+    { mode: 0o755 },
+  );
+  const prev = process.env.CREW_FAKE_GH;
+  process.env.CREW_FAKE_GH = gh;
+  try {
+    const issues = listFeatureIssues(dir, { featureSlug: "feat" });
+    assert.deepEqual(issues.map((i) => i.number), [1]);
+    assert.equal(readFileSync(count, "utf8").split("\n").filter(Boolean).length, 2);
+  } finally {
+    if (prev === undefined) delete process.env.CREW_FAKE_GH;
+    else process.env.CREW_FAKE_GH = prev;
+  }
+});
