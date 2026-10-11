@@ -18,11 +18,13 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseWorkerReport, parseReviewReport, parseTriageReport } from "../../orchestrator/lib/report.mjs";
+import { renderRolePrompt } from "../../orchestrator/lib/adapters/render.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "../..");
@@ -101,4 +103,44 @@ test("every launcher platform has no agent file, and the triage protocol exists 
     }
   }
   assert.ok(existsSync(join(REPO, "orchestrator/roles/triage.md")));
+});
+
+/** The `# ` heading a role file opens with: which file a rendered protocol included, not what it says. */
+function heading(rel) {
+  return readFileSync(join(REPO, rel), "utf8").match(/^# .+$/m)[0];
+}
+
+test("a per-branch review renders reviewer.md alone; a feature review renders the feature part as well", () => {
+  const branch = renderRolePrompt("reviewer", "claude");
+  const feature = renderRolePrompt("reviewer", "claude", { part: "feature" });
+  const featureHeading = heading("orchestrator/roles/reviewer/feature.md");
+  assert.ok(branch.includes(heading("orchestrator/roles/reviewer.md")));
+  assert.ok(!branch.includes(featureHeading));
+  assert.ok(feature.startsWith(branch.trimEnd()));
+  assert.ok(feature.includes(featureHeading));
+});
+
+test("the per-branch reviewer protocol stays within 2,000 words", () => {
+  const words = renderRolePrompt("reviewer", "claude").split(/\s+/).filter(Boolean).length;
+  assert.ok(words <= 2000, `${words} words`);
+});
+
+/** A roles dir holding reviewer.md and, when given, reviewer/feature.md. */
+function rolesWith(feature) {
+  const dir = mkdtempSync(join(tmpdir(), "crew-roles-"));
+  writeFileSync(join(dir, "reviewer.md"), "# R\n");
+  if (feature !== undefined) {
+    mkdirSync(join(dir, "reviewer"));
+    writeFileSync(join(dir, "reviewer", "feature.md"), feature);
+  }
+  return dir;
+}
+
+test("a missing feature part fails the render, naming its file", () => {
+  assert.throws(() => renderRolePrompt("reviewer", "claude", { rolesDir: rolesWith(), part: "feature" }), /reviewer\/feature\.md/);
+});
+
+test("an unexpanded placeholder in the feature part fails the render", () => {
+  assert.throws(() => renderRolePrompt("reviewer", "claude", { rolesDir: rolesWith("# F\n{{NOT_A_THING}}\n"), part: "feature" }), /\{\{NOT_A_THING\}\}/);
+  assert.throws(() => renderRolePrompt("reviewer", "claude", { rolesDir: rolesWith("# F\n{{FRAGMENT:no-such-frag}}\n"), part: "feature" }), /no-such-frag/);
 });

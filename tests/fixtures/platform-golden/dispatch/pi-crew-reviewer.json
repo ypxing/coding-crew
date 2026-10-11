@@ -13,7 +13,7 @@
     "--tools",
     "read,bash",
     "--append-system-prompt",
-    "<PROTOCOL crew-reviewer sha256:26046644c82afd2a>",
+    "<PROTOCOL crew-reviewer sha256:7ce7f223053a92b0>",
     "Implement the alpha issue.\n"
   ],
   "input": null,

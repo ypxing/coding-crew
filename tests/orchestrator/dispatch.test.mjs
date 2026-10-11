@@ -407,6 +407,34 @@ test("a missing fragment fails the dispatch before spawning, naming the fragment
   assert.match(r.stderr, /no-such-frag/);
 });
 
+test("a missing protocol part fails the dispatch before spawning, naming the part's file", async () => {
+  const { root, promptFile } = fixture();
+  const rolesDir = join(root, "roles");
+  mkdirSync(rolesDir, { recursive: true });
+  writeFileSync(join(rolesDir, "reviewer.md"), "# R\n");
+  const reviewer = spec(root, promptFile, { agent: "crew-reviewer", rolesDir, protocolPart: "feature" });
+  assert.throws(() => buildDispatch("claude", reviewer), /reviewer\/feature\.md/);
+  let spawned = false;
+  const effects = { spawnWithTimeout: async () => ((spawned = true), { code: 0, stdout: "", stderr: "" }) };
+  const r = await dispatch(effects, "claude", reviewer, {});
+  assert.equal(spawned, false);
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /reviewer\/feature\.md/);
+});
+
+test("a protocol part lands in the dispatch's .protocol.md; without it the role file renders alone", () => {
+  const { root, promptFile } = fixture();
+  const rolesDir = join(root, "roles");
+  mkdirSync(join(rolesDir, "reviewer"), { recursive: true });
+  writeFileSync(join(rolesDir, "reviewer.md"), "# Branch part\n");
+  writeFileSync(join(rolesDir, "reviewer", "feature.md"), "# Feature part\n");
+  const outFile = join(root, "dispatch/alpha.report.md");
+  buildDispatch("claude", spec(root, promptFile, { agent: "crew-reviewer", rolesDir }));
+  assert.doesNotMatch(readFileSync(`${outFile}.protocol.md`, "utf8"), /# Feature part/);
+  buildDispatch("claude", spec(root, promptFile, { agent: "crew-reviewer", rolesDir, protocolPart: "feature" }));
+  assert.match(readFileSync(`${outFile}.protocol.md`, "utf8"), /# Branch part[\s\S]*# Feature part/);
+});
+
 test("an argv prompt over 128 KiB fails the dispatch naming the limit, never truncated", async () => {
   const { root } = fixture();
   const big = join(root, "big.md");

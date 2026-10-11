@@ -166,13 +166,13 @@ HOME/.coding-crew/crew-afk/roles/coder.md exec=0
 HOME/.coding-crew/crew-afk/roles/followup.md exec=0
 HOME/.coding-crew/crew-afk/roles/reviewer.md exec=0
 HOME/.coding-crew/crew-afk/roles/reviewer/ /
+HOME/.coding-crew/crew-afk/roles/reviewer/feature.md exec=0
 HOME/.coding-crew/crew-afk/roles/reviewer/references/ /
 HOME/.coding-crew/crew-afk/roles/reviewer/references/backend.md exec=0
 HOME/.coding-crew/crew-afk/roles/reviewer/references/quality.md exec=0
 HOME/.coding-crew/crew-afk/roles/reviewer/references/react.md exec=0
 HOME/.coding-crew/crew-afk/roles/reviewer/references/web-security.md exec=0
 HOME/.coding-crew/crew-afk/roles/reviewer/scripts/ /
-HOME/.coding-crew/crew-afk/roles/reviewer/scripts/dependency-audit.sh exec=1
 HOME/.coding-crew/crew-afk/roles/reviewer/scripts/review-context.sh exec=1
 HOME/.coding-crew/crew-afk/roles/triage.md exec=0
 HOME/.coding-crew/dep-install/ /

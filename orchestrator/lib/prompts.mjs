@@ -193,7 +193,7 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
 }
 
 // One finding in the feature review's schema. `issue` carries the reviewer's design-only marker
-// (reviewer.md's "Design standard (criterion <n>):" prefix), which crew-triage reads.
+// (reviewer/feature.md's "Design standard (criterion <n>):" prefix), which crew-triage reads.
 const FINDING_SHAPE = {
   severity: "CRITICAL | HIGH | MEDIUM | LOW",
   location: "<file:line>",
@@ -262,13 +262,10 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     "Each note is `{\"location\": \"<path>:<line>\", \"concern\": \"<input or state → bad outcome>\"}`.",
     "The always-on classes and the design-standard checks apply only to a `Feature review:` dispatch.",
     "",
-    // Same policy as the worker's resultBlock: the file is the only thing read. No fallback
-    // fenced block in the final message — see report.mjs's parseReviewReport. The "##
-    // Branch:" heading below shapes only the transcript a human reads, never the merge gate.
+    // Same policy as the worker's resultBlock: the file is the only thing read (report.mjs's
+    // parseReviewReport), so the final message carries no copy of the object.
     `Write your structured verdict to ${reportPath} as your last action. This file is the`,
-    "only thing that gates the merge, so get it exactly right — nothing",
-    "you print in your final message is parsed. In your final message, still start with",
-    "`## Branch: <branch-name>`, for the human reading the transcript, then the same object:",
+    "only thing that gates the merge, so get it exactly right:",
     "",
     "```json",
     JSON.stringify(
@@ -285,6 +282,9 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
       2,
     ),
     "```",
+    "",
+    "Start your final message with `## Branch: <branch-name>`, for the human reading the transcript.",
+    "Nothing in it is parsed, so do not repeat the object there.",
   ].join("\n");
 }
 

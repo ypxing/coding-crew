@@ -23,7 +23,8 @@ const [prompts, render] = await Promise.all([
 const inp = JSON.parse(fs.readFileSync(0, "utf8"));
 
 const reviewAssets = path.join(tree, "orchestrator", "roles", "reviewer");
-const role = render.renderRolePrompt("reviewer", "claude", { mainRoot: null });
+// A feature case also gets the feature part (a ref that predates the split ignores `part`).
+const role = render.renderRolePrompt("reviewer", "claude", { mainRoot: null, ...(inp.mode === "branch" ? {} : { part: "feature" }) });
 const out = { role, reviews: [] };
 
 if (inp.mode === "branch") {
