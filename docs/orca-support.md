@@ -147,7 +147,8 @@ worker is a tab you can watch. orca scopes the terminal to the dispatch's own wo
 named it to orca, else to `_feature` when that is named; with neither, the dispatch runs headless.
 herdr opens it as a tab of the sprint's `_feature` workspace, started in the dispatch's own cwd
 (an issue's worktree for its coder and reviewer), runs `run.sh` with `pane run`, and closes the tab
-with `tab close` when the dispatch ends. Without a host, dispatch is the plain headless spawn,
+with `tab close` when the dispatch ends (a close that fails or times out is a `WARN herdr tab <tabId>
+not closed` in `orchestrator.log`). Without a host, dispatch is the plain headless spawn,
 unchanged. (herdr's earlier per-worker panes, `dispatchViaHerdr`, drove an interactive REPL and
 scraped it; this design does neither.)
 
@@ -236,10 +237,12 @@ the host, best-effort (a failure is a `WARN` in `orchestrator.log` — held unti
 `_feature`, named before it — and the run goes on):
 
 - **orca:** once `orca worktree show --worktree path:<worktree>` succeeds (orca finds a new
-  worktree from its own git watch; polled every 0.5s for up to 10s, else not named and a `WARN`),
+  worktree from its own git watch; polled every 0.5s for up to 10s, plus one look after the 10s
+  in case a blocking check held the event loop through them, else not named and a `WARN`),
   `orca worktree set --worktree path:<worktree> --display-name <title> [--issue <n>]
   [--parent-worktree path:<_feature>]` for `_feature`, every issue worktree (`--issue <n>`) and the
-  `_baseline` / `_integration` check worktrees, the last three as children of `_feature`. A worker
+  `_baseline` check worktree when the baseline runs alongside dispatch, the last two as children of
+  `_feature` (a check that blocks the event loop, such as the integration check, names none). A worker
   terminal for a dispatch in a named worktree is created with `--worktree path:<that worktree>`, any
   other with `path:<_feature>`. Whether a named worktree shows in orca's sidebar is unverified:
   `orca worktree list` showed only the repo's main checkout.

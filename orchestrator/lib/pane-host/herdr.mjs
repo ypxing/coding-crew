@@ -212,12 +212,14 @@ export async function openWorkerTerminal(effects, { title, command, worktree }) 
 
 export const closeWorkerTerminal = (effects, tabId) => closeTab(effects, tabId);
 
+/** A tab left open outlives its dispatch on screen: logged, never thrown. */
 async function closeTab(effects, tabId) {
   if (!tabId) return;
   try {
-    await paneHostExec(effects, ["tab", "close", tabId], STATUS_TIMEOUT_MS);
-  } catch {
-    /* cosmetic */
+    const r = await paneHostExec(effects, ["tab", "close", tabId], STATUS_TIMEOUT_MS);
+    if (r.code !== 0) effects.log?.(`WARN herdr tab ${tabId} not closed — exit=${r.code}${r.code === 124 ? " (timed out)" : ""} ${failureDetail(r)}`);
+  } catch (err) {
+    effects.log?.(`WARN herdr tab ${tabId} not closed — threw: ${err.message}`);
   }
 }
 

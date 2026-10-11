@@ -139,8 +139,7 @@ function checkoutWorktree(effects, { mainRoot, branch, base, path, adopt }) {
     }
     // Clean, on another branch or detached: switched in place, never removed — a live feature
     // agent (or the process that launched this run) may have its cwd in it.
-    const crewRoot = join(realPath(worktreeRoot(mainRoot)), "/");
-    const blocker = releaseBranch(effects, listed, branch, { onlyCrewMade: (holder) => join(realPath(holder), "/").startsWith(crewRoot) });
+    const blocker = releaseBranch(effects, listed, branch, { onlyCrewMade: (holder) => crewMade(mainRoot, holder) });
     if (blocker) return { path: null, created: false, stale: true, reason: blocker };
     const exists = effects.gitRead(["rev-parse", "--verify", "--quiet", `${branch}^{commit}`]).code === 0;
     const r = effects.git(exists ? ["checkout", "-q", branch] : ["checkout", "-q", "-b", branch, base], { cwd: path });
@@ -153,8 +152,7 @@ function checkoutWorktree(effects, { mainRoot, branch, base, path, adopt }) {
     effects.git(["worktree", "prune"]);
     listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
   }
-  const crewRoot = join(realPath(worktreeRoot(mainRoot)), "/");
-  const blocker = releaseBranch(effects, listed, branch, { onlyCrewMade: (holder) => join(realPath(holder), "/").startsWith(crewRoot) });
+  const blocker = releaseBranch(effects, listed, branch, { onlyCrewMade: (holder) => crewMade(mainRoot, holder) });
   if (blocker) return { path: null, created: false, stale: true, reason: blocker };
 
   const exists = effects.gitRead(["rev-parse", "--verify", "--quiet", `${branch}^{commit}`]).code === 0;
@@ -165,12 +163,8 @@ function checkoutWorktree(effects, { mainRoot, branch, base, path, adopt }) {
   return { path, created: true, reusedBranch: exists };
 }
 
-/**
- * Free `branch` from any other worktree holding it: a gone one is pruned, a clean one removed (its
- * commits live on the branch). A reason string when the holder must be kept — the main checkout,
- * uncommitted changes, or one `onlyCrewMade` rejects — else null.
- */
-function releaseBranch(effects, listed, branch, { onlyCrewMade } = {}) {
+/** The worktree `git worktree list --porcelain` output `listed` has `branch` checked out in, else null; `main` for the main checkout. */
+export function branchHolder(listed, branch) {
   const entries = listed.split("\n\n").map((block) => {
     const lines = block.split("\n");
     return {
@@ -179,10 +173,25 @@ function releaseBranch(effects, listed, branch, { onlyCrewMade } = {}) {
     };
   });
   const index = entries.findIndex((e) => e.branch === `refs/heads/${branch}`);
-  if (index === -1) return null;
-  const holder = entries[index].path;
+  return index === -1 ? null : { path: entries[index].path, main: index === 0 };
+}
 
-  if (index === 0) return `branch '${branch}' is checked out in the main checkout at '${holder}'; switch it to another branch before retrying`;
+/** Whether `holder` lies under `<worktreeRoot>`, where crew-afk makes its worktrees; compared by real path. */
+export function crewMade(mainRoot, holder) {
+  return join(realPath(holder), "/").startsWith(join(realPath(worktreeRoot(mainRoot)), "/"));
+}
+
+/**
+ * Free `branch` from any other worktree holding it: a gone one is pruned, a clean one removed (its
+ * commits live on the branch). A reason string when the holder must be kept — the main checkout,
+ * uncommitted changes, or one `onlyCrewMade` rejects — else null.
+ */
+function releaseBranch(effects, listed, branch, { onlyCrewMade } = {}) {
+  const held = branchHolder(listed, branch);
+  if (!held) return null;
+  const holder = held.path;
+
+  if (held.main) return `branch '${branch}' is checked out in the main checkout at '${holder}'; switch it to another branch before retrying`;
   if (!existsSync(holder)) {
     effects.git(["worktree", "prune"]);
     return null;

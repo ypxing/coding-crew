@@ -71,15 +71,19 @@ async function nameWorktree(effects, path, { title, issue, parent }) {
   return true;
 }
 
+/**
+ * Gives up only once a look started at or after the deadline fails: a blocking check elsewhere can
+ * hold the event loop past the whole wait, and a look made before it says nothing about after.
+ */
 async function listedByOrca(effects, path) {
   const deadline = Date.now() + ADOPT_WAIT.timeoutMs;
   for (;;) {
-    const left = deadline - Date.now();
-    if (left <= 0) return false;
-    const show = await paneHostExec(effects, ["worktree", "show", "--worktree", `path:${path}`, "--json"], Math.min(CALL_TIMEOUT_MS, left));
+    const started = Date.now();
+    const show = await paneHostExec(effects, ["worktree", "show", "--worktree", `path:${path}`, "--json"], CALL_TIMEOUT_MS);
     if (show.code === 0) return true;
-    if (Date.now() + ADOPT_WAIT.pollMs >= deadline) return false;
-    await sleep(ADOPT_WAIT.pollMs);
+    if (started >= deadline) return false;
+    const left = deadline - Date.now();
+    if (left > 0) await sleep(Math.min(ADOPT_WAIT.pollMs, left));
   }
 }
 
