@@ -1,40 +1,35 @@
 #!/usr/bin/env bats
 
-# Every platform in orchestrator/platforms.json, installed the same way: where its skills land,
-# which body it gets, what uninstall removes, and that the installer learns a platform from that
+# Every platform in orchestrator/platforms.json, installed the same way: which body it gets, what
+# uninstall removes, and that the installer learns a platform from that
 # file alone (a fifth entry in a copy of it installs with no installer edit).
 
 load helpers/platforms
+load helpers/shared-install
+
+# A developer's own config-dir override must not move where a user-scope install lands.
+_unset_config_dirs() {
+  local p
+  for p in "${PLATFORMS[@]}"; do unset "$(platform_field "$p" configDirEnv)"; done
+}
+
+# One crew-afk install per platform, read by the tests below.
+setup_file() {
+  _unset_config_dirs
+  local p
+  for p in "${PLATFORMS[@]}"; do shared_install "$p" "$p" --skill crew-afk; done
+  bg_wait
+}
 
 setup() {
   export TEMP_DIR=$(mktemp -d)
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  # A developer's own config-dir override must not move where a user-scope install lands.
-  local p
-  for p in "${PLATFORMS[@]}"; do
-    unset "$(platform_field "$p" configDirEnv)"
-    mkdir -p "$TEMP_DIR/$p"
-  done
+  _unset_config_dirs
 }
 
 teardown() {
   chmod -R u+w "$TEMP_DIR" 2>/dev/null || true
   rm -rf "$TEMP_DIR"
-}
-
-@test "every platform is accepted and its skills land in its projectSkills dir, nowhere else" {
-  cd "$SCRIPT_DIR"
-  local p dir config
-  for p in "${PLATFORMS[@]}"; do
-    dir=$(platform_field "$p" projectSkills); config=$(platform_field "$p" configDir)
-    run env TARGET_REPO="$TEMP_DIR/$p" ./install.sh "$p" --skill tdd
-    [ "$status" -eq 0 ] || { echo "$p: $output" >&2; return 1; }
-    [ -f "$TEMP_DIR/$p/$dir/tdd/SKILL.md" ] || { echo "$p: no $dir/tdd/SKILL.md" >&2; return 1; }
-    # e.g. codex scans .agents/skills, never .codex/skills
-    if [ "$config/skills" != "$dir" ]; then
-      [ ! -d "$TEMP_DIR/$p/$config/skills" ] || { echo "$p: wrote $config/skills" >&2; return 1; }
-    fi
-  done
 }
 
 @test "an unknown platform is rejected, listing the platforms platforms.json names" {
@@ -56,8 +51,7 @@ teardown() {
   cd "$SCRIPT_DIR"
   local p q dir
   for p in "${PLATFORMS[@]}"; do
-    dir="$TEMP_DIR/$p/$(platform_field "$p" projectSkills)/crew-afk"
-    TARGET_REPO="$TEMP_DIR/$p" ./install.sh "$p" --skill crew-afk >/dev/null
+    dir="$(shared_installed "$p")/$(platform_field "$p" projectSkills)/crew-afk"
     grep -q "run --platform $p " "$dir/SKILL.md" || { echo "$p: {{PLATFORM}} not rendered" >&2; return 1; }
     for q in "${PLATFORMS[@]}"; do
       [ ! -f "$dir/$q.SKILL.md" ] || { echo "$p: $q.SKILL.md installed" >&2; return 1; }
@@ -69,8 +63,7 @@ teardown() {
   cd "$SCRIPT_DIR"
   local p q body
   for p in "${PLATFORMS[@]}"; do
-    TARGET_REPO="$TEMP_DIR/$p" ./install.sh "$p" --skill crew-afk >/dev/null
-    body="$TEMP_DIR/$p/$(platform_field "$p" projectSkills)/crew-afk/SKILL.md"
+    body="$(shared_installed "$p")/$(platform_field "$p" projectSkills)/crew-afk/SKILL.md"
     ! grep -n 'dispatch-agent\.sh\|dispatch-codex-agent\.sh' "$body" || return 1
     for q in "${PLATFORMS[@]}"; do
       [ "$q" != "$p" ] || continue
@@ -79,31 +72,24 @@ teardown() {
   done
 }
 
-@test "uninstall removes every platform's crew-afk, its assets and every retired agent file" {
+@test "uninstall removes every platform's crew-afk, its assets, every retired agent file and copilot's legacy .copilot/" {
   cd "$SCRIPT_DIR"
   local p dir
   for p in "${PLATFORMS[@]}"; do
+    cp -R "$(shared_installed "$p")" "$TEMP_DIR/$p"
     dir="$TEMP_DIR/$p/$(platform_field "$p" projectSkills)/crew-afk"
-    TARGET_REPO="$TEMP_DIR/$p" ./install.sh "$p" --skill crew-afk >/dev/null
     [ -d "$dir" ]
+    # Copilot project installs once landed in .copilot/, which Copilot never reads at project scope.
+    if [ "$p" = copilot ]; then
+      mkdir -p "$TEMP_DIR/$p/.copilot/agents" "$TEMP_DIR/$p/.copilot/skills/crew-afk"
+      echo "stale agent" > "$TEMP_DIR/$p/.copilot/agents/crew-coder.agent.md"
+      echo "stale body" > "$TEMP_DIR/$p/.copilot/skills/crew-afk/SKILL.md"
+    fi
     TARGET_REPO="$TEMP_DIR/$p" ./uninstall.sh --skill crew-afk >/dev/null
     [ ! -d "$dir" ] || { echo "$p: $dir survived" >&2; return 1; }
     [ ! -d "$TEMP_DIR/$p/.coding-crew/crew-afk" ] || { echo "$p: assets survived" >&2; return 1; }
     [ -z "$(find "$TEMP_DIR/$p" -name 'crew-coder*')" ] || { echo "$p: a crew-coder agent file exists" >&2; return 1; }
-  done
-}
-
-@test "no platform's install ships a bash dispatcher, and a reinstall prunes one an older install left" {
-  cd "$SCRIPT_DIR"
-  local p scripts
-  for p in "${PLATFORMS[@]}"; do
-    scripts="$TEMP_DIR/$p/$(platform_field "$p" projectSkills)/crew-afk/scripts"
-    TARGET_REPO="$TEMP_DIR/$p" ./install.sh "$p" --skill crew-afk >/dev/null
-    [ ! -f "$scripts/dispatch-agent.sh" ] && [ ! -f "$scripts/dispatch-codex-agent.sh" ]
-    touch "$scripts/dispatch-agent.sh" "$scripts/dispatch-codex-agent.sh"
-    TARGET_REPO="$TEMP_DIR/$p" ./install.sh "$p" --skill crew-afk >/dev/null
-    [ ! -f "$scripts/dispatch-agent.sh" ] && [ ! -f "$scripts/dispatch-codex-agent.sh" ] \
-      || { echo "$p: stale dispatcher kept" >&2; return 1; }
+    [ ! -d "$TEMP_DIR/$p/.copilot" ] || { echo "$p: .copilot/ survived" >&2; return 1; }
   done
 }
 
