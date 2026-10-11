@@ -1382,6 +1382,25 @@ test("adoptWorktree (orca) gives up within its bound when orca never lists the w
   assert.match(effects._logs[0], /^WARN orca .*\/wt\/alpha/);
 });
 
+test("adoptWorktree (orca) still names a worktree orca listed while the event loop was blocked past the whole wait", async () => {
+  const effects = adoptingOrca(0);
+  const created = Date.now();
+  const spawn = effects.spawnWithTimeout;
+  // orca finds the worktree 50ms after it is created, which falls inside the synchronous stretch below.
+  effects.spawnWithTimeout = async (cmd, args, opts) =>
+    args[1] === "show" && Date.now() - created < 50 ? (effects._calls.push([cmd, ...args]), { code: 1, stdout: "", stderr: "selector_not_found" }) : spawn(cmd, args, opts);
+  const named = await withAdoptWait({ pollMs: 20, timeoutMs: 200 }, () => {
+    const adopting = adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" });
+    while (Date.now() - created < 2 * ADOPT_WAIT.timeoutMs) {
+      /* a blocking check holding the event loop */
+    }
+    return adopting;
+  });
+  assert.equal(named, true, effects._logs.join("\n"));
+  assert.ok(effects._calls.some((c) => c[2] === "set"), "worktree set called");
+  assert.deepEqual(effects._logs, []);
+});
+
 test("adoptWorktree (orca) logs a failed `worktree set` as a WARN naming the worktree, which stays unnamed", async () => {
   const effects = adoptingOrca(0);
   const spawn = effects.spawnWithTimeout;
