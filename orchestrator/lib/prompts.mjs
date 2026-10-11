@@ -1,9 +1,6 @@
 /**
- * prompts.mjs — the only prose the orchestrator still writes, and it writes it the
- * same way every time.
- *
- * Acceptance criteria are passed through verbatim and explicitly framed as data, not
- * instructions, so a criterion that reads like a command cannot redirect a worker.
+ * prompts.mjs — the prose the orchestrator writes. Acceptance criteria pass through verbatim, framed
+ * as data, so a criterion that reads like a command cannot redirect a worker.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -12,22 +9,8 @@ import { renderReviewContext } from "./review-context.mjs";
 import { SEVERITY_RANK } from "./report.mjs";
 
 /**
- * `install_mode`/`docker_service` are ensure-deps.sh's own verdict, already cached at
- * `.coding-crew/dev-commands.json` before any worktree or worker exists (Sprint.installDeps
- * runs at MAIN_ROOT, ahead of the per-issue dispatch loop). Handing the mode over as a fact —
- * the same way MAIN_ROOT itself is handed over rather than derived — states up front what
- * solve-issue's resolve-mode.sh will also read from that cache, so a worker has no reason to
- * probe node_modules/PATH itself (one was observed doing so when Step 2 was still prose). No
- * cache yet (a direct, non-orchestrated /solve-issue run) means no line, and resolve-mode.sh's
- * own detection is the source of truth.
- *
- * `deps` is this issue's own ensure-deps.sh outcome (`present`, `installed <cmd>`, and in docker
- * mode `docker-present` — the volumes this worktree's lockfiles name already held the install —
- * or `docker-installed <cmd>`), handed over the same way: that install already ran for this
- * worktree, so solve-issue's
- * resolve-mode.sh turns it into ACTION=none instead of a second, fingerprint-skipped
- * dep-install run per issue. Absent when the step did not run (--no-deps), so a worker is
- * never told deps are in place when nothing looked.
+ * ensure-deps.sh's verdicts as facts, so the worker neither probes nor installs again. `deps` is
+ * absent under --no-deps: a worker is never told deps are in place when nothing looked.
  */
 function installModeLines(mainRoot, deps) {
   const lines = [];
@@ -48,11 +31,7 @@ function installModeLines(mainRoot, deps) {
   return lines;
 }
 
-/**
- * Where the project's own crew config lives. A worktree does not contain it (`.coding-crew/`
- * is untracked or gitignored in most repos), and without this line coders were seen spending
- * several calls — `git check-ignore`, filesystem searches — finding dev-commands.json.
- */
+/** A worktree lacks `.coding-crew/` (untracked in most repos), so the coder is told where it is. */
 function projectConfigLine(mainRoot) {
   return `Project config: ${join(mainRoot, ".coding-crew")} (dev-commands.json, docs/test-conventions.md) — not in the worktree`;
 }
@@ -76,11 +55,7 @@ export function workerPrompt({ mainRoot, deps, worktree, issuePath, slug, criter
   return `${lines.join("\n")}\n`;
 }
 
-/**
- * The structured-result instruction, shared by every prompt that ends in a `crew-coder` dispatch
- * (a first attempt, and a fix retry alike). The schema itself has one owner, the coder protocol's
- * **Report** section (orchestrator/roles/coder.md): a second copy here is one that drifts.
- */
+/** The schema has one owner, coder.md's **Report** section: a copy here would drift. */
 function resultBlock(worktree, reportPath) {
   return [
     `Write your structured result to ${reportPath} as your last action, in the JSON your protocol's`,
@@ -89,14 +64,8 @@ function resultBlock(worktree, reportPath) {
 }
 
 /**
- * A retry after a targeted, independent judgment already said the branch's code stands
- * and only one specific thing needs fixing — either verify-worktree.sh failed and triage
- * (see triagePrompt below) judged it fixable, or crew-reviewer returned `AC: unmet`
- * on a specific criterion. Deliberately not workerPrompt + resumeNote: that framing
- * re-reads the whole issue as if starting over, which is what turned a wrong dependency
- * version or one failing assertion into a full ~45-minute re-implementation. Here the code
- * is already accepted — the only job is to make the stated problem go away with the
- * smallest change that does it.
+ * A retry after a fixable verify failure or an unmet criterion: the code is accepted, so it asks for
+ * the smallest change rather than a re-read that turns one assertion into a re-implementation.
  */
 export function fixPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, checkOutput, reportPath, kind = "verify" }) {
   const isReview = kind === "review";
@@ -137,7 +106,6 @@ export function fixPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, c
   return `${lines.join("\n")}\n`;
 }
 
-/** A merge of the feature branch into this one, left conflicted in the worktree. */
 function conflictLines(featureBranch, conflictFiles) {
   return [
     `A merge of \`${featureBranch}\` into this branch is in progress in the working directory, with`,
@@ -170,7 +138,6 @@ export function conflictPrompt({ mainRoot, deps, worktree, issuePath, slug, bran
   return `${lines.join("\n")}\n`;
 }
 
-/** The three resume notes, verbatim from the prose they replace. */
 export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   const parts = [];
   if (hasProgress) {
@@ -192,8 +159,7 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-// One finding in the feature review's schema. `issue` carries the reviewer's design-only marker
-// (reviewer/feature.md's "Design standard (criterion <n>):" prefix), which crew-triage reads.
+// `issue` carries the reviewer's "Design standard (criterion <n>):" prefix, which crew-triage reads.
 const FINDING_SHAPE = {
   severity: "CRITICAL | HIGH | MEDIUM | LOW",
   location: "<file:line>",
@@ -211,15 +177,13 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     .join(", ");
   return [
     "Review this branch before it merges.",
-    // crew-reviewer's protocol reads its scripts and references from here, and only here:
-    // the orchestrator resolved the install once (install-dir.mjs), so the reviewer never searches.
+    // The one place the reviewer's protocol reads its scripts and references from, so it never searches.
     ...(reviewAssets ? [`Review assets: ${reviewAssets}`] : []),
     ...renderReviewContext(reviewContext),
     `Branch: ${branch}`,
     `Slug: ${slug}`,
     `Issue file: ${issuePath}`,
-    // Where the PRD is, stated rather than left to the reviewer: the feature branch's name
-    // (afk.branchPrefix, --jira) no longer says which .scratch/<slug>/ it belongs to.
+    // Stated: the feature branch's name (afk.branchPrefix, --jira) does not say which .scratch/<slug>/ it is.
     ...(prdPath ? [`PRD: ${prdPath}`] : []),
     "Acceptance criteria:",
     "---",
@@ -228,16 +192,13 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     "",
     `Gather the diff: git diff $(git merge-base ${featureBranch} ${branch})..${branch}`,
     ...(testOnly ? ["Diff scope: test-only — every changed file is a test, spec or fixture file."] : []),
-    // A coder that found every criterion already met, and already tested, commits nothing
-    // (solve-issue §3). An empty diff is then the claim, not a skipped review.
+    // A coder that found every criterion already met commits nothing: the empty diff is its claim.
     ...(emptyDiff
       ? ["Diff scope: empty — the coder reports every criterion already met by existing code. Judge each against the files at the branch tip instead: the same file-and-line evidence, from the tree rather than the diff."]
       : []),
     "",
-    // Execution evidence, stated once. You cannot run commands, and a criterion that
-    // ends "…and the tests pass" is unprovable from a diff — so without this every such
-    // criterion reads `unmet` and nothing ever merges. The pipeline ran these checks in
-    // this branch's worktree, after the coder finished and before this review.
+    // The reviewer cannot run commands, so a criterion ending "…and the tests pass" is unprovable
+    // from a diff: without this evidence every such criterion reads `unmet`.
     `Checks already run by the pipeline in this branch's worktree: ${stated}.`,
     ...(verifyFile ? [`The gate's own record of that run: ${verifyFile}`] : []),
     ...(notConfigured?.length
@@ -256,14 +217,11 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     "run lacked a precondition (a service unreachable, a credential absent, so its tests",
     "skipped): that stops the issue for a human, since no code change can help. Else `code`.",
     "",
-    // Findings come from the feature review alone (PRD D1): this gate is criteria.
     "A per-branch review writes `findings: []`: it is the criteria gate, and nothing more. A defect you",
     "notice outside the criteria goes in `notes`, never in prose: the feature review reads it from there.",
     "Each note is `{\"location\": \"<path>:<line>\", \"concern\": \"<input or state → bad outcome>\"}`.",
     "The always-on classes and the design-standard checks apply only to a `Feature review:` dispatch.",
     "",
-    // Same policy as the worker's resultBlock: the file is the only thing read (report.mjs's
-    // parseReviewReport), so the final message carries no copy of the object.
     `Write your structured verdict to ${reportPath} as your last action. This file is the`,
     "only thing that gates the merge, so get it exactly right:",
     "",
@@ -295,11 +253,8 @@ const oneLine = (text) => String(text).replace(/\s+/g, " ").trim();
 export const FEATURE_REVIEW = "feature";
 
 /**
- * Feature mode (crew-reviewer's protocol § Feature Mode), the run's first review and its closing
- * review: the whole feature diff, or the commits since the last review (`base` is its reviewed tip),
- * and the PRD (`prdPath`, null when there is none) to read whole.
- * Same report object as a branch review, but no issue and no criteria — findings only.
- * `notes` are the per-issue reviewers' concerns for this range (`{location, concern}`), listed as data.
+ * Feature mode: the whole feature diff, or the commits since `base` (the last reviewed tip), with the
+ * PRD read whole. Findings only; `notes` are per-issue reviewers' concerns, listed as data.
  */
 export function featureReviewPrompt({ featureBranch, base, exclude = null, reportPath, reviewAssets, reviewContext, prdPath = null, notes = [] }) {
   return [
@@ -353,12 +308,7 @@ export function featureReviewPrompt({ featureBranch, base, exclude = null, repor
   ].join("\n");
 }
 
-/**
- * The PR writer (role prWriter, a plain dispatch): write-pr's own SKILL.md is the procedure, so a
- * human's /write-pr and the sprint's PR follow one text. Its final message is the `# <title>` line
- * and the body; the caller keeps the body from the first `## Why` line and the title from the
- * `# ` line before it, so a preamble costs nothing.
- */
+/** write-pr's SKILL.md is the procedure, so a human's /write-pr and the sprint's PR follow one text. */
 export function prBodyPrompt({ skillFile, featureBranch, base, prd, checks }) {
   return [
     `Write the pull request body for ${featureBranch}. Read ${skillFile} first and follow it.`,
@@ -376,8 +326,6 @@ export function prBodyPrompt({ skillFile, featureBranch, base, prd, checks }) {
 /** The verdict file every triage prompt ends on — the file is the only thing read (parseTriageReport). */
 function triageVerdictLines(reportPath) {
   return [
-    // Same policy as the worker's resultBlock and the reviewer's verdict block: the file is
-    // the only thing read — see report.mjs's parseTriageReport.
     `Write your structured verdict to ${reportPath} as your last action. This file is the`,
     "only thing the orchestrator reads — nothing you print in your final message is parsed:",
     "",
@@ -395,12 +343,7 @@ function triageVerdictLines(reportPath) {
   ];
 }
 
-/**
- * The same triage question asked of the merged feature branch, when the drain-time integration
- * check is red: every branch passed its own verify, so the failure is in how they combine.
- * Dispatched to `crew-triage`, never a coder. No issue and no worker diff exist here: the
- * feature branch's own history is the evidence.
- */
+/** The triage question for a red integration check: every branch passed alone, so the cause is how they combine. */
 export function integrationTriagePrompt({ featureBranch, commit, checkOutput, reportPath }) {
   return [
     "The project's checks failed on a merged feature branch, though every branch merged into it",
@@ -430,11 +373,7 @@ export function integrationTriagePrompt({ featureBranch, commit, checkOutput, re
   ].join("\n");
 }
 
-/**
- * The integration fix issue's acceptance criteria: the one criterion that matters, then what
- * triage and the failing checks said, so the coder starts from the failure instead of finding it.
- * `tails` is `[{check, tail}]`; only the first line is a `- [ ]` criterion.
- */
+/** One `- [ ]` criterion, then triage's verdict and each failing tail, so the coder starts from the failure. */
 export function integrationFixCriteria({ featureBranch, category, detail, tails }) {
   const lines = [
     "<!-- queued from a red integration check on the merged feature branch -->",
@@ -449,11 +388,7 @@ export function integrationFixCriteria({ featureBranch, category, detail, tails 
   return `${lines.join("\n")}\n`;
 }
 
-/**
- * Dispatched only after verify-worktree.sh already failed, and only to `crew-triage` —
- * never to the coder that wrote the branch, for the same reason review isn't a self-grade.
- * Answers exactly one question: is this fixable by more code on this branch, or not.
- */
+/** Only after verify failed, and only to `crew-triage`: never the coder that wrote the branch. */
 export function triagePrompt({ branch, slug, issuePath, featureBranch, checkOutput, reportPath, coderEvidence }) {
   return [
     "A branch failed verification before it could be reviewed or merged. Decide whether the",
@@ -485,12 +420,7 @@ export function triagePrompt({ branch, slug, issuePath, featureBranch, checkOutp
   ].join("\n");
 }
 
-/**
- * The coder's own account of why it stopped (report.mjs's `cause` + `evidence`), when it gave
- * one. Framed as a claim: the coder has every incentive to call its own failure environmental,
- * and one run's real fix was a wrong host name (`localhost:4566` for `localstack:4566`) its coder
- * had put down to the environment.
- */
+/** The coder's account of why it stopped, framed as a claim: it has every incentive to blame the environment. */
 function coderEvidenceLines(e) {
   if (!e || (!e.command && !e.output && !e.cause)) return [];
   const lines = [
@@ -507,15 +437,9 @@ function coderEvidenceLines(e) {
 }
 
 /**
- * crew-triage's findings mode: judge each review finding Actionable / Debatable, by the shared
- * rubric (inlined in the agent from skills/_shared/fragments/findings-rubric.md). Never
- * Dismiss: a doubted finding goes to the coder's premise check.
- * Dispatched apart from the reviewer that raised them — a review never grades its own findings.
- * `scope` says where the findings came from; `findings` are report.mjs's normalised findings.
- */
-/**
- * `change` is the command that shows the reviewed change: a branch is triaged after it merged, so
- * a diff against the feature branch would show the other branches' work, inverted, and not its own.
+ * crew-triage's findings mode: Actionable / Debatable per finding, never Dismiss (a doubted finding
+ * goes to the coder's premise check). `change` shows the reviewed change: a branch is triaged after
+ * it merged, so a diff against the feature branch would show the other branches' work, inverted.
  */
 export function findingsTriagePrompt({ scope, ref, change, findings, reportPath }) {
   return [

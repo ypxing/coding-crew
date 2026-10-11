@@ -1,64 +1,7 @@
 /**
- * crew-config.mjs — .coding-crew/config.json, and which runtime and model each crew-afk role
- * runs on.
- *
- * config.json holds user-authored coding-crew settings, one top-level section per consumer.
- * Caches (dev-commands.json) and installer state (manifest.json) are separate files. It is read
- * at two levels, the same two a coding-crew install has: ~/.coding-crew/config.json (this
- * machine: e.g. a provider-specific model ID, or which runtime you have) under the repo's own
- * (team policy, committed). They merge per setting, the repo's winning; CLI flags win over both.
- * Sections: `afk`, below, and `tracker` (`{"kind": "local"|"github"}`), which only the repo's
- * file may hold — which tracker a repo uses is the team's — and which tracker/tracker-config.mjs
- * reads and validates; here it is only allowed through. `afk`:
- *
- *   { "afk": {
- *       "runtime": { "reviewer": "codex" },
- *       "models":  { "claude": { "coder": "sonnet" }, "codex": { "reviewer": "gpt-5.1-codex" } },
- *       "fixFindings": "actionable",
- *       "timeouts": { "coder": 60 }, "maxParallel": 3, "maxWallMinutes": 120, "installDeps": true, "squashCommits": false,
- *       "openPr": false,
- *       "baselineCheck": true, "integrationCheck": true, "resumeCoderSession": false,
- *       "branchPrefix": "feature/",
- *       "limits": { "coder": { "usd": 5 } } } }
- *
- * Every setting but runtime/models/limits has a flag that wins for one run (resolveSettings).
- *
- * The PRD audit's settings (afk.PRDAudit, and the prdAuditor role under runtime/models/timeouts/
- * limits) are accepted and ignored, one notice each (dropRetired): the feature review checks PRD
- * coverage now, and a config written for the audit keeps loading.
- *
- * `limits.<role>.usd` caps one dispatch of that role in dollars — the runtime adapter's `budget`
- * flag (claude's --max-budget-usd), a backstop, off by default. A role on a runtime whose adapter
- * has no `budget` ignores it, and main.mjs says so once per run. A dispatch that hits it blocks its issue as `limit-exceeded`.
- *
- * `paneHost` ("orca" | "herdr" | "auto" | "none") describes this machine, not the team, so only
- * ~/.coding-crew/config.json may set it; the repo's file is rejected for it. It also has an env
- * layer between flag and file (resolvePaneHost).
- *
- * `worktreeRoot` (absolute, or relative to the repo root) is where per-issue worktrees are
- * created; unset keeps `.scratch/worktrees`. Either file may set it, and CREW_WORKTREE_ROOT
- * wins over both (resolveWorktreeRoot). No flag: it is a standing choice, not a per-run one.
- *
- * `branchPrefix` (any string, "" allowed; unset is session-init.sh's `feature/`) starts the name
- * of a feature branch a run creates: `<branchPrefix>[<--jira KEY>-]<feature-slug>`. Either file
- * may set it; no flag, for the same reason as worktreeRoot. session-init.sh validates the
- * finished name (`git check-ref-format --branch`).
- *
- * A model string belongs to one runtime, so it's filed under it and never passed to another
- * runtime's CLI. A role that moves to another runtime therefore does not inherit the coder's
- * model: with nothing named under its own runtime, it gets that runtime's default, or no
- * --model at all, so the CLI picks one.
- *
- * Aliases are passed through, not resolved: a Claude alias maps through the child CLI's own
- * ANTHROPIC_DEFAULT_*_MODEL env or settings, which every dispatch inherits. So a committed
- * config.json names aliases, and per-machine provider IDs stay in env.
- *
- * Deliberately no capability ranking across arbitrary model strings. The only order used is an
- * adapter's own `modelTiers` (Claude Code's aliases), for an advisory warning.
- *
- * .coding-crew/afk-models.json, the claude-only file this replaces, is moved into
- * `afk.models.claude` the first time `run` sees it. Its values only ever applied on claude, so
- * that is the same behaviour on every platform.
+ * crew-config.mjs — .coding-crew/config.json and each crew-afk role's runtime and model. The user's
+ * file merges under the repo's per setting, a flag over both (keys: docs/guide.md). A model string
+ * belongs to one runtime; aliases pass through unresolved, so provider IDs stay in env.
  */
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -73,11 +16,9 @@ export const LEGACY_REL = ".coding-crew/afk-models.json";
 
 export const ROLES = ["coder", "reviewer", "triage", "commandFinder", "prWriter"];
 const SECTIONS = ["afk", "tracker"];
-// Sections only the repo's config.json may hold (USER_ONLY's reverse).
 const REPO_ONLY_SECTIONS = ["tracker"];
 
-// What review findings are fixed automatically — `actionable`: every finding crew-triage judges
-// Actionable, whatever its severity; the others: the lowest severity.
+// `actionable`: every finding triage judges Actionable; the others: that severity and above.
 export const FIX_FINDINGS = ["actionable", "critical", "high", "medium", "none"];
 /** Minutes. Every LLM role, plus the merge/close step, which blocks the event loop. */
 export const DEFAULT_TIMEOUTS = { coder: 60, reviewer: 20, triage: 20, commandFinder: 5, prWriter: 10, merge: 5 };
@@ -87,7 +28,6 @@ const timeoutProblem = (min) =>
   typeof min === "number" && min > 0 && min <= MAX_TIMEOUT_MINUTES
     ? null
     : `must be a positive number of minutes, at most ${MAX_TIMEOUT_MINUTES}`;
-// The roles with a ROLE_POLICY (adapters/render.mjs), so the ones afk.effort may set.
 const effortRoles = () => Object.keys(ROLE_POLICY);
 export const PANE_HOSTS = ["orca", "herdr", "auto", "none"];
 export const DEFAULT_SETTINGS = {
@@ -116,20 +56,17 @@ const SCALARS = {
   worktreeRoot: (v) => (typeof v === "string" && v.trim() ? null : "must be a non-empty path"),
   branchPrefix: (v) => (typeof v === "string" ? null : `must be a string ("" for none), got ${JSON.stringify(v)}`),
 };
-// Per-machine settings: accepted from ~/.coding-crew/config.json only.
 const USER_ONLY = ["paneHost"];
 const AFK_KEYS = ["runtime", "models", "timeouts", "effort", "limits", ...Object.keys(SCALARS)];
 
-// afk-models.json's role names, before the plain-dispatch roles were renamed.
+// afk-models.json role names that differ from ROLES.
 const LEGACY_ROLE_NAMES = { commandsDiscovery: "commandFinder" };
 
-// The PRD audit's role, gone with it; its settings still load (dropRetired).
+// The retired PRD audit's role: its settings still load (dropRetired).
 const RETIRED_ROLE = "prdAuditor";
 export const retiredNotice = (name) => `\`${name}\` no longer does anything: the feature review checks PRD coverage.`;
 
-// A runtime's model when nothing names one is its adapter's `defaultModel`, resolved here so
-// that an unconfigured sprint's reviewer/triage genuinely match what the coder runs on, and the
-// tier check below sees it.
+// Resolved here so the tier check below sees an unconfigured runtime's default.
 const defaultModel = (adapters, runtime) => adapters[runtime]?.defaultModel ?? null;
 
 export class ConfigError extends Error {}
@@ -144,10 +81,7 @@ function readJson(path, rel) {
   }
 }
 
-/**
- * Every problem in one message, so a user fixes the file once rather than once per run.
- * `userLevel`: the file is ~/.coding-crew/config.json, so USER_ONLY settings are allowed.
- */
+/** Every problem in one message, so a user fixes the file once rather than once per run. */
 export function validateConfig(config, label = CONFIG_REL, { userLevel = label === USER_CONFIG_LABEL } = {}) {
   const problems = [];
   const oneOf = (list) => list.join(", ");
@@ -239,10 +173,7 @@ export function validateConfig(config, label = CONFIG_REL, { userLevel = label =
   if (problems.length) throw new ConfigError(`${label}: ${problems.join("; ")}`);
 }
 
-/**
- * `config` without the retired PRD audit's settings, one notice in `notices` per setting dropped,
- * so a config written for the audit loads instead of failing as an unknown key.
- */
+/** Drops the retired PRD audit's settings with a notice each, so a config written for it still loads. */
 function dropRetired(config, label, notices) {
   if (!isObject(config) || !isObject(config.afk)) return config;
   const afk = { ...config.afk };
@@ -303,10 +234,7 @@ function mergeAfk(base = {}, over = {}) {
   };
 }
 
-/**
- * Read the repo's config.json, moving a legacy afk-models.json into it in memory. The move on
- * disk is `legacyMove.apply()`, left to the caller so a run can do it only once setup has passed.
- */
+/** A legacy afk-models.json moves in memory; `legacyMove.apply()` writes it, once setup has passed. */
 function loadProjectConfig(mainRoot, notices, { userLevel = false } = {}) {
   let legacyMove = null;
   const path = join(mainRoot, CONFIG_REL);
@@ -321,8 +249,8 @@ function loadProjectConfig(mainRoot, notices, { userLevel = false } = {}) {
     } else {
       const legacy = readJson(legacyPath, LEGACY_REL);
       if (!isObject(legacy)) throw new ConfigError(`${LEGACY_REL} must be a JSON object`);
-      // Checked in the old file's own terms, so the error names the key the user wrote. An
-      // unknown key was ignored by the old loader, so it is dropped with a notice, not fatal.
+      // Checked in the legacy file's own terms, so the error names the key the user wrote; an
+      // unknown key is dropped with a notice, not fatal.
       const claude = {};
       const problems = [];
       for (const [key, model] of Object.entries(legacy)) {
@@ -352,14 +280,7 @@ function loadProjectConfig(mainRoot, notices, { userLevel = false } = {}) {
   return { config, legacyMove };
 }
 
-/**
- * The user's config under the repo's, merged per setting.
- * @returns {{config: object, origin: Record<string, "user"|"project">, notices: string[],
- *   legacyMove: {pending: string, apply: () => string}|null}}
- *   origin names which file set each afk leaf ("runtime.reviewer", "models.claude.coder");
- *   legacyMove is a pending afk-models.json move (`write: true` applies it at once instead);
- *   throws ConfigError, naming the file, on an invalid one
- */
+/** The user's config under the repo's; `origin` names which file set each afk leaf. */
 export function loadConfig(mainRoot, { write = false, home = process.env.HOME || homedir() } = {}) {
   const notices = [];
   // A repo at $HOME (a user-level install's own root) is one file, read once, as the repo's.
@@ -382,10 +303,7 @@ export function loadConfig(mainRoot, { write = false, home = process.env.HOME ||
   return { config, origin, notices, legacyMove: write ? null : legacyMove };
 }
 
-/**
- * Each role's runtime and model.
- * @returns {{roles: Record<string, {runtime: string, model: string|null}>, warnings: string[]}}
- */
+/** Each role's runtime and model; a role moved off the coder's runtime does not inherit its model. */
 export function resolveCrew({ afk = {}, cliPlatform, cliModel = null, adapters = ADAPTERS }) {
   const warnings = [];
   const models = afk.models ?? {};
@@ -445,7 +363,6 @@ export function activeRoles({ commands = true, openPr = DEFAULT_SETTINGS.openPr 
   return ROLES.filter((r) => (r !== "commandFinder" || commands) && (r !== "prWriter" || openPr));
 }
 
-// The flag that overrides each setting, for error text.
 const FLAG_FOR = {
   fixFindings: "--fix-findings",
   maxParallel: "--max-parallel",
@@ -455,10 +372,7 @@ const FLAG_FOR = {
   "timeouts.reviewer": "--reviewer-timeout",
 };
 
-/**
- * A bad flag value, checked by the same rules as its config.json setting — and a bad
- * CREW_PANE_HOST, the one setting with an env layer.
- */
+/** Flag values by their config.json rules, plus CREW_PANE_HOST, the one setting with an env layer. */
 export function validateFlags(cli = {}, flagOf = {}, env = process.env) {
   const problems = [];
   if (env.CREW_PANE_HOST) {
@@ -477,17 +391,7 @@ export function validateFlags(cli = {}, flagOf = {}, env = process.env) {
   return [...new Set(problems)];
 }
 
-/**
- * The sprint's settings: each flag (`cli`, undefined when not given) over config.json's
- * afk section over the defaults. `origin` gains "--flag" for each setting a flag decided,
- * so `plan` credits the right source.
- * @returns {{fixFindings, installDeps, squashCommits, openPr, baselineCheck, integrationCheck, resumeCoderSession,
- *   maxParallel: number|null,
- *   branchPrefix: string|null,  null: session-init.sh's default
- *   timeouts: Record<string, number>,  timeouts in minutes
- *   effort: Record<string, string>,  each ROLE_POLICY role → afk.effort, else ROLE_POLICY's
- *   limitsUsd: Record<string, number>}}  each capped role's dollar cap; no key, no cap
- */
+/** Each flag over afk over the defaults; `origin` gains "flag" for each, so `plan` credits the right source. */
 export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
   const pick = (k) => {
     if (cli[k] !== undefined) {
@@ -524,10 +428,7 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
   };
 }
 
-/**
- * The one line a run prints for the dollar caps it cannot apply: a capped role on a runtime whose
- * adapter has no `budget` runs uncapped. Null when every cap applies.
- */
+/** The one line for dollar caps a runtime without `budget` cannot apply; null when every cap applies. */
 export function ignoredLimitsNotice(limitsUsd = {}, crew, adapters = ADAPTERS) {
   const ignored = Object.keys(limitsUsd).filter((role) => crew[role] && !adapters[crew[role].runtime]?.budget);
   if (!ignored.length) return null;
@@ -536,13 +437,7 @@ export function ignoredLimitsNotice(limitsUsd = {}, crew, adapters = ADAPTERS) {
   return `afk.limits ignored for ${which} — a per-dispatch dollar cap is not supported by ${runtimes}.`;
 }
 
-/**
- * The pane host: --pane-host, else CREW_PANE_HOST, else the legacy ORCA_ENV=1 / HERDR_ENV=1
- * (orca first), else ~/.coding-crew/config.json's afk.paneHost. "auto" picks the host whose
- * ambient terminal id is in env — opt-in, since running inside a herdr pane is not asking for
- * herdr. `origin.paneHost` names the source for `plan`.
- * @returns {{paneHost: "orca"|"herdr"|null, notices: string[]}}
- */
+/** --pane-host, CREW_PANE_HOST, ORCA_ENV / HERDR_ENV, then afk.paneHost; "auto" is opt-in (a herdr pane is not asking for herdr). */
 export function resolvePaneHost({ afk = {}, cli = {}, env = process.env, origin = {} }) {
   const notices = [];
   let choice;
@@ -568,12 +463,6 @@ export function resolvePaneHost({ afk = {}, cli = {}, env = process.env, origin 
   return { paneHost: choice === "none" ? null : choice, notices };
 }
 
-/**
- * The worktree root as the user wrote it: CREW_WORKTREE_ROOT, else config.json's
- * afk.worktreeRoot, else null for worktree.mjs's default. `origin.worktreeRoot` names the
- * source for `plan`.
- * @returns {string|null}
- */
 export function resolveWorktreeRoot({ afk = {}, env = process.env, origin = {} }) {
   if (env.CREW_WORKTREE_ROOT) {
     origin.worktreeRoot = "CREW_WORKTREE_ROOT";
@@ -582,10 +471,7 @@ export function resolveWorktreeRoot({ afk = {}, env = process.env, origin = {} }
   return afk.worktreeRoot ?? null;
 }
 
-/**
- * preflight() once per runtime the active roles use. A problem on a runtime other
- * than the launcher's names its roles, since the user chose that runtime in config.json.
- */
+/** One preflight per runtime; a problem off the launcher's runtime names its roles, chosen in config.json. */
 export function crewPreflight(effects, mainRoot, { crew, roles, launcher, paneHost = null, probeFlags = false }) {
   const byRuntime = new Map();
   for (const role of roles) {

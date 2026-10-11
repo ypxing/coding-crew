@@ -1,10 +1,7 @@
 /**
- * prd.mjs — where this sprint's PRD is, the one owner of that lookup.
- *
- * The local `.scratch/<slug>/PRD.md`, else — under `tracker: github` — fetched with
- * `tracker/cli.mjs prd` and saved as `prd-issue.md`, whose earlier copy is used only when the
- * fetch fails (or under another tracker). With no PRD, the feature's intent is the one issue
- * carrying a `## Decisions` heading (see `intentIssue`). Located once per sprint.
+ * prd.mjs — the one owner of locating a sprint's PRD: local `.scratch/<slug>/PRD.md`, else under
+ * `tracker: github` the fetched PRD issue (its saved copy only when the fetch fails), else the one
+ * issue carrying `## Decisions` (`intentIssue`).
  */
 
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -18,10 +15,7 @@ import { listFeatureIssues } from "./tracker.mjs";
 const TRACKER_CLI = fileURLToPath(new URL("../../tracker/cli.mjs", import.meta.url));
 const cache = new WeakMap();
 
-/**
- * The feature's intent for this sprint: its PRD, or the one issue carrying its decisions; null when there is none.
- * Located once per sprint; re-located only when the cached file is gone (a local intent issue moves open/ → done/ when closed).
- */
+/** Re-located only when the cached file is gone: a local intent issue moves open/ → done/ on close. */
 export function prdPath(ctx) {
   const { sprint } = ctx;
   const cached = cache.get(sprint);
@@ -63,11 +57,8 @@ function locatePrd({ sprint, effects, log = () => {} }) {
 }
 
 /**
- * With no PRD: the feature's one issue whose body has a `## Decisions` heading (a one-slice
- * feature carries its own decisions). Zero matches → null; two or more → null plus a warning, since
- * a wrong intent would mislead the reviewer. Local: every open and done issue, through the tracker. Github:
- * `tracker/cli.mjs known` (open and closed), the match saved as `intent-issue.md`, whose earlier
- * copy is used only when `known` fails. Never throws.
+ * With no PRD: the one issue with a `## Decisions` heading. Two or more → null plus a warning, since
+ * a wrong intent would mislead the reviewer. Never throws.
  */
 function intentIssue({ sprint, effects, log = () => {} }) {
   const dir = join(effects.mainRoot, ".scratch", sprint.featureSlug);
@@ -107,7 +98,6 @@ function intentIssue({ sprint, effects, log = () => {} }) {
   }
 }
 
-/** The `.md` files in `dir` whose body has a `## Decisions` heading, sorted by name. */
 function withDecisions(dir) {
   return readdirSync(dir)
     .filter((n) => n.endsWith(".md"))

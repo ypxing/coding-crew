@@ -1,15 +1,7 @@
 /**
- * integration-fix.mjs — what a red drain-time integration check (preflight.mjs) leads to.
- *
- * The check runs on the merged feature branch, which no per-branch verify saw. Red, it is
- * triaged exactly as a failed per-branch verify is — by `crew-triage`, never a coder — and a
- * fixable failure becomes one parked fix issue (promote-findings.sh `defer-integration`) that
- * loop.mjs's flush sends into Phase 2 beside the review findings' fix issues.
- * The next drain's check then runs on the fixed branch. Not fixable, nothing is queued: the
- * summary says why.
- *
- * Bounded: INTEGRATION_FIX_LIMIT fix issues per run. A red drain after that is reported and the
- * run ends stalled — without that, two commits that keep breaking each other would loop forever.
+ * integration-fix.mjs — a red drain-time integration check is triaged by `crew-triage` and, when
+ * fixable, becomes one parked fix issue the next Phase 2 implements. Bounded by
+ * INTEGRATION_FIX_LIMIT, or two commits that keep breaking each other would loop forever.
  */
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -21,22 +13,12 @@ import { parseTriageReport } from "./report.mjs";
 import { INTEGRATION_STEM, failureTails } from "./preflight.mjs";
 import { limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./pipeline/shared.mjs";
 
-/** Integration fix issues one run may create. */
 export const INTEGRATION_FIX_LIMIT = 2;
 
 /**
- * Triage the red integration `result`, and queue a fix issue when it is fixable.
- *
- * `prior` is what this run's earlier red drains came to: `[{commit, verdict, ref, ...}]`. The
- * same commit red again (its fix issue blocked, so nothing changed) is not a new drain: it is
- * answered from the earlier verdict, with no second triage and no second fix issue.
- *
- * Returns `{verdict, reason, category, detail, ref, queuedReady, triageFailed, repeat, commit}`:
- *   - `queued`      — a fix issue was created (`ref`: its path or number; `queuedReady`: github
- *                     creates it ready-for-agent, so the caller waits for it to be listed)
- *   - `pending`     — a fix issue from an earlier drain is still open, so no second was made
- *   - `not-fixable` — no fix issue: `reason` says why (missing command, triage's verdict, a spent cap)
- *   - `limit`       — INTEGRATION_FIX_LIMIT fix issues were already made and it is red again
+ * `prior`: this run's earlier red drains; the same commit red again is answered from its verdict.
+ * Verdict `queued` (`queuedReady`: wait for github to list it), `pending` (an earlier fix issue is
+ * open), `not-fixable` (`reason` says why) or `limit` (INTEGRATION_FIX_LIMIT spent).
  */
 export async function fixIntegration(ctx, tracker, result, prior) {
   const done = prior.find((p) => p.commit === result.commit);
@@ -140,7 +122,6 @@ async function runIntegrationTriage(ctx, result, attempt) {
   return { completed: !dispatched.timedOut && parsed.ok, parsed, limitExceeded: limitExceeded(dispatched, "triage", triage) };
 }
 
-/** The integration verify's own captured output (preflight.mjs writes it as verify.out). */
 function readOutput(mainRoot, dir) {
   try {
     return readFileSync(resolve(mainRoot, dir, "verify.out"), "utf8");

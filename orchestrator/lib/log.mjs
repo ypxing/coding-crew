@@ -1,25 +1,14 @@
 /**
- * log.mjs — the one line format of a sprint's orchestrator.log.
- *
- *   2026-09-22T04:28:54Z INFO  [MARKER] field=value ... — text
- *
- * The level is the second column, so `grep -E ' (WARN|ERROR|FATAL) '` answers "what went
- * wrong" with no tooling. trace.sh writes the same shape; this
- * module is the node side of it.
- *
- * Every line reaches the file. stderr gets those at or above stderrThreshold(): info by
- * default, since a launcher agent pays tokens for each stderr line it reads.
- *
- * A caller rarely names a level: it comes from the line's first [MARKER] (MARKER_LEVELS),
- * so a new ctx.log() call site is levelled by its marker, not by remembering an argument.
- * Bash callers pass trace.sh --level at the call site instead, where the outcome is known.
+ * log.mjs — orchestrator.log's line format, the shape trace.sh writes too:
+ *   YYYY-MM-DDTHH:MM:SSZ INFO  [MARKER] field=value ... — text
+ * Level is the second column, so `grep -E ' (WARN|ERROR|FATAL) '` needs no tooling; it comes from
+ * the line's first [MARKER] (MARKER_LEVELS) rather than from each call site.
  */
 
 import { appendLine } from "./effects.mjs";
 
 export const LEVELS = ["debug", "info", "warn", "error", "fatal"];
 
-/** A header line of the log, as every writer emits it. */
 export const LINE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z (DEBUG|INFO |WARN |ERROR|FATAL) /;
 
 // debug: mechanics. warn: degraded, the run carries on by itself. error: a step failed for
@@ -52,10 +41,7 @@ function timestamp(now) {
   return `${now.toISOString().slice(0, 19)}Z`;
 }
 
-/**
- * One header line; a multi-line message's other lines follow indented, blank ones dropped,
- * so every line that starts at column 0 is a header a level grep can find.
- */
+/** Continuation lines are indented, so every column-0 line is a header a level grep finds. */
 export function formatLine(level, text, now = new Date()) {
   if (!LEVELS.includes(level)) throw new Error(`unknown log level: ${level}`);
   const [head, ...rest] = String(text).trimEnd().split("\n");
@@ -68,15 +54,11 @@ export function writeLog(file, text, level = levelFor(text)) {
   appendLine(file, formatLine(level, text));
 }
 
-/** a is at least as severe as b. */
 export function atLeast(a, b) {
   return LEVELS.indexOf(a) >= LEVELS.indexOf(b);
 }
 
-/**
- * The lowest level stderr shows. CREW_LOG_LEVEL names it; CREW_VERBOSE=1, the older switch,
- * means debug when CREW_LOG_LEVEL is unset. A bad value runs at info rather than failing a run.
- */
+/** stderr's lowest level: info by default, since a launcher agent pays tokens per stderr line. */
 export function stderrThreshold(env = process.env) {
   const named = (env.CREW_LOG_LEVEL ?? "").trim().toLowerCase();
   if (named) {
