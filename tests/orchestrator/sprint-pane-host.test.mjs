@@ -16,8 +16,8 @@ import { REPO, MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, EMPTY_HOME, sh, sprintE
 // start fail; `agentStatus: "gone"` drops the agent's pane from the host's list (a dead one), "unknown"
 // lists it with no agent detected yet (a CLI still starting, which a run's end keeps). Any other tab is
 // a dispatch's, w5:wN with pane w5:pwN, whose `pane run` really runs the command in the background;
-// `workerTabExit` / `workerRunExit` fail those calls.
-function herdrEnv(root, { agentPromptExit = 0, paneRunExit = 0, agentStatus = "idle", workerTabExit = 0, workerRunExit = 0 } = {}) {
+// `workerTabExit` / `workerRunExit` / `workerCloseExit` fail those calls.
+function herdrEnv(root, { agentPromptExit = 0, paneRunExit = 0, agentStatus = "idle", workerTabExit = 0, workerRunExit = 0, workerCloseExit = 0 } = {}) {
   const bin = mkdtempSync(join(TMPDIR, "crew-fake-herdr-"));
   FIXTURE_ROOTS.push(bin);
   const log = join(bin, "calls.log");
@@ -40,6 +40,7 @@ function herdrEnv(root, { agentPromptExit = 0, paneRunExit = 0, agentStatus = "i
       // Its own process group: crew-afk kills whatever a finished host call left in the call's.
       `    else [ ${workerRunExit} = 0 ] || exit ${workerRunExit}; node -e 'require("child_process").spawn("bash", ["-c", process.argv[1]], { detached: true, stdio: "ignore" }).unref()' "$4"; fi;;`,
       `  "agent prompt") exit ${agentPromptExit};;`,
+      `  "tab close") case "$3" in w5:w*) [ ${workerCloseExit} = 0 ] || { echo 'herdr close boom' >&2; exit ${workerCloseExit}; };; esac;;`,
       "esac",
       '[ "$1" = status ] && echo "status: running"',
       "exit 0",
@@ -265,6 +266,17 @@ test("under herdr a worker tab that cannot be created runs the dispatch headless
   assert.match(traceLog(root), / WARN {2}SPAWN-TERMINAL-FALLBACK 01-alpha crew-coder herdr tab create exit=1/);
   assert.deepEqual(r.calls.filter((c) => /^pane run w5:|^tab close w5:w/.test(c)), [], "no worker tab left to close");
   assert.doesNotMatch(traceLog(root), /\b(RUN|SPAWN) {1,2}[(/]/, "effects' own RUN/SPAWN lines stay out of orchestrator.log");
+});
+
+test("under herdr a worker tab whose close fails is a WARN in orchestrator.log naming the tab", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = herdrRun(root, [], { workerCloseExit: 1 });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const close = r.calls.find((c) => /^tab close w5:w\d+$/.test(c));
+  assert.ok(close, r.calls.join("\n"));
+  const tabId = close.slice("tab close ".length);
+  assert.ok(traceLog(root).split("\n").some((l) => l.includes(` WARN  herdr tab ${tabId} not closed `) && /exit=1 herdr close boom/.test(l)), traceLog(root));
 });
 
 // ─── orca ─────────────────────────────────────────────────────────────────────────────────────
