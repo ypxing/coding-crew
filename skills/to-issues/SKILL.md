@@ -114,6 +114,8 @@ Show the coverage table from step 4.5 (when there is one), then ask only what ne
 
 Then one approve/adjust prompt: approve the breakdown as shown, or say what to adjust. Iterate until the user approves. Do not ask generic questions about granularity, blocking edges, merging or HITL/AFK — a breakdown with nothing to list above needs only the approve/adjust prompt.
 
+A return from step 6's builder check asks only the questions it marked yours, in one message ranked by importance, then goes back to step 6 to re-render and re-lint.
+
 ### 5.5. Cross-cutting rules from the PRD
 
 Before writing issues, read the PRD's `## Decisions` and `## Testing Decisions` for a rule that binds more than one slice ("every endpoint must …", "all calls retry …"). Each slice carries such a rule in `## Cross-cutting Requirements` only when its own acceptance criteria do not already cover it; otherwise the criterion is the home and the section is omitted. There is no category list to scan.
@@ -138,6 +140,22 @@ bash <skill-dir>/scripts/lint-issues.sh --issue <draft> [--issue <draft> …] \
 ```
 
 Pass every file `known` wrote as a `--known <file>` (never linted, but a `## Blocked by` ref resolves to it by basename, and an existing `--known` file's `## Implements` counts toward `--prd` coverage, so a PRD ID an earlier issue already implements is not reported uncovered), and `--prd` only when step 2 found a PRD. Exit 1 means publish nothing: show the `ERROR` lines; the skill returns to the quiz (step 5) to fix them, then render and lint again. Exit 0 prints at most `WARN` lines: show them and continue — publishing continues. The shared-file `WARN` (two issues naming the same file with no `## Blocked by` path between them) is advisory: it is never by itself grounds for a `Blocked by` edge — only the edge rule's rows 1–2 are. Exit 2 is a usage error in how you called it: fix the call.
+
+**Builder check.** After lint exits 0 and before publishing, a fresh subagent reads the drafts cold, the way the coder crew-afk dispatches will: the writer fills omissions from memory, and that is the blind spot this check exists for. Skip it when every draft carries a column-0 `Source:` line (findings already judged, step 1). When the session has no subagent tool, print `builder check skipped: no subagent tool` and publish: never read the drafts yourself in its place.
+
+Give the subagent only the paths of the drafts, `.scratch/<feature-slug>/.drafts/PRD.md` and `known/` when they exist, and read access to the repo. Never give it the conversation, a design summary or the quiz answers. Its prompt:
+
+```text
+You are the coder crew-afk will dispatch for these issues. You can read the repo but cannot talk to whoever wrote them. Read each draft in <drafts dir> and <PRD path> if one exists; known/ holds the feature's existing issues. Your job is the omissions and ambiguities you would have to guess at: report only the questions where a wrong guess changes what you build or how a criterion is checked. For each one, give the draft, the question, and why the answer matters. A contradiction between two drafts, or between a draft and the code, is a question like any other. Rank them by importance. Skip anything a draft leaves to the coder, anything you could reasonably decide, and wording. If nothing important is left, say "nothing important left".
+```
+
+Sort each question it returns into one of three piles, once:
+
+- **Answered** — the conversation or the code settles it: write the answer into the draft.
+- **Minor** — a sensible coder could settle it without changing what gets built: settle it and record one `(auto)` line, under the draft's `## Decisions` when there is no PRD, and as the last line of `## What to build` when there is one (`## Decisions` belongs to the PRD then).
+- **Yours** — only the user can answer it, and it changes what gets built: return to step 5 the way a lint `ERROR` does, which asks only these, in one message ranked by importance, then re-render, re-lint and publish.
+
+Print `builder check: N answered, M (auto), K asked`. One round: dispatch no second check after the answers, and re-lint any draft you changed.
 
 **Publish.** Then, from the project root:
 

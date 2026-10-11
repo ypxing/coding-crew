@@ -12,6 +12,7 @@ setup() {
   cp "$REPO_ROOT/scripts/eval-design-skills.mjs" "$R/scripts/"
   echo "RUBRIC-TEXT" > "$R/scripts/eval-design-skills/rubric.md"
   echo "TO-ISSUES-RUBRIC-TEXT" > "$R/scripts/eval-design-skills/rubric-to-issues.md"
+  echo "PREPUBLISH-RUBRIC-TEXT" > "$R/scripts/eval-design-skills/rubric-prepublish.md"
   echo "SKILL-V1-SECRET" > "$R/skills/crew-grill/SKILL.md"
   echo "SKILL-V1-SECRET to-issues" > "$R/skills/to-issues/SKILL.md"
   git -C "$R" init -q -b main
@@ -44,7 +45,7 @@ if [[ " $* " == *" --max-turns 1 "* ]]; then
   printf '%s\n=== END JUDGE ===\n' "$input" >> "$FAKE_DIR/judge-prompts.log"
   labels=$(printf '%s\n' "$input" | sed -n 's/^### Output \([A-Z]\)$/\1/p')
   arr=""; for l in $labels; do
-    arr+="${arr:+,}{\"label\":\"$l\",\"scores\":{\"sized\":1,\"do_least\":null,\"asked_well\":1,\"overbuilt\":0,\"underbuilt\":0,\"false_cut\":null,\"chain_priced\":null,\"count_ok\":1,\"splits_justified\":1,\"overmerged\":0,\"oversplit\":null},\"note\":\"ok\"}"
+    arr+="${arr:+,}{\"label\":\"$l\",\"scores\":{\"sized\":1,\"do_least\":null,\"asked_well\":1,\"overbuilt\":0,\"underbuilt\":0,\"false_cut\":null,\"chain_priced\":null,\"count_ok\":1,\"splits_justified\":1,\"overmerged\":0,\"oversplit\":null,\"gap_raised\":1,\"noise\":0},\"note\":\"ok\"}"
   done
   jq -n --arg r "[$arr]" '{result:$r,total_cost_usd:0.5,is_error:false}'
   exit 0
@@ -294,13 +295,93 @@ EOF
   [[ "$output" == *"nometrics: "*"write-pr"*"metric"* ]]
 }
 
-@test "the committed to-issues cases dry-run as 3 cases x 2 versions x runs" {
+add_prepublish_case() {
+  cat > "$R/scripts/eval-design-skills/cases/p1.md" <<EOF
+---
+skill: to-issues
+stage: prepublish
+repo_ref: $REF
+---
+## Request
+Draft: build the widget; criterion 3 lists the files.
+
+## Reference judgement
+The list omits the frozen replays.
+EOF
+}
+
+@test "a prepublish case runs at base and head; its prompt ends with the prepublish instruction, drafts inline, nothing published" {
+  add_prepublish_case
+  run run_eval --skill to-issues --case p1 --runs 1
+  [ "$status" -eq 0 ]
+  d=$(ls -d "$R"/.scratch/eval-design-skills/*/)
+  grep -q 'ARGUMENTS: Draft: build the widget' "$d/p1-head-1.prompt.txt"
+  last=$(tail -n 1 "$d/p1-head-1.prompt.txt")
+  [[ "$last" == "EVAL MODE"* ]]
+  [[ "$last" == *"step 6"*"lint-issues.sh"*"exited 0"* ]]
+  [[ "$last" == *"inline"* ]]
+  [[ "$last" == *"what you would ask the user or change in the drafts before publishing"* ]]
+  [[ "$last" == *"Do not publish"* ]]
+}
+
+@test "a prepublish case is judged on rubric-prepublish.md with gap_raised / noise; a slice case keeps rubric-to-issues.md and its metrics" {
+  add_slice_case
+  add_prepublish_case
+  run run_eval --skill to-issues --runs 1
+  [ "$status" -eq 0 ]
+  awk -v t="$T" '/^=== END JUDGE ===$/{n++; next} {print > (t "/jp-" n+0 ".txt")}' "$T/judge-prompts.log"
+  pj=$(grep -l 'The list omits the frozen replays.' "$T"/jp-*.txt)
+  sj=$(grep -l 'One slice is right.' "$T"/jp-*.txt)
+  grep -q 'PREPUBLISH-RUBRIC-TEXT' "$pj"
+  ! grep -q 'TO-ISSUES-RUBRIC-TEXT' "$pj"
+  grep -q '"gap_raised": 0|1|null, "noise": 0|1|null' "$pj"
+  ! grep -q 'count_ok' "$pj"
+  grep -q 'TO-ISSUES-RUBRIC-TEXT' "$sj"
+  ! grep -q 'PREPUBLISH-RUBRIC-TEXT' "$sj"
+  grep -q 'count_ok' "$sj"
+  ! grep -q 'gap_raised' "$sj"
+  [[ "$output" == *"| case | version | n | gap_raised | noise | cost |"* ]]
+  [[ "$output" == *"| p1 | head | 1 | 1/1 | 0/1 | \$0.25 |"* ]]
+  [[ "$output" == *"| case | version | n | count_ok | splits_justified | overmerged | oversplit | cost |"* ]]
+  [[ "$output" == *"Higher is better: gap_raised. Lower is better: noise."* ]]
+}
+
+@test "the committed prepublish-tracker-wrappers case is pinned, uses the prepublish stage and names the frozen replays" {
+  f="$REPO_ROOT/scripts/eval-design-skills/cases/prepublish-tracker-wrappers.md"
+  grep -q '^skill: to-issues$' "$f"
+  grep -q '^stage: prepublish$' "$f"
+  grep -q '^repo_ref: 6368458f$' "$f"
+  git -C "$REPO_ROOT" cat-file -e "6368458f^{commit}"
+  req=$(awk '/^## Request[ \t]*$/{on=1} /^## Reference judgement[ \t]*$/{on=0} on' "$f")
+  ref=$(awk '/^## Reference judgement[ \t]*$/{on=1} on' "$f")
+  # criterion 11 as first written: the Request does not list the replays
+  [[ "$req" == *'Only these files name `mark-issue-done.sh` or `tracker-config.sh`'* ]]
+  [[ "$req" != *"eval-reviewer-misses"* ]]
+  [[ "$ref" == *"scripts/eval-reviewer-misses/cases/tracker-agnostic-drain.md"* ]]
+  [[ "$ref" == *"tracker-agnostic-feature.md"* ]]
+  [[ "$ref" == *"frozen replays"* ]]
+  [[ "$ref" == *"listed or are left unedited"* ]]
+  for c in tracker-agnostic-drain tracker-agnostic-feature; do
+    git -C "$REPO_ROOT" show "6368458f:scripts/eval-reviewer-misses/cases/$c.md" | grep -q 'mark-issue-done.sh'
+  done
+}
+
+@test "the committed prepublish case dry-runs for both arms and exits 0" {
+  run bash -c "cd '$REPO_ROOT' && node scripts/eval-design-skills.mjs --skill to-issues --case prepublish-tracker-wrappers --base HEAD --dry-run --runs 1"
+  [ "$status" -eq 0 ]
+  d=$(prompts_dir "$output")
+  [ -s "$d/prepublish-tracker-wrappers-base-1.prompt.txt" ]
+  [ -s "$d/prepublish-tracker-wrappers-head-1.prompt.txt" ]
+  rm -r "$d"
+}
+
+@test "the committed to-issues cases dry-run as 4 cases x 2 versions x runs" {
   run bash -c "cd '$REPO_ROOT' && node scripts/eval-design-skills.mjs --skill to-issues --base HEAD --dry-run --runs 2"
   [ "$status" -eq 0 ]
   d=$(prompts_dir "$output")
   rm -r "$d"
-  [[ "$output" == *"12 subject runs (3 cases × 2 versions × 2)"* ]]
-  for c in slice-review-catches slice-promote-after-merge slice-crew-afk-review; do
+  [[ "$output" == *"16 subject runs (4 cases × 2 versions × 2)"* ]]
+  for c in slice-review-catches slice-promote-after-merge slice-crew-afk-review prepublish-tracker-wrappers; do
     [ "$(grep -c "  $c " <<<"$output")" -eq 4 ]
   done
 }

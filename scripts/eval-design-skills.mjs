@@ -15,7 +15,9 @@
 // `## Request`, optional `## Transcript` (stage: close), and `## Reference judgement`, which only
 // the judge sees. A `to-issues` case uses stage `slice` and inlines the PRD body in its Request; its
 // judge scores against rubric-to-issues.md and the to-issues metrics (SKILL_SCORING), not the
-// grill/brainstorm ones. skillText renders each version's SKILL.md as claude receives it, `{{FRAGMENT:…}}`
+// grill/brainstorm ones. Stage `prepublish` (to-issues step 6, after lint exit 0) inlines the drafts
+// and PRD in its Request and is scored per stage (STAGE_SCORING): rubric-prepublish.md with
+// gap_raised / noise, not the slicing metrics. skillText renders each version's SKILL.md as claude receives it, `{{FRAGMENT:…}}`
 // lines expanded from that version's fragments, so a rule that lives in a fragment is what the A/B
 // measures. --dry-run calls no model: it writes every subject prompt and stops. A reference
 // judgement is a set of claims about the repo at repo_ref: verify every fact in it against that
@@ -39,6 +41,8 @@ const STAGE_INSTRUCTIONS = {
     "EVAL MODE (non-interactive): the frontier is empty. Output exactly what you would send the user to close Phase 1 (everything up to and including your hand-off: the 'Ready to write the PRD?' line, or the hand-off to `to-issues`). Then assume the user agreed with no other change, and output ONLY the '## Decisions' and '## Out of Scope' sections the next document would carry (the PRD, or the one issue when the work stays one slice). You may read the repo to check facts, but modify nothing.",
   slice:
     "EVAL MODE (non-interactive): the ARGUMENTS above are the feature's PRD; do not look for or fetch another. Explore the repo read-only, then output ONLY your step 5 breakdown: the numbered slices, each with its title, acceptance-criteria count (criteria count), `Blocked by`, and the split reason that produced it (none when there is one slice). Then stop. No user will answer. Modify nothing and publish nothing.",
+  prepublish:
+    "EVAL MODE (non-interactive): you are at step 6, the drafts are written and `lint-issues.sh` exited 0. The ARGUMENTS above are the drafts (and the PRD, when there is one), inline: there are no files to read for them, so wherever your skill reads a draft or the PRD from a path, use this text. You may read the repo read-only. Do not publish. Output ONLY what you would ask the user or change in the drafts before publishing, ranked by importance, each with the draft it concerns and why the answer matters; if there is nothing, say so. Then stop. No user will answer. Modify nothing.",
 };
 
 const METRICS = ["sized", "do_least", "asked_well", "overbuilt", "underbuilt", "false_cut", "chain_priced"];
@@ -53,6 +57,16 @@ export const SKILL_SCORING = {
   "to-issues": { metrics: TO_ISSUES_METRICS, goodHigh: new Set(["count_ok", "splits_justified"]),
     rubric: "rubric-to-issues.md" },
 };
+
+// Per stage, overriding the skill's: a stage that judges something other than what the skill's
+// other stages do (a `prepublish` output is not a slicing breakdown) has its own rubric and metrics.
+export const STAGE_SCORING = {
+  prepublish: { metrics: ["gap_raised", "noise"], goodHigh: new Set(["gap_raised"]), rubric: "rubric-prepublish.md" },
+};
+
+export function scoringFor(c) {
+  return STAGE_SCORING[c.stage] ?? SKILL_SCORING[c.skill];
+}
 
 function parseArgs(argv) {
   const o = { skill: "all", base: "main", head: "worktree", cases: [], runs: 2, model: "sonnet",
@@ -268,7 +282,10 @@ async function main() {
     trees.set(ref, dir);
   }
   const rubrics = {};
-  for (const c of cases) rubrics[c.skill] ??= fs.readFileSync(path.join(HERE, SKILL_SCORING[c.skill].rubric), "utf8");
+  for (const c of cases) {
+    const file = scoringFor(c).rubric;
+    rubrics[file] ??= fs.readFileSync(path.join(HERE, file), "utf8");
+  }
 
   const stop = { hit: false, why: "" };
   try {
@@ -276,8 +293,10 @@ async function main() {
       const prompt = subjectPrompt(skills[`${c.skill}@${v}`], c);
       const id = `${c.name}-${v}-${i}`;
       fs.writeFileSync(path.join(outDir, `${id}.prompt.txt`), prompt);
+      // prepublish keeps the subagent tool: the head arm's builder check dispatches one.
+      const blocked = c.stage === "prepublish" ? "Edit,Write,NotebookEdit" : "Edit,Write,NotebookEdit,Agent";
       const r = await runClaude(["-p", "--model", o.model, "--output-format", "json", "--max-turns", "40",
-        "--disallowedTools", "Edit,Write,NotebookEdit,Agent"], prompt, trees.get(c.repo_ref));
+        "--disallowedTools", blocked], prompt, trees.get(c.repo_ref));
       fs.writeFileSync(path.join(outDir, `${id}.out.md`), r.ok ? r.text : `RUN FAILED: ${r.err}\n${r.text}`);
       const limited = !r.ok && LIMIT_RE.test(`${r.text}\n${r.err}`);
       if (limited && !stop.hit) { stop.hit = true; stop.why = (r.text || r.err).trim().split("\n")[0]; }
@@ -300,7 +319,7 @@ async function main() {
       const labelled = shuffleLabels(mine);
       const j = await runClaude(["-p", "--model", o.judgeModel, "--output-format", "json", "--max-turns", "1",
         "--disallowedTools", "Bash,Edit,Write,NotebookEdit,Agent,Read,Grep,Glob"],
-        judgePrompt(rubrics[c.skill], c, labelled, SKILL_SCORING[c.skill].metrics), ROOT);
+        judgePrompt(rubrics[scoringFor(c).rubric], c, labelled, scoringFor(c).metrics), ROOT);
       let verdicts = [];
       if (!j.ok && LIMIT_RE.test(`${j.text}\n${j.err}`)) {
         console.error(`\nSTOPPED while judging ${c.name}: "${(j.text || j.err).trim().split("\n")[0]}". ` +
@@ -319,9 +338,10 @@ async function main() {
 
     const scored = rows.filter((r) => r.version !== "judge");
     const total = rows.reduce((a, r) => a + (r.cost || 0), 0);
-    const tables = [...new Set(cases.map((c) => c.skill))].map((sk) => {
-      const { metrics, goodHigh } = SKILL_SCORING[sk];
-      const names = new Set(cases.filter((c) => c.skill === sk).map((c) => c.name));
+    const key = (c) => (STAGE_SCORING[c.stage] ? c.stage : c.skill);
+    const tables = [...new Set(cases.map(key))].map((k) => {
+      const { metrics, goodHigh } = scoringFor(cases.find((c) => key(c) === k));
+      const names = new Set(cases.filter((c) => key(c) === k).map((c) => c.name));
       return summarize(scored.filter((r) => names.has(r.case)), metrics, goodHigh);
     });
     const summary = `${tables.join("\n\n")}\n\nTotal cost: $${total.toFixed(2)} (judge included)\n\n## Notes\n` +
