@@ -18,16 +18,6 @@ set -uo pipefail
 #                   (honours CREW_WORKTREE_ROOT, as worktree.mjs does)
 #   --dry-run report what would happen and change nothing
 #   --force   delete a swept branch even when it has commits that are not in HEAD
-#
-# Why this exists
-#   Cleanup used to be prose: "remove the worktree, then delete the ref". Every
-#   platform spelled it out slightly differently, an orchestrator that ran out of
-#   loop iterations simply never got there, and Claude's runtime-managed
-#   worktrees (`.claude/worktrees/agent-*` on `worktree-agent-*` branches) were
-#   not covered by any of the variants at all — so a repo accumulated dozens of
-#   dead worktrees and branch refs across sprints. This makes teardown one
-#   mechanical, idempotent, re-runnable step.
-#
 
 # Safety (a skip is never an error): a --retain branch, a worktree with uncommitted changes, and a
 # swept branch whose tip is not in HEAD (without --force) are kept. Docker mode then removes this
@@ -58,7 +48,7 @@ while [ $# -gt 0 ]; do
     --retain) split_csv _ "${2:-}"; RETAIN+=(${SPLIT[@]+"${SPLIT[@]}"}); shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --force) FORCE=1; shift ;;
-    -h|--help) sed -n '3,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '4,/^$/p' "$0"; exit 0 ;;
     *) echo "ERROR: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
