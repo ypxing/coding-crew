@@ -1,20 +1,10 @@
 #!/usr/bin/env bash
 # Detect and run the right host install command for PROJECT_ROOT.
 # Checks (in order): Makefile install/deps target, then signal file fallback.
-# CLAUDE.md is intentionally excluded — the LLM reads that for context.
-#
 # Usage: host-install.sh --project-root <path> [--main-root <path>] [--force]
 #
-# --force skips the manifest-fingerprint fast path below and always reinstalls — dep-install's
-# own retry rule uses this on a module-not-found error, since a FRESH verdict there would
-# otherwise make the retry a no-op (see manifest-fingerprint.sh's own header comment on what
-# a FRESH verdict does and does not prove).
-#
-# Exit codes:
-#   0  install ran successfully, or skipped because manifests are unchanged since last time
-#   1  argument error
-#   2  no install method found
-#   3  install command failed
+# --force skips the manifest-fingerprint fast path: dep-install's module-not-found retry needs it.
+# Exit codes: 0 installed (or manifests unchanged), 1 argument error, 2 no install method, 3 install failed
 
 set -euo pipefail
 
@@ -43,11 +33,7 @@ fi
 
 cd "$PROJECT_ROOT"
 
-# --- 0. .env (mechanical, mirrors docker-install.sh's own ensure-env.sh call) ---
-# Unconditional and best-effort, regardless of whether an install method is found below:
-# verify-worktree.sh runs test/lint/typecheck either way, and those can need a .env that
-# was never this script's job to create until now. ensure-env.sh itself never reads .env*
-# content — it only creates the file (from .env.example, or empty) if one is missing.
+# .env first, best-effort, whether or not an install method is found: the checks may need one.
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENSURE_ENV="$SELF_DIR/ensure-env.sh"
 if [[ -f "$ENSURE_ENV" ]]; then
@@ -58,9 +44,7 @@ if [[ -f "$ENSURE_ENV" ]]; then
   fi
 fi
 
-# --- 0b. skip if manifests are unchanged since this worktree's own last successful install ---
-# STAMP lives per-worktree (unlike docker's shared-volume marker) since host installs land in
-# this worktree's own node_modules/.venv/etc., not somewhere shared across worktrees.
+# Skip when manifests are unchanged since this worktree's last install (host installs are per worktree).
 FINGERPRINT="$SELF_DIR/manifest-fingerprint.sh"
 STAMP="$PROJECT_ROOT/.scratch/host-install.done"
 if [[ "$FORCE" -ne 1 ]] && [[ -f "$FINGERPRINT" ]] &&
@@ -69,20 +53,15 @@ if [[ "$FORCE" -ne 1 ]] && [[ -f "$FINGERPRINT" ]] &&
   exit 0
 fi
 
-# _mark_installed — record this run's fingerprint so the next call can skip. Best-effort:
-# a write failure here just costs the next call its fast path, not this one's success.
+# _mark_installed — best-effort: a failed write only costs the next call its fast path.
 _mark_installed() {
   [[ -f "$FINGERPRINT" ]] && bash "$FINGERPRINT" write --project-root "$PROJECT_ROOT" --stamp "$STAMP" >/dev/null 2>&1 || true
 }
 
-# --- 1. Makefile target (install or deps, no docker) ---
 if [[ -f Makefile ]]; then
   for target in install deps; do
-    # A non-empty dry-run is the "target exists" signal, not exit status — a recipe
-    # containing the literal word "make" can make some GNU Make builds (macOS's default
-    # 3.81 included) actually run it under -n instead of only printing it, so a real
-    # (sandboxed, daemon-less) docker failure could otherwise be mistaken for "no such
-    # target" even though the recipe text we want is right there in the output.
+    # Non-empty output, not exit status, means the target exists: some GNU Make builds (3.81) run a
+    # recipe containing "make" even under -n, so a daemon-less docker failure would read as no target.
     recipe=$(make -n "$target" 2>/dev/null || true)
     if [[ -n "$recipe" ]]; then
       if grep -qE 'docker (compose|run|exec)' <<<"$recipe"; then
@@ -97,7 +76,6 @@ if [[ -f Makefile ]]; then
   done
 fi
 
-# --- 2. Signal file fallback ---
 run() {
   echo "Running: $*"
   "$@"
@@ -113,8 +91,7 @@ run() {
 [[ -f poetry.lock        ]] && run poetry install --no-root
 [[ -f go.sum             ]] && run go mod download
 [[ -f go.mod             ]] && run go mod download
-# Python with no uv/poetry lockfile: python-install-cmd.sh adds the dev requirements file, extra or
-# group, which pip would otherwise leave out (and with them the tools the checks run).
+# Python with no uv/poetry lockfile: python-install-cmd.sh adds the dev tools pip would leave out.
 python_cmd=$(bash "$SELF_DIR/python-install-cmd.sh" "$PROJECT_ROOT")
 if [[ -n "$python_cmd" ]]; then
   echo "Running: $python_cmd"
@@ -128,7 +105,6 @@ fi
 [[ -f pom.xml            ]] && run mvn dependency:resolve dependency:resolve-plugins -q
 [[ -f mix.exs            ]] && run mix deps.get
 
-# *.csproj (glob)
 csproj=$(find . -maxdepth 2 -name "*.csproj" | head -1)
 [[ -n "$csproj" ]] && run dotnet restore
 

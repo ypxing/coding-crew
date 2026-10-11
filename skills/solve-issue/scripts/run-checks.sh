@@ -5,43 +5,13 @@
 # Usage:
 #   bash scripts/run-checks.sh --project-root <path> --main-root <path> --dep-scripts <dir> [--targeted]
 #
-# --targeted only means something under CREW_DEFER_FULL_CHECKS=1; without it the full suite runs
-# as always. CREW_BASE_REF names the ref to take the merge-base against (default: origin/HEAD,
-# origin/main, main, master — the first that resolves).
-#
-# Order: typecheck, lint, test, then every other check key with a command (coverage,
-# integration, …) in file order — the same set, in the same order, crew-afk's verify gate runs,
-# so a worker that sees every line pass has seen what the gate will see.
-#
-# Prints per check:
-#   <key>: pass | <key>: fail (exit N)     then the tail of its output; the full log path
-#   <key>: NOT RUN: no command found       the cache's `null` — its own answer, not a gap to fill
-#   <key>: modified files: <list> — …      then `<key>: fail (…)`: the check rewrote tracked or
-#                                          untracked files (an auto-fixing lint) — the human
-#                                          commits the rewrite; not something to revert and re-run
-#   test: pass (targeted) | test: fail (targeted, exit N)
-#                                          with CREW_DEFER_FULL_CHECKS=1 and --targeted: only the test
-#                                          files changed on the branch since its merge-base (plus
-#                                          uncommitted ones) ran, as the cached test command with its
-#                                          path/glob arguments swapped for those files — only the
-#                                          ones an argument it replaces would have selected
-#   test: deferred (no changed test files) with --targeted and no changed test file: nothing ran
-#   test: deferred (no changed test file the test command's suite arguments select)
-#                                          with --targeted: changed test files, none the runner's
-#                                          suite arguments cover (a *.test.mjs for tests/*.bats)
-#   test: deferred (the test command takes no test file arguments)
-#                                          with --targeted and a runner such as make, go or cargo
-#   <key>: deferred …                      with CREW_DEFER_FULL_CHECKS=1 only: every check other than
-#                                          typecheck and lint (test, coverage, …) is not run here — the
-#                                          verify gate runs it; report the check as `deferred`
-# and last, one of:
-#   CHECKS: pass                           exit 0
-#   CHECKS: fail                           exit 1
-#   DISCOVER                               exit 3 — no usable cache: discover the commands
-#                                          (references/verification.md), persist them, re-run
-#
-# The cache is read from MAIN_ROOT — resolved from --git-common-dir when --main-root is empty,
-# so a lost MAIN_ROOT still finds the shared cache instead of concluding there is none.
+# Order: typecheck, lint, test, then every other key with a command, as crew-afk's verify gate runs them.
+# --targeted (only under CREW_DEFER_FULL_CHECKS=1) runs the test command on just the test files changed
+# since the merge-base with CREW_BASE_REF (default: origin/HEAD, origin/main, main, master).
+# Prints per check `<key>: pass`, `<key>: fail (exit N)` (then its output tail and log path), `<key>: NOT
+# RUN: no command found` (the cache's null), `<key>: modified files: <list>` (the check rewrote files;
+# then a fail), `(targeted)` variants, or `<key>: deferred …` (the verify gate runs it); last, CHECKS:
+# pass (exit 0) | CHECKS: fail (exit 1) | DISCOVER (exit 3: no usable cache).
 
 set -uo pipefail
 
@@ -102,8 +72,7 @@ fi
 # Keys of dev-commands.json that are not checks — kept in step with verify-worktree.sh's own list.
 NOT_CHECKS=" test lint typecheck install install_mode env credential_target docker_service "
 
-# _cached <key> — its command; empty for `null` or an absent key. Parsed the way
-# verify-worktree.sh's _load_cached_command parses it, so both read the same command.
+# _cached <key> — its command; empty for `null` or an absent key. Parsed as verify-worktree.sh does.
 _cached() {
   local raw
   raw=$(grep -o "\"$1\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" "$CACHE" 2>/dev/null | head -1 | sed -E "s/\"$1\"[[:space:]]*:[[:space:]]*//")
@@ -118,9 +87,7 @@ while IFS= read -r key; do
 done < <(grep -oE '"[a-z][a-z0-9_]*"[[:space:]]*:[[:space:]]*("|null)' "$CACHE" 2>/dev/null \
   | sed -E 's/^"([a-z0-9_]+)".*/\1/' | awk '!seen[$0]++')
 
-# A check must leave the tree as it found it — the same rule, and the same line, as crew-afk's
-# verify gate: `git status --porcelain` before and after, and a differing line names a file the
-# check touched. Dirt already there is in the before snapshot, so it is not blamed on the check.
+# A check must leave the tree as it found it (the verify gate's rule); prior dirt is in the before snapshot.
 _tree_state() {
   git -C "$PROJECT_ROOT" status --porcelain 2>/dev/null | LC_ALL=C sort
 }
@@ -130,17 +97,13 @@ _changed_files() {
     | awk 'NF && !seen[$0]++ { printf "%s%s", (n++ ? ", " : ""), $0 }'
 }
 
-# A test file by its own name (a file under tests/ may be a helper or fixture): bats, *.test.* /
-# *.spec.*, pytest's test_*.py, *_test.* (go, python), *_spec.rb, and jest's __tests__/ sources.
+# A test file by its own name: a file under tests/ may be a helper or fixture.
 TEST_FILE_RE='(\.bats$|\.(test|spec)\.[A-Za-z0-9]+$|(^|/)test_[^/]*\.py$|_test\.[A-Za-z0-9]+$|_spec\.rb$|Test\.php$|(^|/)__tests__/.*\.[cm]?[jt]sx?$|(^|/)test/[^/]*\.[cm]?[jt]s$)'
 # Never a suite file, whatever its name: data and helpers inside a test tree, snapshots.
 NOT_TEST_RE='((^|/)(tests?|spec|__tests__)/(.*/)?(fixtures?|helpers?|__fixtures__|testdata)/|(^|/)(__snapshots__|testdata)/)'
-# Runners that take no test file arguments (or treat them as something else): a targeted run
-# through them would not run the changed tests, so they are deferred to the verify gate.
+# Runners that take no test file arguments: a targeted run through them would not run the changed tests.
 NO_FILE_ARGS_RE='^(make|gmake|go|cargo|gradle|gradlew|\./gradlew|mvn|mvnw|\./mvnw|dotnet|rake|ctest|tox|nox)$'
 
-# _changed_tests — existing test files changed on this branch since its merge-base, plus
-# uncommitted and untracked ones, one per line.
 _changed_tests() {
   local ref base="" cand
   for cand in "${CREW_BASE_REF:-}" origin/HEAD origin/main main master; do
@@ -159,9 +122,8 @@ _changed_tests() {
   done
 }
 
-# _takes_test_files <cached test command> — false when a program the command runs (the first word
-# of each `&&`/`;`/`|` segment, after env assignments and wrappers such as `env`, `time`,
-# `bundle exec`, `poetry run`; `cd` segments aside) is a runner in NO_FILE_ARGS_RE.
+# _takes_test_files <cached test command> — false when the first word of any `&&`/`;`/`|` segment,
+# past env assignments and wrappers (`env`, `bundle exec`, `poetry run`, …), is in NO_FILE_ARGS_RE.
 _takes_test_files() {
   local w prev="" at_prog=1 wrapper=""
   set -f
@@ -182,7 +144,6 @@ _takes_test_files() {
   return 0
 }
 
-# _norm_path <path> — the path with `.` segments and `<dir>/..` pairs collapsed, textually.
 _norm_path() {
   local p="$1" seg out=() n noglob=0 IFS=/
   case "$-" in *f*) noglob=1 ;; esac
@@ -199,10 +160,8 @@ _norm_path() {
   case "$p" in /*) printf '/%s' "${out[*]}" ;; *) printf '%s' "${out[*]}" ;; esac
 }
 
-# _suite_selects <suite word, absolute> <file, absolute> — whether the suite argument would have
-# selected the file: a glob the way the shell expands it (`*`, `?`, `[…]` stay inside one directory;
-# `**` spans directories, and `**/` may be none — the runners that take quoted globs read it so), a
-# directory any file under it, a file itself.
+# _suite_selects <suite word, absolute> <file, absolute> — whether the suite argument selects the file:
+# a glob as the shell expands it (`**` spans directories, `**/` may be none), a directory, or the file.
 _suite_selects() {
   local s="$1" f="$2" sd fd
   case "$s" in
@@ -219,14 +178,9 @@ _suite_selects() {
   esac
 }
 
-# _targeted_command <cached test command> <files…> — the test command with only its suite
-# path/glob arguments replaced by the files. The runner's own words stay: the program, a `cd`
-# target, and a repo script it runs (`bash scripts/test.sh`). A word is a suite argument when it
-# has a glob character, or names an existing directory or test file (not in program position).
-# Only the files a replaced suite argument would have selected are passed (bats is not handed a
-# `*.test.mjs` for `tests/*.bats`); with no suite argument, every file is. None left: prints
-# nothing and returns 1. After a `cd`, words resolve from its target, and the files are passed
-# relative to it (absolute when outside it).
+# _targeted_command <cached test command> <files…> — the command with its suite arguments (a glob, or
+# an existing directory or test file outside program position) replaced by the files they select (all,
+# with none); after a `cd`, files are passed relative to its target. None left: returns 1.
 _targeted_command() {
   local cmd="$1" w out="" q prev="" keep cwd="$PROJECT_ROOT" abs s passed=0; shift
   local suites=()
@@ -240,8 +194,7 @@ _targeted_command() {
         if [ "$prev" != cd ] && [ -e "$abs" ]; then
           if [ -d "$abs" ]; then keep=0
           elif grep -qE "$TEST_FILE_RE" <<<"$w"; then
-            # a shell script that is test-shaped only by its directory (`bash test/run.sh`) is the
-            # runner's wrapper, not a suite file
+            # a .sh that is test-shaped only by its directory (`bash test/run.sh`) is the runner's wrapper
             case "$w" in *.sh) grep -qE '(\.bats$|\.(test|spec)\.|(^|/)test_[^/]*$|_test\.[A-Za-z0-9]+$)' <<<"$w" && keep=0 ;; *) keep=0 ;; esac
           fi
         fi ;;
@@ -309,10 +262,8 @@ for key in "${KEYS[@]}"; do
   log="$LOG_DIR/$key.log"
   echo "=== $key: $cmd"
   before="$(_tree_state)"
-  # stdin from /dev/null: a `docker compose run` would otherwise read the rest of this loop.
-  # The log is written through a pipe, never by the check itself: on overlayfs a check writing
-  # straight to a file under /tmp has hung forever (bats-gather-tests' load-error header, #266).
-  # rc is the check's own exit, not cat's.
+  # stdin from /dev/null: a `docker compose run` would otherwise read the rest of this loop. Logged
+  # through a pipe: on overlayfs a check writing straight to a file under /tmp can hang forever.
   bash "$RUN_SCRIPT" --project-root "$PROJECT_ROOT" ${MAIN_ROOT:+--main-root "$MAIN_ROOT"} -- "$cmd" \
     </dev/null 2>&1 | cat >"$log"
   rc=${PIPESTATUS[0]}

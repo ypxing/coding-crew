@@ -64,7 +64,7 @@
       "source": "mattpocock/skills"
     },
     "dep-install": {
-      "version": "1.6.0",
+      "version": "1.6.1",
       "source-dir": "dep-install",
       "description": "Install the project's dependencies once, on the host or in docker.",
       "assets": {
@@ -103,7 +103,7 @@
       ]
     },
     "address-pr-comments": {
-      "version": "1.5.2",
+      "version": "1.5.3",
       "source-dir": "address-pr-comments",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "scripts": [

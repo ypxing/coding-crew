@@ -1,24 +1,10 @@
 #!/usr/bin/env bash
-# push-rework.sh — commit and push one rework round, behind guards.
-#
-# Usage: push-rework.sh --message <msg> --files <list> [--ci-workflow <file>]
-#   <list> is whitespace- or comma-separated. Only those files are committed.
-#
-# Guards, in order:
-#   1. Round cap (only with CI=true): commits carrying a `Crew-Rework: <n>` trailer made after
-#      the latest `/crew-rework` PR comment by a trusted author (all of them if none); 2 or more
-#      refuses.
-#   2. Protected paths: PROTECTED_PATTERNS below.
-#   3. Checks: solve-issue's run-checks.sh must print `CHECKS: pass`.
-#   4. Commit with a `Crew-Rework: <n+1>` trailer, then a plain `git push` (never forced).
-#   5. --ci-workflow: `gh workflow run <file> --ref <branch>`.
-#
-# A refusal posts one PR comment, adds the `needs-human` label, and exits non-zero:
-#   10 round cap reached     11 protected path touched     12 checks failed
-#   13 push rejected (e.g. non-fast-forward)     14 commit failed     2 usage error
-# On success prints the pushed sha (and only that) on stdout; exit 0.
-#
-# Env: RUN_CHECKS (path to run-checks.sh), DEP_SCRIPTS, MAIN_ROOT override the sibling-skill lookup.
+# push-rework.sh — commit and push one rework round, behind guards; prints the pushed sha.
+# Usage: push-rework.sh --message <msg> --files <list> [--ci-workflow <file>]  (<list>: space or comma separated)
+# Guards: a round cap (CI=true only: 2 `Crew-Rework:` commits since the latest trusted `/crew-rework`
+# comment), PROTECTED_PATTERNS, run-checks.sh's `CHECKS: pass`; then a `Crew-Rework: <n+1>` commit, plain push.
+# A refusal comments on the PR, labels it `needs-human` and exits 10 round cap, 11 protected path,
+# 12 checks failed, 13 push rejected, 14 commit failed; 2 is a usage error.
 
 set -uo pipefail
 
@@ -72,7 +58,6 @@ is_trusted() { # <login> — write/maintain/admin
   case "$perm" in write|maintain|admin) return 0 ;; *) return 1 ;; esac
 }
 
-# --- 1. round cap -------------------------------------------------------------------------
 ROUND=0
 if [ "${CI:-}" = "true" ]; then
   since=0
@@ -95,7 +80,6 @@ if [ "${CI:-}" = "true" ]; then
   [ "$ROUND" -lt "$ROUND_CAP" ] || refuse 10 "round cap reached ($ROUND unattended rework rounds since the last trusted /crew-rework comment); comment /crew-rework to allow more"
 fi
 
-# --- 2. protected paths -------------------------------------------------------------------
 touched=""
 for f in "${FILES[@]}"; do
   for p in "${PROTECTED_PATTERNS[@]}"; do
@@ -104,7 +88,6 @@ for f in "${FILES[@]}"; do
 done
 [ -z "$touched" ] || refuse 11 "the change touches protected paths:$touched"
 
-# --- 3. checks ----------------------------------------------------------------------------
 RUN_CHECKS="${RUN_CHECKS:-$SKILL_DIR/../solve-issue/scripts/run-checks.sh}"
 DEP_SCRIPTS="${DEP_SCRIPTS:-$SKILL_DIR/../dep-install/scripts}"
 out=$(bash "$RUN_CHECKS" --project-root "$PROJECT_ROOT" --main-root "${MAIN_ROOT:-}" --dep-scripts "$DEP_SCRIPTS" 2>&1)
@@ -116,7 +99,6 @@ $(printf '%s\n' "$out" | tail -40)
 \`\`\`"
 fi
 
-# --- 4. commit and push -------------------------------------------------------------------
 git add -- "${FILES[@]}" >&2 || refuse 14 "could not stage the given files"
 git commit -q -m "$MESSAGE
 
@@ -125,7 +107,6 @@ if ! perr=$(git push origin "$BRANCH" 2>&1); then
   refuse 13 "push rejected (never forced): $(printf '%s\n' "$perr" | tail -5)"
 fi
 
-# --- 5. CI re-trigger ---------------------------------------------------------------------
 if [ -n "$CI_WORKFLOW" ]; then
   gh workflow run "$CI_WORKFLOW" --ref "$BRANCH" >&2 || echo "push-rework: warning: could not trigger $CI_WORKFLOW" >&2
 fi

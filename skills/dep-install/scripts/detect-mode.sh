@@ -5,17 +5,9 @@
 # Usage:
 #   bash scripts/detect-mode.sh [--project-root /path/to/worktree]
 #
-# Options:
-#   --project-root   Path to the worktree. Default: $PROJECT_ROOT or current directory.
-#
-# Detection order:
-#   1. git config --local agent.install-mode (docker|host) — an explicit, documented override
-#   2. $MAIN_ROOT/.coding-crew/dev-commands.json's "install_mode" field — this project's own committed
-#      cache (see below), trusted indefinitely like install/env
-#   3. Makefile install/deps/setup/... target: `make -n <target>` dry-run, expanded recipe
-#      invokes docker compose/run/exec → docker; Makefile present but no match → host. The
-#      dry-run (not a static text scan) is what lets this resolve indirection through Make's
-#      own variables/ifeq — the same pattern host-install.sh and ensure-env.sh already use.
+# Detection order: git config --local agent.install-mode (docker|host); dev-commands.json's
+# "install_mode"; then a Makefile install/deps/setup/... target whose `make -n` recipe invokes
+# docker compose/run/exec → docker, any other Makefile → host.
 
 set -euo pipefail
 
@@ -34,22 +26,9 @@ done
 
 _mode=$(git -C "$PROJECT_ROOT" config --local agent.install-mode 2>/dev/null || true)
 
-# The cache is this project's own committed answer — .coding-crew/dev-commands.json's
-# "install_mode" field, written once by ensure-deps.sh's MAIN_ROOT call and trusted indefinitely, the same as
-# its install/env fields, rather than re-derived every sprint. It is also what every later
-# reader agrees on regardless of which install of dep-install it is running — this script's
-# own worktree calls and a worker's independent up-front invocation alike: without a shared
-# answer on disk, a worker resolving a completely different copy of dep-install (a different
-# platform's skill copy, a stale global one) would silently re-derive its own — from git
-# config (usually still empty at this point) or the Makefile heuristic below, which is a plain
-# reimplementation that copy might get wrong or lack entirely. A cache hit skips both.
 if [ -z "$_mode" ]; then
   _main_root_of() {
     local dir="$1" common
-    # --path-format=absolute: without it, plain `--git-common-dir` can come back cwd-relative.
-    # It still isn't enough on its own — git's own idea of "absolute" on Windows is a bare
-    # drive-letter path like "C:/Users/...", which doesn't start with "/", so the *)-branch
-    # below needs its own drive-letter case or it wrongly treats that as relative and mangles it.
     common=$(cd "$dir" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
     case "$common" in
       /*|[A-Za-z]:*) : ;;
@@ -71,26 +50,15 @@ if [ -z "$_mode" ]; then
 fi
 
 if [ -z "$_mode" ]; then
-  # Whether PROJECT_ROOT is inside a git working tree at all — not a string comparison of
-  # PROJECT_ROOT against --show-toplevel's own answer, because -C "$PROJECT_ROOT" resolves
-  # from inside PROJECT_ROOT itself, so success already *means* containment; comparing two
-  # renderings of the same directory as strings only invited them to disagree instead. They
-  # did, twice: --show-toplevel resolves symlinks (macOS's $TMPDIR sits under /var, itself a
-  # symlink to /private/var) while a plain `pwd -P` comparison doesn't, and on Windows git's
-  # own "absolute" is a bare drive-letter path ("C:/Users/...") that no bash-rendered path
-  # ever matches either way. Both falsely forced host mode before the Makefile scan below
-  # ever ran.
+  # Success of -C "$PROJECT_ROOT" already means containment; comparing path strings breaks on
+  # symlinked dirs (macOS's /var) and Windows drive-letter paths.
   git -C "$PROJECT_ROOT" rev-parse --show-toplevel >/dev/null 2>&1 || _mode="host"
 fi
 
 if [ -z "$_mode" ] && [ -f "$PROJECT_ROOT/Makefile" ]; then
   _mode="host"
-  # A recipe whose expanded text contains the literal word "make" (not just the $(MAKE)
-  # variable) makes some GNU Make builds — notably 3.81, the last GPLv2 version and still
-  # macOS's default — actually run it instead of only printing it under -n. Rather than trust
-  # -n's own promise not to execute, shadow docker/docker-compose on PATH for this probe with
-  # stubs that just log their argv and exit 0: real or dry-run, any docker invocation lands
-  # harmlessly in the log instead of hanging or failing against a daemon that may not exist.
+  # Some GNU Make builds (3.81, macOS's default) run a recipe containing "make" even under -n, so docker
+  # and docker-compose are stubbed on PATH for this probe: no call can hang on a missing daemon.
   _stub_dir="$(mktemp -d)"
   _stub_log="$_stub_dir/invoked"
   for _cmd in docker docker-compose; do

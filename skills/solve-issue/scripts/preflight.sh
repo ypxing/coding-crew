@@ -14,13 +14,8 @@
 # Or one line and exit 1 — stop, report it verbatim:
 #   BLOCKED: on default branch (<name>) — create or switch to a feature branch first
 #   BLOCKED: depends on <file> which is not yet done
-#   BLOCKED: requires: <cmd>          then check-requires.sh's exit and output tail — a command
-#                                     under the issue's `## Requires` failed. Not run when
-#                                     ORCHESTRATED=1: the orchestrator already probed it.
-#
-# --issue is optional because a caller may hand the issue over inline: with no file there is
-# no Blocked-by section to check and no Context Documents line to read the PRD from, so only
-# the feature-slug fallback for the PRD applies, and only when a path was given at all.
+#   BLOCKED: requires: <cmd>          then check-requires.sh's output tail; skipped when ORCHESTRATED=1
+# --issue is optional: an issue handed over inline has no Blocked by or PRD to resolve.
 
 set -uo pipefail
 
@@ -54,7 +49,6 @@ if [ -z "$PROJECT_ROOT" ] || [ -z "$MAIN_ROOT" ]; then
   exit 2
 fi
 
-# ─── Step 0: never on the default branch ─────────────────────────────────────
 CURRENT_BRANCH=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
 DEFAULT_BRANCH=$(git -C "$PROJECT_ROOT" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH="main"
@@ -63,10 +57,8 @@ if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
   exit 1
 fi
 
-# ─── Step 1: every Blocked-by file is in the sibling done/ ───────────────────
-# Entries name issue files (`.scratch/<slug>/issues/open/01-x.md`, or bare `01-x.md`); only
-# the file name matters, looked up in done/. "None", or a GitHub `Issue #<n>` entry, names no
-# file — a tracker that filters blocked issues before dispatch owns that case.
+# Blocked-by entries name issue files; only the file name is looked up in done/. A GitHub
+# `Issue #<n>` entry names no file: a tracker that filters blocked issues owns that case.
 if [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
   DONE_DIR="$(dirname "$ISSUE")/../done"
   while IFS= read -r dep; do
@@ -79,7 +71,6 @@ if [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
     | grep -oE '[A-Za-z0-9._-]+\.md' | awk '!seen[$0]++')
 fi
 
-# ─── Step 1.5: the PRD ───────────────────────────────────────────────────────
 PRD=""
 if [ -n "$ISSUE" ]; then
   if [ -f "$ISSUE" ]; then
@@ -96,15 +87,12 @@ if [ -n "$ISSUE" ]; then
   fi
 fi
 
-# ─── Step 7's question, answered now: who closes the issue ───────────────────
 ORCHESTRATED=0
 if [ "${CREW_ORCHESTRATED:-}" = 1 ] || ls "$MAIN_ROOT"/.scratch/*/.orchestrated >/dev/null 2>&1; then
   ORCHESTRATED=1
 fi
 
-# ─── what the issue says it needs: its ## Requires ──────────────────────────
-# One owner per run: an orchestrator probes every issue's requirements before dispatching any,
-# so an orchestrated worker never runs them a second time.
+# An orchestrator probes every issue's `## Requires` before dispatch, so an orchestrated worker skips it.
 if [ "$ORCHESTRATED" = 0 ] && [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
   REQ_OUT=$(bash "$SELF_DIR/check-requires.sh" --project-root "$PROJECT_ROOT" --issue "$ISSUE")
   if [ $? -ne 0 ]; then
@@ -115,10 +103,7 @@ if [ "$ORCHESTRATED" = 0 ] && [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
   fi
 fi
 
-# ─── dep-install's scripts ───────────────────────────────────────────────────
-# A sprint resolved its install once and exports it as CREW_INSTALL_DIR: that copy first.
-# Otherwise installed as a sibling skill on every platform; the platform-neutral asset copies
-# cover an install whose skills live somewhere else — the project's first, then $HOME's.
+# CREW_INSTALL_DIR first, then the sibling skill, then the project's and $HOME's asset copies.
 DEP_SCRIPTS=""
 for d in ${CREW_INSTALL_DIR:+"$CREW_INSTALL_DIR/dep-install/scripts"} \
          "$SELF_DIR/../../dep-install/scripts" \

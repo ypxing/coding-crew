@@ -1,39 +1,17 @@
 #!/usr/bin/env bash
 # resolve-mode.sh — this project's install mode, and whether this session has to install.
 #
-# One verdict for every reader: solve-issue's Step 2 asks it once per issue, and run.sh asks it
-# before every check a worker or verify-worktree.sh runs. Before this, solve-issue checked the
-# override file then detect-mode.sh, dep-install re-read the cache, and verify-worktree.sh read
-# only `agent.install-mode` — three questions that could answer differently about where the same
-# `npm test` runs.
-#
 # Usage:
 #   bash scripts/resolve-mode.sh --project-root <path> [--main-root <path>] [--deps <outcome>]
 #                                [--no-heuristic]
 #
-# Prints KEY=VALUE lines, exit 0:
-#   INSTALL_MODE=docker|host
-#   DOCKER_SERVICE=<name>          recorded service (git config agent.install-service, then the
-#                                  cache's "docker_service"); empty when none is — docker-install.sh
-#                                  and run.sh then fall back to gen-override.sh's own choice
-#   ACTION=none|install|on-failure
-#
-# Mode, first match wins:
-#   1. git config --local agent.install-mode (docker|host) — the explicit, documented override
-#   2. $MAIN_ROOT/.coding-crew/dev-commands.json's "install_mode" — the project's cached verdict
-#   3. detect-mode.sh's Makefile dry-run. --no-heuristic skips it and reads as host: run.sh's
-#      per-command caller cannot afford a `make -n` sweep each time, and by the time any check
-#      runs, a docker verdict that matters is already on disk as rung 1 or 2.
-# A docker-compose.override.yml in the repo is never a signal: it is usually a project's own, and
-# crew's override lives in the git dir.
-#
-# ACTION:
-#   none        --deps is an outcome ensure-deps.sh reports when the deps are already in place
-#               (present, installed, docker-present, docker-installed) — nothing to install
-#   install     docker mode and no such outcome: invoke dep-install now. Docker mode has no
-#               host-side fallback, so this is never deferred to "if a command fails"
-#   on-failure  host mode: invoke dep-install only when a command fails for a missing dependency
-#               (module-not-found, import error, test runner not found)
+# Prints INSTALL_MODE=docker|host, DOCKER_SERVICE=<name> (git config agent.install-service, then the
+# cache's "docker_service"; may be empty) and ACTION=none|install|on-failure, exit 0.
+# Mode, first match wins: git config --local agent.install-mode, dev-commands.json's "install_mode",
+# then detect-mode.sh's Makefile dry-run (--no-heuristic: host instead, for per-command callers that
+# cannot afford a `make -n` sweep). A repo's docker-compose.override.yml is never a signal.
+# ACTION: none when --deps reports the deps in place (present, installed, docker-present,
+# docker-installed); else install in docker mode (no host fallback), on-failure in host mode.
 
 set -uo pipefail
 
@@ -68,8 +46,7 @@ done
 if [ ! -d "$PROJECT_ROOT" ]; then echo "Error: directory does not exist: $PROJECT_ROOT" >&2; exit 1; fi
 PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 
-# _main_root_of <dir> — the main checkout from any linked worktree, in `pwd -P` form so the
-# paths built from it compare equal to PROJECT_ROOT's (see verify-worktree.sh's own copy).
+# _main_root_of <dir> — in `pwd -P` form, so paths built from it compare equal to PROJECT_ROOT's.
 _main_root_of() {
   local dir="$1" common
   common=$(cd "$dir" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
@@ -86,7 +63,6 @@ MAIN_ROOT="${MAIN_ROOT_ARG:-${MAIN_ROOT:-}}"
 [ -n "$MAIN_ROOT" ] || MAIN_ROOT="$PROJECT_ROOT"
 CACHE="$MAIN_ROOT/.coding-crew/dev-commands.json"
 
-# _cached <key> — a string field of the commands cache, or nothing.
 _cached() {
   [ -f "$CACHE" ] || return 0
   grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$CACHE" 2>/dev/null \
