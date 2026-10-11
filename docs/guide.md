@@ -475,8 +475,16 @@ covered by the default `.scratch/` gitignore entry; `crew-afk` warns until you a
 winning) and `--jira <KEY>` (`PROJ-12`, matching `^[A-Z][A-Z0-9]+-[0-9]+$`; omitted, no `<KEY>-`).
 `--jira PROJ-12` gives `feature/PROJ-12-<feature-slug>`. A name git refuses (`git check-ref-format
 --branch`) stops the run before any branch is made. A sprint that already has a `sprint.env` resumes
-on the branch it recorded and warns that `--jira` was ignored. A new branch forks from the default branch,
-wherever the main checkout is.
+on the branch it recorded and warns that `--jira` was ignored.
+
+**Where the branch starts.** With an `origin` remote, the run asks `origin` (`git ls-remote` /
+`git fetch`, never stale remote-tracking refs; an unreachable `origin` stops the run): a new branch
+starts, untracked, at origin's default branch, whatever your local one holds; a branch only on
+`origin` is created at its tip, tracking it; a local one is used as is, fast-forwarded when behind
+origin's, and a run whose local and origin branches diverged stops naming both tips. A local branch
+whose own `origin` branch is gone (it shipped) is renamed to `<branch>-shipped-<yyyymmdd>` (`-2`,
+`-3`… if taken), printed as `[BRANCH-SHIPPED]`, and the run starts fresh. Without `origin`, a new
+branch forks from the local default branch, wherever the main checkout is.
 
 ---
 
