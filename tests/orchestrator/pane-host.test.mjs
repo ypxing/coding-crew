@@ -1600,3 +1600,45 @@ test("adoptWorktree (orca) names a child whose parent orca does not list yet, an
   const last = sets(effects, "/wt/alpha").at(-1);
   assert.deepEqual(last.slice(1), ["worktree", "set", "--worktree", "path:/wt/alpha", "--display-name", "01-alpha", "--issue", "1", "--parent-worktree", "path:/wt/_feature"]);
 });
+
+test("adoptWorktree (orca) names a child whose parent orca lists but never named in one `worktree set` with that parent", async () => {
+  const effects = orcaListing("/wt/alpha", "/wt/_feature");
+  const named = await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", issue: 1, parent: "/wt/_feature" }));
+  assert.equal(named, true);
+  assert.deepEqual(effects._calls.map((c) => c.slice(1).join(" ")), [
+    "worktree show --worktree path:/wt/alpha --json",
+    "worktree set --worktree path:/wt/alpha --display-name 01-alpha --issue 1 --parent-worktree path:/wt/_feature",
+  ]);
+  assert.deepEqual(effects._logs, []);
+});
+
+test("an orca child whose parent orca never lists is named once without it, warned about once, and never retried", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const effects = orcaListing("/wt/alpha");
+  effects.featureRoot = "/wt/_feature";
+  await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () =>
+    Promise.all([adoptWorktree(effects, "/wt/_feature", { title: "alpha" }), adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", parent: "/wt/_feature" })]),
+  );
+  for (let spawn = 0; spawn < 3; spawn++) {
+    assert.equal((await openWorkerTerminal(effects, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" })).handle, "term_x");
+  }
+  assert.deepEqual(sets(effects, "/wt/alpha").map((c) => c.includes("--parent-worktree")), [true, false], "one refused, one named alone");
+  const warns = effects._logs.filter((l) => l.includes("/wt/alpha"));
+  assert.equal(warns.length, 1, effects._logs.join("\n"));
+  assert.match(warns[0], /^WARN orca named worktree \/wt\/alpha without its parent \/wt\/_feature/);
+});
+
+test("an orca child refused for a parent that orca names before the child is named alone gets that parent at once", async () => {
+  const effects = orcaListing("/wt/alpha");
+  const spawn = effects.spawnWithTimeout;
+  // orca lists and the run names `_feature` between the child's refused set and its set alone.
+  effects.spawnWithTimeout = async (cmd, args, opts) => {
+    if (args[1] === "set" && !args.includes("--parent-worktree") && !effects._paneAdopted?.has("/wt/_feature")) {
+      effects.listed.add("/wt/_feature");
+      effects._paneAdopted = new Set(["/wt/_feature"]);
+    }
+    return spawn(cmd, args, opts);
+  };
+  assert.equal(await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", parent: "/wt/_feature" })), true);
+  assert.deepEqual(sets(effects, "/wt/alpha").map((c) => c.includes("--parent-worktree")), [true, false, true]);
+});
