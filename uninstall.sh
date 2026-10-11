@@ -3,7 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Pre-scan for --user flag
 INSTALL_LEVEL="project"
 _filtered=()
 for _arg in "$@"; do
@@ -53,16 +52,8 @@ for cmd in jq; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Error: required command '$cmd' not found" >&2; exit 1; }
 done
 
-# jq on Windows (Git Bash) writes stdout in text mode, so every line arrives with a
-# trailing \r that lands inside the value — a path read as ".pi/skills/tdd\r" is not
-# the path that was installed. Normalise once here; see install.sh for the long form.
-# Command substitution rather than a `| tr -d '\r'` pipeline: one spawn per lookup
-# instead of three, which is what Git Bash's emulated fork() charges for. `$?` after
-# an assignment is jq's own status. Probed once so a jq that already writes LF calls
-# the binary directly. Defined after the dependency check so `command -v jq` still
-# reports a missing binary.
-# The probe reads through `read`, not `$(…)`: Git Bash's command substitution drops the CR
-# itself, so a `$(jq …)` probe never saw one and left every `< <(jq …)` loop unwrapped.
+# jq on Windows (Git Bash) leaves a \r inside every value; normalise once (see install.sh).
+# The probe reads through `read`: `$(…)` strips the CR itself, so it would never see one.
 _jq_probe=""
 IFS= read -r _jq_probe < <(command jq -rn '"probe"' 2>/dev/null) || true
 if [[ "$_jq_probe" == *$'\r' ]]; then
@@ -75,7 +66,6 @@ if [[ "$_jq_probe" == *$'\r' ]]; then
   }
 fi
 
-# The platform list and every platform's skill paths, from orchestrator/platforms.json.
 source "$SCRIPT_DIR/scripts/lib/platforms.sh"
 
 # rmdir that tolerates Windows' lazy directory-entry removal: a child deleted a
@@ -89,8 +79,8 @@ rmdir_if_empty() {
   rmdir "$dir" 2>/dev/null
 }
 
-# Walk up from a removed path removing now-empty directories, stopping at $root —
-# normally REPO_ROOT, but the platform's own override root when resolve_dest moved it.
+# Remove now-empty directories up from a removed path, stopping at $root (REPO_ROOT, or the
+# platform's own override root when resolve_dest moved it).
 prune_empty_dirs() {
   local root="$1" rel="$2" dir
   root=$(cd "$root" 2>/dev/null && pwd) || return 0
@@ -102,8 +92,7 @@ prune_empty_dirs() {
   done
 }
 
-# crew-afk's roles used to install as per-platform agent files (registry.json `retired-agents`),
-# with their protocols and assets under .coding-crew/. Removed with crew-afk, or on a full uninstall.
+# Retired role agent files and their .coding-crew/ dirs: removed with crew-afk, or on a full uninstall.
 REMOVED_RETIRED=0
 remove_retired_agents() {
   [[ "$REMOVED_RETIRED" -eq 0 ]] || return 0
@@ -137,9 +126,7 @@ remove_retired_agents() {
   done < <(jq -r '."retired-agents".dirs // [] | .[]' "$SCRIPT_DIR/registry.json")
 }
 
-# The tracker's shell wrappers used to install to .coding-crew/scripts/ (registry.json
-# `retired-scripts`). Stale on any install, so any uninstall removes them, then the directory once
-# nothing else is in it.
+# Retired tracker wrappers are stale on any install, so any uninstall removes them.
 REMOVED_RETIRED_SCRIPTS=0
 remove_retired_scripts() {
   [[ "$REMOVED_RETIRED_SCRIPTS" -eq 0 ]] || return 0
@@ -163,8 +150,7 @@ remove_skill() {
     return
   fi
 
-  # Both scopes' paths: an earlier install may have written the other one (Copilot project
-  # installs used to land in .copilot/), so uninstall sweeps both or the dead copy survives.
+  # Both scopes' paths: an earlier install may have written the other, so the dead copy goes too.
   local removed=0
   local platform full candidate
   for platform in "${PLATFORMS[@]}"; do
@@ -183,9 +169,8 @@ remove_skill() {
   done
   if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
 
-  # Skill assets install once to a platform-neutral path and are always overwritten, so
-  # uninstall owns them: a stale orchestrator left behind is an executable no installed skill
-  # body matches any more.
+  # Assets install once to a platform-neutral path, so uninstall owns them: a stale orchestrator
+  # left behind is an executable no installed skill body matches.
   local assets_dest
   while IFS= read -r assets_dest; do
     assets_dest="${assets_dest%$'\r'}"
@@ -195,7 +180,6 @@ remove_skill() {
       prune_empty_dirs "$REPO_ROOT" "$assets_dest"
     fi
   done < <(jq -r --arg s "$name" '.skills[$s] | (.assets.dest // empty), ((.["more-assets"] // [])[] | .dest)' "$SCRIPT_DIR/registry.json")
-  # Stale on any install, so any uninstall removes them (once).
   remove_retired_agents
   remove_retired_scripts
 }
@@ -230,13 +214,11 @@ elif [[ "$MODE" != "all" ]]; then
   usage
 
 else
-  # Remove everything — union of manifest (if present) and full registry
   echo "---"
 
   remove_retired_agents
   remove_retired_scripts
 
-  # Collect skill names: manifest + registry, deduped via sort -u
   _skill_names=()
   while IFS= read -r name; do
     name="${name%$'\r'}"
@@ -260,8 +242,7 @@ else
       echo "  removed $name/"
     fi
   done < <(jq -r '.docs.trees // {} | .[].dest // empty' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
-  # Drop .coding-crew/ only when nothing is left in it — config.json (the tracker choice, afk
-  # settings) is the user's and must survive an uninstall.
+  # Drop .coding-crew/ only when empty: config.json is the user's and must survive an uninstall.
   if [[ -d "$REPO_ROOT/.coding-crew" ]]; then
     rmdir_if_empty "$REPO_ROOT/.coding-crew" && echo "  removed .coding-crew/" || true
   fi

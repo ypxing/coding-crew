@@ -1,14 +1,6 @@
 import { createHash } from "node:crypto";
 
-/**
- * body-format.mjs — the backend-agnostic markdown-body helpers.
- *
- * A GitHub issue body uses the exact same markdown conventions as a local issue file
- * (`## Acceptance criteria`, `## Blocked by`, `Source:`) minus the `Status:` line, which
- * becomes a label/close-state instead. So every backend's `parseIssue` can share one
- * text-parsing implementation, extracted here verbatim from the pre-split `tracker.mjs`
- * (no behavior change) rather than duplicated per backend.
- */
+/** body-format.mjs — markdown-body parsing shared by every backend's `parseIssue`. */
 
 /** The code fence open after `line`, given the one open before it: "" when none (``` / ~~~, closed by the same mark). */
 function fenceAfter(fence, line) {
@@ -20,11 +12,7 @@ function fenceAfter(fence, line) {
   return m ? m[1] : "";
 }
 
-/**
- * Extract one `## <heading>` section's body. Stops at the next heading of the
- * same or higher level, so a `### Sub` inside the section is kept. Lines inside a
- * ``` / ~~~ fence are never headings.
- */
+/** One `## <heading>` section's body, up to the next heading of the same or higher level; fenced lines are never headings. */
 export function sectionBody(text, heading) {
   const lines = text.split("\n");
   const want = heading.trim().toLowerCase();
@@ -54,10 +42,7 @@ export function sectionBody(text, heading) {
   return body.join("\n").replace(/^\n+|\n+$/g, "");
 }
 
-/**
- * Replace a section's body, or append the section when absent. Never adds a
- * second heading with the same name — the failure the prose kept warning about.
- */
+/** Replace a section's body, or append the section when absent; never a second heading of the same name. */
 export function spliceSection(text, heading, body) {
   const lines = text.split("\n");
   const want = heading.trim().toLowerCase();
@@ -106,10 +91,7 @@ export function criteriaSection(text) {
   return sectionBody(text, "Acceptance criteria") ?? sectionBody(text, "Acceptance Criteria") ?? "";
 }
 
-/**
- * A `Source:` line marks a fix issue promoted from review findings. It is the
- * depth bound: findings raised against it are never promoted again.
- */
+/** A `Source:` line marks a fix issue promoted from review findings: findings against it are never promoted again. */
 export function isSourceGuarded(text) {
   // Only where promote-findings.sh writes it: column 0, outside a ``` / ~~~ fence.
   let fence = "";
@@ -125,15 +107,10 @@ export function isSourceGuarded(text) {
   return false;
 }
 
-/** Matches an `## Acceptance criteria` / `## Cross-cutting Requirements` heading — the two
- * headings `cli.mjs mark-done`'s criteria guard scopes to on every backend. */
+/** An `## Acceptance criteria` / `## Cross-cutting Requirements` heading: what `mark-done`'s criteria guard scopes to. */
 const CRITERIA_HEADING_RE = /^#{1,6}\s+(?:Acceptance Criteria|Cross-cutting Requirements)\s*$/i;
 
-/**
- * Every still-unchecked `- [ ]` line found under either criteria heading in `text` — the
- * close-time guard `cli.mjs mark-done` runs for every backend, shared here so a Node caller
- * does not reimplement the scan.
- */
+/** Every still-unchecked `- [ ]` line under either criteria heading in `text`. */
 export function uncheckedCriteria(text) {
   let inside = false;
   const unchecked = [];
@@ -149,20 +126,16 @@ export function uncheckedCriteria(text) {
 }
 
 /**
- * The numeric-matching half of `resolveBlockedBy`: `## Blocked by` entries written as
- * `Issue NN` (optionally `Issue #NN`) rather than a literal filename. Returns the matched
- * numbers as strings, in encounter order, duplicates included — resolving a number to a
- * concrete backend ref (a sibling filename for local, a bare issue number for GitHub) is
- * backend-specific and stays with each backend's own `resolveBlockedBy`/blocker lookup.
+ * `Issue NN` / `Issue #NN` entries' numbers as strings, in order, duplicates included. Resolving a
+ * number to a backend ref is each backend's own job.
  */
 export function extractBlockedByNumbers(section) {
   return [...section.matchAll(/\bissue[\s-]*#?0*([0-9]+)\b/gi)].map((m) => m[1]);
 }
 
 /**
- * A hash of what the coder works from — `## What to build` and `## Acceptance criteria` —
- * with checkbox marks normalised. Everything crew-afk writes itself (the `Status:` line,
- * `## Progress` / `## Blocked`, ticked boxes) is outside it, so only a human edit changes it.
+ * A hash of `## What to build` and `## Acceptance criteria`, checkbox marks normalised. Everything
+ * crew-afk writes itself is outside it, so only a human edit changes it.
  */
 export function issueFingerprint(text) {
   const parts = ["What to build", "Acceptance criteria"].map((h) =>

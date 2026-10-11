@@ -47,31 +47,27 @@ if [ ${#FILES[@]} -eq 0 ]; then
   exit 1
 fi
 
-# Use PROJECT_ROOT if set, otherwise current directory
 PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
 
-# Stage files (never use git add -A)
+# Only the named files, never `git add -A`.
 echo "Staging files:"
 for file in "${FILES[@]}"; do
   echo "  - $file"
   git -C "$PROJECT_ROOT" add "$file"
 done
 
-# Build commit message
 if [ -n "$PREFIX" ]; then
   FULL_MESSAGE="$PREFIX $MESSAGE"
 else
   FULL_MESSAGE="$MESSAGE"
 fi
 
-# Add co-author if provided
 if [ -n "$COAUTHOR" ]; then
   FULL_MESSAGE="${FULL_MESSAGE}
 
 Co-authored-by: ${COAUTHOR}"
 fi
 
-# Commit
 git -C "$PROJECT_ROOT" commit -m "$FULL_MESSAGE"
 
 if [ $? -eq 0 ]; then

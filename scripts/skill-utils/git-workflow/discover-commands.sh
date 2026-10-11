@@ -1,91 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Command discovery — mechanical gate for crew-afk (prompt-builder half)
-#
-# Finds the *local dev-loop* command for test/lint/typecheck/install/env/credential_target/
-# coverage/integration once per sprint, before
-# any worktree exists, by asking a model to read whatever of CLAUDE.md/AGENTS.md/README.md/Makefile/manifest
-# files this repo actually has — the same reference chain solve-issue's verification.md names,
-# but read by a model instead of pattern-matched by this script. Real repos document these
-# commands in prose, tables, and bullet lists a regex has no reliable way to parse (a table
-# with a "don't use this shortcut, it's broken" note in a column is exactly the shape that
-# broke the pattern-matched approach this replaces).
-#
-# This script only ever decides whether a model call is needed and, if so, assembles the
-# prompt for it, with a "skipped" / not-skipped stdout contract commands.mjs reads (the whole
-# of stdout becomes the prompt, informational preamble included). It never calls a
-# model itself, and it never writes a result anywhere; a sibling script owns turning the
-# model's response into .coding-crew/dev-commands.json.
-#
-# The prompt lists candidate *paths*, not their contents. dispatchPlain() hands the model the
-# same read/bash/edit/write toolset an interactive session gets (see dispatch.mjs), so the
-# model can open each file itself instead of having every candidate — a 950-line CLAUDE.md
-# included — pasted whole into a single CLI argv string. Content-in-prompt used to be how
-# this was built; it spent tokens on files the model often never needed (a Makefile no one
-# asked about, once CLAUDE.md alone answered every category being asked), and had no ceiling
-# as a repo's own docs grew. Paths are listed in the same fixed priority order as
-# CANDIDATE_FILES below (docs before build files before manifests), and the model is told to
-# stop reading once it has an answer for every category in this run's prompt (a subset of the
-# eight, see ASK_FIELDS below — not necessarily all of them), so a repo that documents
-# everything in CLAUDE.md never pays to have its Makefile and package.json read too.
-#
-# install is the fourth category, added so ensure-deps.sh (which deliberately never reads
-# CLAUDE.md itself — see its own header comment) can use a documented override instead of its
-# mechanical Makefile-target/lockfile heuristic. It is optional: a null install here is not a
-# failure, it means ensure-deps.sh's existing convention-based detection already covers this
-# repo and there is nothing to override.
-#
-# env is the fifth category, added so ensure-env.sh (same reason — it never reads CLAUDE.md
-# itself either) can use a documented .env-bootstrap override instead of its mechanical
-# .env.example-or-empty convention. Also optional, for the same reason: a null env means that
-# convention already covers this repo.
-#
-# credential_target is the sixth category: the command (if any) that runs the Makefile target
-# whose recipe generates package-manager credential config files (.npmrc, pip.conf,
-# .cargo/credentials.toml, …) from a template or env vars — not the .env bootstrap itself
-# (that's env, above). Like install/env, this is a full runnable command (e.g. "make _registry"),
-# not a bare target name — ensure-env.sh eval's it directly, the same way it evals a cached env
-# command, instead of reconstructing a `make` invocation itself from a name alone. Consumed by
-# ensure-deps.sh, which forwards a cached value to docker-install.sh's --credential-target flag
-# instead of dep-install's docker-install.md scanning Makefile comments for it on every run.
-# Also optional: a null here means no such target exists, so ensure-env.sh's own template-only
-# fallback (envsubst on any *.tpl files) already covers this repo.
-#
-# coverage is the seventh category: the local command that produces a test coverage report
-# (e.g. "npm test -- --coverage", "pytest --cov", "go test -cover ./..."), consumed by the
-# add-tests skill in place of asking a model to guess one from scratch on every run. Optional,
-# same rule as install/env/credential_target: only report one if explicitly documented (or an
-# unambiguous build-file target serves this purpose); a null here means add-tests reports "no
-# coverage tooling configured" plainly rather than guessing.
-#
-# integration is the eighth category: the command (if any) that runs a *real*
-# dependency-backed integration test tier — as distinct from a tier that only mocks the
-# dependency away — so add-tests can route external-dependency gap-fix issues to the real tier
-# instead of a mocked one. Optional, same rule as the other five optional fields: only report
-# one if explicitly discoverable; a null here means no such tier exists.
-#
-# Skips (mechanically, no model call, no tokens) when either:
-#   1. none of the known source files exist — verify-worktree.sh's own ecosystem-convention
-#      fallback already covers this case for free, so there is nothing to ask a model
-#   2. the committed .coding-crew/dev-commands.json already has all eight fields (test, lint,
-#      typecheck, install, env, credential_target, coverage, integration) — any value,
-#      including null, counts as "already discovered" for that field.
-#
-# Otherwise this asks a model about only the fields still missing from the cache — a field
-# already present (even as null) is trusted as-is and left out of the prompt entirely, so a
-# fresh discovery run can never let a fresh guess silently overwrite a real (possibly
-# hand-edited) answer; write-commands-cache.sh's merge trusts whatever field a response names.
-# This is bootstrap-once per field, not a recurring staleness check: the file is committed and
-# human-editable, so a present field is trusted indefinitely until a human clears it or passes
-# --refresh, which re-asks all eight fields unconditionally regardless of what is already
-# cached — the one supported way to force a correction. A file missing even one field — e.g.
-# only ensure-deps.sh's own install_mode/docker_service ever landed, because an earlier sprint's
-# model dispatch failed before writing any of these eight — still counts as "missing" for
-# whichever of the eight it lacks.
-#
-# Invocation: bash "<skill-dir>/scripts/discover-commands.sh" [--refresh]
-# Env: CREW_COMMANDS_REFRESH=1 has the same effect as --refresh.
+# discover-commands.sh [--refresh] — prints the prompt asking a model for this repo's dev-loop
+# commands (test, lint, typecheck, install, env, credential_target, coverage, integration), listing
+# file paths, not contents; prints "skipped" when no candidate exists or every field is cached.
+# A cached field, even null, is never re-asked: a fresh guess must not overwrite a hand-edited
+# answer. --refresh (or CREW_COMMANDS_REFRESH=1) re-asks all eight.
 
 REFRESH="${CREW_COMMANDS_REFRESH:-0}"
 while [ $# -gt 0 ]; do
@@ -95,15 +15,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# MAIN_ROOT resolution — must land on the *shared* main checkout even if this ever runs from
-# inside a linked worktree (normally it does not: commands.mjs always invokes it with
-# cwd=mainRoot, before any worktree exists — this is defensive symmetry with
-# write-commands-cache.sh, which solve-issue's own DISCOVER fallback can invoke from a
-# worker's worktree cwd). Prefer the $MAIN_ROOT env var the orchestrator/dispatcher exports,
-# then _main_root_of's --git-common-dir trick (mirrors verify-worktree.sh's own helper of the
-# same name), which resolves the main worktree's root from any linked worktree without an env
-# var. `git rev-parse --show-toplevel` alone returns the *current* worktree's own root, which
-# is wrong from inside a linked worktree.
+# Must land on the shared main checkout even from a linked worktree, where
+# `git rev-parse --show-toplevel` returns the worktree's own root.
 _main_root_of() {
   local dir="$1" common
   common=$(cd "$dir" && git rev-parse --git-common-dir 2>/dev/null) || return 1
@@ -120,32 +33,18 @@ if [ -z "$MAIN_ROOT" ]; then
 fi
 CACHE_FILE="$MAIN_ROOT/.coding-crew/dev-commands.json"
 
-# The eight categories write-commands-cache.sh persists. A key is "already discovered" once it
-# is *present* in the cache file with any value — including JSON `null`, which means "a model
-# already looked and confirmed no such command exists" (see write-commands-cache.sh's own
-# comment on that distinction). A key that is absent entirely means nobody has ever asked.
-# This matters because ensure-deps.sh writes its own two fields (install_mode/docker_service —
-# a *different* file section, not one of these eight) independently of this script, regardless
-# of whether discovery ever ran; a sprint whose first attempt failed before writing anything
-# (an expired credential, a dispatch timeout) can leave this same cache file on disk with none
-# of these eight keys in it. Trusting *any* existing file, as this script used to, then means
-# discovery never gets a second chance.
+# A key is "already discovered" once present with any value; JSON `null` means a model looked and
+# found none. ensure-deps.sh writes its own fields to the same file, so the file existing proves nothing.
 CACHE_FIELDS=(test lint typecheck install env credential_target coverage integration)
 
-# _cache_field_present <file> <key> — true if <key> appears in <file> with a quoted-string or
-# `null` value. Mirrors write-commands-cache.sh's own _extract_field regex so "present" means
-# the same thing to both scripts.
+# _cache_field_present <file> <key> — same regex as write-commands-cache.sh's _extract_field.
 _cache_field_present() {
   local file="$1" key="$2"
   [ -f "$file" ] || return 1
   grep -q "\"$key\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" "$file"
 }
 
-# Fixed, deterministic order — keeps the hash (and the prompt's file order) stable across
-# runs regardless of filesystem iteration order. Not tied to any one repo's stack: covers the
-# doc conventions (CLAUDE.md/AGENTS.md/README.md/Makefile) plus one manifest per common ecosystem. This
-# is also the priority order handed to the model: docs first (most likely to state the
-# command in prose), build files next, manifests last (often just a script name to infer).
+# Fixed order keeps the hash stable and is the priority handed to the model: docs, build files, manifests.
 CANDIDATE_FILES=(
   "$MAIN_ROOT/CLAUDE.md"
   "$MAIN_ROOT/AGENTS.md"
@@ -159,11 +58,7 @@ CANDIDATE_FILES=(
   "$MAIN_ROOT/composer.json"
 )
 
-# _content_hash <file> — one file's own content, independent of its path. Used only to spot
-# duplicates (a CLAUDE.md that is a symlink to AGENTS.md, or two files that happen to hold
-# identical content) before either file is added to the prompt: real repos symlink one to the
-# other for editor convenience, and quoting the same text twice would cost tokens for zero
-# extra information without changing what the model can answer.
+# _content_hash <file> — spots duplicates (a CLAUDE.md symlinked to AGENTS.md) so the prompt lists each once.
 _content_hash() {
   cat "$1" | if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi | awk '{print $1}'
 }
@@ -190,12 +85,7 @@ if [ "${#FOUND_FILES[@]}" -eq 0 ]; then
   exit 0
 fi
 
-# ASK_FIELDS — the fields this run actually asks about: a field already present in the cache
-# (any value, including null) is trusted as-is and left off this list, so the prompt never
-# re-asks a category a human or an earlier run already answered (write-commands-cache.sh's
-# merge trusts whatever field a response names — asking again is what let a re-discovery
-# silently clobber a hand-edited value). --refresh/CREW_COMMANDS_REFRESH=1 asks all eight
-# regardless of what is cached, the one supported way to force a correction.
+# ASK_FIELDS — the fields this run asks about: every field absent from the cache, or all eight under --refresh.
 ASK_FIELDS=()
 for key in "${CACHE_FIELDS[@]}"; do
   if [ "$REFRESH" = "1" ] || [ ! -f "$CACHE_FILE" ] || ! _cache_field_present "$CACHE_FILE" "$key"; then
@@ -211,7 +101,6 @@ fi
 echo "Command discovery: ${#FOUND_FILES[@]} source file(s) found — building discovery prompt for ${#ASK_FIELDS[@]} of eight categories"
 echo
 
-# _in_ask <key> — true if <key> is one of this run's ASK_FIELDS.
 _in_ask() {
   local key="$1" f
   for f in "${ASK_FIELDS[@]}"; do
@@ -358,10 +247,8 @@ cat <<'PROMPT'
   eval'd the same way downstream and loses the same guards if paraphrased.
 PROMPT
 
-# A manifest whose install puts the project's tools in a project-local directory that is not on
-# PATH (dep-install's host-install.sh: `uv sync --frozen` / `poetry install` → a virtualenv,
-# `composer install` → vendor/bin) makes a bare `pytest` or `phpunit` fail every check as
-# "command not found" — what the first demo smoke sprint hit (once, with uv). One line per
+# A manifest whose install puts tools in a project-local directory off PATH (a virtualenv,
+# vendor/bin) makes a bare `pytest` or `phpunit` fail as "command not found". One line per
 # ecosystem present; uv before poetry, the order host-install.sh picks them in.
 _runner_rule() { # <manifest> <tools> <where> <runner> <example: runner + tool> <tool>
   cat <<PROMPT

@@ -2,48 +2,14 @@
 set -uo pipefail
 
 # smoke-sprint.sh — run one real crew-afk sprint end to end on one platform, from a fresh repo.
-#
 # Usage: scripts/smoke-sprint.sh <platform> [--demo] [--dir <path>] [--setup-only] [-- <crew-afk run args>...]
-#
-# Builds a throwaway git repo from scripts/smoke-sprint/template/ (a tiny Node project, `npm test`
-# = `node --test`) with one ready issue from scripts/smoke-sprint/feature/ (`.scratch/subtract/`:
-# add `sub()`), installs crew-afk for <platform> from this checkout, runs `doctor`, then
-# `crew-afk run --feature-slug subtract`, and checks the outcome:
-#   - crew-afk exited 0
-#   - the issue is in `.scratch/subtract/issues/done/`
-#   - `feature/subtract` exports `sub` and its `node --test` passes
-# Prints `SMOKE: PASS (<platform>)` (`SMOKE: PASS (<platform>, demo)` under --demo, the only PASS
-# line cut-release.sh --demo-smoke accepts) / `SMOKE: FAIL: <why>`; exit 0 / 1, 2 on a usage error. Every run also prints
-# `crew-afk-version: <v>` (this checkout's registry.json) and `crew-afk-commit: <sha>` (this checkout's HEAD, `<sha>-dirty`
-# when it has uncommitted or untracked changes), which cut-release.sh --demo-smoke reads back.
-#
-# --demo runs the sprint on a pinned outside demo project instead, laid out in
-# scripts/smoke-sprint/demo/ (CREW_DEMO_DIR overrides the directory):
-#   repo     clone URL (CREW_DEMO_REPO overrides it, and then the file may be absent)
-#   sha      the commit to clone at, checked out as `main`; the clone's remote is removed, so the
-#            sprint can neither sync newer demo commits in nor push anything back
-#   check    the project's own checks, one shell command per line (blank and `#` lines skipped)
-#   feature/ the demo's `.scratch/<slug>/` (PRD and issues), copied to `.scratch/<slug>/`
-#   slug     optional, the feature slug (default `demo`)
-# PASS needs crew-afk to exit 0, every issue under `issues/done/`, and every `check` command to exit
-# 0 on `feature/<slug>`. A missing demo file is a usage error (exit 2). A demo run past --setup-only
-# appends `| version | date | PASS/FAIL | cost | dispatch-hours | findings |` to
-# scripts/smoke-sprint/RESULTS.md (CREW_SMOKE_RESULTS overrides the file).
-#
-# Repeatable: the repo is rebuilt from the template on every run, so no branch, sprint state or
-# dev-commands cache from an earlier run leaks in. The directory (default
-# ${TMPDIR:-/tmp}/crew-smoke-<platform>) is deleted first only when it is an earlier smoke repo
-# (`.git/crew-smoke` marker); any other existing path is refused. The crew-afk log is kept at
-# <dir>/.git/crew-smoke/run.log. --setup-only stops after install (no CLI call, no API cost).
-#
-# A results row is committed by hand: cut-release.sh needs a clean tree, so write the log outside
-# the checkout (e.g. >"${TMPDIR:-/tmp}/smoke.log") and commit RESULTS.md before cutting the release.
-#
+# Prints `SMOKE: PASS (<platform>)` (`, demo)` under --demo, the only line cut-release.sh accepts) or
+# `SMOKE: FAIL: <why>`, plus `crew-afk-version:`/`crew-afk-commit:` lines cut-release.sh reads back.
+# --demo uses the pinned project in scripts/smoke-sprint/demo/ and appends a RESULTS.md row.
 # Maintainer-only: ships to no consumer. A real run calls the platform's CLI and costs money.
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-# <platform> is any key of orchestrator/platforms.json.
 PLATFORMS=()
 while IFS= read -r _p; do PLATFORMS+=("${_p%$'\r'}"); done < <(jq -r 'keys_unsorted[]' "$ROOT/orchestrator/platforms.json")
 FIXTURES="$SCRIPT_DIR/smoke-sprint"
@@ -64,8 +30,7 @@ record() {
     const sum = (k) => d.reduce((a, x) => a + (Number(x[k]) || 0), 0);
     console.log(`$${sum("cost_usd").toFixed(2)} | ${(sum("duration_ms") / 3600000).toFixed(2)}`);
   ' "$DIR/.scratch/$SLUG/sprint-state.json" 2>/dev/null) || stats="? | ?"
-  # Folded as crew-afk's own summary folds them (review-rollup.mjs: one record per branch, latest
-  # wins), so a finding a later review block repeats is counted once.
+  # Folded as review-rollup.mjs folds them (latest per branch), so a repeated finding counts once.
   findings=$(node "$ROOT/orchestrator/review-rollup.mjs" "$DIR/.scratch/$SLUG/reviews/"sprint-review-*.md 2>/dev/null \
     | node -e 'let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () =>
         console.log(JSON.parse(s).branches.reduce((n, b) => n + (b.findings || []).length, 0)))' 2>/dev/null) \
@@ -116,13 +81,12 @@ fi
 
 if [[ -e "$DIR" ]]; then
   [[ -e "$DIR/.git/crew-smoke" ]] || fail "$DIR exists and is not a smoke repo — refusing to delete it"
-  # Retried: on macOS CI a lone rm -rf has failed with "Directory not empty" under .git
-  # (2 of 3 runs on PR #297) while something still wrote there; a later pass succeeds.
+  # Retried: on macOS CI a lone rm -rf can fail with "Directory not empty" under .git while
+  # something still writes there; a later pass succeeds.
   for _ in 1 2 3 4 5; do rm -rf "$DIR" 2>/dev/null && break; sleep 1; done
   [[ ! -e "$DIR" ]] || rm -rf "$DIR" || fail "cannot remove the previous smoke repo at $DIR"
 fi
 
-# --- build the repo -----------------------------------------------------------------------------
 if [[ $DEMO -eq 1 ]]; then
   git clone -q --no-checkout "$DEMO_REPO" "$DIR" || fail "cannot clone $DEMO_REPO"
   # The marker first: a checkout that fails below still leaves a repo the next run may delete.
@@ -154,7 +118,6 @@ git add -A && git commit -qm "smoke: install crew-afk ($PLATFORM)" || fail "inst
 echo "SMOKE: repo ready at $DIR ($PLATFORM)"
 [[ $SETUP_ONLY -eq 1 ]] && exit 0
 
-# --- run ----------------------------------------------------------------------------------------
 # CREW_SMOKE_AFK replaces the crew-afk command (tests stub it; it then makes no CLI call).
 AFK=(node .coding-crew/crew-afk/main.mjs)
 [[ -n "${CREW_SMOKE_AFK:-}" ]] && AFK=("$CREW_SMOKE_AFK")
@@ -167,7 +130,6 @@ echo "SMOKE: running the sprint (log: $DIR/$LOG)"
 rc=$?
 tail -n 40 "$LOG"
 
-# --- check --------------------------------------------------------------------------------------
 [[ $rc -eq 0 ]] || fail "crew-afk exited $rc (log: $DIR/$LOG, traces: $DIR/.scratch/$SLUG/traces/)"
 if [[ $DEMO -eq 1 ]]; then
   left=$(find ".scratch/$SLUG/issues" -name '*.md' -not -path '*/done/*' 2>/dev/null | sort | tr '\n' ' ')

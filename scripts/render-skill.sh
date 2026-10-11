@@ -1,21 +1,9 @@
 #!/usr/bin/env bash
 # render-skill.sh — render a skill's SKILL.md body for one platform.
-#
-# Usage: render-skill.sh <skill-name> <platform>            # prints to stdout
-#        render-skill.sh <skill-name> <platform> <outfile>
-#
-# The body is skills/<source-dir>/SKILL.md, one for every platform.
-#
-# Expansion inside the body:
-#   {{FRAGMENT:<key>}}  → skills/_shared/fragments/<key>.md (whole line) — one source for text
-#                          several skills share, instead of one copy each (orchestrator/lib/adapters/
-#                          render.mjs expands the same line in a role's protocol, so a skill and a
-#                          role can share it). Fragments read the same on every platform; use
-#                          {{PLATFORM}} in the body for anything that differs.
-#   {{PLATFORM}}        → the platform name
-#
-# A missing fragment, or any placeholder left unexpanded, is a hard error: a body
-# that renders with a `{{...}}` still in it would ship an instruction hole to the model.
+# Usage: render-skill.sh <skill-name> <platform> [<outfile>]   (stdout without <outfile>)
+# A whole `{{FRAGMENT:<key>}}` line becomes skills/_shared/fragments/<key>.md and `{{PLATFORM}}` the
+# platform name. A missing fragment or any placeholder left over is a hard error: it would ship an
+# instruction hole to the model.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -33,13 +21,8 @@ OUTFILE="${3:-}"
 
 [[ -f "$REGISTRY" ]] || { echo "Error: registry not found: $REGISTRY" >&2; exit 1; }
 
-# jq on Windows (Git Bash) writes stdout in text mode, so a source-dir read back as
-# "tdd\r" makes `skills/$SOURCE_DIR` a directory that does not exist. Normalise every
-# jq read once, here. Command substitution, not a `| tr` pipeline: render-skill.sh runs
-# once per installed SKILL.md, and on Git Bash every avoided spawn is ~5-50ms. Probed,
-# so a jq that already writes LF is called directly with no wrapper at all.
-# The probe reads through `read`, not `$(…)`: Git Bash's command substitution drops the CR
-# itself, so a `$(jq …)` probe never saw one and left every `< <(jq …)` loop unwrapped.
+# jq on Windows (Git Bash) leaves a \r inside every value, so "tdd\r" names no directory; normalise
+# once (see install.sh). The probe reads through `read`: `$(…)` strips the CR itself.
 _jq_probe=""
 IFS= read -r _jq_probe < <(command jq -rn '"probe"' 2>/dev/null) || true
 if [[ "$_jq_probe" == *$'\r' ]]; then

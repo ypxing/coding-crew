@@ -1,20 +1,7 @@
 /**
  * local.mjs — the local markdown issue tracker backend.
- *
- * Owns every mechanical fact the orchestrator prompt used to read by hand: which
- * issues exist, which are ready, which are blocked by an issue that is not in
- * done/ yet, what an issue's slug and branch are, and how to splice a
- * `## Progress` / `## Blocked` section without ever creating a second one.
- *
- * Slug derivation is deliberately identical to `issue_slug_of()` in receipts.sh
- * (basename, minus .md, minus leading digits): that shared derivation is what
- * ties an acceptance-criteria receipt to one specific issue rather than to
- * whichever branch was verified last.
- *
- * Text-parsing that is identical across backends (section extraction, the criteria
- * lookup, the `Source:` guard, the numeric half of `## Blocked by` resolution) lives in
- * `./body-format.mjs`, not here — this file keeps only what is genuinely file-specific:
- * filenames, the `Status:` line, and directory scans.
+ * The slug derivation must match `issue_slug_of()` in receipts.sh: it ties an acceptance-criteria
+ * receipt to one issue rather than to whichever branch was verified last.
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -53,16 +40,9 @@ export function branchFor(featureSlug, slug) {
 }
 
 /**
- * Every open issue file, sorted. Across every feature dir under .scratch/ by default,
- * or under a single `.scratch/<featureSlug>/` when one is given.
- *
- * A sprint is scoped to exactly one feature — one FEATURE_SLUG, one feature branch, one
- * `sprint.env` (see session-init.sh, sprint.mjs) — so a live sprint's dispatch loop must
- * always pass its own `sprint.featureSlug` here. Without it, a `ready-for-agent` issue
- * that merely happens to sit in a *different* `.scratch/<other-feature>/issues/open/`
- * gets dispatched, merged onto, and closed against the running sprint's feature branch —
- * real work landing on the wrong feature. The unscoped, all-features scan stays the
- * default only for callers with no sprint yet to scope to (e.g. a first `plan` survey).
+ * Every open issue file, sorted, across every feature under .scratch/ unless `featureSlug` names
+ * one. A live sprint must pass its own slug, or a ready issue of another feature is dispatched and
+ * merged onto this sprint's branch.
  */
 export function listOpenIssueFiles(mainRoot, { featureSlug = null } = {}) {
   const scratch = join(mainRoot, ".scratch");
@@ -88,10 +68,8 @@ export function listOpenIssueFiles(mainRoot, { featureSlug = null } = {}) {
 }
 
 /**
- * Resolve a `## Blocked by` section's entries to sibling issue filenames.
- * Accepts literal `NN-slug.md` filenames as well as `Issue NN` references —
- * the latter is how the dependency often actually gets written, and the
- * leading number is the only stable link back to the real file.
+ * Resolve a `## Blocked by` section's entries to sibling issue filenames: literal `NN-slug.md`
+ * names or `Issue NN` refs, whose leading number is the only stable link back to the file.
  */
 export function resolveBlockedBy(section, path) {
   const explicit = [...section.matchAll(/([0-9A-Za-z][\w.-]*\.md)/g)].map((m) => m[1]);
@@ -106,16 +84,13 @@ export function resolveBlockedBy(section, path) {
   return [...new Set([...explicit, ...resolved])];
 }
 
-/** Path to the machine-readable dependency map, a sibling of open/ and done/. */
 export function issueDepsPath(issuePath) {
   return join(dirname(dirname(issuePath)), "issues-deps.json");
 }
 
 /**
- * `issues-deps.json`, if `to-issues` wrote one: `{ "02-second.md": ["01-first.md"] }`.
- * The exact source of truth `## Blocked by` prose can't guarantee, since prose has more
- * shapes than any parser enumerates. Returns null when absent or unparseable, so callers
- * fall back to the markdown heuristic.
+ * `issues-deps.json`, if `to-issues` wrote one: exact where `## Blocked by` prose is not. Null when
+ * absent or unparseable, so callers fall back to the prose.
  */
 export function readIssueDeps(issuePath) {
   const path = issueDepsPath(issuePath);
@@ -152,12 +127,7 @@ export function parseIssue(path, text = readFileSync(path, "utf8")) {
   };
 }
 
-/**
- * Every issue of one feature, in every state, as `parseIssue` entries: `issues/open/` files with
- * their own `Status:`, then `issues/done/` files, whose status is `done` whatever their text says —
- * the directory is the state. The same entry shape (`slug`, `number`, `title`, `status`, `text`, …)
- * as github's `listFeatureIssues`, plus the `path`/`file` only a file has.
- */
+/** Every issue of one feature, in every state; a file in `done/` is `done` whatever its text says. */
 export function listFeatureIssues(mainRoot, { featureSlug } = {}) {
   const dir = join(mainRoot, ".scratch", featureSlug, "issues");
   const files = (state) => {
@@ -174,11 +144,7 @@ export function listFeatureIssues(mainRoot, { featureSlug } = {}) {
   ];
 }
 
-/**
- * Every feature: each `.scratch/<slug>/` directory with an `issues/` subdirectory, sorted by slug.
- * `state` is `open` while `issues/open/` holds an `.md` file, else `closed`; `ready` counts the
- * `Status: ready-for-agent` files there. No `.scratch/` is no features.
- */
+/** Every feature: each `.scratch/<slug>/` with an `issues/` subdirectory, sorted by slug. */
 export function listFeatures(mainRoot) {
   const scratch = join(mainRoot, ".scratch");
   if (!existsSync(scratch)) return [];
@@ -198,7 +164,6 @@ export function featureDepsFile(mainRoot, { featureSlug } = {}) {
   return existsSync(path) ? path : null;
 }
 
-/** Files present in the sibling done/ dir of an issue's open/ dir. */
 export function doneFiles(issuePath) {
   const done = join(dirname(dirname(issuePath)), "done");
   return existsSync(done) ? new Set(readdirSync(done)) : new Set();
@@ -209,11 +174,8 @@ export function blockers(issue, done = doneFiles(issue.path)) {
 }
 
 /**
- * Ready and unblocked, in filename order. Everything else is skipped.
- *
- * `featureSlug` is forwarded to `listOpenIssueFiles` unchanged — see its docstring for
- * why a running sprint must always pass its own slug here. `includeBlocked` keeps the ready
- * issues still waiting on a blocker: preflight probes their `## Requires` before any dispatch.
+ * Ready and unblocked, in filename order. `includeBlocked` keeps the ready issues still waiting
+ * on a blocker: preflight probes their `## Requires` before any dispatch.
  */
 export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlug = null, includeBlocked = false } = {}) {
   const issues = listOpenIssueFiles(mainRoot, { featureSlug }).map((p) => parseIssue(p));
@@ -244,10 +206,9 @@ function realpathAsFarAsExists(p) {
 }
 
 /**
- * The absolute issue path a CLI ref names, or null when it is not one this backend may read: a
- * path that, symlinks resolved, sits under the main root's `.scratch/`. A relative ref resolves
- * against `cwd` when that names an existing file, else against the main root (a worker in a
- * worktree names `.scratch/…` paths, which live only in the main checkout). Stats, never reads.
+ * The absolute issue path a CLI ref names, or null unless it sits under the main root's `.scratch/`
+ * with symlinks resolved. A relative ref resolves against `cwd` when that names a file, else the
+ * main root: a worker in a worktree names `.scratch/…` paths that live only in the main checkout.
  */
 export function validateRef(mainRoot, ref, { cwd = process.cwd() } = {}) {
   if (!ref) return null;
@@ -260,11 +221,7 @@ export function validateRef(mainRoot, ref, { cwd = process.cwd() } = {}) {
   return real;
 }
 
-/**
- * `{title, body}` for the issue file at `path` (already through `validateRef`), or null when there
- * is none. The body is the file minus its `# <title>` line; a file with no such line keeps all of
- * it and takes its slug as the title, as `parseIssue` does. Comments are already in the file.
- */
+/** `{title, body}` for the issue file at `path`, or null; no `# <title>` line means its slug is the title. */
 export function fetchIssue(mainRoot, path) {
   if (!existsSync(path) || !statSync(path).isFile()) return null;
   const issue = parseIssue(path);
@@ -283,17 +240,15 @@ export function knownFile(issue) {
   return { name: issue.file, text: issue.text };
 }
 
-/** The `.md` files in a feature's `issues/<state>/`, sorted. */
 function stateFiles(mainRoot, featureSlug, state) {
   const d = join(mainRoot, ".scratch", featureSlug, "issues", state);
   return existsSync(d) ? readdirSync(d).filter((f) => f.endsWith(".md")).sort() : [];
 }
 
 /**
- * `publish-issues`' re-run rule: a feature with done issues is not re-published over (exit 4 —
- * reconcile by hand), and open issues are only overwritten with `--replace` (exit 5) — never one a
- * draft's `## Blocked by` names (`blockers`), which `--replace` would delete and leave that draft
- * blocked for good (exit 1). Null when publishing may go ahead.
+ * `publish-issues`' re-run rule: a feature with done issues is not re-published over (exit 4), and
+ * open issues are only overwritten with `--replace` (exit 5), never one a draft's `## Blocked by`
+ * names, which would leave that draft blocked for good (exit 1). Null when publishing may go ahead.
  */
 export function publishGuard(mainRoot, { featureSlug, replace = false, blockers = [] } = {}) {
   const issues = `.scratch/${featureSlug}/issues`;
@@ -320,12 +275,7 @@ export function publishGuard(mainRoot, { featureSlug, replace = false, blockers 
   return null;
 }
 
-/**
- * `publish-issues`' local side: each draft is written as-is (its `## Blocked by` already rewritten
- * to final filenames) to `issues/open/NN-<slug>.md`, numbered from one past the feature's highest
- * existing issue number in draft order; `--replace` first removes the open issues; `finish` writes
- * `issues-deps.json` naming the final filenames.
- */
+/** `publish-issues`' local side: drafts numbered from one past the feature's highest issue number. */
 export function beginPublish(mainRoot, { featureSlug, drafts, replace = false } = {}) {
   const issues = join(mainRoot, ".scratch", featureSlug, "issues");
   const openDir = join(issues, "open");
@@ -365,22 +315,14 @@ function withStatus(text, status) {
   return `Status: ${status}\n\n${text}`;
 }
 
-/**
- * Rewrite a single-slice source issue in place: the file at `path` becomes `body` with its
- * `Status:` set to `status`; everything else, a `Source:` line included, stays as written.
- * Null when there is no such file.
- */
+/** Rewrite a single-slice source issue in place with its `Status:` set; null when there is no file. */
 export function rewriteIssue(mainRoot, path, { body, status } = {}) {
   if (!existsSync(path) || !statSync(path).isFile()) return null;
   writeFileSync(path, withStatus(body, status));
   return true;
 }
 
-/**
- * What `mark-done` closes at `path`: its name, its sprint dir (`.scratch/<slug>`, where the
- * `.orchestrated` marker lives), and whether it is already in `done/` (`alreadyDone`, a message)
- * or exists nowhere (`missing`).
- */
+/** What `mark-done` closes at `path`: its name, its sprint dir, and whether it is already done or missing. */
 export function doneTarget(mainRoot, path) {
   const name = basename(path);
   const stateDir = dirname(path);
@@ -394,7 +336,6 @@ export function doneTarget(mainRoot, path) {
   return { name, sprintDir };
 }
 
-/** The issue file's text, read now, for `mark-done`'s criteria guard. */
 export function readIssueBody(mainRoot, path) {
   return readFileSync(path, "utf8");
 }
