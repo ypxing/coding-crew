@@ -139,7 +139,9 @@ run_lookup() {
 }
 
 @test "launcher: the program lookup tries the repo, then the main checkout, then the user-level install" {
-  local home="$BATS_TEST_TMPDIR/home" main="$BATS_TEST_TMPDIR/main" wt="$BATS_TEST_TMPDIR/wt"
+  # Resolved with pwd -P: git reports the main checkout's real path, and macOS's temp dir sits behind the /var → /private/var symlink.
+  local tmp; tmp="$(cd "$BATS_TEST_TMPDIR" && pwd -P)"
+  local home="$tmp/home" main="$tmp/main" wt="$tmp/wt"
   mkdir -p "$home" "$main"
   git -C "$main" init -q -b main
   git -C "$main" -c user.email=t@test -c user.name=T commit -q --allow-empty -m init
