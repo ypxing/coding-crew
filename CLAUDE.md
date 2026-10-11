@@ -17,7 +17,7 @@ TARGET_REPO=/tmp/test-repo ./install.sh claude --skill crew-afk
 # Render a skill body without a full install
 bash scripts/render-skill.sh crew-afk codex | less
 
-# Run tests: one bats process per file, CPU-count at a time (plain `bats tests/*.bats` runs files one by one, ~6x slower)
+# Run tests: one bats process per file, CPU-count at a time, heaviest first (plain `bats tests/*.bats` runs files one by one, ~6x slower)
 bash scripts/ci-run-bats.sh tests/*.bats
 
 # After editing crew-grill/crew-brainstorm/to-issues: behavioural A/B (base ref vs worktree), judged blind; costs API money
