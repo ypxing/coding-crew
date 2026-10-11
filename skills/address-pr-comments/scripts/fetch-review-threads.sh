@@ -1,16 +1,9 @@
 #!/usr/bin/env bash
 # fetch-review-threads.sh — print, as JSON, the PR review threads that need a response.
-#
 # Usage: fetch-review-threads.sh [<pr-number>]
-#
-# A thread is included only if it is unresolved AND its latest comment is from a trusted
-# author (write/maintain/admin permission on the repo). Comments by anyone else are removed
-# from the output, so the caller only ever sees trusted text. A thread whose latest comment
-# is a bot's or an outsider's reply is excluded — "waiting for a human" needs no stored state.
-# Top-level review bodies from trusted authors appear as path-less threads.
-#
+# Only unresolved threads whose latest comment is from a trusted author (write/maintain/admin), minus
+# untrusted comments, so the caller only sees trusted text; trusted review bodies are path-less threads.
 # Output: [{id, path, line, isOutdated, comments: [{author, body, createdAt}]}]
-# Permission lookups happen at most once per login per invocation. All GitHub data via `gh`.
 
 set -euo pipefail
 

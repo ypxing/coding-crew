@@ -4,25 +4,14 @@
 # Usage:
 #   bash scripts/check-requires.sh --project-root <dir> --issue <file> [--issue <file> …] [--timeout <s>]
 #
-# An issue declares what its checks need that the project's install does not guarantee — a
-# service, a credential, a tool — as one shell command per bullet, in backticks; exit 0 means
-# satisfied:
-#
-#   ## Requires
-#   - `make start-localstack`
-#   - `test -n "$LOCALSTACK_AUTH_TOKEN"`
-#
-# Each command runs on the host with cwd <project-root>, at the trust level of dev-commands.json
-# (the team's own skills wrote both). A command may start a service; it stays up. A command two
-# issues share runs once, and both get its verdict. --timeout (default 300) bounds each command.
-#
+# Each `## Requires` bullet's first backtick span is a shell command (exit 0 = satisfied), run on the host
+# in <project-root> once even if two issues share it; --timeout (default 300) bounds each command.
 # Prints, per issue and command:
 #   REQUIRE: pass <issue> <cmd>
 #   REQUIRE: fail <issue> <cmd>
 #     exit <N>                          or: timed out after <s>s
 #     | <output line>                   the tail of its output
-# and exits 1 if any command failed, else 0. An issue with no `## Requires` prints nothing and
-# passes. Deciding what an issue needs is the authoring skills' job; this only runs it.
+# and exits 1 if any command failed, else 0. An issue with no `## Requires` prints nothing and passes.
 
 set -uo pipefail
 
@@ -57,17 +46,14 @@ fi
 [[ "$TIMEOUT" =~ ^[0-9]+$ ]] && [ "$TIMEOUT" -gt 0 ] || { echo "Error: --timeout must be a positive number of seconds" >&2; exit 2; }
 [ "${#ISSUES[@]}" -gt 0 ] || exit 0
 
-# _requires <issue> — its `## Requires` commands, one per line: the first backtick span of
-# each bullet, up to the next heading.
+# _requires <issue> — the first backtick span of each `## Requires` bullet, up to the next heading.
 _requires() {
   awk '/^## Requires[[:space:]]*$/{f=1;next} /^#+ /{f=0} f' "$1" 2>/dev/null \
     | sed -n 's/^[[:space:]]*[-*][[:space:]][^`]*`\([^`][^`]*\)`.*/\1/p'
 }
 
-# _run <cmd> <log> — exit code of <cmd> in PROJECT_ROOT, or 124 once TIMEOUT passes. `timeout`
-# where the host has one (it signals the command's whole process group); otherwise a poll
-# that does the same: under `set -m` the background job leads its own group, so a child the
-# command started (a `docker compose up` it backgrounded) is stopped with it, not orphaned.
+# _run <cmd> <log> — exit code, or 124 once TIMEOUT passes. Without timeout(1), a poll under `set -m`:
+# the job leads its own process group, so a child it backgrounded (`docker compose up`) dies with it.
 _run() {
   local cmd="$1" log="$2" tbin=""
   command -v timeout >/dev/null 2>&1 && tbin=timeout
@@ -94,8 +80,7 @@ _run() {
   wait "$pid"
 }
 
-# Every distinct command, in first-seen order, and its result. Indexed arrays, not an
-# associative one: macOS ships bash 3.2.
+# Parallel indexed arrays, not an associative one: macOS ships bash 3.2.
 CMDS=()
 RCS=()
 LOGS=()

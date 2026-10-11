@@ -184,7 +184,7 @@ rm -rf "$TEST_DIR"
 
 echo "All tests passed! ✓"
 
-# Test 10: Invalid JIRA ticket format (Finding #1)
+# Test 10: Invalid JIRA ticket format
 echo "Test 10: Reject invalid JIRA ticket formats"
 invalid_jira="--jira INVALID"
 result=$(parse_jira_flag "$invalid_jira")

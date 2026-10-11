@@ -1,23 +1,12 @@
 #!/usr/bin/env bash
-# True (exit 0) if <cmd> — or the `make <target>` recipe it runs, expanded by `make -n` — runs
-# `docker run` / `docker exec`; false (exit 1) when it does not. Each reason is printed on stdout,
-# one per line.
+# True (exit 0) if <cmd>, or the `make <target>` recipe it runs as `make -n` expands it, runs
+# `docker run` / `docker exec`, printing each reason on stdout; false (exit 1) otherwise.
 #
-# A command that runs docker itself is run on the host rather than nested (see
-# detect-docker-nesting.sh), and its `docker compose` calls reach the shared dep volumes because
-# the docker shim on PATH adds this worktree's crew override to every one of them — with or
-# without `-f`, `COMPOSE_FILE` or `-p`, so none of those is a bypass. These are:
-#   - `docker run` / `docker exec`   no compose file is loaded at all, so none of the override's
-#                                    volumes
-#
-# A recipe this cannot expand (a shell script, a failing `make -n`) has nothing to object to and
-# is exit 1 — docker-install.sh's probe of the volumes afterwards is what catches those.
-#
+# A command running docker itself runs on the host, and its `docker compose` calls get the crew
+# override from the shim whatever -f/COMPOSE_FILE/-p they use; only `docker run`/`exec` loads none.
+# A recipe this cannot expand is exit 1: docker-install.sh's volume probe afterwards catches those.
 # Usage: detect-compose-bypass.sh --dir <path> --cmd <cmd>
-# Exit codes:
-#   0  a bypass was found (reasons on stdout)
-#   1  none found
-#   2  argument error
+# Exit codes: 0 a bypass was found (reasons on stdout), 1 none found, 2 argument error
 
 set -uo pipefail
 
@@ -41,7 +30,6 @@ if [[ -z "$DIR" || -z "$CMD" ]]; then
   exit 2
 fi
 
-# The same expansion detect-docker-nesting.sh uses to decide the command runs docker at all.
 text="$CMD"
 target="$(printf '%s' "$CMD" | grep -oE 'make[[:space:]]+[A-Za-z0-9_.:-]+' | head -1 | awk '{print $2}')"
 if [[ -n "$target" && -f "$DIR/Makefile" ]]; then
@@ -55,8 +43,7 @@ _add() {
   REASONS+=("$1")
 }
 
-# One docker call per segment: lines are split on shell separators first, so the docker part
-# of `cd x && docker run ...` is judged on its own.
+# Split on shell separators first, so the docker part of `cd x && docker run ...` is judged alone.
 while IFS= read -r seg; do
   seg="${seg#"${seg%%[![:space:]]*}"}"
   read -r -a words <<<"$seg"
