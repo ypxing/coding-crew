@@ -1,17 +1,7 @@
 /**
- * commands.mjs — the sprint's one-time command discovery.
- *
- * Finds the local dev-loop test/lint/typecheck commands once, before any worktree exists,
- * in three steps: a bash script decides whether a model call is needed and builds the
- * prompt (discover-commands.sh), an agent-less dispatchPlain() call answers it, and a second bash script (write-commands-cache.sh) turns
- * the answer into .coding-crew/dev-commands.json. verify-worktree.sh and solve-issue then
- * read that cache instead of guessing from CLAUDE.md/Makefile with a fragile regex.
- *
- * Advisory, like ensure-deps.sh: any failure here is logged and never thrown — a missing or
- * stale cache just means the checks fall back to the pre-existing heuristic chain, exactly the
- * behaviour every repo already had before this step existed. --dry-run costs zero tokens: the
- * discovery script itself is read-only and safe to run for its "would (not) run" message, but
- * the model dispatch and the cache write are skipped outright.
+ * commands.mjs — find the dev-loop test/lint/typecheck commands once per sprint and cache them in
+ * .coding-crew/dev-commands.json. Advisory: a failure is logged, never thrown, and each check falls
+ * back to its own discovery.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -19,11 +9,8 @@ import { dirname, join } from "node:path";
 import { dispatchPlain } from "./dispatch.mjs";
 
 export async function discoverCommands(effects, { platform, model, timeoutMs, maxBudgetUsd = null, log = () => {}, recordCost = () => {} }) {
-  // Read-only — safe (and informative) to actually run under --dry-run/plan, unlike the
-  // model dispatch and cache write below.
+  // Read-only, so it runs even under --dry-run.
   const d = effects.bash("discover-commands.sh", [], { mutating: false });
-  // Its first line says what it decided; any lines after it are the prompt, kept in a file of
-  // its own (the dispatch below reads d.stdout, not the file) rather than in the trace log.
   const [head, ...prompt] = d.stdout.trim() ? d.stdout.trim().split("\n") : [];
   if (head) log(head);
   if (prompt.length && effects.dryRun) log(prompt.join("\n"), "debug");
@@ -34,23 +21,13 @@ export async function discoverCommands(effects, { platform, model, timeoutMs, ma
     log("Command discovery: prompt kept at .scratch/commands-prompt.md", "debug");
   }
 
-  // A non-zero exit here (a candidate file vanishing mid-read, an unreadable manifest, …)
-  // must not fall through to dispatching stderr's leftovers or a half-built prompt as if it
-  // were discover-commands.sh's real output — that is how this step used to fail silently:
-  // no cache, no error anyone could see short of re-running by hand.
+  // A failed script must not dispatch its leftovers or a half-built prompt as real output.
   if (d.code !== 0) {
     log(`Command discovery: discover-commands.sh failed (exit ${d.code}) — ${(d.stderr || d.stdout).trim() || "no output"}`);
     return;
   }
 
-  // Only discover-commands.sh's own *first line* ever says "skipped" — its skip paths echo
-  // that single line and exit immediately, before printing a prompt. Testing the regex
-  // against the whole of d.stdout (as this used to do) matches the word "skipped" anywhere
-  // in the prompt it goes on to build, including inside a quoted CLAUDE.md/AGENTS.md's own
-  // prose ("...because I skipped this; don't repeat the mistake." is a real line seen in the
-  // wild) — silently discarding a fully-built prompt and never calling the model, with
-  // nothing logged to explain why, because the short-circuit fires before any of the
-  // branches below that do log.
+  // Only the first line can say "skipped": the prompt may quote that word from a CLAUDE.md.
   const firstLine = d.stdout.split("\n", 1)[0] ?? "";
   if (/^Command discovery: skipped/.test(firstLine) || effects.dryRun) return;
 
@@ -65,8 +42,7 @@ export async function discoverCommands(effects, { platform, model, timeoutMs, ma
       outFile,
       timeoutMs,
       maxBudgetUsd,
-      // Distinguishes this agent-less dispatch from the others under the
-      // CREW_FAKE_DISPATCH test seam — see fake-dispatch.sh's "commands-discovery" branch.
+      // Selects fake-dispatch.sh's "commands-discovery" branch under CREW_FAKE_DISPATCH.
       fakeAgent: "commands-discovery",
     });
   } catch (e) {

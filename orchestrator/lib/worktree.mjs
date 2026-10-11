@@ -1,9 +1,6 @@
 /**
- * worktree.mjs — one isolated checkout per issue, for every platform.
- *
- * This is what makes the four platforms behave identically: the orchestrator creates
- * the worktree itself, so isolation no longer depends on Claude's runtime managing it
- * or on a Copilot worker obeying a "Working directory:" line in its prompt.
+ * worktree.mjs — one isolated checkout per issue, created by the orchestrator itself so isolation
+ * never depends on a platform's runtime or a worker obeying its prompt.
  */
 
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, symlinkSync, rmSync } from "node:fs";
@@ -11,11 +8,7 @@ import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
 import { adoptWorktree } from "./pane-host/index.mjs";
 
-/**
- * Base directory worktrees are created under: `CREW_WORKTREE_ROOT` (absolute, or relative to
- * `mainRoot`), which main.mjs also sets from config.json's afk.worktreeRoot, else
- * `.scratch/worktrees`.
- */
+// main.mjs also sets CREW_WORKTREE_ROOT from afk.worktreeRoot.
 export function worktreeRoot(mainRoot) {
   const override = process.env.CREW_WORKTREE_ROOT;
   if (!override) return join(mainRoot, ".scratch", "worktrees");
@@ -31,61 +24,16 @@ export function featureWorktreePath(mainRoot, featureSlug) {
   return worktreePath(mainRoot, `crew/${featureSlug}/_feature`);
 }
 
-/**
- * Provisioned into every worktree as if `.worktreeinclude` listed them, without writing that
- * file into the user's repo. It can be generated in mainRoot after round 1's worktrees exist
- * (.env by dep-install's ensure-env.sh), so a "does it exist yet" check at creation time would
- * race; an entry whose source is missing is skipped. Crew's compose override is not one: it
- * lives in each worktree's own git dir, never in the repo tree.
- */
+/** Provisioned as if `.worktreeinclude` listed them; `.env` can appear only after the first worktrees exist. */
 const BUILTIN_ENTRIES = [".env"];
 
-/**
- * Entries provisioned as a real copy instead of a symlink. `.env` is the one case where
- * a symlink to mainRoot's absolute path is actively wrong, not just unnecessary: a worker
- * running inside a container that bind-mounts only the worktree (not mainRoot) resolves
- * the link to a path that does not exist in its filesystem, so a from-worktree read/write
- * of `.env` fails with ENOENT even though the file is "there" from the host's point of
- * view. A copy has no such target to lose.
- */
+/** Copied, not symlinked: a container that bind-mounts only the worktree cannot resolve a link to mainRoot. */
 const COPY_ENTRIES = new Set([".env"]);
 
 /**
- * Create (or reuse) the worktree for a branch.
- * Reuse matters for resume: a retained branch already holds committed WIP.
- *
- * `expectReuse` names whether the *caller* already has a reason to believe this
- * branch should exist (the issue has recorded progress from an earlier round).
- * Reuse is otherwise silent and un-rebased: a branch left behind by an earlier,
- * abandoned attempt (branches are never deleted except by cleanup-worktrees.sh's
- * own ancestry-checked sweep) can sit in the repo with a base that predates work
- * this sprint has since merged. Reusing it as-is on what the caller thinks is a
- * *fresh* dispatch would silently carry that stale base all the way to the merge
- * step, where it surfaces 45 minutes later as an unexplained conflict. Detected
- * here instead: `base` not being an ancestor of the existing branch, on a dispatch
- * nobody expected to resume, is reported back as `stale` rather than reused.
- *
- * Two cases auto-resolve rather than staying `stale`, both because the branch holds no
- * unique work: it has no commits `base` lacks (a worker that died before committing), or
- * its tree is byte-identical to `base`'s (debris whose commits were squashed into the
- * feature branch elsewhere — ancestry can't see that, tree equality can). The branch is
- * deleted and recreated fresh from `base`. A branch with real unique content still stalls
- * for a human.
- *
- * `mode: "checkout"` is for the sprint's feature branch (at `path`, which names the `_feature`
- * worktree since the branch's own name does not): a branch with commits that must never be
- * discarded or judged stale. A worktree already at `path` on `branch` is reused in place when
- * clean (`created: false`: a live feature agent may be working in it). A worktree at `path` with
- * uncommitted changes is refused (`stale`, the reason lists the files: nothing is removed)
- * whatever it has checked out — another branch or a detached HEAD included. A clean one on
- * another branch or detached is switched to `branch` in place (`created: false`), never removed:
- * a live agent's cwd may be in it. With none at `path`, it checks the existing branch out — or
- * creates it from `base` — into a new worktree there.
- * The branch's other holders are released as for any worktree, but only crew-made
- * ones (under the worktree root): the main checkout or a user's own worktree being on it is a
- * refusal, not a switch.
- *
- * A worktree this creates is announced to the pane host (`adopt`: `{title, issue, parent}`).
+ * Create (or reuse) the worktree for a branch. With `expectReuse` false, an existing branch `base`
+ * is not an ancestor of is `stale` — its old base would surface later as a merge conflict — unless
+ * it holds no unique work (no commits past `base`, or `base`'s tree), when it is recreated.
  */
 export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expectReuse = true, mode = "issue", path: at, adopt = null }) {
   const path = at ?? worktreePath(mainRoot, branch);
@@ -131,11 +79,7 @@ export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expec
   return { path, created: true, reusedBranch: exists };
 }
 
-/**
- * A path with its symlinks resolved, or as given when it does not exist. git lists worktrees by
- * their real path, which differs from one built on `mainRoot` when that goes through a symlink
- * (macOS's `/var` → `/private/var`).
- */
+/** git lists worktrees by real path, which differs through a symlinked mainRoot (macOS's `/var` → `/private/var`). */
 const realPath = (path) => {
   try {
     return realpathSync(path);
@@ -150,10 +94,7 @@ export function listsWorktree(listed, path) {
   return listed.split("\n").some((line) => line.startsWith("worktree ") && realPath(line.slice("worktree ".length)) === want);
 }
 
-/**
- * The feature slug of a directory inside `<worktreeRoot>/crew/<slug>/_feature`, else null. Both
- * paths are compared by real path, so a root reached through a symlink still matches.
- */
+/** The slug of a directory inside `<worktreeRoot>/crew/<slug>/_feature`, else null; compared by real path. */
 export function featureSlugOfPath(root, dir) {
   const rel = relative(realPath(root), realPath(dir));
   if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
@@ -161,7 +102,6 @@ export function featureSlugOfPath(root, dir) {
   return m ? m[1] : null;
 }
 
-/** The branch a worktree listed by `git worktree list --porcelain` has checked out, for the one at `path`. */
 function branchAt(listed, path) {
   const want = realPath(path);
   const block = listed.split("\n\n").find((b) => {
@@ -171,6 +111,11 @@ function branchAt(listed, path) {
   return block?.split("\n").find((l) => l.startsWith("branch "))?.slice("branch ".length) ?? null;
 }
 
+/**
+ * The feature branch's `_feature` worktree: its commits are never discarded or judged stale. A
+ * dirty worktree at `path` is refused and a clean one switched in place (a live agent's cwd may be
+ * in it); only crew-made holders of the branch are released.
+ */
 function checkoutWorktree(effects, { mainRoot, branch, base, path, adopt }) {
   let listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
   if (existsSync(path) && listsWorktree(listed, path)) {
@@ -221,11 +166,9 @@ function checkoutWorktree(effects, { mainRoot, branch, base, path, adopt }) {
 }
 
 /**
- * Free `branch` from any other worktree holding it, so `git worktree add` can check it out.
- * A registration whose directory is gone is pruned; a clean checkout is removed (its commits
- * live on the branch, not in the worktree). Returns a reason string when the holder must be
- * kept — the main checkout, uncommitted changes, or (with `onlyCrewMade`) a holder that predicate
- * rejects, such as a user's own linked worktree — else null.
+ * Free `branch` from any other worktree holding it: a gone one is pruned, a clean one removed (its
+ * commits live on the branch). A reason string when the holder must be kept — the main checkout,
+ * uncommitted changes, or one `onlyCrewMade` rejects — else null.
  */
 function releaseBranch(effects, listed, branch, { onlyCrewMade } = {}) {
   const entries = listed.split("\n\n").map((block) => {
@@ -260,23 +203,9 @@ function releaseBranch(effects, listed, branch, { onlyCrewMade } = {}) {
 }
 
 /**
- * Provision each `.worktreeinclude` entry, plus `BUILTIN_ENTRIES`, into the worktree: a symlink for most entries
- * (node_modules, .venv, …), a real copy for `COPY_ENTRIES` (see `.env` above). Blank lines
- * and `#` comments are skipped. A missing source is skipped, not fatal.
- *
- * `existsSync` follows symlinks, so it reports `false` for a *dangling* one — the same
- * value it reports for "nothing here yet". For a symlinked entry, a dangling link that
- * already points at the current `mainRoot/<entry>` self-heals for free once that path
- * becomes real (same target, no relink needed). But a `dest` left as a broken symlink
- * pointing anywhere else — a worktree reused after `.worktreeinclude` changed, or a link
- * this function did not create — used to hit `EEXIST` from `symlinkSync` and get swallowed
- * as "a pre-existing entry is not a failure", so it never healed: the worker's own
- * `cp .env.template .env` kept failing with "not writing through dangling symlink".
- * `lstatSync` (no follow) tells the three states apart: nothing at `dest` (provision it), a
- * live entry (leave it — reuse matters for resume), or a broken symlink (clear it and
- * reprovision from the current source). A copy entry can never be left dangling, so for it
- * this only ever clears a stale *symlink* sitting at `dest` (e.g. one made before `.env`
- * moved into `COPY_ENTRIES`) before copying fresh.
+ * Provision each `.worktreeinclude` entry, plus `BUILTIN_ENTRIES`: a symlink, or a copy for
+ * `COPY_ENTRIES`; a missing source is skipped. `lstatSync` because `existsSync` follows links: a
+ * dangling symlink at `dest` is cleared and reprovisioned, not left to fail the worker's writes.
  */
 export function applyWorktreeInclude(mainRoot, worktree) {
   const manifest = join(mainRoot, ".worktreeinclude");
@@ -317,19 +246,9 @@ export function applyWorktreeInclude(mainRoot, worktree) {
 }
 
 /**
- * Forward-merge the feature branch into a reused issue branch, inside its own worktree,
- * before the coder starts. A reused branch (`ensureWorktree`'s `reusedBranch: true`) was
- * forked from the feature branch as it stood at some earlier round or an earlier
- * `crew-afk` invocation — every sibling issue merged into the feature branch since, or
- * any commit landed on it by hand, is invisible to this branch until it merges that
- * history back in. Left undone, the coder works from a stale base and the gap only
- * surfaces ~45 minutes later as an unexplained conflict at the merge gate.
- *
- * Never attempted for a brand-new branch (`reusedBranch: false` — nothing to merge yet,
- * it forked from the current tip). On conflict: first `resolve-merge-conflicts.sh`, as
- * merge-branches.sh does — when only registry versions / CHANGELOG appends conflict, the
- * merge is committed and the result is a plain `{ merged: true }`. Anything else aborts
- * cleanly and reports it, or with `keepConflict` is left in the worktree for the caller.
+ * Merge the feature branch into a reused issue branch before the coder starts, so it works from the
+ * current base. A conflict goes to resolve-merge-conflicts.sh first (registry versions / CHANGELOG
+ * appends); anything else aborts, or with `keepConflict` stays in the worktree for the caller.
  */
 export function mergeFeatureBranch(effects, { worktree, branch, featureBranch, keepConflict = false }) {
   if (!featureBranch || featureBranch === branch) return { merged: false };
@@ -349,10 +268,8 @@ export function mergeFeatureBranch(effects, { worktree, branch, featureBranch, k
     }
   }
   if (r.code !== 0 && keepConflict) {
-    // Left in progress for the coder to resolve; the files are what it is told to fix. A
-    // merge that failed with nothing conflicted (e.g. an untracked file in the way) has
-    // nothing to resolve, and is aborted below like any other. featureSha is the commit this
-    // merge was started from (MERGE_HEAD): the feature branch can move on while the coder works.
+    // Left for the coder to resolve. With nothing conflicted (an untracked file in the way) it is
+    // aborted below. featureSha is MERGE_HEAD: the feature branch can move on while the coder works.
     const files = effects.gitRead(["diff", "--name-only", "--diff-filter=U"], { cwd: worktree }).stdout.trim().split("\n").filter(Boolean);
     if (files.length) {
       const featureSha = effects.gitRead(["rev-parse", "-q", "--verify", "MERGE_HEAD"], { cwd: worktree }).stdout.trim();

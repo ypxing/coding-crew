@@ -1,11 +1,7 @@
 /**
  * skill-dirs.mjs — where each platform's installer puts a skill, as candidate dirs in lookup order.
- *
- * Every platform's dirs come from orchestrator/platforms.json (shipped with the orchestrator, so
- * the installed copy sits at the same relative path): `projectSkills` in a repo, `userSkills`
- * under $HOME. At user scope a dir under `configDir` moves to `$<configDirEnv>` when that is set
- * (install.sh's rule); any other dir stays under $HOME — codex's `.agents/skills` is not under
- * `.codex`, so CODEX_HOME relocates no skill dir.
+ * At user scope a dir under `configDir` moves to `$<configDirEnv>` when set (install.sh's rule);
+ * codex's `.agents/skills` is not under `.codex`, so CODEX_HOME relocates nothing.
  */
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -24,9 +20,8 @@ function relocatedUserSkills(p, env) {
 }
 
 /**
- * `<skill>`'s install dirs, best first: the project install (a pinned copy wins), the relocated
- * user-level install, then the `$HOME` default. $HOME before os.homedir(): on Windows homedir()
- * reads USERPROFILE and would ignore a $HOME override.
+ * Best first: the project install (a pinned copy wins), the relocated user install, then `$HOME`.
+ * $HOME before os.homedir(): on Windows homedir() reads USERPROFILE and would ignore it.
  */
 export function skillDirCandidates(mainRoot, platform, skill, env = process.env) {
   const home = env.HOME || homedir();

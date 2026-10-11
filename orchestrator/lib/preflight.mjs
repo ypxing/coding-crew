@@ -1,12 +1,6 @@
 /**
- * preflight.mjs — what must hold before the first dispatch, checked once per run.
- *
- * Each check catches a problem every issue would otherwise hit only after paying for its
- * coder and review: a missing installed asset sends every reviewer and coder hunting for it, and
- * a feature branch whose own checks
- * already fail makes every issue's verify gate fail on code no issue wrote. An issue whose own
- * `## Requires` does not hold (a credential unset, a service that will not start) would pay for
- * a coder that can only rediscover it. None costs a token.
+ * preflight.mjs — what must hold before the first dispatch, checked once per run for no tokens:
+ * each check catches a problem every issue would otherwise hit only after paying for its coder.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -28,19 +22,13 @@ const ASSET_PROBES = {
   writePr: "SKILL.md",
 };
 
-/**
- * Each asset dir under `installDir` (install-dir.mjs) whose probe file is absent: `[{ kind, file }]`.
- * Every run uses each — the reviewer reads its scripts, ensure-deps.sh / verify-worktree.sh run
- * dep-install's, and preflight runs check-requires.sh and lint-issues.sh — so a gap here is one every reviewer or
- * coder would otherwise hunt for. write-pr's SKILL.md is read only with openPr, but it ships with crew-afk.
- */
+/** Each asset dir under `installDir` whose probe file is absent; write-pr's ships with crew-afk, so it is always probed. */
 export function missingAssets(installDir) {
   return Object.keys(ASSET_DIRS)
     .map((kind) => ({ kind, file: join(assetDir(installDir, kind), ASSET_PROBES[kind]) }))
     .filter(({ file }) => !existsSync(file));
 }
 
-/** The stop message for a missing asset: the exact paths expected, and the one remedy. */
 export function missingAssetsMessage(installDir, missing) {
   return [
     `crew-afk: the install this run was launched from (${installDir}) is missing files its agents use:`,
@@ -50,14 +38,8 @@ export function missingAssetsMessage(installDir, missing) {
 }
 
 /**
- * The set to lint, as the files lint-issues.sh takes: `{ issues, known, deps, prd }` (`deps` and
- * `prd` null when absent), all from one `listFeatureIssues` call. An open (not done, not PRD) issue
- * the tracker keeps as a file is linted in place; any other has its body written out as
- * `<number>-<slug>.md` — the filename is how `Issue #<n>` refs resolve. `deps` is the tracker's
- * `issues-deps.json` (`featureDepsFile`); `prd` is `.scratch/<slug>/PRD.md`, else the PRD issue's
- * body. `known` is the done issues, as files the same way: a `## Blocked by` ref to one resolves
- * by its filename, as it does for dispatch, and its `## Implements` counts toward PRD coverage, but
- * it is not linted.
+ * The files lint-issues.sh takes. A body-only issue is written out as `<number>-<slug>.md`, the name
+ * an issue ref resolves by; `known` (done issues) resolves refs but is not linted.
  */
 async function lintSet(sprint, mainRoot) {
   const slug = sprint.featureSlug;
@@ -83,13 +65,8 @@ async function lintSet(sprint, mainRoot) {
 }
 
 /**
- * Once, before command discovery or any worktree: the feature's issue set through `to-issues`'
- * lint-issues.sh. Exit 1 (a cycle, an unmatched `## Blocked by`, drift from issues-deps.json, no
- * acceptance criteria) fails the run, carrying each ERROR line; WARN lines are logged. Exit 2,
- * or a checker that could not run at all, is logged and never fails: a broken checker must not
- * block a sprint the issues themselves would not. `--dry-run` runs it and reports without failing.
- *
- * Returns `{ status: "pass" | "fail" | "skipped", errors, warnings, reason }`.
+ * Once, before command discovery or any worktree. Exit 1 fails the run; exit 2, or a checker that
+ * could not run, is only logged, since a broken checker must not block a sprint.
  */
 export async function lintIssues(ctx) {
   const { sprint, effects, options } = ctx;
@@ -129,12 +106,7 @@ export async function lintIssues(ctx) {
   return { status: "pass", errors: [], warnings };
 }
 
-/**
- * An issue that became ready mid-run (loop.mjs's idle-slot poll): lints the set and blocks, for this
- * run only, each of `issues` that carries an ERROR — the same bar preflight holds the initial set to,
- * except that one bad issue must not stop the run. Returns the slugs blocked. A checker that could
- * not run blocks nothing (as in lintIssues).
- */
+/** A mid-run newcomer with a lint ERROR is blocked for this run only: one bad issue must not stop the run. */
 export async function lintMidRunIssues(ctx, issues) {
   const { sprint, effects, options } = ctx;
   if (options?.dryRun || !issues.length) return [];
@@ -159,13 +131,8 @@ export async function lintMidRunIssues(ctx, issues) {
 }
 
 /**
- * Once, at run start: drop each retained-branch record no run can retry — its issue is closed
- * (`done`) or no longer in the tracker at all, or its branch no longer exists — so it stops
- * counting toward Partial, ## Retained Branches, the stall verdict and the PR's draft reasons.
- * Seen once (crew-afk-maintenance, 2026-10-05: #142 shipped in #145, its record kept two runs
- * STALLED and their PR a draft). An open issue whose branch exists is kept, ready or not, blocked
- * or not. A listing that fails or comes back empty drops nothing: it cannot tell a closed issue
- * from one it did not see. `--dry-run` reports only. Returns `[{ slug, branch, reason, issueGone }]`.
+ * Drop each retained-branch record no run can retry, so it stops counting toward the stall verdict and
+ * the PR's draft reasons. A failed or empty listing drops nothing: it cannot tell closed from unseen.
  */
 export function dropStaleRetained(ctx, tracker) {
   const { sprint, effects, options } = ctx;
@@ -206,7 +173,6 @@ export function dropStaleRetained(ctx, tracker) {
   return stale;
 }
 
-/** The stop message for a structurally broken issue set: each ERROR line verbatim. */
 export function lintFailureMessage(errors) {
   return [
     "crew-afk: the issue set has structural errors that would break dispatch or the gates — fix them before any coder is paid for:",
@@ -228,14 +194,8 @@ export const INTEGRATION_STEM = "_integration";
 const STATE_KEY = { [BASELINE_STEM]: "baseline", [INTEGRATION_STEM]: "integration" };
 
 /**
- * Run the project's checks once on the feature branch's tip, in a throwaway worktree set up
- * exactly as an issue's is (include, deps), so a failure here is the one every issue's verify
- * would repeat. A pass is cached by the tip's commit, and by its git tree (a tree any check already passed); a failure never is, since an
- * environment the human fixed (a service started) should be re-checked on the next run.
- * `stem` names the worktree, the verify record and the cache: `_baseline` before any dispatch
- * (runBaseline), `_integration` at each drain of the queue (runIntegrationCheck).
- *
- * Returns `{ status: "pass" | "cached" | "fail", commit, failed: [{check, log, missing}], reason }`.
+ * The project's checks on the feature branch's tip, in a throwaway worktree set up as an issue's is.
+ * A pass is cached by commit and tree; a failure never is, so a fixed environment is re-checked.
  */
 export function runFeatureChecks(ctx, { stem }) {
   const prep = prepareChecks(ctx, stem);
@@ -317,7 +277,6 @@ function prepareChecks(ctx, stem) {
 const recordVerdict = (ctx, p, verdict) =>
   ctx.sprint.state(["baseline", "--slot", p.stateKey, "--commit", p.commit, "--verdict", verdict, ...(p.tree ? ["--tree", p.tree] : [])]);
 
-/** Logs the deps outcome; returns a failing result when the install failed. */
 function installDeps(ctx, p, deps) {
   const line = depsLine(deps.stdout);
   if (line) ctx.log(`${p.step} ${line}`, "debug"); // ensure-deps.sh traced [DEPS]
@@ -347,21 +306,15 @@ function cleanupChecks(p) {
   p.effects.git(["branch", "-D", p.branch]);
 }
 
-/** Before any dispatch: the feature branch's own checks. */
 export function runBaseline(ctx) {
   return runFeatureChecks(ctx, { stem: BASELINE_STEM });
 }
 
-/** The same, started alongside dispatch: resolves to the baseline's result. */
 export function runBaselineAsync(ctx) {
   return runFeatureChecksAsync(ctx, { stem: BASELINE_STEM });
 }
 
-/**
- * At each drain of the queue: the checks on the merged feature branch, which no per-branch
- * verify saw — two branches green alone can be red together. Same throwaway worktree, cache
- * and modified-tree rule as the baseline, under its own stem; `--no-baseline` leaves it on.
- */
+/** The merged feature branch's checks at each drain: two branches green alone can be red together. */
 export function runIntegrationCheck(ctx) {
   const result = runFeatureChecks(ctx, { stem: INTEGRATION_STEM });
   const at = `${ctx.sprint.featureBranch} at ${result.commit.slice(0, 12)}`;
@@ -379,7 +332,6 @@ export function runIntegrationCheck(ctx) {
 /** Lines of a failing check's output the summary quotes: enough to name the failure. */
 const TAIL_LINES = 20;
 
-/** The tail of one failing check's captured log, or null when it has none or it cannot be read. */
 function logTail(mainRoot, log) {
   try {
     return readFileSync(resolve(mainRoot, log), "utf8").trimEnd().split("\n").slice(-TAIL_LINES).join("\n");
@@ -388,17 +340,13 @@ function logTail(mainRoot, log) {
   }
 }
 
-/** Each failing check of an integration result that has a log, with the tail of its output. */
 export function failureTails(mainRoot, result) {
   return result.failed.filter((f) => f.log).map((f) => ({ check: f.check, tail: logTail(mainRoot, f.log) ?? "" }));
 }
 
 /**
- * The summary's `## Integration check` section for the last integration result: what passed,
- * or each failing check with the tail of its output. A check whose command is not installed is
- * named as the environment, since no change to the merged code would fix it. `fix` (the
- * integration-fix.mjs outcome for that result) says what the failure led to, and `fixes` (every
- * outcome this run) names the fix issues an earlier red drain led to.
+ * The summary's `## Integration check` section. An uninstalled command is named as the environment,
+ * since no change to the merged code would fix it.
  */
 export function integrationSection(mainRoot, featureBranch, result, fix = null, fixes = []) {
   const at = `${featureBranch} at ${result.commit.slice(0, 12)}`;
@@ -441,13 +389,8 @@ function fixLines(fix) {
 }
 
 /**
- * Probe `## Requires` through solve-issue's check-requires.sh (which dedupes a command issues
- * share), and block each issue whose requirement fails before any coder is dispatched for it,
- * with the command and its output in `## Blocked`. Called once in preflight for every issue
- * dispatchable then, and by loop.mjs for each other issue when it is first claimed: an issue
- * still waiting on a blocker may need what that blocker lands. Each issue is probed once per
- * run (sprint.claimRequiresProbe); not cached across runs, so a re-run probes again and the
- * issue is dispatched once its requirement holds. Returns the slugs blocked.
+ * Probe `## Requires` and block each issue whose requirement fails before a coder is paid for it;
+ * once per issue per run, also at first claim, since a blocker may land what an issue needs.
  */
 export async function checkRequires(ctx, issues) {
   const { sprint, effects, options } = ctx;
@@ -492,9 +435,8 @@ export async function checkRequires(ctx, issues) {
 }
 
 /**
- * The stop message for a red baseline: which checks, where their output is, and the two ways on.
- * When every failed check failed on a command that is not installed, the branch was never
- * judged, so the message names the environment instead of asking for a fix on the branch.
+ * The stop message for a red baseline. When every check failed on an uninstalled command, the branch
+ * was never judged, so it names the environment instead of asking for a fix.
  */
 export function baselineFailureMessage(featureBranch, result) {
   const at = result.commit.slice(0, 12);
@@ -521,13 +463,7 @@ export function baselineFailureMessage(featureBranch, result) {
   return lines.join("\n");
 }
 
-/**
- * Once, before anything reads the feature branch: bring
- * origin/<default> into a resumed branch that lacks it (sync-feature-branch.sh does the git).
- * `--no-sync-main` skips; `--dry-run` only reports whether a merge would happen.
- *
- * Returns `{ status: "skipped" | "current" | "merged" | "would-merge" | "conflict", output }`.
- */
+/** Once, before anything reads the feature branch: merge origin/<default> into a resumed branch lacking it. */
 export function syncFeatureBranch(ctx) {
   const { sprint, effects, options } = ctx;
   if (options.syncMain === false) return { status: "skipped", output: "" };
@@ -540,7 +476,6 @@ export function syncFeatureBranch(ctx) {
   return { status: options.dryRun ? "would-merge" : "merged", output };
 }
 
-/** The stop message for a feature branch that origin/<default> cannot be merged into cleanly. */
 export function syncConflictMessage(featureBranch, output) {
   return [
     `crew-afk: ${featureBranch} does not contain origin's default branch and merging it conflicts — the merge was aborted and ${featureBranch} is untouched:`,

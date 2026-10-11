@@ -1,17 +1,7 @@
 /**
- * tracker.mjs — the orchestrator's view of the issue tracker.
- *
- * The orchestrator's callers (`pipeline.mjs`, `loop.mjs`, `main.mjs`) keep importing the
- * tracker's public surface (`selectDispatchable`, `parseIssue`, `writeIssueSection`,
- * `branchFor`, etc.) from this file rather than from a backend module directly, so
- * switching backends never means touching a call site.
- *
- * Today, every one of those named exports below is `local.mjs`'s implementation,
- * re-exported unchanged — this file's split from `local.mjs` is a pure refactor with zero
- * behavior change. `getTracker()`, the actual factory, and the backends themselves live in the
- * repo-root `tracker/` directory (installed to `.coding-crew/tracker/`, shared with the tracker
- * CLI); this file reaches them relatively, which resolves the same in the source and installed
- * trees. See `tracker/index.mjs` for the backend contract.
+ * tracker.mjs — the orchestrator's one import point for the tracker, so switching backends never
+ * touches a call site. The relative `../../tracker/` paths resolve the same in the source and
+ * installed (`.coding-crew/tracker/`) trees.
  */
 
 import * as local from "../../tracker/local.mjs";

@@ -1,14 +1,6 @@
 /**
- * effects.mjs — the one place that runs a subprocess.
- *
- * Every mutating step of a sprint is an existing, tested bash script
- * (verify-worktree.sh, merge-branches.sh, close-issue.sh, receipts.sh, …). JS owns
- * control flow; bash keeps the effects. This wrapper exists so that:
- *
- *   - `--dry-run` records the exact command sequence instead of running it, which
- *     makes the whole state machine inspectable and testable for zero tokens;
- *   - every command is logged in one place, in order, with its exit code;
- *   - nothing in the pipeline builds a shell string by hand.
+ * effects.mjs — the one place that runs a subprocess. JS owns control flow, the bash scripts own the
+ * effects; `--dry-run` records the exact command sequence instead of running it.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -45,7 +37,6 @@ function killLeftovers(pid) {
   } catch {}
 }
 
-/** Kill every process group still running (interrupt path). */
 export function killAllGroups(signal = "SIGKILL") {
   for (const pid of liveGroups) killGroup(pid, signal);
   liveGroups.clear();
@@ -63,7 +54,6 @@ export function unregisterExternalPid(pid) {
   liveGroups.delete(pid);
 }
 
-/** The pids the interrupt path would kill now. */
 export function registeredPids() {
   return [...liveGroups];
 }
@@ -80,8 +70,7 @@ const REF_MOVING_SCRIPTS = new Set([
   "session-init.sh",
 ]);
 
-// The scripts that act on the feature branch's checkout (merge, sync, squash): run in
-// `featureRoot` unless the caller names a cwd.
+// Scripts on the feature branch's checkout: run in `featureRoot` unless the caller names a cwd.
 const FEATURE_ROOT_SCRIPTS = new Set(["merge-branches.sh", "sync-feature-branch.sh", "squash-commits.sh"]);
 
 // git subcommands that can move the checkout's HEAD or the branch it is on; and the ones that can
@@ -110,15 +99,7 @@ function real(p) {
 }
 
 export class Effects {
-  /**
-   * @param {object} o
-   * @param {string} o.scriptsDir  crew-afk's scripts/ dir (bash mechanism layer)
-   * @param {string} o.mainRoot    the main checkout, which stays on the user's branch
-   * @param {string} [o.featureRoot] the worktree the feature branch is checked out in (the sprint's
-   *   `crew/<slug>/_feature`); mainRoot until a sprint has one
-   * @param {boolean} o.dryRun
-   * @param {(line: string) => void} o.log
-   */
+  /** `featureRoot`: the sprint's `crew/<slug>/_feature` worktree; mainRoot until a sprint has one. */
   constructor({ scriptsDir, mainRoot, featureRoot = null, dryRun = false, log = () => {}, env = {} }) {
     this.scriptsDir = scriptsDir;
     this.mainRoot = mainRoot;
@@ -126,15 +107,11 @@ export class Effects {
     this.dryRun = dryRun;
     this.log = log;
     this.env = env;
-    /** @type {{argv: string[], cwd: string}[]} */
     this.recorded = [];
-    // What the orchestrator's own effects may have moved, so a read-only guard can tell its
-    // dispatch's ref changes from theirs: `mainMoves` counts effects that can move the feature
-    // checkout's HEAD or the branch it is on (a merge), `branchMoves` those that can move any
-    // branch from the main or feature checkout (a worktree add, a branch delete, and every
-    // feature move); `touched` lists,
-    // in order, the worktrees (realpath) a mutating git or a dispatch ran in; `active` counts the
-    // dispatches still running in each.
+    // What the orchestrator's own effects may have moved, so a read-only guard can tell a dispatch's
+    // ref changes from theirs: `mainMoves` (the feature checkout's HEAD or branch), `branchMoves`
+    // (any branch from the main or feature checkout), `touched` (worktrees a mutating git or a
+    // dispatch ran in, in order) and `active` (dispatches still running per worktree).
     this.mainMoves = 0;
     this.branchMoves = 0;
     this.touched = [];
@@ -145,15 +122,11 @@ export class Effects {
     return join(this.scriptsDir, name);
   }
 
-  /** Run a crew-afk bash script. Returns { code, stdout, stderr }. */
   bash(name, args = [], opts = {}) {
     return this.exec("bash", [this.script(name), ...args], this.withScriptCwd(name, opts));
   }
 
-  /**
-   * The non-blocking twin of `bash`, for effects that run for minutes (verify, deps): the event
-   * loop keeps serving the other worker loops while the child runs. Same contract as `bash`.
-   */
+  /** `bash` without blocking the event loop, for effects that run for minutes (verify, deps). */
   bashAsync(name, args = [], opts = {}) {
     return this.execAsync("bash", [this.script(name), ...args], this.withScriptCwd(name, opts));
   }
@@ -179,11 +152,8 @@ export class Effects {
       maxBuffer: 64 * 1024 * 1024,
       ...(timeoutMs ? { timeout: timeoutMs, killSignal: "SIGKILL" } : {}),
     });
-    // status === null: killed by a signal. Our own `timeout` is the one signal that is a
-    // verdict (124, as always); any other was sent from outside — an interruption, not a
-    // result, so it gets the shell's 128+signal and `interrupted`, never the timeout's 124.
-    // spawnSync's own timeout kills the child (it stays in our group, see liveGroups); a grandchild
-    // it started is not reachable from here.
+    // status null with a signal: only our own timeout is a verdict (124); any other signal came from
+    // outside, an interruption (128+signal). A grandchild left by spawnSync's timeout is not reachable.
     const timedOut = r.error?.code === "ETIMEDOUT";
     const interrupted = r.status === null && !timedOut && Boolean(r.signal);
     const code = interrupted ? 128 + (osConstants.signals[r.signal] ?? 0) : r.status === null ? 124 : r.status;
@@ -193,10 +163,7 @@ export class Effects {
     return { code, stdout: r.stdout ?? "", stderr: r.stderr ?? "", error: r.error, interrupted, signal: r.signal ?? null };
   }
 
-  /**
-   * `exec` without blocking the event loop. Resolves to the same `{ code, stdout, stderr }`;
-   * a timeout kills the child and maps to exit 124, exactly as `exec` does.
-   */
+  /** `exec` without blocking the event loop; same result shape and exit codes. */
   execAsync(cmd, args, { cwd = this.mainRoot, env = {}, input, mutating = true, timeoutMs } = {}) {
     const argv = [cmd, ...args];
     if (this.dryRun && mutating) {
@@ -335,10 +302,7 @@ export class Effects {
     });
   }
 
-  /**
-   * Spawn a long-running child (a worker dispatch) with a hard timeout.
-   * A hung worker used to block `wait` forever and the sprint never ended.
-   */
+  /** A long-running child (a worker dispatch) with a hard timeout, so a hung worker cannot stall the sprint. */
   spawnWithTimeout(cmd, args, { cwd, env = {}, timeoutMs, onLine, input } = {}) {
     const argv = [cmd, ...args];
     if (this.dryRun) {

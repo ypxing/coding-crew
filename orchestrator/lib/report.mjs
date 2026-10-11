@@ -1,17 +1,6 @@
 /**
- * report.mjs — parse what the models return, and apply the schema pre-filter.
- *
- * One file, one schema, one parser, fail closed: every role (coder/triage/review) writes
- * its result to a `report.json` (or `triage.report.json` / `review.report.json`) sidecar
- * in the issue's own dispatch subdirectory as its own last action, and that file
- * is the *only* thing read here — never the dispatch's captured text. There is no fallback
- * to a fenced ```json block in the final message or to markdown headings; a missing or
- * invalid sidecar is read as the failure state (`blocked` / `unmet` / `fixable`, per role),
- * deterministically, the same way for every platform.
- *
- * The reviewer's report carries two things the pipeline gates on: the `AC:`-equivalent
- * `verdict` field and the findings list. Both fail closed — a missing or unreadable sidecar
- * is `unmet`, a review that did not happen.
+ * report.mjs — parse each role's `*.report.json` sidecar, never the captured text; a missing or
+ * invalid one fails closed (`blocked` / `unmet` / `fixable`). Also the schema pre-filter.
  */
 
 import { readFileSync } from "node:fs";
@@ -29,19 +18,7 @@ function normaliseCheck(value) {
   return "not_run";
 }
 
-/**
- * Every fenced ```json block in `text` whose parsed object has `requiredField` set,
- * in document order. JSON's own grammar treats whitespace between tokens as
- * insignificant, so this is immune to the indentation a herdr-captured pane transcript
- * sometimes adds — unlike a line-anchored regex or awk pattern, which is not.
- *
- * Caller: parseReviewAggregate — the round-aggregate file is a
- * concatenation of several dispatches' sidecar contents (see pipeline/review.mjs's runReview),
- * appended as fenced json blocks so a later retry's block can be told apart from an
- * earlier one for the same branch. Per-dispatch parsing (parseWorkerReport,
- * parseReviewReport, parseTriageReport) reads the sidecar object directly and never
- * scans text for a fence.
- */
+/** Every fenced json block in `text` with `requiredField`, parsed as JSON so pane-transcript indentation does not matter. */
 export function allFencedJson(text, requiredField) {
   const re = /[ \t]*```(?:json)?[ \t]*\n([\s\S]*?)\n[ \t]*```/g;
   const out = [];
@@ -69,11 +46,7 @@ function coderCause(value) {
   return v === "environment" || v === "code" ? v : null;
 }
 
-/**
- * `{ command, exit, output, truncated }` — the one command a coder ran that shows why it
- * stopped, or null when it gave none. Only ever read as the coder's claim: triage weighs it
- * against the diff.
- */
+/** The one command a coder says shows why it stopped, or null: a claim triage weighs against the diff. */
 function coderEvidence(obj) {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
   const command = typeof obj.command === "string" ? obj.command.trim() : "";
@@ -87,9 +60,8 @@ function coderEvidence(obj) {
 
 function fromStructured(raw, obj) {
   const checks = {};
-  // Any further dev-commands.json check the coder ran (coverage, integration) rides in `checks`
-  // beside the base three, so the pre-filter can stop on a failure the coder already admitted,
-  // before any gate runs. verify-worktree.sh runs every cached check itself either way.
+  // Further dev-commands.json checks (coverage, integration) ride beside the base three, so the
+  // pre-filter can stop on a failure the coder admitted; verify-worktree.sh runs them anyway.
   for (const c of CHECK_CATEGORIES) checks[c] = normaliseCheck(obj.checks?.[c]);
   for (const [k, v] of Object.entries(obj.checks && typeof obj.checks === "object" ? obj.checks : {})) {
     const c = k.trim().toLowerCase();
@@ -112,11 +84,7 @@ function fromStructured(raw, obj) {
   };
 }
 
-/**
- * The one blocked shape every missing-or-invalid-sidecar case collapses to — same fields as
- * fromStructured's success shape, so a caller never has to branch on which one it got before
- * reading `status`/`checks`/`criteria`.
- */
+/** Every missing-or-invalid-sidecar case, in fromStructured's shape so a caller never branches on which. */
 function missingReport(raw, unparseable) {
   return {
     parsedFrom: "missing",
@@ -134,11 +102,7 @@ function missingReport(raw, unparseable) {
   };
 }
 
-/**
- * @param {string|null} text  the worker's captured dispatch text — kept only as `raw` for a
- *   human reading a blocked report; never parsed
- * @param {object|null} sidecar  parsed report.json, when the worker wrote one
- */
+/** `text` is kept only as `raw`, for a human reading a blocked report; never parsed. */
 export function parseWorkerReport(text, sidecar = null) {
   const raw = text ?? "";
   if (sidecar && STATUSES.has(String(sidecar.status).toLowerCase())) return fromStructured(raw, sidecar);
@@ -151,11 +115,8 @@ export function parseWorkerReport(text, sidecar = null) {
 }
 
 /**
- * The schema pre-filter, identical in policy to verify-worktree.sh so the two
- * gates cannot disagree: a failing check or an un-run test demotes `complete`,
- * while lint/typecheck `not_run` is a recorded coverage gap, not a demotion —
- * many repos legitimately have neither, and demoting there stalls every sprint.
- * A further check the coder did not run is left to verify-worktree.sh, which runs it anyway.
+ * Same policy as verify-worktree.sh, so the two gates cannot disagree: lint/typecheck `not_run` is
+ * only a coverage gap, since many repos have neither.
  */
 export function applySchemaPrefilter(report) {
   const failed = Object.keys(report.checks).filter((c) => report.checks[c] === "fail");
@@ -176,20 +137,8 @@ export function applySchemaPrefilter(report) {
 }
 
 /**
- * verify-worktree.sh's own record (`verify.json`, in the issue's dispatch subdirectory), read back as the check evidence the
- * reviewer is given.
- *
- * The reviewer cannot run commands, so a criterion phrased "…and the tests pass" is
- * unprovable from a diff and reads as `unmet` — which stalled every sprint whose issues
- * were written that way. The pipeline has already run those checks in the branch's
- * worktree and gated the merge on the result; passing that result on is what makes the
- * criteria check answerable without weakening it. `not_run` is never evidence, and a
- * missing or unreadable record is every base check `not_run`.
- *
- * `logs` maps each check to its full-output file, so a reviewer can read a figure (a coverage
- * percentage) pass/fail cannot carry; `notConfigured` names the cached checks set to `null`,
- * which the gate never runs, so a criterion resting on one visibly has no evidence; `missing`
- * maps each check that failed on a command not installed (exit 127) to that command.
+ * verify-worktree.sh's `verify.json`, the reviewer's check evidence (it cannot run commands). A
+ * missing record is every base check `not_run`; `missing` maps a check to its uninstalled command.
  */
 export function readVerifyRecord(file) {
   const checks = Object.fromEntries(CHECK_CATEGORIES.map((c) => [c, "not_run"]));
@@ -211,24 +160,15 @@ export function readVerifyRecord(file) {
   return { checks, logs, missing, notConfigured };
 }
 
-/**
- * ensure-deps.sh's single `DEPS:` line, or "" when there is none (a dry run records the
- * command and produces no output).
- *
- * Extracting the line is all this does; pipeline.mjs stops an issue on a per-issue
- * `DEPS: failed` (a docker install's failure reads the same), and nothing else in the line changes
- * a round's status.
- */
+/** ensure-deps.sh's `DEPS:` line, or "" when there is none (a dry run produces no output). */
 export function depsLine(stdout) {
   const m = /^DEPS:.*$/m.exec(stdout ?? "");
   return m ? m[0].trim() : "";
 }
 
 /**
- * check-requires.sh's failures, per issue file: `Map<file, [{ command, status, output }]>`.
- * `files` are the paths it was given — a `REQUIRE: fail <file> <cmd>` line is matched on them,
- * not split on a space, since a path or a command may contain one. `status` is its `exit N` /
- * `timed out after Ns` line; `output` the `| `-prefixed tail below it.
+ * check-requires.sh's failures: `Map<file, [{ command, status, output }]>`. A `REQUIRE: fail <file>
+ * <cmd>` line is matched against `files`, not split on a space, since either may contain one.
  */
 export function parseRequiresFailures(stdout, files) {
   const byFile = new Map();
@@ -255,7 +195,6 @@ export function parseRequiresFailures(stdout, files) {
 }
 
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
-/** The one severity order: CRITICAL 0 … LOW 3. */
 export const SEVERITY_RANK = Object.fromEntries(SEVERITIES.map((s, i) => [s, i]));
 const VERDICTS = new Set(["all-met", "unmet", "not_run"]);
 /** Findings triage's answer per finding (the shared rubric: skills/_shared/fragments/findings-rubric.md). */
@@ -275,11 +214,9 @@ function findingsFromStructured(list) {
       ...(f.carried === true ? { carried: true } : {}),
       // Set on a feature-review finding the promotion cap left report-only: no fix issue covers it.
       ...(f.report_only === true ? { report_only: true } : {}),
-      // Written beside the finding once findings triage has judged it (annotateFindings below).
       ...(FINDING_VERDICTS.includes(String(f.verdict).toLowerCase())
         ? { verdict: String(f.verdict).toLowerCase(), rationale: f.rationale ? String(f.rationale).trim() : "" }
         : {}),
-      // Written by annotateFindings: triage folded this finding into finding `duplicate_of` of the same review.
       ...(Number.isInteger(f.duplicate_of) && f.duplicate_of >= 0 ? { duplicate_of: f.duplicate_of } : {}),
     }));
 }
@@ -296,13 +233,7 @@ function notesFromStructured(notes) {
     .map((n) => ({ location: n.location, concern: n.concern }));
 }
 
-/**
- * One branch's structured verdict, out of a fenced ```json block: `{branch, slug,
- * verdict, detail, cause, findings}`. Both `code_review_summary()` and `promote-findings.sh
- * remind` used to re-derive this from the same raw text with their own line-anchored
- * awk, and drifted out of sync — this is the one parser both now call through instead
- * (see orchestrator/review-rollup.mjs).
- */
+/** One branch's structured verdict: the one parser crew-summary.sh and promote-findings.sh reach through review-rollup.mjs. */
 function reviewFromStructured(raw, obj) {
   return {
     ok: true,
@@ -322,13 +253,7 @@ function reviewFromStructured(raw, obj) {
   };
 }
 
-/**
- * Reviewer output for one branch. The `review.report.json` sidecar (see
- * parseWorkerReport's own sidecar policy) is the only thing read — never the captured text.
- *
- * @param {string|null} text  the reviewer's captured dispatch text — kept only as `raw`
- * @param {object|null} sidecar  parsed review.report.json, when the reviewer wrote one
- */
+/** Reviewer output for one branch, from the `review.report.json` sidecar alone. */
 export function parseReviewReport(text, sidecar = null) {
   const raw = text ?? "";
   if (sidecar && VERDICTS.has(String(sidecar.verdict).toLowerCase())) return reviewFromStructured(raw, sidecar);
@@ -344,15 +269,7 @@ export function parseReviewReport(text, sidecar = null) {
   };
 }
 
-/**
- * The aggregate `reviews/sprint-review-*.md` file(s): several dispatches' raw text,
- * appended in creation order across rounds and retries. Folds to one record per
- * branch, later block wins — a retry's real verdict overrides an earlier `not_run`
- * stub for the same branch, the same fold semantics `code_review_summary()`'s awk used
- * to implement by hand. This is the one place that fold happens now; `crew-summary.sh`
- * and `promote-findings.sh remind` both read its output (see
- * orchestrator/review-rollup.mjs) instead of re-parsing the file themselves.
- */
+/** The aggregate review file folded to one record per branch, later block wins (a retry overrides a `not_run` stub). */
 export function parseReviewAggregate(text) {
   const order = [];
   const byBranch = new Map();
@@ -371,13 +288,9 @@ export function parseReviewBlocks(text) {
 }
 
 /**
- * The one fold step, shared by parseReviewAggregate and review-rollup.mjs: `rec` replaces `prev`
- * (later block wins), except that a `not_run` block says nothing about the code, and a
- * `criteria_only` block (a per-branch review, which raises no findings) says nothing about
- * findings, so the previous record's findings stay, marked carried, under the new verdict.
- * Notes follow the findings' rule for `not_run` alone: a later review's notes replace the earlier
- * ones (it re-read the code), a `not_run` block keeps the ones before it with the sha they were
- * written for.
+ * The one fold step: `rec` replaces `prev`, except a `not_run` block says nothing about the code and
+ * a `criteria_only` block (a per-branch review) nothing about findings, so the earlier findings stay,
+ * marked carried. A `not_run` block also keeps the earlier notes with the sha they were written for.
  */
 export function foldReview(prev, rec) {
   if (!prev) return rec;
@@ -394,10 +307,8 @@ export function findingKey(f) {
 }
 
 /**
- * `latestFindings` followed by each finding of `earlierRecords` (one branch's earlier review
- * blocks, oldest first) that the latest does not repeat, marked `carried: true` and deduped among
- * themselves. A carried finding drops any triage verdict (the new round judges it afresh) unless
- * `keepVerdicts`: the feature review's verdicts are what its promotion was decided on.
+ * `latestFindings`, then each earlier finding the latest does not repeat, marked `carried`. A carried
+ * finding drops its triage verdict unless `keepVerdicts` (the feature review's promotion used them).
  */
 export function carryFindings(earlierRecords, latestFindings, { keepVerdicts = false } = {}) {
   const seen = new Set(latestFindings.map(findingKey));
@@ -429,19 +340,11 @@ export function severityNames(level) {
   return [...new Set(findingsAtOrAbove(SEVERITIES.map((severity) => ({ severity })), level).map((f) => f.severity))].join(", ");
 }
 
-/**
- * What a sprint promotes under \`level\` (afk.fixFindings), as the scripts take and record it:
- * "actionable", or the severities ("CRITICAL, HIGH"); "" for \`none\`. The one level → severities
- * table — promote-findings.sh keeps none and takes this as --severities.
- */
+/** What a sprint promotes under `level`: "actionable", or the severities ("CRITICAL, HIGH"); the one such table. */
 export function promoteSeverities(level) {
   return level === "actionable" ? "actionable" : severityNames(level);
 }
 
-/**
- * One triage sidecar or fenced-json object, normalised — shared by the sidecar branch and
- * the in-text fenced-json branch below so the two can never drift on field handling.
- */
 function triageFromStructured(raw, obj) {
   return {
     ok: true,
@@ -453,20 +356,7 @@ function triageFromStructured(raw, obj) {
   };
 }
 
-/**
- * Triage report. Dispatched only after verify-worktree.sh already failed, to answer one
- * question independently of the coder that wrote the branch (the same reason review is
- * independent of the coder, not a self-grade): is this failure fixable by writing more
- * code on this branch, or is it an environment/infrastructure problem no amount of
- * recoding touches? Fails closed toward `fixable` — an unparseable or missing verdict
- * must not silently strand an issue that a normal retry could still fix.
- *
- * The `triage.report.json` sidecar (see parseWorkerReport's own sidecar policy) is
- * the only thing read — never the captured text.
- *
- * @param {string|null} text  the triage agent's captured dispatch text — kept only as `raw`
- * @param {object|null} sidecar  parsed triage.report.json, when it wrote one
- */
+/** Fails closed toward `fixable`: a missing verdict must not strand an issue a retry could still fix. */
 export function parseTriageReport(text, sidecar = null) {
   const raw = text ?? "";
   if (sidecar && sidecar.fixable != null) return triageFromStructured(raw, sidecar);
@@ -485,15 +375,8 @@ export function parseTriageReport(text, sidecar = null) {
 const isYes = (v) => v === true || ["true", "yes"].includes(String(v).trim().toLowerCase());
 
 /**
- * Findings triage (crew-triage's findings mode): `{"findings": [{index, verdict, rationale, adr?,
- * protected?, duplicate_of?}]}` — one entry per finding, `index` the 0-based position in the prompt's list. Only
- * the sidecar is read. All-or-nothing: a missing, unknown or duplicate entry makes the whole
- * answer `ok: false` — the caller falls back to the severity rule, as it does for no sidecar at
- * all, rather than promoting on a half-read verdict.
- *
- * @param {object|null} sidecar  parsed findings-triage.report.json
- * @param {number} count  how many findings were sent
- * @returns {{ok: true, verdicts: {verdict, rationale, adr, protected, duplicate_of?}[]} | {ok: false, detail: string}}
+ * All-or-nothing: a missing, unknown or duplicate entry makes the whole answer `ok: false`, and the
+ * caller falls back to the severity rule rather than promote on a half-read verdict.
  */
 export function parseFindingsTriage(sidecar, count) {
   if (!sidecar) return { ok: false, detail: "no report.json — triage never wrote its verdict file" };
@@ -525,9 +408,8 @@ export function parseFindingsTriage(sidecar, count) {
 }
 
 /**
- * Paths no unattended fix may touch: CI config, auth, deploy, secrets. The same list the shared
- * rubric gives crew-triage and /crew-address-findings; here it is enforced in code, so a triage
- * verdict of Actionable cannot send a coder at them.
+ * Paths no unattended fix may touch: the shared rubric's list, enforced in code so a triage verdict
+ * of Actionable cannot send a coder at them.
  */
 const PROTECTED_PATH = [
   /(^|\/)\.github\/(workflows|actions)\//,
@@ -552,20 +434,12 @@ function isDesignOnly(finding) {
   return String(finding.issue ?? "").trim().startsWith("Design standard (criterion");
 }
 
-/** Whether a finding's `location` names a protected path. */
 export function touchesProtectedPath(location) {
   const path = locationPath(location);
   return path !== "" && PROTECTED_PATH.some((re) => re.test(path));
 }
 
-/**
- * Findings with triage's verdicts applied, the hard rules last: a finding that contradicts an
- * ADR / CONTEXT.md (triage's `adr` flag), whose fix touches a protected path (triage's
- * `protected` flag, or the finding's own location), or whose only basis is the design standard
- * (its `issue` starts `Design standard (criterion`, as crew-reviewer is told to write it) is
- * Debatable whatever triage said.
- * Returns the findings with `verdict` and `rationale` written beside them.
- */
+/** Triage's verdicts, then the hard rules: an ADR conflict, a protected path or a design-only basis forces Debatable. */
 export function applyFindingVerdicts(findings, verdicts) {
   return findings.map((f, i) => {
     const t = verdicts[i];
@@ -588,13 +462,7 @@ export function applyFindingVerdicts(findings, verdicts) {
 }
 
 
-/**
- * Fold the findings triage marked `duplicate_of` into their targets, for promotion. `judged` is
- * applyFindingVerdicts' list and `promotable` the subset selected from it. A duplicate is never
- * promoted itself while its target is; then the target takes the higher severity and its
- * criterion names both locations. A duplicate whose target is not promotable stays promotable
- * itself, so the defect is not lost. Returns the promotable list, folded.
- */
+/** Folds `duplicate_of` findings into promotable targets; one whose target is not promotable stays, so the defect is not lost. */
 export function foldDuplicates(judged, promotable) {
   const folded = new Map();
   judged.forEach((f, i) => {
@@ -611,12 +479,7 @@ export function foldDuplicates(judged, promotable) {
   return promotable.filter((f) => !folds(f)).map((f) => folded.get(judged.indexOf(f)) ?? f);
 }
 
-/**
- * The review's sidecar object with each finding's verdict and rationale written beside it, in
- * the order the sidecar lists them. `findings` is the normalised, verdict-bearing list from
- * applyFindingVerdicts, in the same order findingsFromStructured produced it (it drops entries
- * with no valid severity, so the sidecar's own list is walked in step).
- */
+/** findingsFromStructured drops entries with no valid severity, so the sidecar's own list is walked in step. */
 export function annotateFindings(sidecar, findings) {
   let k = 0;
   const annotated = (Array.isArray(sidecar.findings) ? sidecar.findings : []).map((f) => {
