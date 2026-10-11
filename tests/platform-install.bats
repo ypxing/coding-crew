@@ -72,7 +72,7 @@ teardown() {
   done
 }
 
-@test "uninstall removes every platform's crew-afk, its assets, every retired agent file and copilot's legacy .copilot/" {
+@test "uninstall removes every platform's crew-afk, its assets, every retired agent file and copilot's legacy .copilot/ copy" {
   cd "$SCRIPT_DIR"
   local p dir
   for p in "${PLATFORMS[@]}"; do
@@ -81,8 +81,7 @@ teardown() {
     [ -d "$dir" ]
     # Copilot project installs once landed in .copilot/, which Copilot never reads at project scope.
     if [ "$p" = copilot ]; then
-      mkdir -p "$TEMP_DIR/$p/.copilot/agents" "$TEMP_DIR/$p/.copilot/skills/crew-afk"
-      echo "stale agent" > "$TEMP_DIR/$p/.copilot/agents/crew-coder.agent.md"
+      mkdir -p "$TEMP_DIR/$p/.copilot/skills/crew-afk"
       echo "stale body" > "$TEMP_DIR/$p/.copilot/skills/crew-afk/SKILL.md"
     fi
     TARGET_REPO="$TEMP_DIR/$p" ./uninstall.sh --skill crew-afk >/dev/null
