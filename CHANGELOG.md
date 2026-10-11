@@ -8,6 +8,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- to-issues, upgrade-deps: a PRD `to-prd` writes mid-run is saved to `.drafts/PRD.md` before step 6, so the lint's `--prd` and the builder check receive it on that path too; upgrade-deps' step 8 names the builder check between the lint and `publish-issues` and sends its "yours" questions to the user in one ranked message (#400, from the review of #389)
 - to-issues: step 6 runs a builder check before publishing — a fresh subagent reads the drafts, `PRD.md` and `known/` without the conversation and returns what a coder would have to guess at; answers go into the draft, minor ones become one `(auto)` line, the rest return to step 5 as one ranked question; skipped for `Source:` issues and when the session has no subagent tool. `eval-design-skills.mjs` gains a `prepublish` stage (`gap_raised` / `noise`) and the `prepublish-tracker-wrappers` case (#389)
 - crew-afk: under herdr, the sprint workspace and feature agent open again when the focused herdr workspace is another repo: `worktree open` now names the repo with `--cwd` (PR #398 smoke)
 - tests: the dispatch golden test clears `CREW_INSTALL_DIR`, so its snapshots no longer fail when run from inside a sprint (the docker shim landed on the snapshot's `PATH`) (PR #398)

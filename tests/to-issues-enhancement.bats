@@ -382,3 +382,27 @@ quiz() { awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE"; }
     grep -qF 'A return from step 6'"'"'s builder check asks only the questions it marked yours' "$f"
   done
 }
+
+@test "to-issues: a PRD to-prd writes is saved to .drafts/PRD.md before step 6, so lint and the builder check get it, for every platform" {
+  local p f s2 s3
+  for p in "${PLATFORMS[@]}"; do
+    run rendered_skill to-issues "$p"
+    [ "$status" -eq 0 ]
+    f="$output"
+    s2=$(awk '/^### 2\. Check for a PRD/{on=1;next} /^### 3\./{on=0} on' "$f")
+    grep -qF 'resume with the PRD it wrote: run `node "$TRACKER" prd --feature-slug <feature-slug>` again and save its output to `.scratch/<feature-slug>/.drafts/PRD.md` before step 6' <<<"$s2"
+    grep -qF 'so the lint'"'"'s `--prd` and the builder check receive it on this path too' <<<"$s2"
+  done
+}
+
+@test "upgrade-deps: step 8 names to-issues' builder check between the lint and publish-issues, and where its 'yours' questions go, for every platform" {
+  local p f s8
+  for p in "${PLATFORMS[@]}"; do
+    run rendered_skill upgrade-deps "$p"
+    [ "$status" -eq 0 ]
+    f="$output"
+    s8=$(awk '/^### 8\. Publish/{on=1;next} /^### 9\./{on=0} on' "$f" | tr '\n' ' ' | tr -s ' ')
+    [[ "$s8" == *"then the lint, then \`to-issues\`' builder check, then \`publish-issues\`"* ]]
+    [[ "$s8" == *"\"yours\" questions go to the user in one message ranked by importance before re-rendering, re-linting and publishing"* ]]
+  done
+}

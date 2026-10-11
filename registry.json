@@ -165,7 +165,7 @@
       ]
     },
     "upgrade-deps": {
-      "version": "1.5.1",
+      "version": "1.5.2",
       "source-dir": "upgrade-deps",
       "description": "Audit outdated npm/yarn/pnpm dependencies and plan safe upgrades as issues.",
       "deps": [
