@@ -39,7 +39,7 @@ export { ARGV_PROMPT_LIMIT_BYTES, renderRolePrompt };
  * @returns {{cmd: string, args: string[], cwd: string, env: object, capture: "stdout"|"file"}}
  */
 export function buildDispatch(platform, spec) {
-  const { agent, cwd, promptFile, outFile, model, mainRoot, slug, reportPath, resumeSessionId, maxBudgetUsd } = spec; // spec.effort: afk.effort over ROLE_POLICY
+  const { agent, cwd, promptFile, outFile, model, mainRoot, slug, reportPath, resumeSessionId, maxBudgetUsd } = spec; // spec.effort: afk.effort over ROLE_POLICY; spec.protocolPart: renderRolePrompt's `part`
   const shared = {
     cwd,
     env: {
@@ -52,6 +52,17 @@ export function buildDispatch(platform, spec) {
     ...(agent === "crew-coder" ? { CREW_DEFER_FULL_CHECKS: "1", ...(spec.baseRef ? { CREW_BASE_REF: spec.baseRef } : {}) } : {}),
     },
   };
+
+  const role = roleOfAgent(agent);
+  // Rendered here, before anything spawns: a missing protocol or fragment fails the dispatch.
+  const protocol = role ? renderRolePrompt(role, platform, { mainRoot, rolesDir: spec.rolesDir, part: spec.protocolPart }) : null;
+  // Every protocol is on disk as well as in hand: the adapter places whichever its CLI takes.
+  let protocolFile = null;
+  if (protocol) {
+    protocolFile = `${outFile}.protocol.md`;
+    mkdirSync(dirname(protocolFile), { recursive: true });
+    writeFileSync(protocolFile, protocol);
+  }
 
   // Test/CI seam: one script stands in for every model dispatch, so the whole state
   // machine runs for zero tokens. --report-path lets it write the sidecar report.mjs reads.
@@ -79,17 +90,7 @@ export function buildDispatch(platform, spec) {
 
   const adapter = ADAPTERS[platform];
   if (!adapter) throw new Error(`unknown platform: ${platform}`);
-  const role = roleOfAgent(agent);
-  // Rendered here, before anything spawns: a missing protocol or fragment fails the dispatch.
-  const protocol = role ? renderRolePrompt(role, platform, { mainRoot, rolesDir: spec.rolesDir }) : null;
   const prompt = readFileSync(promptFile, "utf8");
-  // Every protocol is on disk as well as in hand: the adapter places whichever its CLI takes.
-  let protocolFile = null;
-  if (protocol) {
-    protocolFile = `${outFile}.protocol.md`;
-    mkdirSync(dirname(protocolFile), { recursive: true });
-    writeFileSync(protocolFile, protocol);
-  }
   const label = basename(promptFile, ".md").replace(/\.prompt$/, "");
   const { args, input } = adapter.build({
     cwd,
