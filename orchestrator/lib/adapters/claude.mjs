@@ -2,7 +2,7 @@
 import { EMPTY_RESULT_META, lastEvent, normalized, safePreview, str } from "./common.mjs";
 
 // Drops claude.ai connectors and the skills bundled with Claude Code; an older CLI ignores the keys.
-const HEADLESS_SETTINGS = JSON.stringify({ disableClaudeAiConnectors: true, disableBundledSkills: true });
+export const HEADLESS_SETTINGS = JSON.stringify({ disableClaudeAiConnectors: true, disableBundledSkills: true });
 
 function usageTokens(u) {
   return (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0);
