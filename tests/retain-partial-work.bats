@@ -1,53 +1,9 @@
 #!/usr/bin/env bats
 
-# Tests for retain-and-resume-partial-work (issue 08)
-#
-# Asserts:
-#   1. Retained branches (partial/verification-failed) are excluded from cleanup
-#   2. No agent file still forbids committing partial work
-#   3. Worker agent files instruct committing partial work with a marker
-#   4. Dispatch instruction tells the next worker to resume, not re-implement from scratch
-#   5. Sprint summary lists retained branches with reason
-#   6. Progress notes are positioned as context alongside code, not a substitute
-
-load helpers/render
-
-setup() {
-  export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export CLAUDE_AGENT="$(coder_variant claude)"
-  export COPILOT_AGENT="$(coder_variant copilot)"
-  export MERGE_SCRIPT="$SCRIPT_DIR/skills/crew-afk/scripts/merge-branches.sh"
-}
-
-# Every orchestrator-body version of these assertions was deleted with the body that carried
-# it (claude's, then copilot's). Each has a code equivalent that runs the behaviour instead of
-# grepping for it, in tests/orchestrator/sprint-gates-config.test.mjs (and sprint-lifecycle.test.mjs for the demoted branch): retention survives cleanup, the
-# branch is named in the summary with its reason, the next round's worker prompt says "Resume
-# on that existing branch" and that the notes are "not a substitute for it", a demoted branch
-# never merges, and a merged branch loses both its worktree and its ref. What stays here is
-# what is still somebody's file: the coder definitions, merge-branches.sh and state.sh.
-
-# ─── No agent forbids committing partial work ────────────────────────────────
-
-@test "claude.agent.md does not forbid committing partial work" {
-  # The old text was: "Do not commit partial work — the next worker starts from scratch"
-  ! grep -q 'Do not commit partial work' "$CLAUDE_AGENT"
-}
-
-@test "copilot.agent.md does not forbid committing partial work" {
-  ! grep -q 'Do not commit partial work' "$COPILOT_AGENT"
-}
-
-# ─── Worker commits partial work with marker ─────────────────────────────────
-
-@test "claude.agent.md instructs worker to commit partial work with a marker" {
-  # Must instruct committing WIP with some kind of incomplete/partial marker
-  grep -qiE 'WIP|partial.*commit|commit.*partial|incomplete.*marker|marker.*incomplete|commit.*wip' "$CLAUDE_AGENT"
-}
-
-@test "copilot.agent.md instructs worker to commit partial work with a marker" {
-  grep -qiE 'WIP|partial.*commit|commit.*partial|incomplete.*marker|marker.*incomplete|commit.*wip' "$COPILOT_AGENT"
-}
+# Tests for retain-and-resume-partial-work (issue 08): a retained (partial) branch survives the
+# cleanup that deletes merged ones. The rest of the behaviour — the resume prompt, the summary's
+# retained list, a demoted branch never merging — is asserted on faked-dispatch sprints in
+# tests/orchestrator/sprint-gates-config.test.mjs and sprint-lifecycle.test.mjs.
 
 # ─── Git-state test: retained branches survive cleanup script ─────────────────
 
@@ -87,15 +43,4 @@ MERGE_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scr
   [[ "$output" == *"worktree-agent-partial"* ]]
 
   rm -rf "$TEMP_DIR"
-}
-
-# ─── retained_branches is both written and read ──────────────────────────────
-#
-# The resume dispatch reads .retained_branches; if nothing ever writes it the lookup
-# silently returns empty and every partial restarts from scratch. Who calls it is
-# orchestrator/lib/pipeline.mjs (asserted in tests/orchestrator/sprint-gates-config.test.mjs); that the
-# script still does what the call assumes is asserted here.
-@test "state.sh implements the retained_branches write and clear the prose used to spell out" {
-  grep -q 'retained_branches\[\$s\] = \$b' "$SCRIPT_DIR/skills/crew-afk/scripts/state.sh"
-  grep -q 'del(.\[\$s\])' "$SCRIPT_DIR/skills/crew-afk/scripts/state.sh"
 }

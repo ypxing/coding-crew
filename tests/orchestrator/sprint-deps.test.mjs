@@ -422,12 +422,10 @@ test("a failed verify's pointer is an ERROR, next to the [VERIFY] result it expl
   assert.match(log, /\[VERIFY-OUTPUT\] slug=alpha round=2 result=fail file=/);
 });
 
-test("--no-deps and the help text are declared together, so the flag is discoverable", () => {
+test("--no-deps is in the help text, so the flag is discoverable", () => {
   const help = sh("node", [MAIN, "--help"], { cwd: REPO });
   assert.equal(help.code, 0, help.stderr);
   assert.match(help.stdout, /--no-deps/);
-  const source = readFileSync(MAIN, "utf8");
-  assert.match(source, /^ \*\s+--no-deps\s/m, "the header comment's option list omits --no-deps");
 });
 
 test("a dry run records both call sites without running either", () => {

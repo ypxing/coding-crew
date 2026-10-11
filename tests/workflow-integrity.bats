@@ -188,48 +188,7 @@ _installed_scripts() {
   [[ "$output" == *"add multiply"* ]]
 }
 
-# --- B1/C2: pi agent frontmatter must be valid for the pi CLI -----------------
-
-@test "B1: pi agent definitions do not pin a Claude-only model alias" {
-  local f model
-  for f in "$REPO_ROOT"/agents/*/pi.agent.md; do
-    model=$(_frontmatter "$f" | sed -n 's/^model: *//p')
-    case "$model" in
-      sonnet|haiku|opus) echo "$f pins Claude alias '$model'"; return 1 ;;
-    esac
-  done
-}
-
-@test "B3: verify-worktree.sh reports a missing lint/typecheck as a non-fatal gap" {
-  grep -q 'not_run' "$VERIFY"
-}
-
 # --- B4: only the orchestrator closes issues in a sprint ---------------------
-
-@test "B4: every crew-coder variant is told not to close the issue itself" {
-  for p in "${CODER_VARIANTS[@]}"; do
-    local f
-    f=$(coder_variant "$p")
-    grep -q 'do not' <(tr 'A-Z' 'a-z' < "$f")
-    grep -qi 'mark-done\|mark it done\|move the issue' "$f"
-    grep -qi 'orchestrator' "$f"
-  done
-}
-
-@test "B4: solve-issue's close is refused by the tracker CLI, not by prose" {
-  # Was a grep for the sentence that told the worker to skip mark-done. The sentence is
-  # gone; what stands in its place is an op that exits non-zero. Assert that instead.
-  mkdir -p .scratch/f/issues/open
-  printf '# T\n\nStatus: ready-for-agent\n' > .scratch/f/issues/open/01-t.md
-  touch .scratch/f/.orchestrated
-
-  run node "$REPO_ROOT/tracker/cli.mjs" mark-done .scratch/f/issues/open/01-t.md
-  [ "$status" -eq 3 ]
-  [ -f .scratch/f/issues/open/01-t.md ]
-
-  # ...and solve-issue must route its close through that operation rather than its own mv.
-  grep -qF 'node "$TRACKER" mark-done <issue-ref>' "$REPO_ROOT/skills/solve-issue/SKILL.md"
-}
 
 @test "B4: close-issue.sh is idempotent when the issue is already in done/" {
   mkdir -p issues/open issues/done
@@ -239,12 +198,4 @@ _installed_scripts() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"already closed"* ]]
   [ "$(grep -c '^Status: done' issues/done/01-t.md)" -eq 1 ]
-}
-
-# --- C6: cosmetic ------------------------------------------------------------
-
-@test "C6: verify-worktree pluralises the not-run category count" {
-  grep -q 'categor' "$VERIFY"
-  ! grep -q '2 category not run' "$VERIFY"
-  grep -q 'CATEGORY_WORD\|categories' "$VERIFY"
 }

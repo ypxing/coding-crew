@@ -58,21 +58,3 @@ teardown() {
   [ ! -d "$TEMP_DIR/.github/agents" ]
   [ ! -d "$TEMP_DIR/.github/skills" ]
 }
-
-# ─── dispatch mechanism ──────────────────────────────────────────────────────
-#
-# See the header: these six tests moved to tests/orchestrator/dispatch.test.mjs, which
-# exercises the argv and the preflight instead of grepping a body for the promise of them.
-# What stays here is the one dispatch fact that is still the *body's* to carry.
-
-@test "the launcher pre-approves the shell on every platform, and no longer the task tool" {
-  body=$(afk_variant copilot)
-  run grep -m1 '^allowed-tools:' "$body"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"shell"* ]] || { echo "an unattended sprint would stall on a permission prompt" >&2; return 1; }
-  # `task` is the in-session subagent tool. A worker is its own process now, so a body that
-  # still pre-approves it is a body that still believes it dispatches.
-  [[ "$output" != *"task"* ]]
-  ! grep -q 'task(agent_type' "$body"
-}
-

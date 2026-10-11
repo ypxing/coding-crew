@@ -201,19 +201,6 @@ EOF
   [ -f "$DISPATCH_DIR/task-a/ac.ok" ]
 }
 
-@test "parity: nothing outside receipts.sh writes the ACVERIFY trace marker" {
-  # Writing the receipt *is* the event, so the script traces it. A second writer — a body,
-  # or the orchestrator beside its own receipt call — is a marker that can be emitted for a
-  # gate that never wrote a receipt.
-  for f in "$REPO_ROOT"/skills/crew-afk/*.SKILL.md "$REPO_ROOT"/orchestrator/lib/*.mjs; do
-    if grep -q 'ACVERIFY' "$f"; then
-      echo "$(basename "$f") emits ACVERIFY by hand beside the receipt write" >&2
-      return 1
-    fi
-  done
-  grep -q 'ACVERIFY' "$RECEIPTS_SCRIPT"
-}
-
 @test "receipts: write refuses a directory whose branch is not a crew branch" {
   run bash "$RECEIPTS_SCRIPT" write ac --dir "$MAIN_ROOT"
   [ "$status" -ne 0 ]

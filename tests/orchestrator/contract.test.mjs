@@ -1,6 +1,7 @@
 /**
  * contract.test.mjs — the report contracts in the agent definitions must be the ones
- * `report.mjs` parses.
+ * `report.mjs` parses. Each JSON example is lifted from its protocol and parsed; no test here
+ * pins a protocol's wording.
  *
  * Both contracts were, until now, stated only in the prompts the orchestrator builds
  * (`lib/prompts.mjs`). That works — a live sprint confirmed it — but a contract that
@@ -21,46 +22,24 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { CHECK_CATEGORIES, parseWorkerReport, parseReviewReport, parseTriageReport } from "../../orchestrator/lib/report.mjs";
+import { parseWorkerReport, parseReviewReport, parseTriageReport } from "../../orchestrator/lib/report.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "../..");
 
-/** The fields `fromStructured()` in report.mjs actually reads out of a worker report. */
-const WORKER_FIELDS = ["status", "branch", "working_directory", "checks", "criteria", "progress", "notes"];
-
 function launcherPlatforms() {
   return Object.keys(JSON.parse(readFileSync(join(REPO, "orchestrator/platforms.json"), "utf8")));
+}
+
+/** The body of every ```json fence in `text`, in order. */
+function jsonBlocks(text) {
+  return [...text.matchAll(/```json\s*\n([\s\S]*?)\n```/g)].map((m) => m[1]);
 }
 
 function coderDefinition() {
   // No agent file: the protocol is the whole definition, rendered per dispatch.
   return readFileSync(join(REPO, "orchestrator/roles/coder.md"), "utf8");
 }
-
-test("every launcher platform's coder declares the parser's exact field list", () => {
-  for (const platform of launcherPlatforms()) {
-    const text = coderDefinition();
-    for (const field of WORKER_FIELDS) {
-      assert.match(text, new RegExp(`"${field}"`), `${platform} coder never names "${field}"`);
-    }
-    for (const category of CHECK_CATEGORIES) {
-      assert.match(text, new RegExp(`"${category}"`), `${platform} coder omits check category "${category}"`);
-    }
-    // The sidecar path is not half the contract but the primary one: a final message that
-    // ends with a summary sentence parses as nothing, which cost a real claude sprint its
-    // first round. The definition must ask for the file, as the last action.
-    assert.match(text, /report\.json/, `${platform} coder never names the sidecar`);
-    assert.match(text, /as your last action/, `${platform} coder does not ask for the sidecar write`);
-    // And the shape must be the object the parser indexes, not the older array of
-    // {command, result} pairs the prose orchestrators read.
-    assert.doesNotMatch(
-      text,
-      /"checks"\s*:\s*\[/,
-      `${platform} coder declares checks as an array — report.mjs indexes checks.test/lint/typecheck`,
-    );
-  }
-});
 
 test("the JSON a launcher coder is told to emit round-trips through the parser", () => {
   // Lifted from the definition itself rather than retyped, so a drifted example fails here
@@ -92,43 +71,27 @@ test("there is no markdown fallback — an un-migrated coder that never writes t
   assert.equal(r.status, "blocked");
 });
 
-test("the reviewer protocol states the findings shape the parser promotes from", () => {
-  const protocol = readFileSync(join(REPO, "orchestrator/roles/reviewer.md"), "utf8");
-  assert.match(protocol, /"severity": "CRITICAL"/);
-  assert.match(protocol, /verifiable fix criterion/);
-  // The verdict field it is printed beneath is the other half of the same contract.
-  assert.match(protocol, /"verdict": "all-met"/);
-
-  // And the shape the protocol shows is the shape the parser reads — from the sidecar,
-  // never from the surrounding text.
-  const sidecar = {
-    branch: "crew/f/x",
-    verdict: "all-met",
-    findings: [{ severity: "CRITICAL", location: "src/db.ts:7", criterion: "Parameterise the query" }],
-  };
-  const parsed = parseReviewReport("## Branch: crew/f/x (x)", sidecar);
+test("the report object the reviewer protocol shows is the shape the parser reads", () => {
+  // Lifted from the protocol rather than retyped, so a drifted shape fails here, not in a sprint.
+  const [block] = jsonBlocks(readFileSync(join(REPO, "orchestrator/roles/reviewer.md"), "utf8"));
+  assert.ok(block, "reviewer.md has no ```json block");
+  const sidecar = JSON.parse(block.replace(/"<[^"]*>"/g, '"crew/f/x"'));
+  const finding = { severity: "CRITICAL", location: "src/db.ts:7", issue: "unparameterised", criterion: "Parameterise the query" };
+  const parsed = parseReviewReport("## Branch: crew/f/x (x)", { ...sidecar, findings: [finding] });
   assert.equal(parsed.verdict, "all-met");
-  assert.deepEqual(parsed.findings, [
-    { severity: "CRITICAL", location: "src/db.ts:7", criterion: "Parameterise the query", issue: "", explicit: true },
-  ]);
+  assert.deepEqual(parsed.findings, [{ ...finding, explicit: true }]);
 });
 
-test("the triage protocol states the json verdict the parser reads, and never trusts the coder's own diagnosis", () => {
-  const protocol = readFileSync(join(REPO, "orchestrator/roles/triage.md"), "utf8");
-  assert.match(protocol, /"fixable": "yes \| no"/);
-  assert.match(protocol, /"category":/);
-  assert.match(protocol, /"detail":/);
-  // Independence from the coder is the whole point of a separate agent — state it, not
-  // just imply it, the same way the reviewer protocol states "no branch is blocked or
-  // re-queued on a finding" rather than leaving that to be inferred.
-  assert.match(protocol, /independent of the coder/i);
-
-  // And the shape the protocol shows is the shape the parser reads — from the sidecar.
-  const sidecar = { fixable: "yes", category: "wrong dependency version", detail: "pinned a version that 404s" };
-  const parsed = parseTriageReport("", sidecar);
-  assert.equal(parsed.ok, true);
-  assert.equal(parsed.fixable, true);
-  assert.equal(parsed.category, "wrong dependency version");
+test("every verdict example the triage protocol shows parses", () => {
+  const examples = jsonBlocks(readFileSync(join(REPO, "orchestrator/roles/triage.md"), "utf8"))
+    .filter((b) => /"fixable": "(yes|no)"/.test(b))
+    .map((b) => JSON.parse(b));
+  assert.ok(examples.length > 0, "triage.md shows no concrete verdict");
+  for (const example of examples) {
+    const parsed = parseTriageReport("", example);
+    assert.equal(parsed.ok, true, JSON.stringify(example));
+    assert.equal(parsed.fixable, example.fixable === "yes");
+  }
 });
 
 test("every launcher platform has no agent file, and the triage protocol exists once", () => {

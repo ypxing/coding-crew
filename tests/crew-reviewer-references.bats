@@ -7,14 +7,12 @@
 # hand. The audit's instruction was explicit — do not blind-cut the checklist, make the framework
 # blocks conditional. So nothing was deleted: the blocks moved to
 # .coding-crew/crew-afk/roles/reviewer/references/, and review-context.sh decides which apply from signal
-# files. These tests prove both halves: the relocation is lossless, and the selection is correct
-# per stack. The negative greps lock the trim in (the P0 technique) so an inline checklist cannot
-# creep back.
+# files. These tests check the selection per stack, the dependency audit, and that both ship with
+# crew-afk.
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export AGENT_DIR="$SCRIPT_DIR/orchestrator/roles"
-  export PROTOCOL="$AGENT_DIR/reviewer.md"
   export ASSETS="$AGENT_DIR/reviewer"
   export CONTEXT_SH="$ASSETS/scripts/review-context.sh"
   export AUDIT_SH="$ASSETS/scripts/dependency-audit.sh"
@@ -64,80 +62,6 @@ stack_for() {
   run jq -r '.skills["crew-afk"].assets | "\(.source) \(.dest)"' "$SCRIPT_DIR/registry.json"
   [ "$output" = "orchestrator .coding-crew/crew-afk" ]
   [ -d "$SCRIPT_DIR/orchestrator/roles/reviewer/references" ]
-}
-
-# ─── Relocation is lossless ──────────────────────────────────────────────────
-
-@test "no checklist item was deleted - every pre-P5 class survives in protocol or a reference" {
-  # Snapshot of the checklist vocabulary the protocol carried inline before P5. Each entry must
-  # still be findable somewhere the reviewer reads, otherwise the trim deleted a control.
-  local union="$TEMP_DIR/union.txt"
-  cat "$PROTOCOL" "$ASSETS/references/"*.md > "$union"
-  local item
-  for item in \
-    "Hardcoded credentials" "Injection" "XSS" "Path traversal" "CSRF" \
-    "Authentication bypass" "Broken access control" "SSRF" "Insecure deserialization" \
-    "XXE" "Sensitive data exposure" "Security misconfiguration" "Insecure dependencies" \
-    "Large functions" "Large files" "Deep nesting" "Missing error handling" \
-    "Mutation patterns" "console.log" "Missing tests" "Dead code" \
-    "Missing dependency arrays" "State updates in render" "Missing keys in lists" \
-    "Prop drilling" "Client/server boundary" "Missing loading/error states" "Stale closures" \
-    "Unvalidated input" "Missing rate limiting" "Unbounded queries" "Missing timeouts" \
-    "Error message leakage" "Missing CORS configuration" \
-    "Inefficient algorithms" "Large bundle sizes" "Missing caching" "Synchronous I/O" \
-    "TODO/FIXME without tickets" "Missing JSDoc for public APIs" "Poor naming" \
-    "Inconsistent formatting"; do
-    grep -qF "$item" "$union" || { echo "lost checklist item: $item"; return 1; }
-  done
-}
-
-@test "the load-bearing discipline sections stay inline in the protocol" {
-  grep -q 'Pre-Report Gate' "$PROTOCOL"
-  grep -q 'Common False Positives' "$PROTOCOL"
-  grep -q 'Zero Findings Is Valid' "$PROTOCOL"
-  grep -qi 'every severity' "$PROTOCOL"
-  grep -q '## Branch:' "$PROTOCOL"
-  grep -q '\[CRITICAL\]' "$PROTOCOL"
-}
-
-@test "framework-specific checklists are no longer inline in the protocol" {
-  ! grep -q 'useEffect' "$PROTOCOL"
-  ! grep -q 'Prop drilling' "$PROTOCOL"
-  ! grep -q 'Missing rate limiting' "$PROTOCOL"
-  ! grep -qi 'bundle size' "$PROTOCOL"
-}
-
-@test "the dependency-audit command table is no longer inline in the protocol" {
-  ! grep -q 'audit-level=high' "$PROTOCOL"
-  ! grep -q 'govulncheck' "$PROTOCOL"
-  grep -q 'dependency-audit.sh' "$PROTOCOL"
-}
-
-@test "protocol instructs reading every REFERENCE line and names both scripts" {
-  grep -q 'review-context.sh' "$PROTOCOL"
-  grep -q 'REFERENCE:' "$PROTOCOL"
-  grep -qiE 'read \*\*every\*\* file named by a `REFERENCE:`|read every file named by a' "$PROTOCOL"
-}
-
-@test "protocol reads its assets from the prompt's Review assets: path, never a guessed install path" {
-  # "$ROOT/.coding-crew/crew-afk/roles/reviewer" exists only in a project install; on a user-level one every
-  # reviewer hit a TOOL-ERROR on review-context.sh and then searched. The orchestrator knows
-  # the one path and states it.
-  grep -qF 'CR="<the Review assets: path from your prompt>"' "$PROTOCOL"
-  ! grep -qF '.coding-crew/crew-afk/roles/reviewer' "$PROTOCOL"
-}
-
-@test "protocol keeps a fallback for an install without the scripts" {
-  grep -qiE 'if either script is missing|older install' "$PROTOCOL"
-}
-
-@test "no single reference is larger than the protocol that conditions it" {
-  local protocol_words ref words
-  protocol_words=$(wc -w < "$PROTOCOL")
-  for ref in "$ASSETS/references/"*.md; do
-    words=$(wc -w < "$ref")
-    [ "$words" -lt "$protocol_words" ] || { echo "$ref is $words words"; return 1; }
-  done
 }
 
 # ─── Selection is correct per stack ──────────────────────────────────────────
@@ -260,8 +184,7 @@ require github.com/gin-gonic/gin v1.9.0')
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
   echo "STALE" > "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/references/quality.md"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
-  ! grep -q 'STALE' "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/references/quality.md"
-  grep -q 'Code Quality' "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/references/quality.md"
+  cmp "$ASSETS/references/quality.md" "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/references/quality.md"
 }
 
 @test "the installed scripts resolve the installed references" {

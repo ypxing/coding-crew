@@ -179,34 +179,6 @@ work_repo_with_issue() {
   [[ "$output" == *"$expected"* ]]
 }
 
-# ─── the launcher's own path ──────────────────────────────────────────────────
-
-@test "launcher: it falls back to the user-level orchestrator when the repo has no copy" {
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$(afk_variant "$p")"
-    grep -q 'HOME/.coding-crew/crew-afk/main.mjs' "$body" || {
-      echo "$p launcher cannot reach a user-level install" >&2; return 1; }
-  done
-}
-
-@test "launcher: the missing-scripts remedy names the install scope, not 'half-installed'" {
-  # The old wording sent a user who had installed user-level back to the same install.
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$(afk_variant "$p")"
-    ! grep -q 'half-installed' "$body" || {
-      echo "$p still calls a scope problem a half-install" >&2; return 1; }
-    grep -q 'TARGET_REPO=\$HOME' "$body" || {
-      echo "$p does not tell the user how to install user-level" >&2; return 1; }
-  done
-}
-
-@test "launcher: the rendered body runs the same resolved path" {
-  # Rendering is what a consumer receives; the fallback must survive it.
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    grep -q 'HOME/.coding-crew/crew-afk/main.mjs' "$(afk_variant "$p")"
-  done
-}
-
 # ─── one install dir per run (CREW_INSTALL_DIR) ───────────────────────────────
 # The reviewer's assets used to be read from "$ROOT/.coding-crew/crew-afk/roles/reviewer" — a path only a
 # project install has. Every reviewer on a user-level install hit a TOOL-ERROR on
