@@ -5,14 +5,14 @@
  * `effects._pane*`; nothing here closes the feature agent or a workspace holding it.
  */
 
-import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative } from "node:path";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { ADAPTERS as PLATFORM_ADAPTERS } from "../adapters/index.mjs";
 import { ROLE_POLICY, renderRolePrompt } from "../adapters/render.mjs";
 import * as herdr from "./herdr.mjs";
 import * as orca from "./orca.mjs";
-import { shellQuote } from "./shared.mjs";
+import { insideDir, shellQuote } from "./shared.mjs";
 import { spawnInWorkerTerminal, writeLaunchScript } from "./worker-terminal.mjs";
 
 const ADAPTERS = { herdr, orca };
@@ -135,19 +135,6 @@ export function settlePaneAgent(effects) {
     effects._paneWatch = null;
   }
   return alive;
-}
-
-function insideDir(root, dir) {
-  const rel = relative(realpathOr(root), realpathOr(dir));
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
-
-function realpathOr(path) {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
 }
 
 /**

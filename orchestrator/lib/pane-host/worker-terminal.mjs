@@ -43,7 +43,7 @@ export async function spawnInWorkerTerminal(
   const opened = await adapter.openWorkerTerminal(effects, { title, command: `bash ${shellQuote(f("run.sh"))}`, worktree: cwd });
   if (!opened.handle) {
     rmSync(dir, { recursive: true, force: true });
-    effects.log?.(`SPAWN-TERMINAL-FALLBACK ${opened.failure} — running headless`);
+    effects.log?.(`WARN SPAWN-TERMINAL-FALLBACK ${title} ${opened.failure} — running headless`);
     return effects.spawnWithTimeout(cmd, args, { cwd, env, timeoutMs, onLine, input });
   }
 

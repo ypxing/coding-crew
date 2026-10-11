@@ -176,7 +176,7 @@ test("a terminal that can't be opened falls back to a headless spawn", async () 
   const r = await spawnInWorkerTerminal(e, fakeTerminal({ openFailure: "orca unreachable" }), "claude", ["-p"], { cwd: root, stem, title: "t", timeoutMs: 9 });
   assert.deepEqual(r.headless.slice(0, 2), ["claude", ["-p"]]);
   assert.equal(r.headless[2].timeoutMs, 9);
-  assert.ok(e._logs.some((l) => /SPAWN-TERMINAL-FALLBACK orca unreachable/.test(l)));
+  assert.ok(e._logs.some((l) => /^WARN SPAWN-TERMINAL-FALLBACK t orca unreachable/.test(l)));
 });
 
 test("the terminal shows a claude event stream as trace lines, not raw JSON", () => {
@@ -241,12 +241,15 @@ test("spawnDispatch stays headless with no pane host, under herdr, and under --d
   }
 });
 
-test("spawnDispatch under orca opens one terminal in the main checkout, running run.sh", async () => {
+test("spawnDispatch under orca opens one terminal in _feature for a dispatch whose worktree is not named, running run.sh", async () => {
   const { root, stem } = fixture();
   const calls = [];
+  const featureRoot = join(root, "_feature");
   const e = effects({
     paneHost: "orca",
     mainRoot: root,
+    featureRoot,
+    _paneAdopted: new Set([featureRoot]),
     spawnWithTimeout: async (cmd, args) => {
       calls.push([cmd, ...args]);
       return { code: 1, stdout: "", stderr: "stop here" };
@@ -255,10 +258,27 @@ test("spawnDispatch under orca opens one terminal in the main checkout, running 
   await spawnDispatch(e, "claude", ["-p"], { cwd: root, stem, title: "alpha crew-coder" });
   const create = calls[0];
   assert.deepEqual(create.slice(0, 3), ["orca", "terminal", "create"]);
-  assert.equal(create[create.indexOf("--worktree") + 1], `path:${root}`);
+  assert.equal(create[create.indexOf("--worktree") + 1], `path:${featureRoot}`);
   assert.equal(create[create.indexOf("--title") + 1], "alpha crew-coder");
   assert.match(create[create.indexOf("--command") + 1], /^bash '.*coder\.out\.term\/run\.sh'$/);
   assert.deepEqual(calls[1], ["claude", "-p"], "a failed create falls back to the headless spawn");
+});
+
+test("spawnDispatch under orca with nothing named to orca runs headless, with a WARN naming the terminal", async () => {
+  const { root, stem } = fixture();
+  const calls = [];
+  const e = effects({
+    paneHost: "orca",
+    mainRoot: root,
+    featureRoot: join(root, "_feature"),
+    spawnWithTimeout: async (cmd, args) => {
+      calls.push([cmd, ...args]);
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  });
+  await spawnDispatch(e, "claude", ["-p"], { cwd: root, stem, title: "alpha crew-coder" });
+  assert.deepEqual(calls, [["claude", "-p"]], "no terminal create in the main checkout");
+  assert.ok(e._logs.some((l) => l.startsWith("WARN SPAWN-TERMINAL-FALLBACK alpha crew-coder ")), e._logs.join("\n"));
 });
 
 test("the interrupt handler kills a running pane-hosted run.sh, and a finished dispatch's pid is unregistered", async () => {

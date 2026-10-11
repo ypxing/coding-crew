@@ -4,7 +4,7 @@
  * refuses for a worktree it does not know. See docs/orca-support.md.
  */
 
-import { failureDetail, paneHostExec, paneHostJson, paneWorkspaceLabel, shellQuote } from "./shared.mjs";
+import { failureDetail, insideDir, paneHostExec, paneHostJson, paneWorkspaceLabel, shellQuote } from "./shared.mjs";
 
 /** orca is a desktop app that can be quit mid-run; no call may block startup or exit. */
 const CALL_TIMEOUT_MS = 10000;
@@ -91,8 +91,10 @@ async function named(effects, path) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** `_feature` once adopted, else the main checkout: orca refuses a terminal in a worktree it does not know. */
-const featureWorktree = (effects) => (effects.featureRoot && effects._paneAdopted?.has(effects.featureRoot) ? effects.featureRoot : effects.mainRoot);
+/** `_feature` once named, else null: no sprint tab opens in the main checkout, which is the developer's. */
+const featureWorktree = async (effects) => ((await named(effects, effects.featureRoot)) ? effects.featureRoot : null);
+
+const unnamedFeature = (effects) => `_feature ${effects.featureRoot ?? "(none)"} is not named to orca`;
 
 export const launcherHandle = () => process.env.ORCA_TERMINAL_HANDLE || null;
 
@@ -100,17 +102,23 @@ export const launcherHandle = () => process.env.ORCA_TERMINAL_HANDLE || null;
 export async function ensureWorkspace(effects, { featureSlug, logFile }) {
   await renameTriggeringTerminal(effects, featureSlug);
   if (logFile) {
-    const failure = await openLogTerminal(effects, paneWorkspaceLabel(featureSlug), logFile);
-    if (failure) throw new Error(`orca terminal create failed: ${failure}`);
+    const worktree = await featureWorktree(effects);
+    if (!worktree) {
+      effects.log?.(`WARN orca: ${unnamedFeature(effects)} — no log tab`);
+    } else {
+      const failure = await openLogTerminal(effects, paneWorkspaceLabel(featureSlug), logFile, worktree);
+      if (failure) throw new Error(`orca terminal create failed: ${failure}`);
+    }
   }
   return process.env.ORCA_WORKTREE_ID ?? null;
 }
 
 export async function closeWorkspace() {}
 
+/** Only a terminal launched inside `_feature` is the sprint's: any other is the developer's own. */
 async function renameTriggeringTerminal(effects, featureSlug) {
   const handle = process.env.ORCA_TERMINAL_HANDLE;
-  if (!featureSlug || !handle) return;
+  if (!featureSlug || !handle || !effects.featureRoot || !insideDir(effects.featureRoot, process.cwd())) return;
   try {
     await paneHostExec(effects, ["terminal", "rename", "--terminal", handle, "--title", featureSlug, "--json"], CALL_TIMEOUT_MS);
   } catch {
@@ -119,13 +127,13 @@ async function renameTriggeringTerminal(effects, featureSlug) {
 }
 
 /** `--command` is typed into the terminal's shell, so the path is shell-quoted. */
-async function openLogTerminal(effects, label, logFile) {
+async function openLogTerminal(effects, label, logFile, worktree) {
   try {
     const create = await paneHostExec(effects, [
       "terminal",
       "create",
       "--worktree",
-      `path:${featureWorktree(effects)}`,
+      `path:${worktree}`,
       "--title",
       `${label}-log`,
       "--command",
@@ -175,14 +183,16 @@ export async function closeTerminals(effects) {
   for (const handle of [...(effects._paneTerminals ?? [])]) await closeTerminal(effects, handle);
 }
 
-/** Scoped to the dispatch's worktree once adopted, else the main checkout. Never throws. */
+/** Scoped to the dispatch's worktree once named, else `_feature`; with neither, a failure (headless). Never throws. */
 export async function openWorkerTerminal(effects, { title, command, worktree }) {
   try {
+    const scope = (await named(effects, worktree)) ? worktree : await featureWorktree(effects);
+    if (!scope) return { failure: `orca: neither ${worktree ?? "the dispatch's worktree"} nor _feature ${effects.featureRoot ?? "(none)"} is named to orca` };
     const create = await paneHostExec(effects, [
       "terminal",
       "create",
       "--worktree",
-      `path:${worktree && effects._paneAdopted?.has(worktree) ? worktree : effects.mainRoot}`,
+      `path:${scope}`,
       "--title",
       title,
       "--command",
@@ -243,11 +253,13 @@ export function watchPresentSync(effects, handle) {
 /** Its handle is deliberately never `track`ed, so no sweep can close the feature agent. */
 export async function openWatch(effects, { slug, command }) {
   try {
+    const worktree = await featureWorktree(effects);
+    if (!worktree) return { failure: unnamedFeature(effects) };
     const create = await paneHostExec(effects, [
       "terminal",
       "create",
       "--worktree",
-      `path:${featureWorktree(effects)}`,
+      `path:${worktree}`,
       "--title",
       `${slug}-watch`,
       "--command",

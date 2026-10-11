@@ -1,5 +1,8 @@
 /** Helpers shared by the herdr and orca adapters. */
 
+import { realpathSync } from "node:fs";
+import { isAbsolute, relative } from "node:path";
+
 /** Async: a blocking pane-host call would stall every concurrent dispatch sharing this event loop. */
 export async function paneHostExec(effects, args, timeoutMs) {
   return effects.spawnWithTimeout(effects.paneHost, args, { cwd: effects.mainRoot, timeoutMs });
@@ -26,6 +29,20 @@ export function paneWorkspaceLabel(featureSlug) {
 /** POSIX single-quoting, for text orca types into a shell rather than passing as argv. */
 export function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+/** Whether `dir` is `root` or inside it, compared by real path. */
+export function insideDir(root, dir) {
+  const rel = relative(realpathOr(root), realpathOr(dir));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function realpathOr(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
 }
 
 /**

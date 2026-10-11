@@ -107,7 +107,13 @@ function fakePaneHostEffects(paneHost, responses, { mainRoot = "/root", dryRun =
   };
 }
 const fakeHerdrEffects = (responses, opts) => fakePaneHostEffects("herdr", responses, opts);
-const fakeOrcaEffects = (responses, opts) => fakePaneHostEffects("orca", responses, opts);
+/** orca effects with the sprint's `_feature` named to orca, as main.mjs leaves them before any terminal opens. */
+function fakeOrcaEffects(responses, opts) {
+  const effects = fakePaneHostEffects("orca", responses, opts);
+  effects.featureRoot = join(effects.mainRoot, ".scratch", "worktrees", "crew", "alpha", "_feature");
+  effects._paneAdopted = new Set([effects.featureRoot]);
+  return effects;
+}
 const json = (obj) => ({ code: 0, stdout: JSON.stringify(obj), stderr: "" });
 
 // Every canned-response list for ensurePaneWorkspace (herdr) that passes a logFile needs
@@ -411,7 +417,7 @@ test("ensurePaneWorkspace (orca) creates a log terminal directly — no separate
   const create = effects._calls[0];
   assert.deepEqual(create.slice(0, 4), ["orca", "terminal", "create", "--worktree"]);
   assert.equal(create[create.indexOf("--title") + 1], "implement-user-auth-log");
-  assert.equal(create[create.indexOf("--worktree") + 1], `path:${root}`, "scoped to this checkout, not whatever worktree orca's GUI has active");
+  assert.equal(create[create.indexOf("--worktree") + 1], `path:${effects.featureRoot}`, "scoped to _feature, not whatever worktree orca's GUI has active");
   assert.equal(create[create.indexOf("--command") + 1], `tail -f '${logFile}'`);
 });
 
@@ -463,7 +469,7 @@ test("every orca call is bounded by a timeout", async () => {
     { mainRoot: root },
   );
 
-  await withOrcaTerminalHandle("term_1", () => ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile }));
+  await withOrcaTerminalHandle("term_1", () => inDir(effects.featureRoot, () => ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile })));
   await closePaneLogTab(effects);
 
   assert.equal(effects._calls.length, 4);
@@ -491,12 +497,12 @@ test("ensurePaneWorkspace (orca) renames the triggering terminal via ORCA_TERMIN
   );
 
   const workspaceId = await withOrcaWorktreeId("wt1", () =>
-    withOrcaTerminalHandle("term_1", () => ensurePaneWorkspace(effects, { featureSlug: "implement-user-auth", logFile })),
+    withOrcaTerminalHandle("term_1", () => inDir(effects.featureRoot, () => ensurePaneWorkspace(effects, { featureSlug: "implement-user-auth", logFile }))),
   );
 
   assert.equal(workspaceId, "wt1");
   assert.deepEqual(effects._calls[0], ["orca", "terminal", "rename", "--terminal", "term_1", "--title", "implement-user-auth", "--json"]);
-  assert.equal(effects._calls[1][4], `path:${root}`, "the log terminal is scoped by --worktree path:<mainRoot> — reuse needs nothing explicit");
+  assert.equal(effects._calls[1][4], `path:${effects.featureRoot}`, "the log terminal is scoped by --worktree path:<_feature> — reuse needs nothing explicit");
 });
 
 test("ensurePaneWorkspace (orca) never renames the triggering terminal when no feature slug resolved", async () => {
@@ -860,15 +866,15 @@ test("the log terminal and the agent terminal are both created with --worktree p
   assert.deepEqual(worktrees, [`path:${featureRoot}`, `path:${featureRoot}`]);
 });
 
-test("orca: when `_feature` was never adopted (worktree set failed), both terminals are scoped to the main checkout and the agent still starts in _feature", async () => {
-  const { featureRoot, root, effects } = watchFixture("orca", [orcaCreated("term_log"), orcaCreated("term_w")]);
+test("orca: when `_feature` was never named (worktree set failed), neither the log terminal nor the agent is created, each a WARN", async () => {
+  const { featureRoot, root, effects } = watchFixture("orca", []);
   effects._paneAdopted = new Set();
   await ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile: join(root, "trace.log") });
-  await ensureWatchSession(effects, WATCH);
-  const creates = effects._calls.filter((c) => c[2] === "create");
-  assert.deepEqual(creates.map((c) => c[c.indexOf("--worktree") + 1]), [`path:${root}`, `path:${root}`]);
-  const { text } = launchScriptOf(creates[1][creates[1].indexOf("--command") + 1]);
-  assert.ok(text.includes(`cd -P '${featureRoot}'`), "the agent's cwd is _feature");
+  const logs = [];
+  assert.equal(await ensureWatchSession(effects, { ...WATCH, log: (l) => logs.push(l) }), null);
+  assert.deepEqual(effects._calls, [], "no terminal create, and none in the main checkout");
+  assert.ok(effects._logs.some((l) => l.startsWith("WARN ") && l.includes(featureRoot) && /log/.test(l)), effects._logs.join("\n"));
+  assert.ok(logs.some((l) => l.startsWith("WARN watch session (orca): ") && l.includes(featureRoot)), logs.join("\n"));
 });
 
 test("ensureWatchSession gives the host a command that sources crew-afk's env.sh before the interactive argv, then deletes it", async () => {
@@ -1383,4 +1389,45 @@ test("adoptWorktree (orca) logs a failed `worktree set` as a WARN naming the wor
   const named = await withAdoptWait({ pollMs: 10, timeoutMs: 1000 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" }));
   assert.equal(named, false);
   assert.match(effects._logs.join("\n"), /^WARN orca worktree set \/wt\/alpha exit=1 orca boom$/m);
+});
+
+test("ensurePaneWorkspace (orca) renames the launching terminal only for a run launched from inside _feature", async () => {
+  const { root } = fixture();
+  const outside = fakeOrcaEffects([json({ result: { terminal: { handle: "term_2" } } })], { mainRoot: root });
+  await withOrcaTerminalHandle("term_1", () => inDir(join(root, "elsewhere"), () => ensurePaneWorkspace(outside, { featureSlug: "alpha", logFile: join(root, "trace.log") })));
+  assert.deepEqual(outside._calls.map((c) => c[2]), ["create"], "no rename of a terminal outside _feature");
+
+  const inside = fakeOrcaEffects([json({ result: { rename: { title: "alpha" } } }), json({ result: { terminal: { handle: "term_2" } } })], { mainRoot: root });
+  await withOrcaTerminalHandle("term_1", () => inDir(join(inside.featureRoot, "src"), () => ensurePaneWorkspace(inside, { featureSlug: "alpha", logFile: join(root, "trace.log") })));
+  assert.deepEqual(inside._calls[0], ["orca", "terminal", "rename", "--terminal", "term_1", "--title", "alpha", "--json"]);
+});
+
+test("an orca worker terminal opens in its own worktree when named, else in _feature when named, else not at all", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const created = () => json({ result: { terminal: { handle: "term_x" } } });
+  const own = fakeOrcaEffects([created()]);
+  own._paneAdopted.add("/wt/alpha");
+  assert.equal((await openWorkerTerminal(own, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" })).handle, "term_x");
+  assert.equal(own._calls[0][own._calls[0].indexOf("--worktree") + 1], "path:/wt/alpha");
+
+  const feature = fakeOrcaEffects([created(), created()]);
+  await openWorkerTerminal(feature, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+  await openWorkerTerminal(feature, { title: "crew-afk crew-feature-review", command: "true", worktree: feature.mainRoot });
+  assert.deepEqual(feature._calls.map((c) => c[c.indexOf("--worktree") + 1]), [`path:${feature.featureRoot}`, `path:${feature.featureRoot}`]);
+
+  const none = fakeOrcaEffects([]);
+  none._paneAdopted = new Set();
+  const opened = await openWorkerTerminal(none, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+  assert.equal(opened.handle, undefined);
+  assert.match(opened.failure, /\/wt\/alpha/);
+  assert.deepEqual(none._calls, [], "never --worktree path:<mainRoot>");
+});
+
+test("an orca worker terminal waits for its worktree's naming still under way", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const effects = fakeOrcaEffects([json({ result: {} }), json({ result: {} }), json({ result: { terminal: { handle: "term_x" } } })]);
+  adoptWorktree(effects, "/wt/alpha", { title: "01-alpha" });
+  await openWorkerTerminal(effects, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+  assert.deepEqual(effects._calls.map((c) => c[2]), ["show", "set", "create"]);
+  assert.equal(effects._calls[2][effects._calls[2].indexOf("--worktree") + 1], "path:/wt/alpha");
 });
