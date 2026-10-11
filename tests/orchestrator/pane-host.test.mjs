@@ -1484,3 +1484,28 @@ test("adoptWorktree (orca) names a worktree orca lists only after 10s, and the l
   assert.deepEqual(create.slice(1, 3), ["terminal", "create"]);
   assert.equal(create[create.indexOf("--worktree") + 1], "path:/wt/_feature");
 });
+
+/** `adoptingOrca` whose `worktree show` fails until `effects.listed` is set. */
+function orcaListingWhenToggled() {
+  const effects = adoptingOrca(0);
+  effects.listed = false;
+  const spawn = effects.spawnWithTimeout;
+  effects.spawnWithTimeout = async (cmd, args, opts) =>
+    args[1] === "show" && !effects.listed ? (effects._calls.push([cmd, ...args]), { code: 1, stdout: "", stderr: "selector_not_found" }) : spawn(cmd, args, opts);
+  return effects;
+}
+
+test("an orca worker terminal names and opens in a worktree orca listed only after the adopt wait", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const effects = orcaListingWhenToggled();
+  const adopted = await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", issue: 1, parent: "/wt/_feature" }));
+  assert.equal(adopted, false);
+  effects.listed = true;
+  effects._calls.length = 0;
+  const opened = await openWorkerTerminal(effects, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+  assert.equal(opened.handle, "term_x", opened.failure);
+  assert.deepEqual(effects._calls.map((c) => c[2]), ["show", "set", "create"]);
+  assert.deepEqual(effects._calls[1], ["orca", "worktree", "set", "--worktree", "path:/wt/alpha", "--display-name", "01-alpha", "--issue", "1", "--parent-worktree", "path:/wt/_feature"]);
+  assert.equal(effects._calls[2][effects._calls[2].indexOf("--worktree") + 1], "path:/wt/alpha");
+  assert.equal(effects._logs.length, 1, "only the adoption's own WARN");
+});
