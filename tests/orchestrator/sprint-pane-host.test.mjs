@@ -284,8 +284,9 @@ test("under herdr a worker tab whose close fails is a WARN in orchestrator.log n
 // An `orca` stub on PATH, logging every call: the runtime is reachable, every worktree is listed,
 // and `worktree set` fails for a path ending in `setFail`. A terminal create other than the log tab
 // or the agent runs its `--command` in the background; `terminal show` reports every terminal gone,
-// or with `closeSticks` still listed (a close orca never carries out).
-function orcaRun(root, { setFail = null, closeSticks = false } = {}) {
+// or with `closeSticks` still listed (a close orca never carries out). `terminalList` is what
+// `terminal list --json` prints (exit 0), or `{ exit }` for one that fails.
+function orcaRun(root, { setFail = null, closeSticks = false, terminalList = null } = {}) {
   const bin = mkdtempSync(join(TMPDIR, "crew-fake-orca-"));
   FIXTURE_ROOTS.push(bin);
   const log = join(bin, "calls.log");
@@ -300,6 +301,7 @@ function orcaRun(root, { setFail = null, closeSticks = false } = {}) {
       '  "terminal create") title=; cmd=; while [ $# -gt 0 ]; do case "$1" in --title) title=$2;; --command) cmd=$2;; esac; shift; done',
       `    n=$(( $(cat '${bin}/n' 2>/dev/null || echo 0) + 1 )); echo $n > '${bin}/n'; printf '{"result":{"terminal":{"handle":"t%s"}}}\\n' $n`,
       `    case "$title" in *-log|*-watch) ;; *) node -e 'require("child_process").spawn("bash", ["-c", process.argv[1]], { detached: true, stdio: "ignore" }).unref()' "$cmd";; esac;;`,
+      `  "terminal list") ${terminalList?.exit ? `exit ${terminalList.exit}` : terminalList ? `echo '${JSON.stringify(terminalList)}'` : ":"};;`,
       `  "terminal show") ${closeSticks ? `echo '{"result":{"terminal":{"handle":"'"$4"'"}}}'` : "exit 1"};;`,
       "esac",
       "exit 0",
@@ -358,4 +360,34 @@ test("under orca with _feature named the log tab, the agent and a dispatch outsi
   assert.deepEqual(creates.filter((c) => c.includes(`--worktree path:${root} `)), []);
   assert.match(traceLog(root), / WARN {2}orca terminal t\d+ not closed after 3 attempts/);
   assert.doesNotMatch(traceLog(root), /SPAWN-TERMINAL-FALLBACK/);
+});
+
+test("under orca, removing _feature at the end with the agent gone names in a WARN each terminal orca still lists inside it; none listed, or a failed list, logs nothing", () => {
+  const listed = (root) => ({
+    result: {
+      terminals: [
+        { handle: "term_mine", title: "zsh", worktreePath: featureWt(root) },
+        { handle: "term_elsewhere", title: "vi", worktreePath: root },
+      ],
+    },
+  });
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = orcaRun(root, { terminalList: listed(root) });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(existsSync(featureWt(root)), false, "_feature is removed");
+  assert.ok(r.calls.includes("terminal list --json"), r.calls.join("\n"));
+  const warns = traceLog(root).split("\n").filter((l) => / WARN {2}orca terminal term_/.test(l) && l.includes("still open"));
+  assert.equal(warns.length, 1, traceLog(root));
+  assert.match(warns[0], /term_mine/);
+  assert.ok(warns[0].includes(featureWt(root)), warns[0]);
+
+  for (const terminalList of [{ result: { terminals: [] } }, { exit: 1 }]) {
+    const quiet = fixtureRepo();
+    addIssue(quiet, "01-alpha.md");
+    const q = orcaRun(quiet, { terminalList });
+    assert.equal(q.code, 0, `${q.stdout}\n${q.stderr}`);
+    assert.equal(existsSync(featureWt(quiet)), false, "_feature is removed");
+    assert.doesNotMatch(traceLog(quiet), /still open/);
+  }
 });

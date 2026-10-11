@@ -14,7 +14,7 @@ const CALL_TIMEOUT_MS = 10000;
 const SEND_TIMEOUT_MS = 20000;
 
 /** How long a new worktree may take to appear in orca after `git worktree add`, and how often to look. */
-export const ADOPT_WAIT = { pollMs: 500, timeoutMs: 10000 };
+export const ADOPT_WAIT = { pollMs: 500, timeoutMs: 60000 };
 
 export function preflight(effects) {
   const which = effects.exec("sh", ["-c", "command -v orca"], { mutating: false });
@@ -51,24 +51,59 @@ export function adoptWorktree(effects, path, meta) {
     return false;
   });
   (effects._paneAdoptions ??= new Map()).set(path, adopting);
+  (effects._paneAdoptMeta ??= new Map()).set(path, meta);
   return adopting;
 }
 
-async function nameWorktree(effects, path, { title, issue, parent }) {
+async function nameWorktree(effects, path, meta) {
   if (!(await listedByOrca(effects, path))) {
-    effects.log?.(`WARN orca never listed worktree ${path} within ${ADOPT_WAIT.timeoutMs / 1000}s — not named, so no terminal opens in it`);
+    effects.log?.(`WARN orca never listed worktree ${path} within ${ADOPT_WAIT.timeoutMs / 1000}s — not named yet; the next terminal for it looks again`);
     return false;
   }
-  const args = ["worktree", "set", "--worktree", `path:${path}`, "--display-name", title];
-  if (issue != null) args.push("--issue", String(issue));
-  if (parent) args.push("--parent-worktree", `path:${parent}`);
-  const r = await paneHostExec(effects, args, CALL_TIMEOUT_MS);
+  return setWorktree(effects, path, meta, effects.log);
+}
+
+/** `log` is omitted by a re-probe: the adoption already warned. */
+async function setWorktree(effects, path, meta, log) {
+  let r = await worktreeSet(effects, path, meta);
+  if (r.code !== 0 && meta.parent && /selector_not_found/.test(failureDetail(r))) r = await nameWithoutParent(effects, path, meta, log);
   if (r.code !== 0) {
-    effects.log?.(`WARN orca worktree set ${path} exit=${r.code} ${failureDetail(r)}`);
+    log?.(`WARN orca worktree set ${path} exit=${r.code} ${failureDetail(r)}`);
     return false;
   }
   (effects._paneAdopted ??= new Set()).add(path);
+  await setParentOfChildren(effects, path, log);
   return true;
+}
+
+function worktreeSet(effects, path, { title, issue, parent }) {
+  const args = ["worktree", "set", "--worktree", `path:${path}`, "--display-name", title];
+  if (issue != null) args.push("--issue", String(issue));
+  if (parent) args.push("--parent-worktree", `path:${parent}`);
+  return paneHostExec(effects, args, CALL_TIMEOUT_MS);
+}
+
+/**
+ * orca refuses a `--parent-worktree` it does not list yet (`selector_not_found`, naming the child),
+ * so the child is named alone and its parent set once orca names that one. Returns the set alone's result.
+ */
+async function nameWithoutParent(effects, path, meta, log) {
+  const r = await worktreeSet(effects, path, { ...meta, parent: null });
+  if (r.code !== 0) return r;
+  (effects._paneParentless ??= new Map()).set(path, meta);
+  log?.(`WARN orca named worktree ${path} without its parent ${meta.parent}, which orca does not list yet — set once orca names it`);
+  if (effects._paneAdopted?.has(meta.parent)) await setParentOfChildren(effects, meta.parent, log);
+  return r;
+}
+
+/** Once each: a refusal leaves the child named, only without its parent. */
+async function setParentOfChildren(effects, parent, log) {
+  for (const [child, meta] of effects._paneParentless ?? []) {
+    if (meta.parent !== parent) continue;
+    effects._paneParentless.delete(child);
+    const r = await worktreeSet(effects, child, meta).catch((err) => ({ code: -1, stderr: err.message }));
+    if (r.code !== 0) log?.(`WARN orca could not set the parent of worktree ${child} to ${parent} — exit=${r.code} ${failureDetail(r)}`);
+  }
 }
 
 /**
@@ -87,11 +122,37 @@ async function listedByOrca(effects, path) {
   }
 }
 
-/** Whether `path` is named to orca, once any naming still under way has settled. */
+/**
+ * Whether `path` is named to orca, once any naming still under way has settled. One whose adoption
+ * ended unnamed gets one more look, so a worktree orca lists only after the wait is named at the next
+ * spawn; a miss is not cached, so the spawn after that looks again. A child named without its parent
+ * looks at the parent too: its terminals scope to the child, so nothing else would name that parent.
+ */
 async function named(effects, path) {
   if (!path) return false;
-  await effects._paneAdoptions?.get(path);
-  return Boolean(effects._paneAdopted?.has(path));
+  const adoption = effects._paneAdoptions?.get(path);
+  await adoption;
+  if (effects._paneAdopted?.has(path)) {
+    const parentless = effects._paneParentless?.get(path);
+    if (parentless) await named(effects, parentless.parent);
+    return true;
+  }
+  return adoption ? nameIfListedNow(effects, path) : false;
+}
+
+/** Concurrent spawns share one probe, so a worktree gets one `worktree set`. Silent: the adoption already warned. */
+function nameIfListedNow(effects, path) {
+  const probes = (effects._paneReprobes ??= new Map());
+  if (!probes.has(path)) {
+    const probe = (async () => {
+      const show = await paneHostExec(effects, ["worktree", "show", "--worktree", `path:${path}`, "--json"], CALL_TIMEOUT_MS);
+      return show.code === 0 && setWorktree(effects, path, effects._paneAdoptMeta.get(path));
+    })()
+      .catch(() => false)
+      .finally(() => probes.delete(path));
+    probes.set(path, probe);
+  }
+  return probes.get(path);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -277,6 +338,13 @@ export async function openWatch(effects, { slug, command }) {
   } catch (err) {
     return { failure: `orca terminal create threw: ${err.message}` };
   }
+}
+
+/** Terminals orca lists whose worktree is `dir` or inside it; none when the list fails. Blocking. */
+export function terminalsInSync(effects, dir) {
+  const list = effects.exec("orca", ["terminal", "list", "--json"], { mutating: false, timeoutMs: CALL_TIMEOUT_MS });
+  const terminals = list.code === 0 ? paneHostJson(list)?.result?.terminals : null;
+  return Array.isArray(terminals) ? terminals.filter((t) => t?.worktreePath && insideDir(dir, t.worktreePath)) : [];
 }
 
 /** In a plain shell `terminal send` runs the message as a command, so send only to an `agentIdentity`. */

@@ -59,7 +59,7 @@ confirmed with a live spike against a running orca runtime (not just the CLI ref
 
 | operation                         | herdr                                                        | orca                                                                        |
 | ---------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| name a new worktree                | — (`_feature` is the workspace; issue worktrees get no call) | `worktree show --worktree path:<dir> --json`, polled until orca lists it (bounded, 10s), then `worktree set --worktree path:<dir> --display-name <title> [--issue <n>] [--parent-worktree path:<_feature>]` |
+| name a new worktree                | — (`_feature` is the workspace; issue worktrees get no call) | `worktree show --worktree path:<dir> --json`, polled until orca lists it (bounded, 60s), then `worktree set --worktree path:<dir> --display-name <title> [--issue <n>] [--parent-worktree path:<_feature>]`; a set refused (`selector_not_found`) because orca does not list `_feature` yet is repeated without `--parent-worktree` (a `WARN`), and the parent is set once orca names `_feature` |
 | ensure workspace + log tab         | `worktree open --path <_feature> --cwd <mainRoot> --label <slug> --no-focus` (the sprint's feature worktree, even from inside another workspace; `workspace create --cwd <mainRoot> …` with none), then `tab create --workspace <id> --cwd <_feature> --label <slug>-log --no-focus` + `pane run <pane> tail -f <log>` | `terminal create --worktree path:<_feature> --title <slug>-log --command "tail -f '<log>'" --json` (one call); with `_feature` not named to orca, no log tab (`WARN`) |
 | close log tab                      | `tab close <tabId>`                                          | `terminal close --terminal <handle> --json`                                |
 | close workspace                    | `workspace close <id>` (no-op while the feature agent lives) | no-op always — no workspace object exists                                  |
@@ -101,7 +101,9 @@ never edits an issue's `Status:` or criteria boxes.
 - **`_feature` is kept.** While the agent still passes the host's liveness check at the end of
   the run (a signal included) the `_feature` worktree stays registered and on disk, and herdr's
   workspace holding the agent is not closed. A run with no host, under `--dry-run`, or whose agent
-  failed to open or is gone by the end removes `_feature` as before; herdr's workspace is closed
+  failed to open or is gone by the end removes `_feature` as before, first naming in a `WARN` each
+  terminal `orca terminal list --json` still shows with a `worktreePath` inside it (its shell is left
+  in a deleted directory; a failed or timed-out list logs nothing and the removal goes ahead); herdr's workspace is closed
   only when this run made it (`worktree open`'s `already_open` is false), never one a developer
   already had open (a signal ending closes it too). An agent this run opened that the host lists but has
   not yet identified counts as live only in its first two minutes: herdr's pane outlives a CLI that exited.
@@ -145,6 +147,8 @@ With orca or herdr as the pane host, every dispatch (coder, reviewer, triage, fe
 whatever `spawnDispatch` routes) runs in a tab of its own titled `<slug> <agent>`, so every
 worker is a tab you can watch. orca scopes the terminal to the dispatch's own worktree when crew-afk
 named it to orca, else to `_feature` when that is named; with neither, the dispatch runs headless.
+A worktree orca listed only after the 60s naming wait is named at the next dispatch that asks
+for it (one `worktree show`, then `worktree set`); the startup log tab and feature agent are not reopened.
 herdr opens it as a tab of the sprint's `_feature` workspace, started in the dispatch's own cwd
 (an issue's worktree for its coder and reviewer), runs `run.sh` with `pane run`, and closes the tab
 with `tab close` when the dispatch ends (a close that fails or times out is a `WARN herdr tab <tabId>
@@ -237,8 +241,10 @@ the host, best-effort (a failure is a `WARN` in `orchestrator.log` — held unti
 `_feature`, named before it — and the run goes on):
 
 - **orca:** once `orca worktree show --worktree path:<worktree>` succeeds (orca finds a new
-  worktree from its own git watch; polled every 0.5s for up to 10s, plus one look after the 10s
-  in case a blocking check held the event loop through them, else not named and a `WARN`),
+  worktree from its own git watch; polled every 0.5s for up to 60s, plus one look after the 60s
+  in case a blocking check held the event loop through them, else not named yet and a `WARN`;
+  each later worker terminal for that worktree looks once more — one `worktree show`, then
+  `worktree set` — and a failure there logs nothing, since the adoption already warned),
   `orca worktree set --worktree path:<worktree> --display-name <title> [--issue <n>]
   [--parent-worktree path:<_feature>]` for `_feature`, every issue worktree (`--issue <n>`) and the
   `_baseline` check worktree when the baseline runs alongside dispatch, the last two as children of

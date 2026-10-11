@@ -73,6 +73,21 @@ export function closePaneWorkspaceSync(effects) {
   }
 }
 
+/**
+ * Before `dir` is removed: a terminal still open in it is left on a deleted cwd, which no shell or
+ * CLI recovers from, so each is named. Blocking, for a signal handler; never throws or delays.
+ */
+export function warnPaneTerminalsIn(effects, dir) {
+  if (effects.dryRun) return;
+  try {
+    for (const { handle, title } of adapterFor(effects)?.terminalsInSync?.(effects, dir) ?? []) {
+      effects.log?.(`WARN ${effects.paneHost} terminal ${handle}${title ? ` (${title})` : ""} is still open in ${dir}, which is being removed — its shell is left in a deleted directory`);
+    }
+  } catch {
+    /* cosmetic */
+  }
+}
+
 /** The log tab is this run's own even when its workspace is not. */
 export async function closePaneLogTab(effects) {
   if (effects._paneLogTabId) {

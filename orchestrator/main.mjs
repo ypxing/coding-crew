@@ -31,7 +31,7 @@ import {
   retiredNotice,
   validateFlags,
 } from "./lib/crew-config.mjs";
-import { closePaneLogTab, closePaneWorkspace, closePaneWorkspaceSync, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, notifyWatchSession, queueRunStartNotice, settlePaneAgent } from "./lib/pane-host/index.mjs";
+import { closePaneLogTab, closePaneWorkspace, closePaneWorkspaceSync, drainPaneNotices, ensurePaneWorkspace, ensureWatchSession, notifyWatchSession, queueRunStartNotice, settlePaneAgent, warnPaneTerminalsIn } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { settleFeatureBranch } from "./lib/feature-start.mjs";
@@ -553,6 +553,7 @@ async function main() {
     if (!featureWorktree || keep) return;
     const path = featureWorktree;
     featureWorktree = null;
+    warnPaneTerminalsIn(effects, path);
     removeWorktree(effects, { mainRoot, path });
     effects.git(["worktree", "prune"]);
   };
