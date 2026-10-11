@@ -386,6 +386,9 @@ async function main() {
   const stderrLevel = stderrThreshold();
   const shows = (level) => atLeast(level, stderrLevel.level);
   const logLines = [];
+  // An effects line starting `WARN ` is a degraded host call, so orchestrator.log carries it; one
+  // logged before Sprint.init creates that file (naming `_feature`) is held until then.
+  const warnLog = { file: null, held: [] };
   const effects = new Effects({
     scriptsDir,
     mainRoot,
@@ -394,7 +397,12 @@ async function main() {
     env: { MAIN_ROOT: mainRoot },
     log: (line) => {
       logLines.push(line);
+      const warn = /^WARN /.test(line) ? line.slice("WARN ".length) : null;
       if (shows("debug")) console.error(line);
+      else if (warn && shows("warn")) console.error(warn);
+      if (!warn) return;
+      if (warnLog.file) writeLog(warnLog.file, warn, "warn");
+      else warnLog.held.push(warn);
     },
   });
   if (options.command === "status") {
@@ -684,6 +692,10 @@ async function main() {
       },
     });
     sprint.setModel(options.model ?? "agent default");
+    if (sprint.traceLog) {
+      warnLog.file = sprint.traceLog;
+      for (const warn of warnLog.held.splice(0)) writeLog(warnLog.file, warn, "warn");
+    }
 
     if (lease) {
       const leaseLog = (line, level) => {

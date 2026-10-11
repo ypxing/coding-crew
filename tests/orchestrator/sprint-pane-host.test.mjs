@@ -255,3 +255,95 @@ test("--dry-run opens no watch agent and writes no watch.json", () => {
   assert.equal(existsSync(join(root, ".scratch/demo/watch.json")), false, r.stderr);
   assert.deepEqual(r.calls.filter((c) => /^(workspace create|tab create|pane run|agent prompt)/.test(c)), []);
 });
+
+test("under herdr a worker tab that cannot be created runs the dispatch headless, a WARN in orchestrator.log naming it; no effects line goes there", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = herdrRun(root, [], { workerTabExit: 1 });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+  assert.match(traceLog(root), / WARN {2}SPAWN-TERMINAL-FALLBACK 01-alpha crew-coder herdr tab create exit=1/);
+  assert.deepEqual(r.calls.filter((c) => /^pane run w5:|^tab close w5:w/.test(c)), [], "no worker tab left to close");
+  assert.doesNotMatch(traceLog(root), /\b(RUN|SPAWN) {1,2}[(/]/, "effects' own RUN/SPAWN lines stay out of orchestrator.log");
+});
+
+// ─── orca ─────────────────────────────────────────────────────────────────────────────────────
+
+// An `orca` stub on PATH, logging every call: the runtime is reachable, every worktree is listed,
+// and `worktree set` fails for a path ending in `setFail`. A terminal create other than the log tab
+// or the agent runs its `--command` in the background; `terminal show` reports every terminal gone,
+// or with `closeSticks` still listed (a close orca never carries out).
+function orcaRun(root, { setFail = null, closeSticks = false } = {}) {
+  const bin = mkdtempSync(join(TMPDIR, "crew-fake-orca-"));
+  FIXTURE_ROOTS.push(bin);
+  const log = join(bin, "calls.log");
+  writeFileSync(
+    join(bin, "orca"),
+    [
+      "#!/bin/sh",
+      `printf '%s\\n' "$*" >> '${log}'`,
+      'case "$1 $2" in',
+      `  "status --json") echo '{"result":{"runtime":{"reachable":true}}}';;`,
+      `  "worktree set") case "$4" in ${setFail ? `path:*${setFail}) echo '{"error":{"code":"boom","message":"orca set boom"}}'; exit 1;;` : "_none_) ;;"} esac; echo '{}';;`,
+      '  "terminal create") title=; cmd=; while [ $# -gt 0 ]; do case "$1" in --title) title=$2;; --command) cmd=$2;; esac; shift; done',
+      `    n=$(( $(cat '${bin}/n' 2>/dev/null || echo 0) + 1 )); echo $n > '${bin}/n'; printf '{"result":{"terminal":{"handle":"t%s"}}}\\n' $n`,
+      `    case "$title" in *-log|*-watch) ;; *) node -e 'require("child_process").spawn("bash", ["-c", process.argv[1]], { detached: true, stdio: "ignore" }).unref()' "$cmd";; esac;;`,
+      `  "terminal show") ${closeSticks ? `echo '{"result":{"terminal":{"handle":"'"$4"'"}}}'` : "exit 1"};;`,
+      "esac",
+      "exit 0",
+      "",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  writeFileSync(join(bin, "pi"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const env = sprintEnv({
+    ...process.env,
+    PATH: `${bin}:${process.env.PATH}`,
+    CREW_SCRIPTS: SCRIPTS,
+    CREW_FAKE_DISPATCH: FAKE,
+    CREW_FAKE_DIR: join(root, ".scratch/fake"),
+    MAIN_ROOT: root,
+  });
+  env.CREW_PANE_HOST = "orca";
+  const r = spawnSync("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], { cwd: root, encoding: "utf8", env });
+  const calls = existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean) : [];
+  return { code: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", calls };
+}
+
+test("under orca with _feature unnamed (worktree set failed) no terminal opens in the main checkout, and the failure reaches orchestrator.log as a WARN", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = orcaRun(root, { setFail: "/_feature" });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+  const log = traceLog(root);
+  // Named before Sprint.init created orchestrator.log, so the line was held until then.
+  assert.ok(log.split("\n").some((l) => / WARN {2}orca worktree set /.test(l) && l.includes(featureWt(root)) && /orca set boom/.test(l)), log);
+  assert.ok(log.split("\n").some((l) => / WARN {2}orca: _feature /.test(l) && l.includes(featureWt(root)) && /no log tab/.test(l)), log);
+  const creates = r.calls.filter((c) => c.startsWith("terminal create "));
+  assert.deepEqual(creates.filter((c) => c.includes(`--worktree path:${root} `)), [], creates.join("\n"));
+  assert.deepEqual(creates.filter((c) => / --title demo-(log|watch) /.test(c)), [], "no log tab or agent without a named _feature");
+  // The issue's worktree is still named, under _feature.
+  const set = r.calls.find((c) => /^worktree set --worktree path:\S+ --display-name 01-alpha /.test(c));
+  assert.ok(set, r.calls.join("\n"));
+  assert.match(set, new RegExp(` --issue \\S+ --parent-worktree path:${featureWt(root).replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}$`));
+  // The fake dispatch runs in the main checkout (dispatch.mjs's test seam), which is never a terminal's scope.
+  assert.deepEqual(creates, []);
+  assert.match(log, / WARN {2}SPAWN-TERMINAL-FALLBACK 01-alpha crew-coder orca: neither /);
+});
+
+test("under orca with _feature named the log tab, the agent and a dispatch outside a named worktree all open in _feature; an unclosed terminal is a WARN in orchestrator.log", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = orcaRun(root, { closeSticks: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+  assert.ok(r.calls.includes(`worktree set --worktree path:${featureWt(root)} --display-name demo`), r.calls.join("\n"));
+  const creates = r.calls.filter((c) => c.startsWith("terminal create "));
+  for (const title of ["demo-log", "demo-watch", "01-alpha crew-coder"]) {
+    assert.ok(creates.some((c) => c.startsWith(`terminal create --worktree path:${featureWt(root)} --title ${title} `)), `${title}:\n${creates.join("\n")}`);
+  }
+  assert.deepEqual(creates.filter((c) => c.includes(`--worktree path:${root} `)), []);
+  assert.match(traceLog(root), / WARN {2}orca terminal t\d+ not closed after 3 attempts/);
+  assert.doesNotMatch(traceLog(root), /SPAWN-TERMINAL-FALLBACK/);
+});
