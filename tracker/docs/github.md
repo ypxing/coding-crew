@@ -40,6 +40,14 @@ node "$TRACKER" mark-done <number> [--force]
 Exit codes, every op: `0` ok, `1` the op failed (stderr carries `gh`'s own error, verbatim), `2` a
 usage error or a ref that is not an issue number, `3` not found.
 
+A `gh` call that fails on the network or GitHub's side — `EOF`, a connection reset or refused, a
+DNS failure, a timeout, an `HTTP 5xx`, a secondary rate limit — is retried up to 3 times, after
+1s, 2s and 4s (a warning line on stderr each time); past that the op fails with the last `gh`
+error. Every other failure (auth, not found, a usage error) fails at once. A call that creates
+something (`issue create`, `issue comment`, a `gh api` POST) is retried only when it failed
+before the request was sent (a connection refused, DNS or TLS-handshake failure), so a retry
+never files a duplicate.
+
 `features` prints one tab-separated line per milestone, open and closed, sorted by title: the
 milestone title (the feature slug), its state (`open` or `closed`) and the count of its open
 `ready-for-agent` issues. A failing `gh` exits `1` with `gh`'s stderr verbatim.
