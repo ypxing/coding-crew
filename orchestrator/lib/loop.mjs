@@ -80,7 +80,12 @@ export async function runSprint(ctx) {
           await sleep(pollMs);
           if (id !== pollerId || inFlight.size === 0 || claimsStopped()) break;
           if (waiters.length === 0) continue;
-          await pollOnce();
+          // Nothing awaits this loop, so a throw here would end the process mid-sprint.
+          try {
+            await pollOnce();
+          } catch (err) {
+            ctx.log(`[POLL-FAILED] listing the tracker failed; polling again next interval — ${err?.message ?? err}`, "warn");
+          }
         }
       } finally {
         if (id === pollerId) pollerRunning = false;
