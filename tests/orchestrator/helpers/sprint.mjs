@@ -441,4 +441,27 @@ export const sprintReport = (root) => {
   return readdirSync(dir).filter((f) => f.startsWith("sprint-review-")).map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
 };
 
+/** A `test` target that is red only when alpha's and beta's files are both present — so each
+ * branch is green alone and the merge of the two is not. Committed to the feature branch. */
+export function redWhenMerged(root) {
+  writeFileSync(
+    join(root, "Makefile"),
+    "test:\n\t@if [ -f src/alpha.txt ] && [ -f src/beta.txt ]; then echo 'alpha and beta clash' >&2; exit 1; fi\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n",
+  );
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red when merged"]);
+}
+
+export const featureReviews = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-reviewer.* --slug feature( |$)/.test(l)).length;
+
+// The feature's fix issues (Phase 2) that have closed.
+export const featureFixes = (root) => readdirSync(join(root, ".scratch/demo/issues/done")).filter((f) => /fix-findings-feature/.test(f));
+
+export function scriptsWithFakeOpenPr(root) {
+  const dir = join(root, ".scratch/scripts-fake-pr");
+  cpSync(SCRIPTS, dir, { recursive: true });
+  writeFileSync(join(dir, "open-pr.sh"), `#!/usr/bin/env bash\necho "$@" >> "${root}/open-pr.args"\necho "PR: http://x/1"\n`, { mode: 0o755 });
+  return dir;
+}
+
 export { nodeTest as test };
