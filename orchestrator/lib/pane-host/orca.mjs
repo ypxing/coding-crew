@@ -65,8 +65,9 @@ async function nameWorktree(effects, path, meta) {
 
 /** `log` is omitted by a re-probe: the adoption already warned. */
 async function setWorktree(effects, path, meta, log) {
-  const r = await worktreeSet(effects, path, meta);
-  if (r.code !== 0 && !(meta.parent && /selector_not_found/.test(failureDetail(r)) && (await nameWithoutParent(effects, path, meta, log)))) {
+  let r = await worktreeSet(effects, path, meta);
+  if (r.code !== 0 && meta.parent && /selector_not_found/.test(failureDetail(r))) r = await nameWithoutParent(effects, path, meta, log);
+  if (r.code !== 0) {
     log?.(`WARN orca worktree set ${path} exit=${r.code} ${failureDetail(r)}`);
     return false;
   }
@@ -84,14 +85,15 @@ function worktreeSet(effects, path, { title, issue, parent }) {
 
 /**
  * orca refuses a `--parent-worktree` it does not list yet (`selector_not_found`, naming the child),
- * so the child is named alone and its parent set once orca names that one, here or not at all.
+ * so the child is named alone and its parent set once orca names that one. Returns the set alone's result.
  */
 async function nameWithoutParent(effects, path, meta, log) {
-  if ((await worktreeSet(effects, path, { ...meta, parent: null })).code !== 0) return false;
+  const r = await worktreeSet(effects, path, { ...meta, parent: null });
+  if (r.code !== 0) return r;
   (effects._paneParentless ??= new Map()).set(path, meta);
   log?.(`WARN orca named worktree ${path} without its parent ${meta.parent}, which orca does not list yet — set once orca names it`);
   if (effects._paneAdopted?.has(meta.parent)) await setParentOfChildren(effects, meta.parent, log);
-  return true;
+  return r;
 }
 
 /** Once each: a refusal leaves the child named, only without its parent. */
@@ -123,13 +125,18 @@ async function listedByOrca(effects, path) {
 /**
  * Whether `path` is named to orca, once any naming still under way has settled. One whose adoption
  * ended unnamed gets one more look, so a worktree orca lists only after the wait is named at the next
- * spawn; a miss is not cached, so the spawn after that looks again.
+ * spawn; a miss is not cached, so the spawn after that looks again. A child named without its parent
+ * looks at the parent too: its terminals scope to the child, so nothing else would name that parent.
  */
 async function named(effects, path) {
   if (!path) return false;
   const adoption = effects._paneAdoptions?.get(path);
   await adoption;
-  if (effects._paneAdopted?.has(path)) return true;
+  if (effects._paneAdopted?.has(path)) {
+    const parentless = effects._paneParentless?.get(path);
+    if (parentless) await named(effects, parentless.parent);
+    return true;
+  }
   return adoption ? nameIfListedNow(effects, path) : false;
 }
 

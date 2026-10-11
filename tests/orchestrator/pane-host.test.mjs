@@ -1644,6 +1644,39 @@ test("an orca child refused for a parent that orca names before the child is nam
   assert.deepEqual(sets(effects, "/wt/alpha").map((c) => c.includes("--parent-worktree")), [true, false, true]);
 });
 
+test("an orca child named without a `_feature` whose adoption gave up gets its parent at its next terminal once orca lists `_feature`", async () => {
+  const { openWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const effects = orcaListing("/wt/alpha");
+  effects.featureRoot = "/wt/_feature";
+  await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () =>
+    Promise.all([adoptWorktree(effects, "/wt/_feature", { title: "alpha" }), adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", parent: "/wt/_feature" })]),
+  );
+  const spawn = () => openWorkerTerminal(effects, { title: "alpha crew-coder", command: "true", worktree: "/wt/alpha" });
+  const before = { feature: sets(effects, "/wt/_feature").length, child: sets(effects, "/wt/alpha").length };
+  assert.equal((await spawn()).handle, "term_x");
+  assert.deepEqual({ feature: sets(effects, "/wt/_feature").length, child: sets(effects, "/wt/alpha").length }, before, "no set while orca does not list `_feature`");
+
+  effects.listed.add("/wt/_feature");
+  assert.equal((await spawn()).handle, "term_x");
+  assert.equal(sets(effects, "/wt/_feature").length, before.feature + 1);
+  assert.deepEqual(sets(effects, "/wt/alpha").at(-1).slice(1), ["worktree", "set", "--worktree", "path:/wt/alpha", "--display-name", "01-alpha", "--parent-worktree", "path:/wt/_feature"]);
+  assert.equal(sets(effects, "/wt/alpha").length, before.child + 1);
+});
+
+test("an orca child refused for its parent whose set alone also fails is warned about with that set's own failure", async () => {
+  const effects = orcaListing("/wt/alpha");
+  const spawn = effects.spawnWithTimeout;
+  effects.spawnWithTimeout = async (cmd, args, opts) => {
+    if (args[1] === "set" && !args.includes("--parent-worktree")) {
+      effects._calls.push([cmd, ...args]);
+      return { code: 3, stdout: "", stderr: "orca busy" };
+    }
+    return spawn(cmd, args, opts);
+  };
+  assert.equal(await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", parent: "/wt/_feature" })), false);
+  assert.deepEqual(effects._logs, ["WARN orca worktree set /wt/alpha exit=3 orca busy"]);
+});
+
 /** orca effects whose blocking `exec` answers `terminal list` with `list()`, recording each call's options. */
 function orcaListingTerminals(list) {
   const logs = [];
