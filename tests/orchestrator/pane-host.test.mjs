@@ -20,6 +20,7 @@ import {
   queuePaneNotice,
   queueRunStartNotice,
   settlePaneAgent,
+  warnPaneTerminalsIn,
   AGENT_START_GRACE_MS,
 } from "../../orchestrator/lib/pane-host/index.mjs";
 import { levelFor } from "../../orchestrator/lib/log.mjs";
@@ -1641,4 +1642,66 @@ test("an orca child refused for a parent that orca names before the child is nam
   };
   assert.equal(await withAdoptWait({ pollMs: 10, timeoutMs: 50 }, () => adoptWorktree(effects, "/wt/alpha", { title: "01-alpha", parent: "/wt/_feature" })), true);
   assert.deepEqual(sets(effects, "/wt/alpha").map((c) => c.includes("--parent-worktree")), [true, false, true]);
+});
+
+/** orca effects whose blocking `exec` answers `terminal list` with `list()`, recording each call's options. */
+function orcaListingTerminals(list) {
+  const logs = [];
+  const calls = [];
+  return {
+    paneHost: "orca",
+    mainRoot: "/root",
+    _calls: calls,
+    _logs: logs,
+    log: (l) => logs.push(l),
+    exec: (cmd, args, opts) => {
+      calls.push({ argv: [cmd, ...args], opts });
+      return list();
+    },
+  };
+}
+
+test("warnPaneTerminalsIn (orca) names each terminal orca lists in the worktree or below it, with a bounded blocking list", () => {
+  const effects = orcaListingTerminals(() =>
+    json({
+      result: {
+        terminals: [
+          { handle: "term_a", title: "zsh", worktreePath: "/wt/_feature" },
+          { handle: "term_b", title: "claude", worktreePath: "/wt/_feature/sub" },
+          { handle: "term_c", title: "vi", worktreePath: "/wt/_feature-other" },
+          { handle: "term_d", title: "vi", worktreePath: "/root" },
+          { handle: "term_e", title: "x" },
+        ],
+      },
+    }),
+  );
+  warnPaneTerminalsIn(effects, "/wt/_feature");
+  assert.deepEqual(effects._calls.map((c) => c.argv), [["orca", "terminal", "list", "--json"]]);
+  assert.ok(effects._calls[0].opts.timeoutMs > 0, "bounded");
+  assert.deepEqual(effects._logs, [
+    "WARN orca terminal term_a (zsh) is still open in /wt/_feature, which is being removed — its shell is left in a deleted directory",
+    "WARN orca terminal term_b (claude) is still open in /wt/_feature, which is being removed — its shell is left in a deleted directory",
+  ]);
+});
+
+test("warnPaneTerminalsIn (orca) logs nothing and returns when the list fails, times out, throws or is unreadable", () => {
+  for (const [label, list] of [
+    ["none listed", () => json({ result: { terminals: [] } })],
+    ["non-zero", () => ({ code: 1, stdout: "", stderr: "orca boom" })],
+    ["timeout", () => ({ code: 124, stdout: "", stderr: "" })],
+    ["throw", () => { throw new Error("spawn orca ENOENT"); }],
+    ["unparseable", () => ({ code: 0, stdout: "not json", stderr: "" })],
+  ]) {
+    const effects = orcaListingTerminals(list);
+    assert.doesNotThrow(() => warnPaneTerminalsIn(effects, "/wt/_feature"), label);
+    assert.deepEqual(effects._logs, [], label);
+  }
+});
+
+test("warnPaneTerminalsIn asks no host under --dry-run or with no pane host", () => {
+  for (const effects of [{ ...orcaListingTerminals(() => json({ result: { terminals: [{ handle: "t", worktreePath: "/wt/_feature" }] } })), dryRun: true }, { ...orcaListingTerminals(() => ok()), paneHost: null }]) {
+    warnPaneTerminalsIn(effects, "/wt/_feature");
+    assert.deepEqual(effects._calls, []);
+    assert.deepEqual(effects._logs, []);
+  }
 });
