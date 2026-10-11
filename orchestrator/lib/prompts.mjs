@@ -84,9 +84,7 @@ export function workerPrompt({ mainRoot, deps, worktree, issuePath, slug, criter
 function resultBlock(worktree, reportPath) {
   return [
     `Write your structured result to ${reportPath} as your last action, in the JSON your protocol's`,
-    `**Report** section defines (\`working_directory\`: ${worktree}). This file is the only thing the`,
-    "orchestrator reads — nothing you print in your final message is parsed, so a summary sentence",
-    "with no file write is read as `blocked`, never as a silent `complete`.",
+    `**Report** section defines (\`working_directory\`: ${worktree}).`,
   ];
 }
 

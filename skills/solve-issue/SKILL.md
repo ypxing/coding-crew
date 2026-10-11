@@ -36,14 +36,11 @@ $ <command> (exit <N>)
 <verbatim output, or the dependency name>
 ```
 
-Do not attempt workarounds. Do not proceed.
+Do not attempt workarounds.
 
 ## Inputs
 
-The caller provides one of:
-
-- A **file path** — read the issue from that path.
-- **Issue content** inline — use it directly.
+The caller provides a **file path** or tracker ref to read the issue from, or the issue content inline.
 
 `PROJECT_ROOT` (where code lives and all commands run) and `MAIN_ROOT` (the main checkout, where
 `.scratch/` and gitignored files live) are **inherited from the caller** — use the values already
@@ -65,32 +62,27 @@ bash "<skill-dir>/scripts/preflight.sh" --project-root "$PROJECT_ROOT" --main-ro
   --issue "$ISSUE_PATH"   # omit --issue when the caller handed the issue over inline
 ```
 
-A `BLOCKED:` line (exit 1) — `BLOCKED: on default branch` (`DEFAULT_BRANCH`: `origin/HEAD`, else
-`main`), `BLOCKED: depends on <file>` for a `## Blocked by` file not yet in the sibling `done/`, or
-`BLOCKED: requires: <cmd>` for a failing `## Requires` command — ends the run: report it verbatim and do not proceed to any other
-step. Otherwise it prints `OK` and four values; each bash call is a fresh shell, so carry them as
-literals for the rest of the run:
+A `BLOCKED:` line (exit 1) ends the run: report it verbatim and do not proceed. It is
+`BLOCKED: on default branch` (`DEFAULT_BRANCH`: `origin/HEAD`, else `main`), `BLOCKED: depends on
+<file>` for a `## Blocked by` file not yet in the sibling `done/`, or `BLOCKED: requires: <cmd>` for
+a failing `## Requires` command. Otherwise it prints `OK` and four values; each bash call is a fresh
+shell, so carry them as literals for the rest of the run:
 
 - `ISSUE_SLUG` — the commit prefix (Steps 4 and 6)
 - `PRD` — the PRD path, or empty (Step 1.5)
 - `ORCHESTRATED` — who closes the issue (Step 7)
 - `DEP_SCRIPTS` — dep-install's scripts (Steps 2, 4 and 5)
 
-A caller that dispatches into a prepared worktree has already put you on the right branch, so there
-is no branch to create.
-
 ### 1. Understand the issue
 
-Read the issue the caller names with `node "$TRACKER" fetch <issue-ref>` (issue content handed over
-inline needs no fetch). Read no other issue from the tracker unless the caller explicitly says to.
-Extract the acceptance criteria and the files likely to change (confirmed in Step 3).
+Read the issue the caller names with `node "$TRACKER" fetch <issue-ref>` (inline content needs no
+fetch). Read no other issue from the tracker unless the caller explicitly says to. Extract the
+acceptance criteria and the files likely to change (confirmed in Step 3).
 
 ### 1.5. Read the PRD
 
-If `PRD` is non-empty, read it and keep it in memory for the rest of the run: it holds the
-architecture decisions and constraints the issue assumes. `preflight.sh` resolved it from the
-issue's `## Context Documents` (`- PRD: <path>`, against `$MAIN_ROOT`) and, failing that, from the
-feature's PRD. No PRD is normal — continue normally.
+If `PRD` is non-empty, read it and keep it for the rest of the run: it holds the architecture
+decisions and constraints the issue assumes. No PRD is normal.
 
 ### 2. Dependencies — only when something is missing
 
@@ -103,39 +95,29 @@ bash "$DEP_SCRIPTS/resolve-mode.sh" --project-root "$PROJECT_ROOT" --main-root "
   --deps "<the DEPS= value from your prompt, or empty>"
 ```
 
-It prints `INSTALL_MODE` — the one verdict every later command uses; `git config --local
-agent.install-mode` is its documented override — and an `ACTION`:
+It prints `INSTALL_MODE` — the verdict every later command uses (`git config --local
+agent.install-mode` overrides it) — and an `ACTION`:
 
-- `none` — the caller already installed into this directory. Continue to Step 3.
-- `install` — docker mode: invoke the `dep-install` skill now. Never optional, never deferred to
-  "if a command fails" — docker mode has no host-side fallback.
-- `on-failure` — `INSTALL_MODE=host`. Do **not** install pre-emptively: a crew worktree usually
-  inherits `node_modules`/`.venv` through `.worktreeinclude`, and many repos have no dependency
-  step at all. Continue to Step 3.
+- `none` — dependencies are already installed here. Continue to Step 3.
+- `install` — docker mode: invoke the `dep-install` skill now. Never optional or deferred — docker
+  mode has no host-side fallback.
+- `on-failure` — `INSTALL_MODE=host`. Do **not** install pre-emptively: a worktree usually inherits
+  `node_modules`/`.venv` through `.worktreeinclude`, and many repos have no dependency step.
 
 Under every `ACTION`, a command that later fails for a missing dependency (module-not-found, import
-error, test runner not found) means invoke `dep-install` then — its own retry rule. Do not probe
-`node_modules`, `.venv` or `PATH` yourself instead: that question is the script's, and it answered.
+error, test runner not found) means invoke `dep-install` then. Do not probe `node_modules`, `.venv`
+or `PATH` yourself: the script answered that.
 
 ### 3. Explore before coding
 
-**Codebase orientation — do this first:**
-
-1. Read `CLAUDE.md` (or `AGENTS.md` if that's what this repo uses) at `$PROJECT_ROOT` if it exists and is not already part of your context — it may describe architecture, conventions, and key entry points.
-2. Grep for similar patterns to what you're about to implement — find existing utilities, helpers, or conventions you should follow or reuse.
-3. Identify callers of the files you plan to change — understand how they're used before modifying them.
+1. Read `CLAUDE.md` (or `AGENTS.md`) at `$PROJECT_ROOT` if it exists and is not already in your context.
+2. Grep for similar patterns — existing utilities, helpers and conventions to reuse.
+3. Identify callers of the files you plan to change.
+4. For each file from Step 1, read it and its test file; their test style, naming and patterns are
+   the style contract for Step 4. Expand the list if exploration reveals more files. Do not guess.
 
 **Bug-fix issues:** if multiple callers share the broken behavior, fix it in the function they all
-route through, not only at the call site the issue names — a guard added at one caller leaves every
-sibling still broken.
-
-**Then for each hypothesized file from Step 1:**
-
-1. Read the source file.
-2. Read the corresponding test file if one exists.
-3. Note test style, naming conventions, and patterns — these become the style contract for Step 4.
-
-Expand the file list if exploration reveals additional files. Do not guess. Confirm the current state before writing anything.
+route through, not only at the call site the issue names.
 
 **Premise check — last, before Step 4.** For each acceptance criterion and each file, symbol or
 behavior the issue names, find the `file:line` that confirms or contradicts it. Then, per finding:
@@ -145,8 +127,8 @@ behavior the issue names, find the `file:line` that confirms or contradicts it. 
 - **Already met** — the code satisfies a criterion before this branch touches it (a bug already
   fixed is this case; `[$ISSUE_SLUG]` commits on this branch are a resumed run, not this): write no
   code for it. Pin it with a test if none exists — for a bug, the regression test — and report it
-  met with its `file:line`. Every criterion already met and already tested leaves nothing to
-  commit: that is still `complete`.
+  met with its `file:line`. Every criterion already met and tested leaves nothing to commit: that
+  is still `complete`.
 - **Wrong assumption** — the issue's picture of the code is wrong in a way reading cannot recover:
   a named thing has no counterpart, the described bug's code path does not exist, or a criterion
   conflicts with the PRD, an ADR or another criterion. Report `blocked` before writing code, with
@@ -155,43 +137,42 @@ behavior the issue names, find the `file:line` that confirms or contradicts it. 
 
 Not for what more reading would settle, or a design you merely prefer.
 
-**Batch these calls.** Each exploration tool call re-bills your entire accumulated context, so five
-small calls cost far more in aggregate than one or two larger ones covering the same ground. Combine
-multiple grep patterns into a single call (`grep -rn -E 'patternA|patternB'` instead of two separate
-greps), and read several files in one turn where your tool allows it, rather than one call per
-bullet above.
+**Batch these calls.** Each tool call re-bills your whole context: combine grep patterns into one
+call (`grep -rn -E 'patternA|patternB'`) and read several files per turn.
 
 ### 4. Implement with TDD
 
-**Run every project command through `run.sh`** — test runs, type checks, linting:
+**Run every project command through `run.sh`** — test runs, type checks, linting, and any ad-hoc
+command, a one-off `docker compose` one included. It runs the command where `INSTALL_MODE` says:
+inside docker (with this worktree's compose override) or on the host. Never hand-build a `docker
+compose` command.
 
 ```bash
 bash "$DEP_SCRIPTS/run.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" -- "<command>"
 ```
 
-It runs the command where the INSTALL_MODE from Step 2 says: inside docker (the right service, with
-this worktree's compose override added by the `docker` shim) or on the host. That holds for any
-ad-hoc command, a one-off `docker compose` one included: send it through `run.sh -- <cmd>`. Never
-hand-build a `docker compose` command.
-
-Run commands in the foreground and wait for them — never in the background. Between edits run only what your change touches (one test file, not the suite). Before committing, run the tests your change affects.
-Other workers share this machine: temp files go under `$PROJECT_ROOT`, never a shared path such as `/tmp/<name>`; never kill a process you did not start.
+Run commands in the foreground and wait for them — never in the background. Between edits run only
+what your change touches (one test file, not the suite); before committing, the tests your change
+affects. Other workers share this machine: temp files go under `$PROJECT_ROOT`, never a shared path
+such as `/tmp/<name>`; never kill a process you did not start.
 
 STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
 
+**Comments.** A comment states a non-obvious *why* in 1–3 lines. History, PR and issue numbers,
+and incident counts go in the commit message or PR body, never in code; neither does a comment that
+restates the code.
+
 A bug-fix test that passes on its first run, through the path the issue names, means the bug is
-already fixed: keep it as the regression test (Step 3's already met), not a test to rewrite until
-it fails.
+already fixed: keep it as the regression test (Step 3's already met).
 
 A test of code the issue does not ask you to change that fails on its assertion (`tdd`'s "Testing
 code that already exists") is Step 3's wrong assumption, found late: report `blocked` with the test
 and its output as the evidence — `BLOCKED: premise: <criterion> — <observed output>`. Commits
 already made stay.
 
-**Commit after every GREEN, not only once at the end.** A dispatcher-imposed timeout can kill this
-run mid-loop; only a branch that already has a commit on it is resumable next round — one with
-everything still staged, uncommitted, is indistinguishable from a run that never started. Before
-starting the next RED, checkpoint what just went green:
+**Commit after every GREEN**, before the next RED. A timeout can kill this run mid-loop, and only a
+branch with a commit on it is resumable; uncommitted work looks like a run that never started.
+Message quality doesn't matter — checkpoints are squashed before merge:
 
 ```bash
 bash "<skill-dir>/scripts/commit-changes.sh" \
@@ -200,50 +181,33 @@ bash "<skill-dir>/scripts/commit-changes.sh" \
   --files "<files touched this cycle>"
 ```
 
-Commit message quality doesn't matter here — these checkpoints get squashed away with the rest of
-the branch's history before merge. Getting one on disk before the next cycle does.
-
 ### 4.5. Update documentation
 
-After implementation, check whether the change affects anything user-facing. Ask:
-
-- Does this add, remove, or change a public API, CLI flag, config option, or install step?
-- Does this change behavior that users or consuming projects depend on?
-- Does this add or remove an agent, skill, or script?
-- Does this change architecture that `CLAUDE.md` or `docs/` describes?
-
-If **none** of the above apply (e.g. pure refactor, internal test fix, private helper), skip this step.
-
-If **any** apply, update the relevant documents before committing:
-
-- `README.md` — user-facing install instructions, usage examples, skills table
-- `CLAUDE.md` — architecture, agent/skill descriptions, conventions
-- `docs/` — guides, ADRs, or other docs that describe the changed behavior
-- Inline code comments only if the WHY is non-obvious
-
-Do not add documentation for things that are already self-evident from the code. Do not touch doc sections unrelated to this change.
+If the change adds, removes or changes a public API, CLI flag, config option, install step, agent,
+skill or script, behavior consumers depend on, or architecture `CLAUDE.md` or `docs/` describes,
+update `README.md`, `CLAUDE.md` or `docs/` to match before committing. Otherwise (a pure refactor,
+an internal test fix, a private helper) skip this step. Do not document what the code already shows,
+or touch unrelated doc sections.
 
 ### 5. Verify
 
-This is the one full-suite run: foreground, and wait for it.
+This is the one full-suite run:
 
 ```bash
 bash "<skill-dir>/scripts/run-checks.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
   --dep-scripts "$DEP_SCRIPTS"
 ```
 
-It runs every `.coding-crew/dev-commands.json` check — `typecheck`, `lint`, `test`, then
-every other key with a command (coverage, integration) — each through `run.sh`, and reports each.
-`NOT RUN: no command found` means no local command exists: report it,
-do not re-check CLAUDE.md/Makefile.
+It runs every `.coding-crew/dev-commands.json` check — `typecheck`, `lint`, `test`, then every other
+key with a command (coverage, integration) — each through `run.sh`, and reports each. `NOT RUN: no
+command found` means no local command exists: report it, do not re-check CLAUDE.md/Makefile.
+`<key>: deferred` means the verify gate runs it: report `deferred`.
 
-`<key>: deferred`: the verify gate runs it; report `deferred`.
-
-**Under `CREW_DEFER_FULL_CHECKS=1`** the full suite is the verify gate's, never yours: do not run the
-`dev-commands.json` `test` command (or any whole-suite glob) yourself, at any point. To run tests,
-pass `--targeted` to `run-checks.sh`: it runs only the test files changed on the branch against its
-merge-base and reports `test: pass (targeted)` / `test: fail (targeted, exit N)`, or
-`test: deferred` when no changed test file is one the test command's suite argument selects (report `deferred`). Between edits run one test file by hand.
+**Under `CREW_DEFER_FULL_CHECKS=1`** the full suite is the verify gate's: never run the
+`dev-commands.json` `test` command (or any whole-suite glob) yourself. Pass `--targeted` to
+`run-checks.sh`: it runs only the test files changed on the branch against its merge-base and
+reports `test: pass (targeted)` / `test: fail (targeted, exit N)`, or `test: deferred` when no
+changed test file is one the test command's suite selects (report `deferred`).
 
 - `CHECKS: pass` — continue.
 - `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
@@ -251,8 +215,7 @@ merge-base and reports `test: pass (targeted)` / `test: fail (targeted, exit N)`
   human commits — and a failure naming what no repo file can provide (§ Outcome): report
   `blocked` with that output.
 - `DISCOVER` — no cache yet. STOP. Read `references/verification.md` now and discover every check
-  as it describes. Persist what you found, pass or fail (from the same directory you read this
-  skill file from), then re-run `run-checks.sh` — it runs what you just wrote:
+  as it describes, persist what you found, pass or fail, then re-run `run-checks.sh`:
 
   ```bash
   cat > "$PROJECT_ROOT/.discovered-commands.json" <<'JSON'
@@ -266,51 +229,29 @@ Do not proceed to commit if any check fails or any acceptance criterion from Ste
 
 ### 6. Commit
 
-If any check in Step 5 failed, do NOT stage or commit — report status `partial` or `blocked` instead.
+If any check in Step 5 failed, do NOT stage or commit — report `partial` or `blocked` instead. If
+the working directory is already clean, check whether the issue is already implemented and
+committed; if so, go to Step 7.
 
-If the working directory is already clean, the issue may already be implemented and committed:
-check, and if so proceed to Step 7.
-
-**Commit with shared script:**
-
-Run `commit-changes.sh` from the same directory you read this skill file from, with `ISSUE_SLUG`
-from Step 0:
+Run `commit-changes.sh` from the same directory you read this skill file from:
 
 ```bash
-ISSUE_TITLE="<extract title from issue file>"
-CHANGED_FILES="<space-separated list of files you modified>"
 DETAILS="- <key decision or tradeoff line 1>
 - <key decision or tradeoff line 2>"
-
-if [ -n "$COAUTHOR_TRAILER" ]; then
-  bash "<skill-dir>/scripts/commit-changes.sh" \
-    --prefix "[$ISSUE_SLUG]" \
-    --message "$ISSUE_TITLE${DETAILS:+
+bash "<skill-dir>/scripts/commit-changes.sh" \
+  --prefix "[$ISSUE_SLUG]" \
+  --message "<issue title>${DETAILS:+
 
 $DETAILS}" \
-    --files "$CHANGED_FILES" \
-    --coauthor "$COAUTHOR_TRAILER"
-else
-  bash "<skill-dir>/scripts/commit-changes.sh" \
-    --prefix "[$ISSUE_SLUG]" \
-    --message "$ISSUE_TITLE${DETAILS:+
-
-$DETAILS}" \
-    --files "$CHANGED_FILES"
-fi
+  --files "<space-separated list of files you modified>" \
+  ${COAUTHOR_TRAILER:+--coauthor "$COAUTHOR_TRAILER"}
 ```
 
-Example: `[01-auth-logout] Add user logout endpoint`
-
-Do not push.
+Example: `[01-auth-logout] Add user logout endpoint`. Do not push.
 
 ### 6.5. Reminder: dev-commands.json
 
-`.coding-crew/dev-commands.json` is committed and human-editable, but nothing here auto-commits
-it — Step 5's `DISCOVER` fallback can be the first thing to ever create it in a repo where no
-sprint has run yet, and a bootstrap write left uncommitted is easy to lose to a stray
-`git clean` before anything notices it. Stateless — re-check `git status` every run, no
-"already warned" flag file:
+Nothing here commits a `.coding-crew/dev-commands.json` that Step 5's `DISCOVER` created:
 
 ```bash
 if [ -n "$(git -C "$MAIN_ROOT" status --porcelain -- .coding-crew/dev-commands.json 2>/dev/null)" ]; then
@@ -318,25 +259,25 @@ if [ -n "$(git -C "$MAIN_ROOT" status --porcelain -- .coding-crew/dev-commands.j
 fi
 ```
 
-Clean or absent → print nothing.
-
 ### 7. Mark done
 
-Who owns the close is a fact on disk, and `ORCHESTRATED` from Step 0 is it — the same one
-`mark-done` checks: `CREW_ORCHESTRATED=1`, or a `$MAIN_ROOT/.scratch/*/.orchestrated` marker.
+`ORCHESTRATED` from Step 0 says who owns the close — the same fact `mark-done` checks:
+`CREW_ORCHESTRATED=1`, or a `$MAIN_ROOT/.scratch/*/.orchestrated` marker.
 
 **`1` — write nothing to the issue file, in this step or the next:** no tick, no `mark-done`, no
-`Status:` rewrite, no move, no added section. Report every criterion and its state in your structured
-result and stop; the owner ticks the boxes and closes the issue after its own gates pass on your branch.
+`Status:` rewrite, no move, no added section. Report every criterion and its state and stop; the
+owner ticks the boxes and closes the issue once its own gates pass on your branch.
 
 **`0` — the close is yours.** Check off (`- [x]`) every criterion the code satisfies under
-`## Acceptance criteria` — and under `## Cross-cutting Requirements` if present. Then run `node "$TRACKER" mark-done <issue-ref>`. Never hand-roll `mv`, `sed` or a label edit; a refusal is an expected outcome, not something to force past: exit 3 means an orchestrator owns the close (report and stop), exit 4 that a criterion is still unchecked (Step 8).
+`## Acceptance criteria` — and under `## Cross-cutting Requirements` if present. Then run `node
+"$TRACKER" mark-done <issue-ref>`. Never hand-roll `mv`, `sed` or a label edit. Exit 3 means
+another owner holds the close (report and stop); exit 4 that a criterion is still unchecked (Step 8).
 
 ### 8. Unmet criteria
 
 Orchestrated (Step 7): report status `partial` with the unmet criteria, and stop.
 
-Otherwise add a `## Unmet criteria` section explaining what is missing and why (descoped, blocked,
-split out). Then, on a **non-interactive run** (a headless/`-p` invocation; `CREW_ORCHESTRATED` already
-took the branch above), report status `partial` with the unmet criteria listed, and stop — a question
-nobody can answer stalls the run. Only on an interactive run, ask the user how to proceed.
+Otherwise add a `## Unmet criteria` section saying what is missing and why (descoped, blocked,
+split out). On a **non-interactive run** (a headless/`-p` invocation; `CREW_ORCHESTRATED` took the
+branch above), report `partial` listing them and stop — nobody can answer a question. Only on an
+interactive run, ask the user how to proceed.

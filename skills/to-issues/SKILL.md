@@ -76,7 +76,8 @@ Every slice costs fixed overhead before and after its code: a worktree, a deps i
 Otherwise split slices stay parallel: edits to separate parts of a file merge cleanly, and a needless edge serializes work. Same-meaning edits are sequenced because a conflict is retried only for the conflict, run one at a time, and each retry is spent from the retry cap. A split for parallelism worth having (reason 3) never yields an edge; an edge appears only under reasons 1, 2 or 4.
 
 <vertical-slice-rules>
-- Each behaviour a slice delivers is externally observable, verified at the highest existing seam (the outermost place a test can already exercise it: a CLI invocation, an HTTP call, a rendered output, a bats run). "Schema / API / UI" is only an example of the layers such a behaviour may cut through, not a required shape — a slice touches whichever layers its behaviours need
+- Each behaviour a slice delivers is externally observable, verified at the highest existing seam (the outermost place a test can already exercise it: a CLI invocation, an HTTP call, a script's exit code and output). "Schema / API / UI" is only an example of the layers such a behaviour may cut through, not a required shape — a slice touches whichever layers its behaviours need
+- When a slice's behaviour is prose (a skill, prompt or doc), its check is never a grep of the rendered output: its criteria are checkable from the diff, and its behaviour is judged by an eval where a harness exists
 - If the work is split, the first slice is the thinnest end-to-end path: the narrowest behaviour that proves the layers connect. Later slices widen it
 - A completed slice is demoable or verifiable on its own
 - Each slice is sized to fit in a single fresh context window — the context-budget reason above is the only size rule
