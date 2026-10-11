@@ -15,6 +15,7 @@ import { labelIssue } from "./labels.mjs";
 import { checkRequires, integrationSection, lintMidRunIssues, runIntegrationCheck } from "./preflight.mjs";
 import { fixIntegration } from "./integration-fix.mjs";
 import { writePrBody } from "./pipeline/pr-body.mjs";
+import { defaultBranchBase } from "./pipeline/shared.mjs";
 import { promoteSeverities } from "./report.mjs";
 import { reportOnlyFeatureFindings, runFeatureReview } from "./pipeline/feature-review.mjs";
 
@@ -526,6 +527,13 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
     if (r.dryRun || r.code !== 0 || !url || url === "none") return { text: notOpened };
     const stateFailed = /^PR-STATE-FAILED: (.*)$/m.exec(r.stdout)?.[1];
     return { text: `${notOpened}\n\nThe PR already open for it (${url}) ${stateFailed ? `could not be made a draft: ${stateFailed}` : "is now a draft"}.` };
+  }
+  // GitHub refuses a PR with no commits. Measured from the default branch only: the recorded
+  // base_sha is this run's start, so a resumed branch holding earlier runs' work would count zero.
+  const base = defaultBranchBase(effects, sprint.featureBranch);
+  const ahead = base && effects.gitRead(["rev-list", "--count", `${base.sha}..${sprint.featureBranch}`]);
+  if (ahead?.code === 0 && ahead.stdout.trim() === "0") {
+    return { text: `**Not opened:** nothing was merged — \`${sprint.featureBranch}\` has no commits beyond \`${base.ref}\`.` };
   }
   // A PR without its closing lines would ship the work and strand the issues open.
   if (refsError) return { text: `**Not opened:** could not list the issues it closes — ${refsError}` };
