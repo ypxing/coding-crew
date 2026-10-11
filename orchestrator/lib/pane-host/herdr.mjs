@@ -166,6 +166,52 @@ export async function openWatch(effects, { slug, command }) {
   }
 }
 
+/**
+ * A tab of the sprint's workspace, started in the dispatch's own cwd; its handle is the tab, which
+ * closing takes the pane with. A tab made before a failed `pane run` is closed again. Never throws.
+ */
+export async function openWorkerTerminal(effects, { title, command, worktree }) {
+  let tabId = null;
+  try {
+    let workspaceId = null;
+    try {
+      workspaceId = (await effects._paneWorkspace) ?? null;
+    } catch {
+      /* reported where the workspace open failed */
+    }
+    if (!workspaceId) return { failure: "herdr: the sprint has no workspace" };
+    const create = await paneHostExec(effects, [
+      "tab",
+      "create",
+      "--workspace",
+      workspaceId,
+      "--cwd",
+      worktree ?? effects.featureRoot ?? effects.mainRoot,
+      "--label",
+      title,
+      "--no-focus",
+    ], STATUS_TIMEOUT_MS);
+    const result = paneHostJson(create)?.result;
+    tabId = result?.tab?.tab_id ?? null;
+    const paneId = result?.root_pane?.pane_id;
+    if (create.code !== 0 || !paneId) {
+      await closeTab(effects, tabId);
+      return { failure: `herdr tab create exit=${create.code} ${failureDetail(create)}` };
+    }
+    const run = await paneHostExec(effects, ["pane", "run", paneId, command], STATUS_TIMEOUT_MS);
+    if (run.code !== 0) {
+      await closeTab(effects, tabId);
+      return { failure: `herdr pane run exit=${run.code} ${failureDetail(run)}` };
+    }
+    return { handle: tabId };
+  } catch (err) {
+    await closeTab(effects, tabId);
+    return { failure: `herdr worker tab threw: ${err.message}` };
+  }
+}
+
+export const closeWorkerTerminal = (effects, tabId) => closeTab(effects, tabId);
+
 async function closeTab(effects, tabId) {
   if (!tabId) return;
   try {

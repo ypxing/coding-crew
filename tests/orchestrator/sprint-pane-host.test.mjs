@@ -14,8 +14,10 @@ import { REPO, MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, EMPTY_HOME, sh, sprintE
 // The sprint's workspace is w5 (`worktree open`); the log tab and the agent's tab are made in it,
 // the agent's pane being w9:pl. `agentPromptExit` / `paneRunExit` make the end push or the agent's
 // start fail; `agentStatus: "gone"` drops the agent's pane from the host's list (a dead one), "unknown"
-// lists it with no agent detected yet (a CLI still starting, which a run's end keeps).
-function herdrEnv(root, { agentPromptExit = 0, paneRunExit = 0, agentStatus = "idle" } = {}) {
+// lists it with no agent detected yet (a CLI still starting, which a run's end keeps). Any other tab is
+// a dispatch's, w5:wN with pane w5:pwN, whose `pane run` really runs the command in the background;
+// `workerTabExit` / `workerRunExit` fail those calls.
+function herdrEnv(root, { agentPromptExit = 0, paneRunExit = 0, agentStatus = "idle", workerTabExit = 0, workerRunExit = 0 } = {}) {
   const bin = mkdtempSync(join(TMPDIR, "crew-fake-herdr-"));
   FIXTURE_ROOTS.push(bin);
   const log = join(bin, "calls.log");
@@ -28,9 +30,15 @@ function herdrEnv(root, { agentPromptExit = 0, paneRunExit = 0, agentStatus = "i
       'case "$1 $2" in',
       `  "workspace create") ${reply({ result: { workspace: { workspace_id: "w9" }, root_pane: { pane_id: "w9:p1" } } })};;`,
       `  "worktree open") ${reply({ result: { already_open: false, workspace: { workspace_id: "w5" }, root_pane: { pane_id: "w5:p1" } } })};;`,
-      `  "tab create") ${reply({ result: { tab: { tab_id: "w5:t" }, root_pane: { pane_id: "w9:pl" } } })};;`,
+      '  "tab create") case "$8" in',
+      `    *-log|*-watch) ${reply({ result: { tab: { tab_id: "w5:t" }, root_pane: { pane_id: "w9:pl" } } })};;`,
+      `    *) [ ${workerTabExit} = 0 ] || exit ${workerTabExit}; n=$(( $(cat '${bin}/n' 2>/dev/null || echo 0) + 1 )); echo $n > '${bin}/n'`,
+      `       printf '{"result":{"tab":{"tab_id":"w5:w%s"},"root_pane":{"pane_id":"w5:pw%s"}}}\\n' $n $n;;`,
+      "  esac;;",
       `  "pane list") ${reply({ result: { panes: [{ pane_id: "w9:p1", agent_status: "idle" }, ...(agentStatus === "gone" ? [] : [{ pane_id: "w9:pl", agent_status: agentStatus }])] } })};;`,
-      `  "pane run") [ "$3" = "w9:pl" ] && case "$4" in tail) ;; *) exit ${paneRunExit};; esac;;`,
+      `  "pane run") if [ "$3" = "w9:pl" ]; then case "$4" in tail) ;; *) exit ${paneRunExit};; esac`,
+      // Its own process group: crew-afk kills whatever a finished host call left in the call's.
+      `    else [ ${workerRunExit} = 0 ] || exit ${workerRunExit}; node -e 'require("child_process").spawn("bash", ["-c", process.argv[1]], { detached: true, stdio: "ignore" }).unref()' "$4"; fi;;`,
       `  "agent prompt") exit ${agentPromptExit};;`,
       "esac",
       '[ "$1" = status ] && echo "status: running"',
@@ -77,7 +85,7 @@ test("under a pane host the run opens the feature agent in _feature, keeps _feat
   assert.deepEqual(JSON.parse(readFileSync(join(root, ".scratch/demo/watch.json"), "utf8")), { host: "herdr", handle: "w9:pl" });
   // Both tabs open in the feature worktree's workspace (w5) with cwd _feature, never the triggering one.
   assert.ok(r.calls.some((c) => c.startsWith(`worktree open --path ${featureWt(root)} `)), r.calls.join("\n"));
-  const tabs = r.calls.filter((c) => c.startsWith("tab create "));
+  const tabs = r.calls.filter((c) => c.startsWith("tab create ") && / --label demo-(log|watch) /.test(c));
   assert.equal(tabs.length, 2, tabs.join("\n"));
   for (const t of tabs) assert.match(t, new RegExp(`^tab create --workspace w5 --cwd ${featureWt(root)} `));
   assert.ok(r.calls.find((c) => c.startsWith("pane run w9:pl ")), r.calls.join("\n"));
@@ -99,9 +107,24 @@ test("under a pane host the run opens the feature agent in _feature, keeps _feat
   assert.equal(r.calls.filter((c) => c.includes("trigger:p9")).length, 0, "nothing targets the triggering pane");
   assert.ok(prompts.at(-1).includes(summary), prompts.at(-1));
   // The log tab closed; the workspace holding the agent, the agent and `_feature` did not.
-  assert.deepEqual(r.calls.filter((c) => /^(workspace|tab|pane) close/.test(c)), ["tab close w5:t"]);
+  assert.deepEqual(r.calls.filter((c) => /^(workspace|tab|pane) close/.test(c) && !c.startsWith("tab close w5:w")), ["tab close w5:t"]);
   assert.equal(worktreeListed(root, featureWt(root)), true);
   assert.equal(existsSync(featureWt(root)), true);
+});
+
+test("under herdr an issue's coder dispatch runs in a tab of the _feature workspace, started in its cwd, and the tab is closed after", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = herdrRun(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+  // The fake dispatch's cwd is the main checkout (dispatch.mjs's test seam); a real coder's is its worktree.
+  const i = r.calls.indexOf(`tab create --workspace w5 --cwd ${root} --label 01-alpha crew-coder --no-focus`);
+  assert.ok(i >= 0, r.calls.join("\n"));
+  const n = /^pane run w5:pw(\d+) /.exec(r.calls[i + 1])?.[1];
+  assert.match(r.calls[i + 1], /^pane run w5:pw\d+ bash '.*\/01-alpha\/report\.md\.term\/run\.sh'$/);
+  assert.ok(r.calls.slice(i + 2).includes(`tab close w5:w${n}`), r.calls.join("\n"));
+  assert.doesNotMatch(traceLog(root), /SPAWN-TERMINAL-FALLBACK/);
 });
 
 test("a re-run launched from inside _feature with no slug runs that feature, reuses the live agent and the worktree in place", () => {

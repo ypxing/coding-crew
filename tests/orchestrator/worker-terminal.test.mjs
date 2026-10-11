@@ -234,8 +234,8 @@ test("the terminal follows stdout for a parsed event stream, stderr for a bash d
 
 // ─── spawnDispatch: which path a dispatch takes ─────────────────────────────────────────
 
-test("spawnDispatch stays headless with no pane host, under herdr, and under --dry-run", async () => {
-  for (const extra of [{ paneHost: null }, { paneHost: "herdr" }, { paneHost: "orca", dryRun: true }]) {
+test("spawnDispatch stays headless with no pane host and under --dry-run", async () => {
+  for (const extra of [{ paneHost: null }, { paneHost: "herdr", dryRun: true }, { paneHost: "orca", dryRun: true }]) {
     const r = await spawnDispatch(effects(extra), "claude", ["-p"], {});
     assert.ok(r.headless, JSON.stringify(extra));
   }
@@ -318,4 +318,59 @@ test("a dispatch's stdin reaches the child, which leads its own process group", 
   assert.match(r.stdout, /^got the prompt$/m);
   const [, pgid, pid] = /pgid=(\d+) pid=(\d+)/.exec(r.stdout);
   assert.equal(pgid, pid, "a timeout's group kill takes the child's children with it");
+});
+
+// ─── herdr: a tab of the sprint's `_feature` workspace per dispatch ─────────────────────────
+
+/** herdr effects whose `pane run` really runs the command, detached, as herdr's shell would; `fail` names a call to fail. */
+function herdrEffects(root, { fail = null } = {}) {
+  const calls = [];
+  const shells = [];
+  const e = effects({
+    paneHost: "herdr",
+    mainRoot: root,
+    featureRoot: join(root, "_feature"),
+    _paneWorkspace: Promise.resolve("w5"),
+    spawnWithTimeout: async (cmd, args, opts) => {
+      if (cmd !== "herdr") return { headless: [cmd, args, opts], code: 0, stdout: "", stderr: "", timedOut: false };
+      calls.push(args);
+      const call = args.slice(0, 2).join(" ");
+      if (call === fail) return { code: 1, stdout: "", stderr: `${call} boom` };
+      if (call === "tab create") return { code: 0, stdout: JSON.stringify({ result: { tab: { tab_id: "w5:t2" }, root_pane: { pane_id: "w5:p2" } } }), stderr: "" };
+      if (call === "pane run") {
+        const child = spawn("bash", ["-c", args[3]], { detached: true, stdio: "ignore" });
+        child.unref();
+        shells.push(child);
+      }
+      if (call === "tab close") shells.forEach(hangUp);
+      return { code: 0, stdout: "{}", stderr: "" };
+    },
+  });
+  e._herdrCalls = calls;
+  return e;
+}
+
+test("spawnDispatch under herdr runs the dispatch in a tab of the _feature workspace, started in its cwd, and closes the tab", async () => {
+  const { root, stem } = fixture();
+  const e = herdrEffects(root);
+  const r = await spawnDispatch(e, "bash", ["-c", "echo hi; exit 3"], { cwd: root, stem, title: "alpha crew-coder", timing: FAST });
+  assert.equal(r.code, 3, "the exit code run.sh wrote");
+  assert.match(r.stdout, /^hi$/m);
+  const [create, run, close] = e._herdrCalls;
+  assert.deepEqual(create, ["tab", "create", "--workspace", "w5", "--cwd", root, "--label", "alpha crew-coder", "--no-focus"]);
+  assert.deepEqual(run.slice(0, 3), ["pane", "run", "w5:p2"]);
+  assert.match(run[3], /^bash '.*coder\.out\.term\/run\.sh'$/);
+  assert.deepEqual(close, ["tab", "close", "w5:t2"]);
+  assert.equal(e._herdrCalls.length, 3);
+});
+
+test("under herdr a failed tab create or pane run runs the dispatch headless and leaves no tab open", async () => {
+  for (const [fail, expected] of [["tab create", [["tab", "create"]]], ["pane run", [["tab", "create"], ["pane", "run"], ["tab", "close", "w5:t2"]]]]) {
+    const { root, stem } = fixture();
+    const e = herdrEffects(root, { fail });
+    const r = await spawnDispatch(e, "claude", ["-p"], { cwd: root, stem, title: "alpha crew-coder", timing: FAST });
+    assert.deepEqual(r.headless.slice(0, 2), ["claude", ["-p"]], fail);
+    assert.deepEqual(e._herdrCalls.map((c) => (c[1] === "close" ? c : c.slice(0, 2))), expected, fail);
+    assert.ok(e._logs.some((l) => l.startsWith("WARN SPAWN-TERMINAL-FALLBACK alpha crew-coder ") && l.includes(`${fail} boom`)), `${fail}: ${e._logs.join("\n")}`);
+  }
 });
