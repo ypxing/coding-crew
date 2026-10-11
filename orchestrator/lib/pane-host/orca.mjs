@@ -57,19 +57,20 @@ export function adoptWorktree(effects, path, meta) {
 
 async function nameWorktree(effects, path, meta) {
   if (!(await listedByOrca(effects, path))) {
-    effects.log?.(`WARN orca never listed worktree ${path} within ${ADOPT_WAIT.timeoutMs / 1000}s — not named, so no terminal opens in it`);
+    effects.log?.(`WARN orca never listed worktree ${path} within ${ADOPT_WAIT.timeoutMs / 1000}s — not named yet; the next terminal for it looks again`);
     return false;
   }
-  return setWorktree(effects, path, meta);
+  return setWorktree(effects, path, meta, effects.log);
 }
 
-async function setWorktree(effects, path, { title, issue, parent }) {
+/** `log` is omitted by a re-probe: the adoption already warned. */
+async function setWorktree(effects, path, { title, issue, parent }, log) {
   const args = ["worktree", "set", "--worktree", `path:${path}`, "--display-name", title];
   if (issue != null) args.push("--issue", String(issue));
   if (parent) args.push("--parent-worktree", `path:${parent}`);
   const r = await paneHostExec(effects, args, CALL_TIMEOUT_MS);
   if (r.code !== 0) {
-    effects.log?.(`WARN orca worktree set ${path} exit=${r.code} ${failureDetail(r)}`);
+    log?.(`WARN orca worktree set ${path} exit=${r.code} ${failureDetail(r)}`);
     return false;
   }
   (effects._paneAdopted ??= new Set()).add(path);
