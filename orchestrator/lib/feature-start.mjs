@@ -4,6 +4,10 @@
  * that is safe, and a shipped one (its own origin branch gone) renamed aside. Each git effect is one call.
  */
 
+import { existsSync } from "node:fs";
+
+import { branchHolder, crewMade } from "./worktree.mjs";
+
 const sha = (effects, ref) => {
   const r = effects.gitRead(["rev-parse", "--verify", "-q", `${ref}^{commit}`]);
   return r.code === 0 ? r.stdout.trim() : null;
@@ -71,6 +75,16 @@ export function settleFeatureBranch(effects, { branch, defaultBranch, now = new 
 
   const shipped = configValue(effects, `branch.${branch}.remote`) === "origin" && configValue(effects, `branch.${branch}.merge`) === `refs/heads/${branch}`;
   if (!shipped) return { base: branch, messages };
+
+  // A rename moves whatever checkout holds the branch along with it: only crew-afk's own may be moved.
+  const held = branchHolder(effects.gitRead(["worktree", "list", "--porcelain"]).stdout, branch);
+  if (held && existsSync(held.path) && (held.main || !crewMade(effects.mainRoot, held.path))) {
+    const where = held.main ? `the main checkout at '${held.path}'` : `the worktree '${held.path}', which crew-afk did not make`;
+    return {
+      error: `crew-afk: ${branch} has shipped (origin/${branch} is gone) and would be renamed aside, but it is checked out in ${where}; switch it to another branch, then re-run.`,
+      messages,
+    };
+  }
 
   // Renamed, never deleted: commits that never reached the PR stay reachable.
   const stem = `${branch}-shipped-${yyyymmdd(now)}`;
