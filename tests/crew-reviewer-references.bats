@@ -7,15 +7,13 @@
 # hand. The audit's instruction was explicit — do not blind-cut the checklist, make the framework
 # blocks conditional. So nothing was deleted: the blocks moved to
 # .coding-crew/crew-afk/roles/reviewer/references/, and review-context.sh decides which apply from signal
-# files. These tests check the selection per stack, the dependency audit, and that both ship with
-# crew-afk.
+# files. These tests check the selection per stack, and that the references ship with crew-afk.
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export AGENT_DIR="$SCRIPT_DIR/orchestrator/roles"
   export ASSETS="$AGENT_DIR/reviewer"
   export CONTEXT_SH="$ASSETS/scripts/review-context.sh"
-  export AUDIT_SH="$ASSETS/scripts/dependency-audit.sh"
   export TEMP_DIR=$(mktemp -d)
 }
 
@@ -51,11 +49,9 @@ stack_for() {
   done
 }
 
-@test "both review scripts exist and are executable as bash" {
+@test "the review-context script exists and parses as bash" {
   [ -f "$CONTEXT_SH" ]
-  [ -f "$AUDIT_SH" ]
   bash -n "$CONTEXT_SH"
-  bash -n "$AUDIT_SH"
 }
 
 @test "the reviewer's assets ship inside crew-afk's orchestrator asset" {
@@ -140,43 +136,15 @@ require github.com/gin-gonic/gin v1.9.0')
   [[ "$output" == *"STACK: "* ]]
 }
 
-# ─── Dependency audit ────────────────────────────────────────────────────────
-
-@test "dependency-audit.sh reports NO MANIFEST FOUND and exits 0 on a repo with none" {
-  local root; root=$(fixture nomanifest a.sh 'echo hi')
-  run bash "$AUDIT_SH" --root "$root"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"NO MANIFEST FOUND"* ]]
-}
-
-@test "dependency-audit.sh reports NOT RUN rather than failing when the tool is absent" {
-  local root; root=$(fixture pyaudit requirements.txt 'flask==3.0.0')
-  # Empty PATH beyond the shell builtins: no audit tool can be found.
-  run env PATH="/nonexistent" /bin/bash "$AUDIT_SH" --root "$root"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"NOT RUN:"* ]]
-  [[ "$output" == *"### pip-audit"* ]]
-}
-
-@test "dependency-audit.sh emits one block per manifest found" {
-  local root
-  root=$(fixture multi package-lock.json '{}' go.sum 'x' Gemfile.lock 'y')
-  run env PATH="/nonexistent" /bin/bash "$AUDIT_SH" --root "$root"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"### npm audit"* ]]
-  [[ "$output" == *"### govulncheck"* ]]
-  [[ "$output" == *"### bundle audit"* ]]
-}
-
 # ─── Install / uninstall ─────────────────────────────────────────────────────
 
-@test "installing crew-afk ships the reviewer's references and executable scripts" {
+@test "installing crew-afk ships the reviewer's references, feature part and executable script" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
   [ -f "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/references/quality.md" ]
   [ -f "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/references/react.md" ]
   [ -x "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/scripts/review-context.sh" ]
-  [ -x "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/scripts/dependency-audit.sh" ]
+  [ -f "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/feature.md" ]
 }
 
 @test "assets are always overwritten - a stale reference cannot survive a re-install" {

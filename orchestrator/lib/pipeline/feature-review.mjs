@@ -230,6 +230,7 @@ async function reviewOnce(ctx, { reviewer, promptFile, outFile, sidecarFile }) {
     reviewer.runtime,
     {
       agent: "crew-reviewer",
+      protocolPart: "feature",
       cwd: effects.featureRoot,
       promptFile,
       outFile,

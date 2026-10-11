@@ -1,7 +1,7 @@
 # Reference — Code Quality, Performance, Best Practices
 
 Loaded for every review (language-agnostic thresholds). Every item still passes the Pre-Report
-Gate and the Common False Positives list in the protocol before it becomes a finding.
+Gate in the protocol before it becomes a finding.
 
 ## Code Quality (HIGH)
 
@@ -29,7 +29,7 @@ Gate and the Common False Positives list in the protocol before it becomes a fin
 ## Best Practices (LOW)
 
 - **TODO/FIXME without tickets** — TODOs should reference issue numbers
-- **Missing JSDoc for public APIs** — exported functions without documentation
+- **Comments and tests that pin prose** — a comment that narrates history, cites a PR or incident, or restates the code; a test that asserts prose wording instead of behaviour
 - **Poor naming** — single-letter variables in non-trivial contexts
 - **Inconsistent formatting** — mixed semicolons, quote styles, indentation
 

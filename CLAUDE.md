@@ -27,7 +27,7 @@ node scripts/eval-design-skills.mjs --skill crew-grill --runs 2 --dry-run   # dr
 scripts/smoke-sprint.sh copilot              # --setup-only builds the repo without calling the CLI
 scripts/smoke-sprint.sh claude --demo > /tmp/smoke.log   # the same on the pinned demo repo (scripts/smoke-sprint/demo/); appends a row to scripts/smoke-sprint/RESULTS.md — commit it before cutting the release
 
-# After editing orchestrator/roles/reviewer.md: replay the two bugs PR #208 shipped with against base and head, judged blind; costs API money
+# After editing orchestrator/roles/reviewer.md or reviewer/feature.md: replay the two bugs PR #208 shipped with against base and head, judged blind; costs API money
 node scripts/eval-reviewer-misses.mjs --runs 2 --dry-run   # writes each ref's prompts, calls no model; drop --dry-run to run
 
 # Bring a PR branch up to date with origin/main (local only, never pushes): merge it, resolve registry version / CHANGELOG append conflicts, bump versions to sit above main's
