@@ -240,6 +240,7 @@ function pushFromElsewhere(origin, branch, from = branch) {
   const other = `${origin}-${FIXTURE_ROOTS.length}`;
   FIXTURE_ROOTS.push(other);
   sh("git", ["clone", "-q", origin, other]);
+  for (const [k, v] of [["user.email", "t@test"], ["user.name", "T"]]) git(other, "config", k, v);
   const tip = commitOn(other, `origin/${from}`, `elsewhere on ${branch}`);
   git(other, "push", "-q", "origin", `${tip}:refs/heads/${branch}`);
   return tip;
