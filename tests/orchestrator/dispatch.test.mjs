@@ -348,7 +348,7 @@ test("claude: the coder edits and keeps Skill but no sub-agents; reviewer and tr
   const { root, promptFile } = fixture();
   const tools = (a) => a.slice(a.indexOf("--tools") + 1, a.indexOf("ToolSearch") + 1);
   const expected = {
-    "crew-coder": ["Bash", "Read", "Edit", "Write", "Skill", "ToolSearch"],
+    "crew-coder": ["Bash", "Read", "Edit", "Write", "NotebookEdit", "Skill", "ToolSearch"],
     "crew-reviewer": ["Bash", "Read", "Agent", "ToolSearch"],
     "crew-triage": ["Bash", "Read", "Agent", "ToolSearch"],
     "pr-writer": ["Bash", "Read", "ToolSearch"],

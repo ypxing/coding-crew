@@ -92,10 +92,10 @@ const CLAUDE_READ_ONLY = ["--effort", "high", "--tools", "Bash", "Read", "Agent"
 // The feature agent (followup): it edits, takes no sub-agents, and has no effort (its CLI's default applies).
 const EXPECTED_POLICY_ARGS = {
   claude: {
-    coder: ["--effort", "high", "--tools", "Bash", "Read", "Edit", "Write", "Skill", "ToolSearch"],
+    coder: ["--effort", "high", "--tools", "Bash", "Read", "Edit", "Write", "NotebookEdit", "Skill", "ToolSearch"],
     reviewer: CLAUDE_READ_ONLY,
     triage: CLAUDE_READ_ONLY,
-    followup: ["--tools", "Bash", "Read", "Edit", "Write", "ToolSearch"],
+    followup: ["--tools", "Bash", "Read", "Edit", "Write", "NotebookEdit", "ToolSearch"],
   },
   copilot: {
     coder: ["--reasoning-effort", "high"],
@@ -129,7 +129,7 @@ for (const platform of Object.keys(EXPECTED_POLICY_ARGS)) {
 // a plain role (no protocol, so no policy) only reads, as on codex.
 const CLAUDE_SETTINGS = ["--settings", '{"disableClaudeAiConnectors":true,"disableBundledSkills":true}'];
 const CLAUDE_HEADLESS_TOOLS = {
-  coder: ["--effort", "high", "--tools", "Bash", "Read", "Edit", "Write", "Skill", "ToolSearch"],
+  coder: ["--effort", "high", "--tools", "Bash", "Read", "Edit", "Write", "NotebookEdit", "Skill", "ToolSearch"],
   reviewer: ["--effort", "high", "--tools", "Bash", "Read", "Agent", "ToolSearch"],
   triage: ["--effort", "high", "--tools", "Bash", "Read", "Agent", "ToolSearch"],
   plain: ["--tools", "Bash", "Read", "ToolSearch"],

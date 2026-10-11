@@ -2,7 +2,7 @@
 import { EMPTY_RESULT_META, lastEvent, normalized, safePreview, str } from "./common.mjs";
 
 // Drops claude.ai connectors and the skills bundled with Claude Code; an older CLI ignores the keys.
-const HEADLESS_SETTINGS = JSON.stringify({ disableClaudeAiConnectors: true, disableBundledSkills: true });
+export const HEADLESS_SETTINGS = JSON.stringify({ disableClaudeAiConnectors: true, disableBundledSkills: true });
 
 function usageTokens(u) {
   return (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0);
@@ -60,7 +60,7 @@ export default {
    * a headless run that waits on one ends its turn and is lost.
    */
   policyArgs({ readOnly, subagents, skills, effort }) {
-    const tools = ["Bash", "Read", ...(readOnly ? [] : ["Edit", "Write"]), ...(subagents ? ["Agent"] : []), ...(skills ? ["Skill"] : []), "ToolSearch"];
+    const tools = ["Bash", "Read", ...(readOnly ? [] : ["Edit", "Write", "NotebookEdit"]), ...(subagents ? ["Agent"] : []), ...(skills ? ["Skill"] : []), "ToolSearch"];
     return [...(effort ? ["--effort", effort] : []), "--tools", ...tools];
   },
 

@@ -23,6 +23,7 @@
     "Read",
     "Edit",
     "Write",
+    "NotebookEdit",
     "Skill",
     "ToolSearch"
   ],
