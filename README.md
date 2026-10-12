@@ -89,6 +89,20 @@ flowchart LR
    shows. The crew fixes the findings once, a closing review checks the fix, and the run stops.
 4. **Ship.** You review one PR.
 
+## What people use it for
+
+| You want to…                              | Run                                                    |
+| ----------------------------------------- | ------------------------------------------------------ |
+| 🚀 **Ship a feature overnight**           | `/crew-grill <idea>` → `/crew-afk <slug> --open-pr`    |
+| 🐛 **Burn down a bug backlog**            | `/to-issues <ref>` for each bug, then one `/crew-afk`  |
+| 🧪 **Cover risky untested code**          | `/add-tests` → `/crew-afk`                             |
+| 📦 **Upgrade dependencies safely**        | `/upgrade-deps` → `/crew-afk`                          |
+| 🔀 **Build several features in parallel** | one `/crew-afk` per feature, each in its own worktree  |
+| 💬 **Clear a PR's review comments**       | `/address-pr-comments`                                 |
+| 🎯 **Pair on a single issue yourself**    | `/solve-issue <issue>`                                 |
+
+Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to the issue writer.
+
 ## Why teams use it
 
 - ✅ **Test-first, always.** Every coder works red, green, refactor.
@@ -96,8 +110,9 @@ flowchart LR
 - 🔍 **A reviewer that sees the whole feature.** It reviews against the plan, not one diff at a time.
 - 🔁 **Fixes itself without looping.** One fix round, one closing check, then it stops.
 - 💸 **You see what it cost.** Every sprint ends with a cost summary by role.
-- 💬 **You can ask the crew what happened.** Under [orca](https://www.onorca.dev) or [herdr](https://herdr.dev), every sprint gets its own feature agent, in the sprint's `crew/<slug>/_feature` worktree. Ask it what finished or what's blocked; once the sprint ends it does your follow-up work in place (`/crew-address-findings`, `/address-pr-comments`) and commits it. Run `crew-afk` from its pane and that pane is the agent.
-- 🔒 **You stay in control.** Nothing is pushed unless you ask.
+- 💬 **Ask the crew what happened.** Under [orca](https://www.onorca.dev) or [herdr](https://herdr.dev), each sprint
+  gets a live feature agent. Ask it what's done or stuck, then have it do the follow-up work.
+- 🔒 **You stay in control.** Your checkout is never touched, and nothing is pushed unless you ask.
 - 🧩 **Fits what you already use.** It works with four coding CLIs, and keeps issues as local markdown or in GitHub Issues.
 
 ## The toolkit
@@ -106,11 +121,13 @@ flowchart LR
 | ------------------------ | ---------------------------------------------------------- |
 | `/crew-grill`            | Stress-test a plan and turn it into issues                 |
 | `/crew-brainstorm`       | Shape a fuzzy idea into a design, then issues              |
+| `/to-issues`             | Split a plan into issues, or sharpen an existing one       |
 | `/crew-afk`              | Run the unattended sprint                                  |
 | `/crew-address-findings` | Fix what the sprint's review found                         |
 | `/address-pr-comments`   | Fix PR review comments, push once your checks pass         |
 | `/solve-issue`           | Build one issue end to end, yourself                       |
 | `/add-tests`             | Find risky untested code and plan tests for it             |
+| `/upgrade-deps`          | Audit outdated packages and plan safe upgrades             |
 | `/write-pr`              | Write a PR description a reviewer can act on               |
 | `/configure-tracker`     | Choose local markdown or GitHub Issues                     |
 
