@@ -51,17 +51,33 @@ as is; the script exits 1 naming a slug the tracker has no feature for.
    a dirty tree or moved HEAD, a failing check, `DISCOVER` (run `/solve-issue` or `dep-install` once
    by hand first), a missing report, or a verdict other than `all-met`. Fix the cause, then re-run:
    issues already done are skipped.
-4. **Finish**, when no ready issue is left: push the branch, then print `gh pr create` with the
-   feature's `Closes #<n>` lines as the body (the tracker's `closing-refs`), or with `--open-pr`
-   create the PR when none exists and print its URL.
+4. **Finish**, when no ready issue is left:
+   - the whole-feature verify, only when two or more of the feature's issues are `awaiting-merge`
+     (the root included; a lone issue's diff was already its own gate): one more read-only
+     `claude -p` with the reviewer protocol and its feature mode, 30 minutes and 4 USD, over
+     `git diff $(git merge-base origin/<default> HEAD)..HEAD` with the PRD and every per-issue
+     verifier `note`. It only reports: a write to the tree stops the run like the per-issue
+     verifier's, but a missing report does not — the PR opens as a draft and says `not run`;
+   - the PR: push the branch, then with `--open-pr` create the PR when none is open and print its
+     URL, else print the `gh pr create` command. Its body is a `<!-- solve-feature:begin -->` …
+     `<!-- solve-feature:end -->` block holding a `Whole-feature verify:` line (the finding counts,
+     `skipped: one issue on the branch` or `not run (<reason>)`) and the `Closes #<n>` lines; it is
+     a draft when a finding is `CRITICAL` or `HIGH` or the verify did not run. An existing PR is
+     left as it is;
+   - the review: on the open PR (created, or one `gh pr view` finds), `post-review.sh` posts one
+     `COMMENT` review — an inline comment per finding on a line the PR diff shows, the rest in its
+     body by severity, then every per-issue note. Each finding carries a `crew-finding:` marker, so
+     a re-run posts only what is new. With no open PR it prints the command to post it by hand. A
+     failed post only warns.
 
 Logs are under `.solve-feature/` (`<n>.log`, `<n>.checks.log`, `<n>.verify.log`, `<n>.verify.json`,
-`<n>.issue.md`, `prd.md`); the directory ignores itself.
+`<n>.issue.md`, `prd.md`, `feature.verify.log`, `feature.verify.json`, `notes.md`, each verifier's
+`<log>.system.md`); the directory ignores itself.
 
 **Progress** is one comment on the feature's root issue, marked `<!-- solve-feature-progress -->`, edited in
-place at every step: the host, a line per issue (`solve`, `checks`, `verify`: ✓, ✗ or ·), on a stop
-the failing step and the last 20 lines of its log (of a `claude` log, its result text), and at the
-end the PR URL or command. A failed comment write only warns.
+place at every step: the host, a line per issue (`solve`, `checks`, `verify`: ✓, ✗ or ·), a
+`feature  verify` line, on a stop the failing step and the last 20 lines of its log (of a `claude`
+log, its result text), and at the end the PR URL or command, with the review's counts once posted. A failed comment write only warns.
 
 ## Flags and environment
 
@@ -72,11 +88,11 @@ end the PR URL or command. A failed comment write only warns.
 | `--open-pr`         | Create the PR at the end when none exists                                                |
 | `SOLVE_FEATURE_HOST`          | The host name the progress comment shows (default: `hostname`)                           |
 
-Both `claude` processes run with `bypassPermissions`, as crew-afk's do: unattended, nobody can
-answer a prompt, and an allow-list, `auto` mode and Claude Code's sandbox all refuse solve-issue's
-own commands. The coder can therefore run anything your user can, so give it a worktree, container
-or runner rather than the checkout you work in. The verifier keeps to `Bash`, `Read` and
-`ToolSearch`, and the script checks that it left HEAD and the tree as they were. Models come from
+Every `claude` process — the coder, the per-issue verifier and the whole-feature verify, one at a
+time — runs with `bypassPermissions`, as crew-afk's do: unattended, nobody can answer a prompt,
+and an allow-list, `auto` mode and Claude Code's sandbox all refuse solve-issue's own commands. The coder can therefore run anything your user can, so give it a worktree, container
+or runner rather than the checkout you work in. Both verifiers keep to `Bash`, `Read` and
+`ToolSearch`, and the script checks that they left HEAD and the tree as they were. Models come from
 `.coding-crew/config.json` `afk.models.claude.coder` and `.reviewer` (defaults `sonnet` and `opus`).
 
 **One run per feature at a time.** The script takes no lock: two runs on the same slug both pick

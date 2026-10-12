@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature**: once two or more of a feature's issues are on the branch, Finish runs one read-only
+  whole-feature verify (crew-afk's feature-mode reviewer, with the PRD and every per-issue `note`) and posts its
+  findings and the notes as one review on the PR; the PR body gains a `<!-- solve-feature:begin -->` block with a
+  `Whole-feature verify:` line, and opens as a draft on a CRITICAL/HIGH finding or a verify that did not run (#457).
 - **tracker**: `features`' third column counts the issues dispatch would start now — `ready-for-agent`, not
   labelled `blocked`, every blocker done — instead of every open `ready-for-agent` issue, on both backends (#447).
 - **solve-feature**: runs a one-slice feature, whose root issue is its only work issue, instead of finding nothing
