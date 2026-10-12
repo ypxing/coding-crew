@@ -29,7 +29,7 @@ TRACKER="$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs"
 
 ```bash
 node "$TRACKER" fetch <number> [--comments]               # print one issue (title, body; + comments)
-node "$TRACKER" features                                  # list the features: <slug>, open|closed, ready-for-agent count
+node "$TRACKER" features                                  # list the features: <slug>, open|closed, count of issues that can start now
 node "$TRACKER" prd --feature-slug <slug>                 # print the feature's PRD: issue
 node "$TRACKER" known --feature-slug <slug> --out <dir>   # write the feature's issues, open and closed, into <dir>
 node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace]
@@ -54,9 +54,11 @@ before the request was sent (a connection refused, DNS or TLS-handshake failure)
 never files a duplicate.
 
 `features` prints one tab-separated line per root issue's slug, sorted: the slug, `open` while the
-root or any of its sub-issues is open (`closed` otherwise) and the count of open `ready-for-agent`
-issues among the root and its sub-issues. A slug on more than one root is listed once, with a
-warning on stderr. A closed root whose sub-issues have all closed is listed from its
+root or any of its sub-issues is open (`closed` otherwise) and the count of issues among the root
+and its sub-issues that can start now: open, `ready-for-agent`, no `blocked` label, and every
+`## Blocked by` issue closed or `awaiting-merge` — a blocker outside the feature keeps the issue
+out, as dispatch does. A slug on more than one root is listed once, with a warning on stderr, its
+roots' issues counted as one feature. A closed root whose sub-issues have all closed is listed from its
 `sub_issues_summary` without reading them. A failing `gh` exits `1` with `gh`'s stderr verbatim.
 
 `publish-issues`, `publish-prd` and `rewrite` file their issues in the feature: the first issue

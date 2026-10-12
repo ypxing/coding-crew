@@ -33,7 +33,7 @@ those (`--fix-findings medium` keeps LOW findings out of fix issues). A bare wor
 If the trailing arguments aren't CLI syntax, look up what exists first:
 
 ```bash
-node "$TRACKER" features   # <slug>, open|closed, ready-for-agent count — one line per feature
+node "$TRACKER" features   # <slug>, open|closed, count of issues that can start now — one line per feature
 ```
 
 Match against those slugs (exact, fuzzy/typo, then issue content: `node "$TRACKER" known --feature-slug <slug> --out <dir>` for a candidate). One match →

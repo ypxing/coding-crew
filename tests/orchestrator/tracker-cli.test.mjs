@@ -461,13 +461,34 @@ test("features (local) lists each .scratch/<slug>/ with issues/, sorted, open|cl
   assert.equal(r.stdout, "alpha\tclosed\t0\nmid\topen\t0\nzeta\topen\t2\n");
 });
 
+test("features (local) counts only the ready issues whose every blocker is in the feature's done/, from issues-deps.json when it has one", async () => {
+  const dir = root();
+  const write = (slug, state, name, status, blockedBy = "None") => {
+    const d = join(dir, ".scratch", slug, "issues", state);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, name), `# ${name}\n\nStatus: ${status}\n\n## Blocked by\n\n${blockedBy}\n`);
+  };
+  write("prose", "open", "01-a.md", "ready-for-agent");
+  write("prose", "open", "02-b.md", "ready-for-agent", "- 01-a.md");
+  write("prose", "open", "03-c.md", "ready-for-agent", "- 00-done.md");
+  write("prose", "done", "00-done.md", "done");
+  write("waiting", "open", "01-a.md", "ready-for-human");
+  write("waiting", "open", "02-b.md", "ready-for-agent", "- 01-a.md");
+  write("deps", "open", "01-a.md", "ready-for-agent");
+  write("deps", "open", "02-b.md", "ready-for-agent");
+  writeFileSync(join(dir, ".scratch/deps/issues/issues-deps.json"), JSON.stringify({ "01-a.md": [], "02-b.md": ["01-a.md"] }));
+  const r = await cli(dir, ["features"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "deps\topen\t1\nprose\topen\t2\nwaiting\topen\t0\n");
+});
+
 test("features (local) with no .scratch/ exits 0 and prints nothing", async () => {
   const dir = mkdtempSync(join(tmpdir(), "crew-tracker-cli-"));
   const r = await cli(dir, ["features"]);
   assert.deepEqual(r, { code: 0, stdout: "", stderr: "" });
 });
 
-test("features (github) lists one line per marked root: slug, open|closed, and the open ready-for-agent count among root and sub-issues", async () => {
+test("features (github) lists one line per marked root: slug, open|closed, and the dispatchable count among root and sub-issues", async () => {
   const dir = root({ github: true });
   writeFileSync(join(dir, ".coding-crew/config.json"), JSON.stringify({ tracker: { kind: "github" } }));
   const ready = ["ready-for-agent"];
@@ -481,6 +502,34 @@ test("features (github) lists one line per marked root: slug, open|closed, and t
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.stdout, "alpha\tclosed\t0\nreopened\topen\t1\nzeta\topen\t2\n");
   for (const call of exec.calls) assert.ok(!call.some((a) => /milestone/i.test(a)), call.join(" "));
+});
+
+test("features (github) counts only the ready issues dispatch would start: no `blocked` label, every blocker in the feature and done", async () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, ".coding-crew/config.json"), JSON.stringify({ tracker: { kind: "github" } }));
+  const ready = ["ready-for-agent"];
+  const after = (...ns) => `## Blocked by\n\n${ns.map((n) => `- #${n}`).join("\n")}\n`;
+  const exec = fakeGithub([
+    ...ghFeature(
+      "mixed",
+      ghIssue(1),
+      ghIssue(2, { labels: ready }),
+      ghIssue(3, { labels: ready, body: after(2) }),
+      ghIssue(4, { labels: [...ready, "blocked"] }),
+      ghIssue(5, { labels: ready, body: after(30) }),
+      ghIssue(6, { labels: ready, body: after(7) }),
+      ghIssue(7, { state: "CLOSED" }),
+      ghIssue(8, { labels: ready, body: after(9) }),
+      ghIssue(9, { labels: ["awaiting-merge"] }),
+    ),
+    ...ghFeature("waiting", ghIssue(10), ghIssue(11, { labels: ready, body: after(10) }), ghIssue(12, { labels: [...ready, "blocked"] })),
+    ghIssue(30, { state: "CLOSED" }),
+  ]);
+  const r = await cli(dir, ["features"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "mixed\topen\t3\nwaiting\topen\t0\n");
+  const reads = exec.calls.filter((c) => !/issues\?state=all/.test(c.join(" ")));
+  assert.deepEqual(reads.map((c) => /issues\/(\d+)\/sub_issues/.exec(c.join(" "))?.[1]), ["1", "10"]);
 });
 
 test("features (github) reads no sub-issues of a closed root whose sub-issues have all closed", async () => {

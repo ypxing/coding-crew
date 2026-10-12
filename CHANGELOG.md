@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **tracker**: `features`' third column counts the issues dispatch would start now — `ready-for-agent`, not
+  labelled `blocked`, every blocker done — instead of every open `ready-for-agent` issue, on both backends (#447).
 - **solve-feature**: runs a one-slice feature, whose root issue is its only work issue, instead of finding nothing
   to do; an issue labelled `blocked` is skipped, as crew-afk skips it.
 - **solve-feature**: the PR it opens (or the `gh pr create` it prints) is titled after the root issue, not the
