@@ -87,7 +87,8 @@ but one of them.
 `done` means implemented and merged into the feature branch, not shipped. `mark-done` re-fetches
 the body live and refuses with exit `4` while an `- [ ]` in `## Acceptance criteria` (or
 `## Cross-cutting Requirements`) is unchecked, or exit `3` when an orchestrator owns the close —
-report your status and stop in either case. Never close the issue by hand instead.
+report your status and stop in either case. It also exits `4` for a body with no
+`## Acceptance criteria` section at all, unless `--force`. Never close the issue by hand instead.
 
 On success `mark-done` swaps `ready-for-agent` for `awaiting-merge` (creating that label if the repo
 lacks it) and leaves the issue **open**. Put `Closes #<number>` in the body of the PR that
