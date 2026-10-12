@@ -392,7 +392,7 @@ test("github.mjs's create-issue and link-blockers stay reachable through the CLI
 
 // --- feature-issues ----------------------------------------------------------------
 
-test("feature-issues (github) prints the root and its sub-issues as JSON, open ones only with --state open", async () => {
+test("feature-issues (github) prints the root, marked root: true, and its sub-issues as JSON, open ones only with --state open", async () => {
   const dir = root({ github: true });
   const exec = fakeGithub(
     ghFeature("feat", ghIssue(3, { title: "PRD: Feat" }), ghIssue(4, { labels: ["awaiting-merge"] }), ghIssue(5, { state: "CLOSED", labels: ["in-progress"] })),
@@ -400,7 +400,7 @@ test("feature-issues (github) prints the root and its sub-issues as JSON, open o
   const all = await cli(dir, ["feature-issues", "--feature-slug", "feat"], exec);
   assert.equal(all.code, 0, all.stderr);
   assert.deepEqual(JSON.parse(all.stdout), [
-    { number: 3, title: "PRD: Feat", state: "OPEN", labels: [] },
+    { number: 3, title: "PRD: Feat", state: "OPEN", labels: [], root: true },
     { number: 4, title: "Issue 4", state: "OPEN", labels: [{ name: "awaiting-merge" }] },
     { number: 5, title: "Issue 5", state: "CLOSED", labels: [{ name: "in-progress" }] },
   ]);

@@ -665,8 +665,9 @@ const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /**
  * `feature-issues --feature-slug S [--state open|all] [--main-root DIR]` — the feature's issues as
- * one JSON array of `{number, title, state, labels}` (state `OPEN`|`CLOSED`), `[]` for a slug with
- * no root: the one membership read close-shipped.sh and issue-labels.sh make.
+ * one JSON array of `{number, title, state, labels, root?}` (state `OPEN`|`CLOSED`; `root: true` on
+ * the root only), `[]` for a slug with no root: the one membership read close-shipped.sh,
+ * issue-labels.sh and afk-feature.sh make.
  */
 function cliFeatureIssues(argv, { exec = gh, out }) {
   const opts = { state: "all" };
@@ -687,13 +688,16 @@ function cliFeatureIssues(argv, { exec = gh, out }) {
   }
   if (!SLUG.test(opts.featureSlug ?? "")) throw usage("feature-issues requires a valid --feature-slug");
   if (!["open", "all"].includes(opts.state)) throw usage(`feature-issues: --state must be open or all, not ${opts.state}`);
-  const issues = featureIssuesJson(opts.featureSlug, { exec })
+  // rootAndSubIssues puts the root first.
+  const all = featureIssuesJson(opts.featureSlug, { exec });
+  const issues = all
     .filter((i) => opts.state === "all" || isOpen(i))
     .map((i) => ({
       number: i.number,
       title: i.title ?? "",
       state: String(i.state).toUpperCase(),
       labels: (i.labels ?? []).map((l) => ({ name: typeof l === "string" ? l : l.name })),
+      ...(i === all[0] ? { root: true } : {}),
     }));
   out(`${JSON.stringify(issues)}\n`);
 }

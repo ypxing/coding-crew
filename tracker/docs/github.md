@@ -77,8 +77,9 @@ of another feature. One exception: an issue that becomes the root keeps a parent
 `Feature:` line (a human's epic, say), since making it the root moves nothing.
 
 `feature-issues` prints the feature's issues — the root and its sub-issues, all of them or only
-the open ones — as one JSON array of `{number, title, state, labels}`, `[]` for a slug with no
-root. `close-shipped.sh` and `issue-labels.sh sweep` read a feature only through it.
+the open ones — as one JSON array of `{number, title, state, labels}`, the root's entry also
+carrying `"root": true`, `[]` for a slug with no root. `close-shipped.sh`, `issue-labels.sh sweep`
+and `afk-feature.sh` read a feature only through it.
 
 Every op that reads a feature exits `1` naming them when its slug is ambiguous: two open issues
 carrying the same `Feature:` line, or none open and two or more closed. Remove the line from all
