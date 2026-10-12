@@ -1,22 +1,4 @@
 HOME/.coding-crew/ /
-HOME/.coding-crew/afk-feature/ /
-HOME/.coding-crew/afk-feature/roles/ /
-HOME/.coding-crew/afk-feature/roles/coder.md exec=0
-HOME/.coding-crew/afk-feature/roles/followup.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer/ /
-HOME/.coding-crew/afk-feature/roles/reviewer/feature.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer/references/ /
-HOME/.coding-crew/afk-feature/roles/reviewer/references/backend.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer/references/quality.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer/references/react.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer/references/web-security.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer/scripts/ /
-HOME/.coding-crew/afk-feature/roles/reviewer/scripts/review-context.sh exec=1
-HOME/.coding-crew/afk-feature/roles/triage.md exec=0
-HOME/.coding-crew/afk-feature/scripts/ /
-HOME/.coding-crew/afk-feature/scripts/afk-feature.sh exec=1
-HOME/.coding-crew/afk-feature/scripts/verify-prompt.md exec=0
 HOME/.coding-crew/crew-afk/ /
 HOME/.coding-crew/crew-afk/lib/ /
 HOME/.coding-crew/crew-afk/lib/adapters/ /
@@ -101,7 +83,7 @@ HOME/.coding-crew/dep-install/scripts/run.sh exec=1
 HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-HOME/.coding-crew/manifest.json da20c37ba837946a45d8a473c7b563a5c11ae557
+HOME/.coding-crew/manifest.json e94c054917ff8b5d41d30ce3f0dd49aeb13772e4
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
 HOME/.coding-crew/skills/_shared/fragments/ /
@@ -111,6 +93,24 @@ HOME/.coding-crew/skills/_shared/fragments/human-issue.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
+HOME/.coding-crew/solve-feature/ /
+HOME/.coding-crew/solve-feature/roles/ /
+HOME/.coding-crew/solve-feature/roles/coder.md exec=0
+HOME/.coding-crew/solve-feature/roles/followup.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/ /
+HOME/.coding-crew/solve-feature/roles/reviewer/feature.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/references/ /
+HOME/.coding-crew/solve-feature/roles/reviewer/references/backend.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/references/quality.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/references/react.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/references/web-security.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/scripts/ /
+HOME/.coding-crew/solve-feature/roles/reviewer/scripts/review-context.sh exec=1
+HOME/.coding-crew/solve-feature/roles/triage.md exec=0
+HOME/.coding-crew/solve-feature/scripts/ /
+HOME/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
+HOME/.coding-crew/solve-feature/scripts/verify-prompt.md exec=0
 HOME/.coding-crew/solve-issue/ /
 HOME/.coding-crew/solve-issue/scripts/ /
 HOME/.coding-crew/solve-issue/scripts/check-requires.sh exec=1
@@ -145,11 +145,6 @@ CONFIG/skills/address-pr-comments/scripts/commit-changes.sh exec=1
 CONFIG/skills/address-pr-comments/scripts/fetch-review-threads.sh exec=1
 CONFIG/skills/address-pr-comments/scripts/push-rework.sh exec=1
 CONFIG/skills/address-pr-comments/scripts/reply-thread.sh exec=1
-CONFIG/skills/afk-feature/ /
-CONFIG/skills/afk-feature/SKILL.md exec=0 unrendered=0
-CONFIG/skills/afk-feature/scripts/ /
-CONFIG/skills/afk-feature/scripts/afk-feature.sh exec=1
-CONFIG/skills/afk-feature/scripts/verify-prompt.md exec=0
 CONFIG/skills/configure-tracker/ /
 CONFIG/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 CONFIG/skills/crew-address-findings/ /
@@ -215,6 +210,11 @@ CONFIG/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 CONFIG/skills/domain-modeling/references/ /
 CONFIG/skills/domain-modeling/references/adr-format.md exec=0
 CONFIG/skills/domain-modeling/references/context-format.md exec=0
+CONFIG/skills/solve-feature/ /
+CONFIG/skills/solve-feature/SKILL.md exec=0 unrendered=0
+CONFIG/skills/solve-feature/scripts/ /
+CONFIG/skills/solve-feature/scripts/solve-feature.sh exec=0
+CONFIG/skills/solve-feature/scripts/verify-prompt.md exec=0
 CONFIG/skills/solve-issue/ /
 CONFIG/skills/solve-issue/SKILL.md exec=0 unrendered=0
 CONFIG/skills/solve-issue/references/ /

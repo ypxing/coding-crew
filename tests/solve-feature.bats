@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# afk-feature.sh — one feature's ready issues, in order, on one branch, each gated by checks and a
+# solve-feature.sh — one feature's ready issues, in order, on one branch, each gated by checks and a
 # verifier the coder cannot influence.
 #
 # A temp clone with a bare `origin`, and the skill installed user-level under a temp $HOME as
@@ -15,18 +15,18 @@ setup() {
   # Physical path: the script's paths come from `git rev-parse --show-toplevel`, which resolves
   # macOS's /var → /private/var symlink on the temp dir.
   TEMP_DIR=$(cd "$(mktemp -d)" && pwd -P)
-  export STATE="$TEMP_DIR/state" HOME="$TEMP_DIR/home" AFK_HOST=test-host
+  export STATE="$TEMP_DIR/state" HOME="$TEMP_DIR/home" SOLVE_FEATURE_HOST=test-host
   mkdir -p "$STATE" "$HOME"
   unset CREW_ORCHESTRATED
 
   INSTALL="$HOME/.coding-crew"
-  mkdir -p "$INSTALL/afk-feature" "$INSTALL/solve-issue/scripts" "$INSTALL/dep-install/scripts" "$INSTALL/tracker"
-  cp -R "$REPO_ROOT/skills/afk-feature/scripts" "$INSTALL/afk-feature/scripts"
-  mkdir -p "$INSTALL/afk-feature/roles"
-  cp "$REPO_ROOT/orchestrator/roles/reviewer.md" "$INSTALL/afk-feature/roles/reviewer.md"
-  cp -R "$REPO_ROOT/orchestrator/roles/reviewer" "$INSTALL/afk-feature/roles/reviewer"
+  mkdir -p "$INSTALL/solve-feature" "$INSTALL/solve-issue/scripts" "$INSTALL/dep-install/scripts" "$INSTALL/tracker"
+  cp -R "$REPO_ROOT/skills/solve-feature/scripts" "$INSTALL/solve-feature/scripts"
+  mkdir -p "$INSTALL/solve-feature/roles"
+  cp "$REPO_ROOT/orchestrator/roles/reviewer.md" "$INSTALL/solve-feature/roles/reviewer.md"
+  cp -R "$REPO_ROOT/orchestrator/roles/reviewer" "$INSTALL/solve-feature/roles/reviewer"
   : > "$INSTALL/tracker/cli.mjs"
-  SCRIPT="$INSTALL/afk-feature/scripts/afk-feature.sh"
+  SCRIPT="$INSTALL/solve-feature/scripts/solve-feature.sh"
 
   WORK="$TEMP_DIR/work"
   git init -q -b main "$WORK"
@@ -277,7 +277,7 @@ coder_issues() {
 @test "a coder that exits 0 but leaves its issue ready stops at solve, before the checks and the verifier" {
   CODER_NO_CLOSE=1 run bash "$SCRIPT" feat
   [ "$status" -ne 0 ]
-  [[ "$output" == *"#2 solve failed: coder ran but did not close #2"*"$WORK/.afk-logs/2.log"* ]]
+  [[ "$output" == *"#2 solve failed: coder ran but did not close #2"*"$WORK/.solve-feature/2.log"* ]]
   [ "$(claude_calls)" -eq 1 ]
   [ ! -f "$STATE/checks.log" ]
 }
@@ -299,16 +299,16 @@ coder_issues() {
   [ "$(claude_flag 2 --max-budget-usd)" = 2 ]
   [ "$(claude_flag 2 --settings)" = '{"disableClaudeAiConnectors":true,"disableBundledSkills":true}' ]
   local prompt; prompt=$(sed -n '/^-p$/,/^--append-system-prompt-file$/p' "$STATE/claude.2")
-  [[ "$prompt" == *"Issue file: $WORK/.afk-logs/2.issue.md"* ]]
+  [[ "$prompt" == *"Issue file: $WORK/.solve-feature/2.issue.md"* ]]
   [[ "$prompt" == *"Gather the diff: git diff $base..HEAD"* ]]
-  [[ "$prompt" == *"Write your structured verdict to $WORK/.afk-logs/2.verify.json as your last action."* ]]
+  [[ "$prompt" == *"Write your structured verdict to $WORK/.solve-feature/2.verify.json as your last action."* ]]
   [[ "$prompt" == *"Branch: feature/feat"* ]]
   [[ "$prompt" == *"Slug: feat"* ]]
   [[ "$prompt" == *'- [ ] works for `<before>` & co'* ]]
-  [[ "$prompt" == *"Review assets: $HOME/.coding-crew/afk-feature/roles/reviewer"* ]]
+  [[ "$prompt" == *"Review assets: $HOME/.coding-crew/solve-feature/roles/reviewer"* ]]
   [[ "$prompt" == *"Checks already run by the pipeline in this branch's worktree: test=pass, lint=not_run."* ]]
-  [[ "$prompt" == *"PRD: $WORK/.afk-logs/prd.md"* ]]
-  [ "$(cat "$WORK/.afk-logs/prd.md")" = "# PRD: Feat" ]
+  [[ "$prompt" == *"PRD: $WORK/.solve-feature/prd.md"* ]]
+  [ "$(cat "$WORK/.solve-feature/prd.md")" = "# PRD: Feat" ]
   [ -z "$(git status --porcelain)" ]
 }
 
@@ -325,7 +325,7 @@ coder_issues() {
   [ "$status" -ne 0 ]
   [ "$(claude_calls)" -eq 2 ]
   [[ "$output" == *"criterion 1 unmet"* ]]
-  [[ "$output" == *"$WORK/.afk-logs/2.verify.log"* ]]
+  [[ "$output" == *"$WORK/.solve-feature/2.verify.log"* ]]
 }
 
 # --- stops ---------------------------------------------------------------------------
@@ -341,9 +341,9 @@ fails_with() {
   git clean -qfd
   run env "$@" bash "$SCRIPT" feat
   [ "$status" -ne 0 ] || { echo "$*: exit 0"; return 1; }
-  [[ "$output" == *"$WORK/.afk-logs/$log"* ]] || { echo "$*: $output"; return 1; }
+  [[ "$output" == *"$WORK/.solve-feature/$log"* ]] || { echo "$*: $output"; return 1; }
   [ "$(coder_issues)" = 2 ] || { echo "$*: coder ran on $(coder_issues)"; return 1; }
-  [ -f "$WORK/.afk-logs/$log" ] || { echo "$*: no $log"; return 1; }
+  [ -f "$WORK/.solve-feature/$log" ] || { echo "$*: no $log"; return 1; }
 }
 
 @test "a coder non-zero exit, a branch change or a dirty tree after the coder stops with the coder log's path" {
@@ -413,17 +413,17 @@ fails_with() {
 
 # --- progress comment ----------------------------------------------------------------
 
-# progress_body — the one afk-progress comment's body; fails unless exactly one exists.
+# progress_body — the one solve-feature-progress comment's body; fails unless exactly one exists.
 progress_body() {
-  [ "$(jq '[.[] | select(.body | contains("<!-- afk-progress -->"))] | length' "$STATE/comments.json")" = 1 ] || return 1
-  jq -r '.[] | select(.body | contains("<!-- afk-progress -->")) | .body' "$STATE/comments.json"
+  [ "$(jq '[.[] | select(.body | contains("<!-- solve-feature-progress -->"))] | length' "$STATE/comments.json")" = 1 ] || return 1
+  jq -r '.[] | select(.body | contains("<!-- solve-feature-progress -->")) | .body' "$STATE/comments.json"
 }
 
 @test "one progress comment on the root issue, created once then edited in place, with a line per issue and the PR command" {
   run bash "$SCRIPT" feat
   [ "$status" -eq 0 ]
   local body; body=$(progress_body)
-  grep -qE '^afk — feature feat — host test-host — [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$' <<<"$body"
+  grep -qE '^solve-feature — feat — host test-host — [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$' <<<"$body"
   grep -qx '#2  solve ✓  checks ✓  verify ✓' <<<"$body"
   grep -qx '#3  solve ✓  checks ✓  verify ✓' <<<"$body"
   grep -q 'gh pr create' <<<"$body"
@@ -499,25 +499,25 @@ progress_body() {
   [ ! -f "$STATE/pr-body" ]
 }
 
-@test "afk-feature.sh stays under 150 lines and .afk-logs/ is gitignored here" {
-  [ "$(wc -l < "$REPO_ROOT/skills/afk-feature/scripts/afk-feature.sh")" -lt 150 ]
-  git -C "$REPO_ROOT" check-ignore -q .afk-logs/x.log
+@test "solve-feature.sh stays under 150 lines and .solve-feature/ is gitignored here" {
+  [ "$(wc -l < "$REPO_ROOT/skills/solve-feature/scripts/solve-feature.sh")" -lt 150 ]
+  git -C "$REPO_ROOT" check-ignore -q .solve-feature/x.log
 }
 
 # --- packaging -----------------------------------------------------------------------
 
-@test "install.sh claude --skill afk-feature ships the script, the prompt template and the reviewer role with its scripts and references" {
+@test "install.sh claude --skill solve-feature ships the script, the prompt template and the reviewer role with its scripts and references" {
   local target="$TEMP_DIR/target"
   mkdir -p "$target" && git -C "$target" init -q -b main
-  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" claude --skill afk-feature
+  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" claude --skill solve-feature
   [ "$status" -eq 0 ]
-  [ -x "$target/.coding-crew/afk-feature/scripts/afk-feature.sh" ]
-  [ -f "$target/.coding-crew/afk-feature/scripts/verify-prompt.md" ]
-  [ -f "$target/.coding-crew/afk-feature/roles/reviewer.md" ]
-  [ -n "$(ls "$target/.coding-crew/afk-feature/roles/reviewer/scripts")" ]
-  [ -n "$(ls "$target/.coding-crew/afk-feature/roles/reviewer/references")" ]
-  [ -f "$target/.claude/skills/afk-feature/SKILL.md" ]
+  [ -x "$target/.coding-crew/solve-feature/scripts/solve-feature.sh" ]
+  [ -f "$target/.coding-crew/solve-feature/scripts/verify-prompt.md" ]
+  [ -f "$target/.coding-crew/solve-feature/roles/reviewer.md" ]
+  [ -n "$(ls "$target/.coding-crew/solve-feature/roles/reviewer/scripts")" ]
+  [ -n "$(ls "$target/.coding-crew/solve-feature/roles/reviewer/references")" ]
+  [ -f "$target/.claude/skills/solve-feature/SKILL.md" ]
   [ -f "$target/.coding-crew/solve-issue/scripts/run-checks.sh" ]
   [ -f "$target/.coding-crew/dep-install/scripts/run.sh" ]
-  [ "$(jq -c '.skills["afk-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install"]' ]
+  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install"]' ]
 }

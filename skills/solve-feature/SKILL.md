@@ -1,25 +1,25 @@
 ---
-name: afk-feature
+name: solve-feature
 description: >
   Run one feature's ready-for-agent issues unattended, in order, on one branch: after each coder run
   the project's checks and a fresh read-only verifier gate it, and one comment on the feature's root
-  issue shows progress. GitHub tracker only. Trigger with /afk-feature <slug>. Optional: --branch
+  issue shows progress. GitHub tracker only. Trigger with /solve-feature <slug>. Optional: --branch
   <name>, --budget <usd>, --open-pr.
 argument-hint: "<feature-slug> [--branch <name>] [--budget <usd>] [--open-pr]"
 allowed-tools: Bash, shell
 ---
 
-# afk-feature
+# solve-feature
 
 The loop is a script, not a prompt: launch it, let it run, report what it printed. **You do not
 implement, check, review or close anything yourself.**
 
 ```bash
-AFK="$(git rev-parse --show-toplevel)/.coding-crew/afk-feature/scripts/afk-feature.sh"
+LOOP="$(git rev-parse --show-toplevel)/.coding-crew/solve-feature/scripts/solve-feature.sh"
 # a linked worktree may lack .coding-crew/: the main checkout's copy
-[ -f "$AFK" ] || AFK="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.coding-crew/afk-feature/scripts/afk-feature.sh"
-[ -f "$AFK" ] || AFK="$HOME/.coding-crew/afk-feature/scripts/afk-feature.sh"
-bash "$AFK" "$@"
+[ -f "$LOOP" ] || LOOP="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.coding-crew/solve-feature/scripts/solve-feature.sh"
+[ -f "$LOOP" ] || LOOP="$HOME/.coding-crew/solve-feature/scripts/solve-feature.sh"
+bash "$LOOP" "$@"
 ```
 
 A run takes up to an hour per issue, so start it where it can outlive your turn: in the
@@ -55,10 +55,10 @@ as is; the script exits 1 naming a slug the tracker has no feature for.
    feature's `Closes #<n>` lines as the body (the tracker's `closing-refs`), or with `--open-pr`
    create the PR when none exists and print its URL.
 
-Logs are under `.afk-logs/` (`<n>.log`, `<n>.checks.log`, `<n>.verify.log`, `<n>.verify.json`,
+Logs are under `.solve-feature/` (`<n>.log`, `<n>.checks.log`, `<n>.verify.log`, `<n>.verify.json`,
 `<n>.issue.md`, `prd.md`); the directory ignores itself.
 
-**Progress** is one comment on the feature's root issue, marked `<!-- afk-progress -->`, edited in
+**Progress** is one comment on the feature's root issue, marked `<!-- solve-feature-progress -->`, edited in
 place at every step: the host, a line per issue (`solve`, `checks`, `verify`: ✓, ✗ or ·), on a stop
 the failing step and the last 20 lines of its log (of a `claude` log, its result text), and at the
 end the PR URL or command. A failed comment write only warns.
@@ -70,7 +70,7 @@ end the PR URL or command. A failed comment write only warns.
 | `--branch <name>`   | The branch to use when started on the default branch                                     |
 | `--budget <usd>`    | The coder's `--max-budget-usd` per issue (default 5)                                     |
 | `--open-pr`         | Create the PR at the end when none exists                                                |
-| `AFK_HOST`          | The host name the progress comment shows (default: `hostname`)                           |
+| `SOLVE_FEATURE_HOST`          | The host name the progress comment shows (default: `hostname`)                           |
 
 Both `claude` processes run with `bypassPermissions`, as crew-afk's do: unattended, nobody can
 answer a prompt, and an allow-list, `auto` mode and Claude Code's sandbox all refuse solve-issue's
@@ -85,12 +85,12 @@ first has stopped.
 
 ## Where to run it
 
-- **A terminal**, from the repo: `bash .coding-crew/afk-feature/scripts/afk-feature.sh <slug>`.
+- **A terminal**, from the repo: `bash .coding-crew/solve-feature/scripts/solve-feature.sh <slug>`.
 - **A herdr or orca pane in a worktree**: a worktree per feature keeps your checkout free; start it
   from that worktree, on its branch or the default one.
 - **An OpenRig seat**: the same command as the seat's command, from a clone.
 - **A GitHub Actions step**: check out, install coding-crew and the `claude` CLI, then
-  `bash .coding-crew/afk-feature/scripts/afk-feature.sh <slug> --open-pr`, with the
+  `bash .coding-crew/solve-feature/scripts/solve-feature.sh <slug> --open-pr`, with the
   API key as a secret and `contents`, `issues` and `pull-requests` write permissions.
 - **A cloud Claude Code session**: launch, don't host. Start one of the above from it (a
   `gh workflow run` for an Actions workflow, say) rather than running the loop inside the session,

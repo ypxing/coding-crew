@@ -1,22 +1,4 @@
 HOME/.coding-crew/ /
-HOME/.coding-crew/afk-feature/ /
-HOME/.coding-crew/afk-feature/roles/ /
-HOME/.coding-crew/afk-feature/roles/coder.md exec=0
-HOME/.coding-crew/afk-feature/roles/followup.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer/ /
-HOME/.coding-crew/afk-feature/roles/reviewer/feature.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer/references/ /
-HOME/.coding-crew/afk-feature/roles/reviewer/references/backend.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer/references/quality.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer/references/react.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer/references/web-security.md exec=0
-HOME/.coding-crew/afk-feature/roles/reviewer/scripts/ /
-HOME/.coding-crew/afk-feature/roles/reviewer/scripts/review-context.sh exec=1
-HOME/.coding-crew/afk-feature/roles/triage.md exec=0
-HOME/.coding-crew/afk-feature/scripts/ /
-HOME/.coding-crew/afk-feature/scripts/afk-feature.sh exec=1
-HOME/.coding-crew/afk-feature/scripts/verify-prompt.md exec=0
 HOME/.coding-crew/crew-afk/ /
 HOME/.coding-crew/crew-afk/lib/ /
 HOME/.coding-crew/crew-afk/lib/adapters/ /
@@ -101,7 +83,7 @@ HOME/.coding-crew/dep-install/scripts/run.sh exec=1
 HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-HOME/.coding-crew/manifest.json da41a9406525aad7c3ea05ed0136e2aa234e8b2b
+HOME/.coding-crew/manifest.json f01cdac762d93072d64625afb122c96fa5ec4886
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
 HOME/.coding-crew/skills/_shared/fragments/ /
@@ -111,6 +93,24 @@ HOME/.coding-crew/skills/_shared/fragments/human-issue.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
+HOME/.coding-crew/solve-feature/ /
+HOME/.coding-crew/solve-feature/roles/ /
+HOME/.coding-crew/solve-feature/roles/coder.md exec=0
+HOME/.coding-crew/solve-feature/roles/followup.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/ /
+HOME/.coding-crew/solve-feature/roles/reviewer/feature.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/references/ /
+HOME/.coding-crew/solve-feature/roles/reviewer/references/backend.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/references/quality.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/references/react.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/references/web-security.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/scripts/ /
+HOME/.coding-crew/solve-feature/roles/reviewer/scripts/review-context.sh exec=1
+HOME/.coding-crew/solve-feature/roles/triage.md exec=0
+HOME/.coding-crew/solve-feature/scripts/ /
+HOME/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
+HOME/.coding-crew/solve-feature/scripts/verify-prompt.md exec=0
 HOME/.coding-crew/solve-issue/ /
 HOME/.coding-crew/solve-issue/scripts/ /
 HOME/.coding-crew/solve-issue/scripts/check-requires.sh exec=1
@@ -147,11 +147,6 @@ HOME/.pi/agent/skills/address-pr-comments/scripts/commit-changes.sh exec=1
 HOME/.pi/agent/skills/address-pr-comments/scripts/fetch-review-threads.sh exec=1
 HOME/.pi/agent/skills/address-pr-comments/scripts/push-rework.sh exec=1
 HOME/.pi/agent/skills/address-pr-comments/scripts/reply-thread.sh exec=1
-HOME/.pi/agent/skills/afk-feature/ /
-HOME/.pi/agent/skills/afk-feature/SKILL.md exec=0 unrendered=0
-HOME/.pi/agent/skills/afk-feature/scripts/ /
-HOME/.pi/agent/skills/afk-feature/scripts/afk-feature.sh exec=1
-HOME/.pi/agent/skills/afk-feature/scripts/verify-prompt.md exec=0
 HOME/.pi/agent/skills/configure-tracker/ /
 HOME/.pi/agent/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/crew-address-findings/ /
@@ -217,6 +212,11 @@ HOME/.pi/agent/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/domain-modeling/references/ /
 HOME/.pi/agent/skills/domain-modeling/references/adr-format.md exec=0
 HOME/.pi/agent/skills/domain-modeling/references/context-format.md exec=0
+HOME/.pi/agent/skills/solve-feature/ /
+HOME/.pi/agent/skills/solve-feature/SKILL.md exec=0 unrendered=0
+HOME/.pi/agent/skills/solve-feature/scripts/ /
+HOME/.pi/agent/skills/solve-feature/scripts/solve-feature.sh exec=0
+HOME/.pi/agent/skills/solve-feature/scripts/verify-prompt.md exec=0
 HOME/.pi/agent/skills/solve-issue/ /
 HOME/.pi/agent/skills/solve-issue/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/solve-issue/references/ /

@@ -688,7 +688,7 @@ const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
  * `feature-issues --feature-slug S [--state open|all] [--main-root DIR]` — the feature's issues as
  * one JSON array of `{number, title, state, labels, root?}` (state `OPEN`|`CLOSED`; `root: true` on
  * the root only), `[]` for a slug with no root: the one membership read close-shipped.sh,
- * issue-labels.sh and afk-feature.sh make.
+ * issue-labels.sh and solve-feature.sh make.
  */
 function cliFeatureIssues(argv, { exec = gh, out }) {
   const opts = { state: "all" };
@@ -725,7 +725,7 @@ function cliFeatureIssues(argv, { exec = gh, out }) {
 
 /**
  * `closing-refs --feature-slug S [--main-root DIR]` — closingRefs' `Closes #n` lines, one per line,
- * nothing when the feature ships nothing: the PR body afk-feature.sh writes.
+ * nothing when the feature ships nothing: the PR body solve-feature.sh writes.
  */
 function cliClosingRefs(argv, { exec = gh, out }) {
   let featureSlug;

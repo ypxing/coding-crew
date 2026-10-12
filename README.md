@@ -123,7 +123,7 @@ Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to t
 | `/crew-brainstorm`       | Shape a fuzzy idea into a design, then issues              |
 | `/to-issues`             | Split a plan into issues, or sharpen an existing one       |
 | `/crew-afk`              | Run the unattended sprint                                  |
-| `/afk-feature`           | Run one feature's issues on one branch, each one verified  |
+| `/solve-feature`         | Run one feature's issues on one branch, each one verified  |
 | `/crew-address-findings` | Fix what the sprint's review found                         |
 | `/address-pr-comments`   | Fix PR review comments, push once your checks pass         |
 | `/solve-issue`           | Build one issue end to end, yourself                       |

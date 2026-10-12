@@ -13,11 +13,6 @@ REPO/.agents/skills/address-pr-comments/scripts/commit-changes.sh exec=1
 REPO/.agents/skills/address-pr-comments/scripts/fetch-review-threads.sh exec=1
 REPO/.agents/skills/address-pr-comments/scripts/push-rework.sh exec=1
 REPO/.agents/skills/address-pr-comments/scripts/reply-thread.sh exec=1
-REPO/.agents/skills/afk-feature/ /
-REPO/.agents/skills/afk-feature/SKILL.md exec=0 unrendered=0
-REPO/.agents/skills/afk-feature/scripts/ /
-REPO/.agents/skills/afk-feature/scripts/afk-feature.sh exec=1
-REPO/.agents/skills/afk-feature/scripts/verify-prompt.md exec=0
 REPO/.agents/skills/configure-tracker/ /
 REPO/.agents/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 REPO/.agents/skills/crew-address-findings/ /
@@ -83,6 +78,11 @@ REPO/.agents/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 REPO/.agents/skills/domain-modeling/references/ /
 REPO/.agents/skills/domain-modeling/references/adr-format.md exec=0
 REPO/.agents/skills/domain-modeling/references/context-format.md exec=0
+REPO/.agents/skills/solve-feature/ /
+REPO/.agents/skills/solve-feature/SKILL.md exec=0 unrendered=0
+REPO/.agents/skills/solve-feature/scripts/ /
+REPO/.agents/skills/solve-feature/scripts/solve-feature.sh exec=0
+REPO/.agents/skills/solve-feature/scripts/verify-prompt.md exec=0
 REPO/.agents/skills/solve-issue/ /
 REPO/.agents/skills/solve-issue/SKILL.md exec=0 unrendered=0
 REPO/.agents/skills/solve-issue/references/ /
@@ -114,24 +114,6 @@ REPO/.agents/skills/upgrade-deps/SKILL.md exec=0 unrendered=0
 REPO/.agents/skills/write-pr/ /
 REPO/.agents/skills/write-pr/SKILL.md exec=0 unrendered=0
 REPO/.coding-crew/ /
-REPO/.coding-crew/afk-feature/ /
-REPO/.coding-crew/afk-feature/roles/ /
-REPO/.coding-crew/afk-feature/roles/coder.md exec=0
-REPO/.coding-crew/afk-feature/roles/followup.md exec=0
-REPO/.coding-crew/afk-feature/roles/reviewer.md exec=0
-REPO/.coding-crew/afk-feature/roles/reviewer/ /
-REPO/.coding-crew/afk-feature/roles/reviewer/feature.md exec=0
-REPO/.coding-crew/afk-feature/roles/reviewer/references/ /
-REPO/.coding-crew/afk-feature/roles/reviewer/references/backend.md exec=0
-REPO/.coding-crew/afk-feature/roles/reviewer/references/quality.md exec=0
-REPO/.coding-crew/afk-feature/roles/reviewer/references/react.md exec=0
-REPO/.coding-crew/afk-feature/roles/reviewer/references/web-security.md exec=0
-REPO/.coding-crew/afk-feature/roles/reviewer/scripts/ /
-REPO/.coding-crew/afk-feature/roles/reviewer/scripts/review-context.sh exec=1
-REPO/.coding-crew/afk-feature/roles/triage.md exec=0
-REPO/.coding-crew/afk-feature/scripts/ /
-REPO/.coding-crew/afk-feature/scripts/afk-feature.sh exec=1
-REPO/.coding-crew/afk-feature/scripts/verify-prompt.md exec=0
 REPO/.coding-crew/crew-afk/ /
 REPO/.coding-crew/crew-afk/lib/ /
 REPO/.coding-crew/crew-afk/lib/adapters/ /
@@ -216,7 +198,7 @@ REPO/.coding-crew/dep-install/scripts/run.sh exec=1
 REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-REPO/.coding-crew/manifest.json b0a137ff2ef38608bc41a8446b4c260a2bef86cc
+REPO/.coding-crew/manifest.json 92328427204a2948256922d546cf919c9bae91b3
 REPO/.coding-crew/skills/ /
 REPO/.coding-crew/skills/_shared/ /
 REPO/.coding-crew/skills/_shared/fragments/ /
@@ -226,6 +208,24 @@ REPO/.coding-crew/skills/_shared/fragments/human-issue.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
+REPO/.coding-crew/solve-feature/ /
+REPO/.coding-crew/solve-feature/roles/ /
+REPO/.coding-crew/solve-feature/roles/coder.md exec=0
+REPO/.coding-crew/solve-feature/roles/followup.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer/ /
+REPO/.coding-crew/solve-feature/roles/reviewer/feature.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer/references/ /
+REPO/.coding-crew/solve-feature/roles/reviewer/references/backend.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer/references/quality.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer/references/react.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer/references/web-security.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer/scripts/ /
+REPO/.coding-crew/solve-feature/roles/reviewer/scripts/review-context.sh exec=1
+REPO/.coding-crew/solve-feature/roles/triage.md exec=0
+REPO/.coding-crew/solve-feature/scripts/ /
+REPO/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
+REPO/.coding-crew/solve-feature/scripts/verify-prompt.md exec=0
 REPO/.coding-crew/solve-issue/ /
 REPO/.coding-crew/solve-issue/scripts/ /
 REPO/.coding-crew/solve-issue/scripts/check-requires.sh exec=1

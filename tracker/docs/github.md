@@ -82,7 +82,7 @@ of another feature. One exception: an issue that becomes the root keeps a parent
 `feature-issues` prints the feature's issues — the root and its sub-issues, all of them or only
 the open ones — as one JSON array of `{number, title, state, labels}`, the root's entry also
 carrying `"root": true`, `[]` for a slug with no root. `close-shipped.sh`, `issue-labels.sh sweep`
-and `afk-feature.sh` read a feature only through it.
+and `solve-feature.sh` read a feature only through it.
 
 `closing-refs` prints the `Closes #<n>` lines the feature's PR body needs, one per line, by the
 rule below: every open `awaiting-merge` issue of the feature, plus its `PRD:` issue (and that
