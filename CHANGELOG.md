@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **tracker (github)**: `rewrite` of an issue that sits under an epic with no `Feature:` line now makes it the
+  feature's root when the slug has none, its parent left as it is, instead of exiting 1 (#445).
 - **tracker (github)**: "Moving off milestones" now moves every issue of the milestone, closed ones included, so an
   open issue whose blocker already closed is not left blocked after the move (#443).
 - **tracker (github)**: a feature is now one root issue — the `PRD:` issue, or a single-slice feature's work issue —

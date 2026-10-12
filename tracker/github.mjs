@@ -474,20 +474,21 @@ export function publishPrd(mainRoot, { featureSlug, title, body, exec = gh } = {
   return String(existing.number);
 }
 
-/** Issue `number`'s parent issue number, or null when it has none (the API answers 404). */
+/** Issue `number`'s parent issue (REST JSON), or null when it has none (the API answers 404). */
 function parentOf(number, { exec }) {
   const r = exec("gh", ["api", `${API}/issues/${number}/parent`]);
   if (r.code !== 0) {
     if (/HTTP 404|Not Found/i.test(r.stderr ?? "")) return null;
     throw new Error(`gh api ${API}/issues/${number}/parent failed (exit ${r.code}): ${r.stderr || r.stdout}`);
   }
-  return JSON.parse(r.stdout || "{}").number ?? null;
+  const parent = JSON.parse(r.stdout || "{}");
+  return parent.number ? parent : null;
 }
 
 /**
  * Rewrite a single-slice source issue's body (a `Source:` line kept), set `status` as its only
  * triage label and file it in the feature: as its root when the slug has none, else under the
- * root. Never moves an issue out of another feature. `--remove-label` fails on a label the issue
+ * root. Never moves an issue out of another feature; a new root keeps a parent that is no root. `--remove-label` fails on a label the issue
  * lacks, so only carried ones are named. Null when the issue does not exist.
  */
 export function rewriteIssue(mainRoot, number, { body, status, featureSlug, exec = gh } = {}) {
@@ -508,11 +509,13 @@ export function rewriteIssue(mainRoot, number, { body, status, featureSlug, exec
   const root = findRoot(featureSlug, { exec });
   const isRoot = !root || root.number === Number(number);
   const parent = root?.number === Number(number) ? null : parentOf(number, { exec });
-  if (parent !== null && parent !== root?.number) {
-    throw new Error(`rewrite: issue #${number} is already a sub-issue of #${parent}, not of feature ${featureSlug}'s root — not moving it`);
+  // A new root stays under a parent that is no feature's root: making it the root moves nothing.
+  const keepsParent = !root && parent && !featureMarker(parent.body);
+  if (parent && parent.number !== root?.number && !keepsParent) {
+    throw new Error(`rewrite: issue #${number} is already a sub-issue of #${parent.number}, not of feature ${featureSlug}'s root — not moving it`);
   }
   const text = isRoot ? withMarker(draftBody(body), featureSlug) : withoutMarker(draftBody(body));
-  const move = isRoot || parent === root.number ? [] : ["--parent", String(root.number)];
+  const move = isRoot || parent?.number === root.number ? [] : ["--parent", String(root.number)];
   const r = withBodyFile(text, (f) =>
     exec("gh", ["issue", "edit", String(number), "--body-file", f, ...remove, "--add-label", status, ...move]),
   );

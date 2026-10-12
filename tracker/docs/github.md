@@ -72,7 +72,8 @@ root's sub-issue progress bar is the feature's overview. Work issues cite it as 
 none (the `Feature:` line added, and kept on every later rewrite of the root), else under the
 root with `gh issue edit --parent`. It exits `1`, editing nothing, when the issue is already a
 sub-issue of another issue or carries another slug's `Feature:` line: it never moves an issue out
-of another feature.
+of another feature. One exception: an issue that becomes the root keeps a parent with no
+`Feature:` line (a human's epic, say), since making it the root moves nothing.
 
 `feature-issues` prints the feature's issues — the root and its sub-issues, all of them or only
 the open ones — as one JSON array of `{number, title, state, labels}`, `[]` for a slug with no

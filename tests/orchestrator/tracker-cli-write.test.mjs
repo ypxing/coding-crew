@@ -437,6 +437,23 @@ test("rewrite (github) exits 1 naming the conflict for an issue of another featu
   assert.equal(r.code, 1);
   assert.match(r.stderr, /Feature: other/);
   assert.ok(!otherRoot.calls.some((c) => c[2] === "edit"));
+
+  const rootlessUnderOther = fakeGithub(ghFeature("other", ghIssue(2), triage(12)));
+  r = await cli(dir, rewriteArgs(dir), rootlessUnderOther);
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /#12.*#2/);
+  assert.ok(!rootlessUnderOther.calls.some((c) => c[2] === "edit"));
+});
+
+test("rewrite (github) makes a sub-issue of an issue with no Feature: line the root, its parent left as it is", async () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, "body.md"), PROMOTED_BODY);
+  const exec = fakeGithub([ghIssue(100, { title: "Epic", body: "A human's epic" }), triage(12, { parent: 100 })]);
+  const r = await cli(dir, rewriteArgs(dir), exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.ok(!exec.calls.find((c) => c[2] === "edit").includes("--parent"));
+  assert.equal(issueOf(exec, 12).body, `Feature: feat\n\n${PROMOTED_BODY}`);
+  assert.equal(issueOf(exec, 12).parent, 100);
 });
 
 test("rewrite (github) given a draft takes its title and Status: lines off the body, Source: kept", async () => {
