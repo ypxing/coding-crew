@@ -657,6 +657,91 @@ test("mark-done exits 4 while a criterion is unchecked in a fresh read, on both 
 
 const NO_SECTION = "# T\n\nStatus: ready-for-agent\n\n## What to build\n\nA.\n";
 
+// --- tick / write-section ----------------------------------------------------------------
+
+const TWO_UNMET = "# T\n\nStatus: ready-for-agent\n\n## What to build\n\n- [ ] not a criterion\n\n## Acceptance criteria\n\n- [ ] one\n- [x] two\n\n## Cross-cutting Requirements\n\n- [ ] docs\n";
+const TWO_TICKED = TWO_UNMET.replace("- [ ] one", "- [x] one").replace("- [ ] docs", "- [x] docs");
+
+test("tick (local) checks every criterion off under both headings and nothing else, then mark-done closes", async () => {
+  const dir = root();
+  const path = localIssue(dir, TWO_UNMET);
+  const r = await cli(dir, ["tick", path]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /^TICKED: 01-t\.md — 2 criteria$/m);
+  assert.equal(readFileSync(path, "utf8"), TWO_TICKED);
+  assert.equal((await cli(dir, ["tick", path])).stdout, "TICKED: 01-t.md — 0 criteria\n");
+  assert.equal((await cli(dir, ["mark-done", path])).code, 0);
+});
+
+test("tick (local) leaves a body with no criteria section alone, so mark-done still refuses it", async () => {
+  const dir = root();
+  const path = localIssue(dir, NO_SECTION);
+  assert.equal((await cli(dir, ["tick", path])).code, 0);
+  assert.equal(readFileSync(path, "utf8"), NO_SECTION);
+  assert.equal((await cli(dir, ["mark-done", path])).code, 4);
+});
+
+test("tick exits 3 for a missing issue and 2 for a ref outside .scratch/ or no ref", async () => {
+  const dir = root();
+  assert.equal((await cli(dir, ["tick", join(dir, ".scratch/feat/issues/open/nope.md")])).code, 3);
+  assert.equal((await cli(dir, ["tick", join(dir, "elsewhere.md")])).code, 2);
+  assert.equal((await cli(dir, ["tick"])).code, 2);
+});
+
+test("tick (github) fetches the body live, edits it back ticked, and skips the edit when nothing is unchecked", async () => {
+  const exec = fakeGh({ "issue view 12": { stdout: TWO_UNMET }, "issue edit 12": {} });
+  const dir = root({ github: true });
+  const r = await cli(dir, ["tick", "12"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "TICKED: issue #12 — 2 criteria\n");
+  assert.deepEqual(exec.calls[0], ["gh", "issue", "view", "12", "--json", "body", "--jq", ".body"]);
+  const [[edit, i]] = exec.find("issue edit 12");
+  assert.deepEqual(edit.slice(0, 4), ["gh", "issue", "edit", "12"]);
+  assert.equal(exec.bodies[i], TWO_TICKED);
+
+  const met = fakeGh({ "issue view 12": { stdout: TWO_TICKED } });
+  assert.equal((await cli(dir, ["tick", "12"], met)).stdout, "TICKED: issue #12 — 0 criteria\n");
+  assert.equal(met.find("issue edit").length, 0);
+
+  const gone = fakeGh({ "issue view 99": { code: 1, stderr: "could not resolve to an Issue" } });
+  assert.equal((await cli(dir, ["tick", "99"], gone)).code, 3);
+});
+
+test("write-section (local) replaces or appends the section in the file; (github) posts it as a comment", async () => {
+  const dir = root();
+  const path = localIssue(dir, TWO_UNMET);
+  const note = join(dir, "note.md");
+  writeFileSync(note, "- one: blocked on the API\n");
+  const r = await cli(dir, ["write-section", path, "--heading", "Unmet criteria", "--body-file", note]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, `${path}\n`);
+  assert.match(readFileSync(path, "utf8"), /\n## Unmet criteria\n\n- one: blocked on the API\n$/);
+  writeFileSync(note, "- one: descoped\n");
+  await cli(dir, ["write-section", path, "--heading", "Unmet criteria", "--body-file", note]);
+  const text = readFileSync(path, "utf8");
+  assert.equal(text.match(/^## Unmet criteria$/gm).length, 1);
+  assert.match(text, /- one: descoped/);
+  assert.doesNotMatch(text, /blocked on the API/);
+  assert.equal((await cli(dir, ["write-section", path, "--heading", "", "--body-file", note])).code, 2);
+  assert.equal((await cli(dir, ["write-section", path, "--body-file", note])).code, 2);
+
+  const exec = fakeGh({ "issue comment 12": {} });
+  const gh = await cli(root({ github: true }), ["write-section", "12", "--heading", "Unmet criteria", "--body-file", note], exec);
+  assert.equal(gh.code, 0, gh.stderr);
+  assert.deepEqual(exec.calls[0], ["gh", "issue", "comment", "12", "--body", "## Unmet criteria\n\n- one: descoped\n"]);
+  assert.equal(exec.find("issue edit").length, 0);
+});
+
+test("mark-done (local) on an issue already in done/ makes its Status: done in place", async () => {
+  const dir = root();
+  const done = join(dir, ".scratch/feat/issues/done");
+  mkdirSync(done, { recursive: true });
+  writeFileSync(join(done, "01-t.md"), "# T\n\nStatus: complete\n");
+  const r = await cli(dir, ["mark-done", join(dir, ".scratch/feat/issues/open/01-t.md")]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(readFileSync(join(done, "01-t.md"), "utf8"), /^Status: done$/m);
+});
+
 test("mark-done exits 4 for a body with no acceptance-criteria section, on both backends", async () => {
   const dir = root();
   const path = localIssue(dir, NO_SECTION);

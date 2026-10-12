@@ -35,6 +35,8 @@ node "$TRACKER" known --feature-slug <slug> --out <dir>   # write the feature's 
 node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace]
 node "$TRACKER" publish-prd --feature-slug <slug> --title "<feature title>" --body-file <file>
 node "$TRACKER" rewrite <number> --body-file <file> --status <status> --feature-slug <slug>
+node "$TRACKER" tick <number>                             # check every criterion off, in the live body
+node "$TRACKER" write-section <number> --heading <h> --body-file <file>   # a `## <h>` comment on the issue
 node "$TRACKER" mark-done <number> [--force]
 node "$TRACKER" feature-issues --feature-slug <slug> [--state open|all]   # the feature's issues as JSON
 node "$TRACKER" closing-refs --feature-slug <slug>       # the feature PR's `Closes #n` lines
@@ -90,11 +92,17 @@ Every op that reads a feature exits `1` naming them when its slug is ambiguous: 
 carrying the same `Feature:` line, or none open and two or more closed. Remove the line from all
 but one of them.
 
-`done` means implemented and merged into the feature branch, not shipped. `mark-done` re-fetches
-the body live and refuses with exit `4` while an `- [ ]` in `## Acceptance criteria` (or
-`## Cross-cutting Requirements`) is unchecked, or exit `3` when an orchestrator owns the close —
-report your status and stop in either case. It also exits `4` for a body with no
-`## Acceptance criteria` section at all, unless `--force`. Never close the issue by hand instead.
+`done` means implemented and merged into the feature branch, not shipped. An issue's body has no
+file to edit, so `tick <number>` is how criteria are checked off: it fetches the body live, turns
+every `- [ ]` under `## Acceptance criteria` (or `## Cross-cutting Requirements`) into `- [x]` and
+writes it back with `gh issue edit`, printing `TICKED: issue #<n> — <k> criteria`; run it only once
+every criterion holds. `write-section <number> --heading <h> --body-file <file>` posts the file as
+a comment headed `## <h>` — never a body edit — which is how `## Unmet criteria` is recorded here.
+`mark-done` re-fetches the body live and refuses with exit `4` while an `- [ ]` in
+`## Acceptance criteria` (or `## Cross-cutting Requirements`) is unchecked, or exit `3` when an
+orchestrator owns the close — report your status and stop in either case. It also exits `4` for a
+body with no `## Acceptance criteria` section at all, unless `--force`. Never close the issue by
+hand instead.
 
 On success `mark-done` swaps `ready-for-agent` for `awaiting-merge` (creating that label if the repo
 lacks it) and leaves the issue **open**. Put `Closes #<number>` in the body of the PR that

@@ -191,11 +191,12 @@ _installed_scripts() {
 # --- B4: only the orchestrator closes issues in a sprint ---------------------
 
 @test "B4: close-issue.sh is idempotent when the issue is already in done/" {
-  mkdir -p issues/open issues/done
-  printf '# T\n\nStatus: ready-for-agent\n' > issues/done/01-t.md
+  # Under .scratch/: the tracker CLI, which close-issue.sh now closes through, accepts no ref outside it.
+  mkdir -p .scratch/feat/issues/open .scratch/feat/issues/done
+  printf '# T\n\nStatus: ready-for-agent\n' > .scratch/feat/issues/done/01-t.md
 
-  run bash "$REPO_ROOT/skills/crew-afk/scripts/close-issue.sh" issues/open/01-t.md
+  run bash "$REPO_ROOT/skills/crew-afk/scripts/close-issue.sh" .scratch/feat/issues/open/01-t.md
   [ "$status" -eq 0 ]
   [[ "$output" == *"already closed"* ]]
-  [ "$(grep -c '^Status: done' issues/done/01-t.md)" -eq 1 ]
+  [ "$(grep -c '^Status: done' .scratch/feat/issues/done/01-t.md)" -eq 1 ]
 }

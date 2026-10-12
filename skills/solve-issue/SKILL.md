@@ -269,16 +269,21 @@ fi
 `Status:` rewrite, no move, no added section. Report every criterion and its state and stop; the
 owner ticks the boxes and closes the issue once its own gates pass on your branch.
 
-**`0` — the close is yours.** Check off (`- [x]`) every criterion the code satisfies under
-`## Acceptance criteria` — and under `## Cross-cutting Requirements` if present. Then run `node
-"$TRACKER" mark-done <issue-ref>`. Never hand-roll `mv`, `sed` or a label edit. Exit 3 means
-another owner holds the close (report and stop); exit 4 that a criterion is still unchecked (Step 8).
+**`0` — the close is yours.** Verify every criterion under `## Acceptance criteria` — and under
+`## Cross-cutting Requirements` if present — against the code. Once each one holds, run `node
+"$TRACKER" tick <issue-ref>` (it checks every `- [ ]` off, on any tracker: a GitHub issue's body
+has no file to edit), then `node "$TRACKER" mark-done <issue-ref>`. Never hand-roll `mv`, `sed`,
+`gh issue edit` or a label edit. Exit 3 means another owner holds the close (report and stop);
+exit 4 that a criterion is still unchecked, or the section missing (Step 8). A criterion that does
+not hold is never ticked: Step 8 is for that, with nothing ticked.
 
 ### 8. Unmet criteria
 
 Orchestrated (Step 7): report status `partial` with the unmet criteria, and stop.
 
-Otherwise add a `## Unmet criteria` section saying what is missing and why (descoped, blocked,
-split out). On a **non-interactive run** (a headless/`-p` invocation; `CREW_ORCHESTRATED` took the
+Otherwise record a `## Unmet criteria` section saying what is missing and why (descoped, blocked,
+split out): write it to a file and run `node "$TRACKER" write-section <issue-ref> --heading
+"Unmet criteria" --body-file <file>` (into the issue file on a local tracker, as a comment on a
+GitHub issue). On a **non-interactive run** (a headless/`-p` invocation; `CREW_ORCHESTRATED` took the
 branch above), report `partial` listing them and stop — nobody can answer a question. Only on an
 interactive run, ask the user how to proceed.

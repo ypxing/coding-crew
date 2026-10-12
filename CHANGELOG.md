@@ -6,6 +6,13 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **tracker**: new `tick <ref>` checks every criterion off on either backend (a GitHub body has no file to edit), and
+  `write-section <ref> --heading H --body-file F` records a section (the issue file locally, a comment on GitHub).
+  `mark-done` on an issue already in `done/` now makes its `Status:` `done` in place (#450).
+- **solve-issue**: Step 7 ticks through `tick` then `mark-done`, so a direct run closes a GitHub issue too; Step 8
+  records `## Unmet criteria` through `write-section` (#450).
+- **crew-afk**: `close-issue.sh` ticks and closes through the tracker CLI (`tick`, `mark-done --force`) on both
+  backends instead of its own awk and `gh issue edit`; the local path now needs the issue under `.scratch/` (#450).
 - **afk-feature** (new): `afk-feature.sh <slug>` runs one feature's `ready-for-agent` issues in order on one branch.
   After each `/solve-issue` coder run, the script itself runs the checks and then a fresh read-only verifier against
   the issue's criteria, and stops at the first failure with the log path. Progress is one comment on the feature's

@@ -133,6 +133,22 @@ export function uncheckedCriteria(text) {
   return unchecked;
 }
 
+/** `text` with every `- [ ]` under either criteria heading ticked, and how many were: what `cli.mjs tick` writes. */
+export function tickCriteria(text) {
+  let inside = false;
+  let ticked = 0;
+  const lines = String(text).split("\n").map((line) => {
+    if (/^#{1,6}\s+/.test(line)) {
+      inside = CRITERIA_HEADING_RE.test(line);
+      return line;
+    }
+    if (!inside || !/^\s*[-*]\s*\[\s\]/.test(line)) return line;
+    ticked += 1;
+    return line.replace(/\[\s\]/, "[x]");
+  });
+  return { text: lines.join("\n"), ticked };
+}
+
 /**
  * `Issue NN` / `Issue #NN` entries' numbers as strings, in order, duplicates included. Resolving a
  * number to a backend ref is each backend's own job.

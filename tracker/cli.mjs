@@ -55,6 +55,8 @@ const USAGE = {
   "publish-prd": "publish-prd --feature-slug S --title T --body-file F",
   rewrite: "rewrite <ref> --body-file F --status ST --feature-slug S",
   "mark-done": "mark-done <ref> [--force]",
+  tick: "tick <ref>",
+  "write-section": "write-section <ref> --heading H --body-file F",
   config: "config",
 };
 
@@ -283,6 +285,40 @@ const OPS = {
   },
 
   /**
+   * Every criterion ticked at once, on either backend: the direct path's own record before
+   * `mark-done`, and close-issue.sh's after its receipt. No orchestration guard: a sprint worker's
+   * ticks buy nothing, since `mark-done` still refuses it.
+   */
+  async tick(argv, { tracker, mainRoot, exec, cwd, out, err }) {
+    const args = parseArgs("tick", argv, { positionals: 1 });
+    const ref = tracker.validateRef(mainRoot, args._[0], { cwd });
+    if (ref === null) throw new UsageError(`tick: invalid ref: ${args._[0]}`);
+    const ticked = tracker.tickIssue(mainRoot, ref, { exec });
+    if (ticked === null) {
+      err(`ERROR: issue not found: ${args._[0]}\n`);
+      return EXIT.NOT_FOUND;
+    }
+    out(`TICKED: ${tracker.doneTarget(mainRoot, ref).name} — ${ticked} criteria\n`);
+    return EXIT.OK;
+  },
+
+  /** `## <heading>` recorded on the issue: in its file (local) or as a comment (github). */
+  async "write-section"(argv, { tracker, mainRoot, exec, cwd, out, err }) {
+    const args = parseArgs("write-section", argv, { positionals: 1, values: ["heading", "body-file"] });
+    const heading = args.heading.trim();
+    if (!heading || /[\r\n#]/.test(heading)) throw new UsageError(`write-section: invalid --heading: ${args.heading}`);
+    const ref = tracker.validateRef(mainRoot, args._[0], { cwd });
+    if (ref === null) throw new UsageError(`write-section: invalid ref: ${args._[0]}`);
+    const body = readArgFile("write-section", cwd, args["body-file"]);
+    if (tracker.writeSection(mainRoot, ref, { heading, body, exec }) === null) {
+      err(`ERROR: issue not found: ${args._[0]}\n`);
+      return EXIT.NOT_FOUND;
+    }
+    out(`${ref}\n`);
+    return EXIT.OK;
+  },
+
+  /**
    * The close guards, for every backend: an orchestrator owns the close (exit 3); a fresh read has no
    * criteria section, or a criterion still unchecked (exit 4). `--force` skips them all: a crashed
    * sprint's stale marker, or a criterion descoped on purpose.
@@ -293,6 +329,7 @@ const OPS = {
     if (ref === null) throw new UsageError(`mark-done: invalid ref: ${args._[0]}`);
     const target = tracker.doneTarget(mainRoot, ref);
     if (target.alreadyDone) {
+      tracker.reconcileDone?.(mainRoot, target.donePath);
       out(`DONE: ${target.alreadyDone}\n`);
       return EXIT.OK;
     }

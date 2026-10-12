@@ -16,6 +16,7 @@ import {
   criteriaSection,
   isSourceGuarded,
   sectionBody,
+  tickCriteria,
 } from "./body-format.mjs";
 
 export const READY_STATUS = "ready-for-agent";
@@ -578,6 +579,26 @@ export function rewriteIssue(mainRoot, number, { body, status, featureSlug, exec
     if (notFound(r)) return null;
     throw new Error(`gh issue edit failed (exit ${r.code}): ${r.stderr || r.stdout}`);
   }
+  return true;
+}
+
+/** Every criterion of issue `number`'s live body ticked; the count, or null when gh knows no such issue. */
+export function tickIssue(mainRoot, number, { exec = gh } = {}) {
+  const r = exec("gh", ["issue", "view", String(number), "--json", "body", "--jq", ".body"]);
+  if (r.code !== 0) {
+    if (NOT_FOUND.test(r.stderr ?? "")) return null;
+    throw new Error(`gh issue view failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  }
+  const { text, ticked } = tickCriteria(r.stdout ?? "");
+  if (!ticked) return 0;
+  const edit = withBodyFile(text, (f) => exec("gh", ["issue", "edit", String(number), "--body-file", f]));
+  if (edit.code !== 0) throw new Error(`gh issue edit failed (exit ${edit.code}): ${edit.stderr || edit.stdout}`);
+  return ticked;
+}
+
+/** `## <heading>` as a new comment on issue `number`, never a body edit: the body stays whoever wrote it's. */
+export function writeSection(mainRoot, number, { heading, body, exec = gh } = {}) {
+  writeProgress({ number }, body, { heading, mainRoot, exec });
   return true;
 }
 
