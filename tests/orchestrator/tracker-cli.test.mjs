@@ -461,6 +461,27 @@ test("features (local) lists each .scratch/<slug>/ with issues/, sorted, open|cl
   assert.equal(r.stdout, "alpha\tclosed\t0\nmid\topen\t0\nzeta\topen\t2\n");
 });
 
+test("features (local) counts only the ready issues whose every blocker is in the feature's done/, from issues-deps.json when it has one", async () => {
+  const dir = root();
+  const write = (slug, state, name, status, blockedBy = "None") => {
+    const d = join(dir, ".scratch", slug, "issues", state);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, name), `# ${name}\n\nStatus: ${status}\n\n## Blocked by\n\n${blockedBy}\n`);
+  };
+  write("prose", "open", "01-a.md", "ready-for-agent");
+  write("prose", "open", "02-b.md", "ready-for-agent", "- 01-a.md");
+  write("prose", "open", "03-c.md", "ready-for-agent", "- 00-done.md");
+  write("prose", "done", "00-done.md", "done");
+  write("waiting", "open", "01-a.md", "ready-for-human");
+  write("waiting", "open", "02-b.md", "ready-for-agent", "- 01-a.md");
+  write("deps", "open", "01-a.md", "ready-for-agent");
+  write("deps", "open", "02-b.md", "ready-for-agent");
+  writeFileSync(join(dir, ".scratch/deps/issues/issues-deps.json"), JSON.stringify({ "01-a.md": [], "02-b.md": ["01-a.md"] }));
+  const r = await cli(dir, ["features"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "deps\topen\t1\nprose\topen\t2\nwaiting\topen\t0\n");
+});
+
 test("features (local) with no .scratch/ exits 0 and prints nothing", async () => {
   const dir = mkdtempSync(join(tmpdir(), "crew-tracker-cli-"));
   const r = await cli(dir, ["features"]);

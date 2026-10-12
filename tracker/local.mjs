@@ -145,7 +145,8 @@ export function listFeatureIssues(mainRoot, { featureSlug } = {}) {
   ];
 }
 
-/** Every feature: each `.scratch/<slug>/` with an `issues/` subdirectory, sorted by slug. */
+/** Every feature: each `.scratch/<slug>/` with an `issues/` subdirectory, sorted by slug, with the
+ * count of issues dispatch would start now. */
 export function listFeatures(mainRoot) {
   const scratch = join(mainRoot, ".scratch");
   if (!existsSync(scratch)) return [];
@@ -153,7 +154,7 @@ export function listFeatures(mainRoot) {
   for (const entry of readdirSync(scratch, { withFileTypes: true })) {
     if (!entry.isDirectory() || !existsSync(join(scratch, entry.name, "issues"))) continue;
     const open = listOpenIssueFiles(mainRoot, { featureSlug: entry.name });
-    const ready = open.filter((p) => parseIssue(p).status === READY_STATUS).length;
+    const ready = selectDispatchable(mainRoot, { featureSlug: entry.name }).length;
     out.push({ slug: entry.name, state: open.length ? "open" : "closed", ready });
   }
   return out.sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
