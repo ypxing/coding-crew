@@ -353,9 +353,8 @@ export async function runSprint(ctx) {
   for (const issue of held.values()) labelIssue(ctx, "release", issue);
   held.clear();
 
-  const stallReason = listingFailed;
-  await wrapUp(ctx, { tracker, stalled, stallReason, capped, wallCap, unlisted, waiting, integration, integrationFixes, featureReviews });
-  return { stalled, stallReason, capped, wallCapped: Boolean(wallCap), history };
+  await wrapUp(ctx, { tracker, stalled, stallReason: listingFailed, capped, wallCap, unlisted, waiting, integration, integrationFixes, featureReviews });
+  return { stalled, stallReason: listingFailed, capped, wallCapped: Boolean(wallCap), history };
 }
 
 /** The feature's work issues not yet `done`, parked fix issues included; the PRD issue is not work. Null when the listing failed. */

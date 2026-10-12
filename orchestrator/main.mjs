@@ -534,6 +534,7 @@ async function main() {
   };
   let resolved;
   let stalled;
+  let stallReason = null;
   let wallCapped = false;
   let attemptCapped = false;
   let exitCode = 0;
@@ -818,6 +819,7 @@ async function main() {
 
     const sprintResult = await runSprint(ctx);
     stalled = sprintResult.stalled;
+    stallReason = sprintResult.stallReason ?? null;
     wallCapped = Boolean(sprintResult.wallCapped);
     attemptCapped = Boolean(sprintResult.capped);
     if (sprintResult.baselineFailed) {
@@ -856,7 +858,7 @@ async function main() {
     // polling has no other way to learn the run is over.
     if (options.paneHost) {
       await drainPaneNotices(effects);
-      const outcome = runError ? "errored" : exitCode === 1 ? "setup failed" : wallCapped ? "stopped at the wall-clock cap — re-run to continue" : stalled ? "stalled — blockers need a human" : "finished";
+      const outcome = runError ? "errored" : exitCode === 1 ? "setup failed" : wallCapped ? "stopped at the wall-clock cap — re-run to continue" : stalled ? `stalled — ${stallReason ?? "blockers need a human"}` : "finished";
       const label = resolved?.slug ? `crew-afk (${resolved.slug})` : "crew-afk";
       // The summary file names itself; a run that never reached ctx has only the failure's first line.
       const detail = summaryFile && existsSync(summaryFile) ? `Summary: ${summaryFile}` : failureLine ?? "no summary was written";
