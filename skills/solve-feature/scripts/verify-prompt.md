@@ -1,4 +1,4 @@
-Review this branch before it merges.
+Verify this branch before it merges.
 Review assets: <review-assets>
 Branch: <branch>
 Slug: <slug>
@@ -26,7 +26,8 @@ run lacked a precondition (a service unreachable, a credential absent, so its te
 skipped): that stops the issue for a human, since no code change can help. Else `code`.
 
 A per-branch review writes `findings: []`: it is the criteria gate, and nothing more. A defect you
-notice outside the criteria goes in `notes`, never in prose: the feature review reads it from there.
+notice outside the criteria goes in `notes`, never in prose: solve-feature posts it in the PR review's body
+and hands it to the whole-feature verify.
 Each note is `{"location": "<path>:<line>", "concern": "<input or state → bad outcome>"}`.
 
 Write your structured verdict to <report> as your last action. This file is the

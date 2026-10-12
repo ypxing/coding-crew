@@ -81,8 +81,12 @@ REPO/.claude/skills/domain-modeling/references/context-format.md exec=0
 REPO/.claude/skills/solve-feature/ /
 REPO/.claude/skills/solve-feature/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/solve-feature/scripts/ /
+REPO/.claude/skills/solve-feature/scripts/feature-verify-prompt.md exec=0
+REPO/.claude/skills/solve-feature/scripts/open-pr.sh exec=1
+REPO/.claude/skills/solve-feature/scripts/post-review.sh exec=1
 REPO/.claude/skills/solve-feature/scripts/solve-feature.sh exec=0
 REPO/.claude/skills/solve-feature/scripts/verify-prompt.md exec=0
+REPO/.claude/skills/solve-feature/scripts/verify.sh exec=1
 REPO/.claude/skills/solve-issue/ /
 REPO/.claude/skills/solve-issue/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/solve-issue/references/ /
@@ -198,7 +202,7 @@ REPO/.coding-crew/dep-install/scripts/run.sh exec=1
 REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-REPO/.coding-crew/manifest.json ce98a269e689379e00951c6850bc5b2c08fd6064
+REPO/.coding-crew/manifest.json 53cfe624e1057a038927e44293cafbbd1c979316
 REPO/.coding-crew/skills/ /
 REPO/.coding-crew/skills/_shared/ /
 REPO/.coding-crew/skills/_shared/fragments/ /
@@ -224,8 +228,12 @@ REPO/.coding-crew/solve-feature/roles/reviewer/scripts/ /
 REPO/.coding-crew/solve-feature/roles/reviewer/scripts/review-context.sh exec=1
 REPO/.coding-crew/solve-feature/roles/triage.md exec=0
 REPO/.coding-crew/solve-feature/scripts/ /
+REPO/.coding-crew/solve-feature/scripts/feature-verify-prompt.md exec=0
+REPO/.coding-crew/solve-feature/scripts/open-pr.sh exec=1
+REPO/.coding-crew/solve-feature/scripts/post-review.sh exec=1
 REPO/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
 REPO/.coding-crew/solve-feature/scripts/verify-prompt.md exec=0
+REPO/.coding-crew/solve-feature/scripts/verify.sh exec=1
 REPO/.coding-crew/solve-issue/ /
 REPO/.coding-crew/solve-issue/scripts/ /
 REPO/.coding-crew/solve-issue/scripts/check-requires.sh exec=1

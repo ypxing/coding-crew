@@ -58,7 +58,7 @@
       ]
     },
     "solve-feature": {
-      "version": "0.1.2",
+      "version": "0.2.0",
       "source-dir": "solve-feature",
       "description": "Run one feature's ready-for-agent issues in order on one branch, each gated by the project's checks and a fresh read-only verifier.",
       "assets": {
@@ -69,6 +69,10 @@
         {
           "source": "orchestrator/roles",
           "dest": ".coding-crew/solve-feature/roles"
+        },
+        {
+          "source": "skills/_shared/fragments",
+          "dest": ".coding-crew/skills/_shared/fragments"
         }
       ],
       "deps": [

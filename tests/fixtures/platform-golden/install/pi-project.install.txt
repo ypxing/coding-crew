@@ -83,7 +83,7 @@ REPO/.coding-crew/dep-install/scripts/run.sh exec=1
 REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-REPO/.coding-crew/manifest.json 64759f6f314e14d819d2c732ba75a9f54550bd58
+REPO/.coding-crew/manifest.json 3c827dd5cfeb21111324f6855ec9952901dc8522
 REPO/.coding-crew/skills/ /
 REPO/.coding-crew/skills/_shared/ /
 REPO/.coding-crew/skills/_shared/fragments/ /
@@ -109,8 +109,12 @@ REPO/.coding-crew/solve-feature/roles/reviewer/scripts/ /
 REPO/.coding-crew/solve-feature/roles/reviewer/scripts/review-context.sh exec=1
 REPO/.coding-crew/solve-feature/roles/triage.md exec=0
 REPO/.coding-crew/solve-feature/scripts/ /
+REPO/.coding-crew/solve-feature/scripts/feature-verify-prompt.md exec=0
+REPO/.coding-crew/solve-feature/scripts/open-pr.sh exec=1
+REPO/.coding-crew/solve-feature/scripts/post-review.sh exec=1
 REPO/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
 REPO/.coding-crew/solve-feature/scripts/verify-prompt.md exec=0
+REPO/.coding-crew/solve-feature/scripts/verify.sh exec=1
 REPO/.coding-crew/solve-issue/ /
 REPO/.coding-crew/solve-issue/scripts/ /
 REPO/.coding-crew/solve-issue/scripts/check-requires.sh exec=1
@@ -214,8 +218,12 @@ REPO/.pi/skills/domain-modeling/references/context-format.md exec=0
 REPO/.pi/skills/solve-feature/ /
 REPO/.pi/skills/solve-feature/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/solve-feature/scripts/ /
+REPO/.pi/skills/solve-feature/scripts/feature-verify-prompt.md exec=0
+REPO/.pi/skills/solve-feature/scripts/open-pr.sh exec=1
+REPO/.pi/skills/solve-feature/scripts/post-review.sh exec=1
 REPO/.pi/skills/solve-feature/scripts/solve-feature.sh exec=0
 REPO/.pi/skills/solve-feature/scripts/verify-prompt.md exec=0
+REPO/.pi/skills/solve-feature/scripts/verify.sh exec=1
 REPO/.pi/skills/solve-issue/ /
 REPO/.pi/skills/solve-issue/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/solve-issue/references/ /
