@@ -19,7 +19,7 @@ When the plan references an issue, read its full body and its comments, not just
 
 **An existing issue as the source.** `/to-issues <ref>` on an existing issue is how it moves from `needs-triage` to `ready-for-agent`: it goes through steps 3–5 like any plan. If it is still one slice after step 4, step 6 rewrites that issue in place; if it splits into several slices, each becomes a new child issue with `## Parent` naming it. An issue with a column-0 `Source:` line outside a code fence (`Source: review (<branch>)` or `Source: <report> (<branch>)`, anywhere in the body) was auto-promoted by crew-afk from findings already judged — the same line `promote-findings.sh`'s guard reads: it is not checked against the design standard.
 
-Determine the **feature slug** (the milestone or directory the issues are filed under):
+Determine the **feature slug** (the root issue or directory the issues are filed under):
 
 1. If the user provided a path argument, extract the slug from it (e.g. `.scratch/auth-flow/...` → `auth-flow`).
 2. Otherwise, run `node "$TRACKER" features` — one `<slug>\t<open|closed>\t<ready-count>` line per feature — and check if one slug clearly matches the topic being discussed.
@@ -27,7 +27,7 @@ Determine the **feature slug** (the milestone or directory the issues are filed 
 
 Never guess the slug silently — confirm with the user if there's any ambiguity. **Before using a slug `features` lists, ask the user** whether to extend that feature or choose a new slug; a closed feature is still a taken slug. `to-prd` relies on this question and does not ask it again.
 
-**One slice, no PRD:** the slug needs no question. Use, in order: a github issue ref's existing milestone; a local issue ref's feature (`rewrite` writes in place); otherwise one derived from the title (kebab-case, short). Step 5's quiz shows it for the user to override. With two or more slices the slug is confirmed as above.
+**One slice, no PRD:** the slug needs no question. Use, in order: a github issue ref's own `Feature: <slug>` line, when its body has one; a local issue ref's feature (`rewrite` writes in place); otherwise one derived from the title (kebab-case, short). Step 5's quiz shows it for the user to override. With two or more slices the slug is confirmed as above.
 
 ### 2. Check for a PRD
 

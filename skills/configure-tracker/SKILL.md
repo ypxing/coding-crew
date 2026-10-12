@@ -31,7 +31,7 @@ Then present this menu:
 ```
 Available trackers:
 (1) local — markdown files under .scratch/<feature-slug>/issues/
-(2) github — GitHub Issues and Milestones of this repo's git remote (needs an authenticated gh)
+(2) github — GitHub Issues of this repo's git remote, a feature as a root issue and its sub-issues (needs an authenticated gh)
 ```
 
 ## Step 2 — Choose
