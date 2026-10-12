@@ -3,13 +3,14 @@ set -uo pipefail
 
 # crew-summary.sh — render the end-of-sprint summary and findings reminder from sprint-state.json
 # and the review reports, so no retained branch or review gap can be dropped from it.
-# Usage: crew-summary.sh [--feature-slug <slug>] [--stalled] [--capped] [--no-reminder]
-#          [--posted-to <pr-url>] [--promoted <severities>]
+# Usage: crew-summary.sh [--feature-slug <slug>] [--stalled] [--stall-reason <text>] [--capped]
+#          [--no-reminder] [--posted-to <pr-url>] [--promoted <severities>]
 # Sections with nothing to report are omitted.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 STALLED=0
+STALL_REASON=""
 CAPPED=0
 REMINDER=1
 POSTED_TO=""
@@ -19,6 +20,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --feature-slug) FEATURE_SLUG_ARG="${2:-}"; shift 2 ;;
     --stalled) STALLED=1; shift ;;
+    --stall-reason) STALL_REASON="${2:-}"; shift 2 ;;
     --capped) CAPPED=1; shift ;;
     --no-reminder) REMINDER=0; shift ;;
     --posted-to) POSTED_TO="${2:-}"; shift 2 ;;
@@ -152,7 +154,7 @@ if [ -n "$UNBLOCK" ]; then
 fi
 # --capped: the wall-clock cap, not a blocker, is what left work undone.
 if [ "$CAPPED" -eq 1 ]; then echo "CAPPED: the wall-clock cap stopped new claims — re-run (/crew-afk) to continue"
-elif [ "$STALLED" -eq 1 ]; then echo "STALLED: resolve blockers and re-run (/crew-afk)"
+elif [ "$STALLED" -eq 1 ]; then echo "STALLED: ${STALL_REASON:-resolve blockers and re-run (/crew-afk)}"
 fi
 
 echo ""

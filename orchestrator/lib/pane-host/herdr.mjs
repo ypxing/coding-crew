@@ -223,16 +223,26 @@ async function closeTab(effects, tabId) {
   }
 }
 
+/** A --wait timeout whose reply shows the pane mid-turn: the prompt is queued behind it. */
+function queuedBehindTurn(result) {
+  const reply = paneHostJson(result)?.result;
+  return result.code === 124 && reply?.type === "agent_prompted" && reply.agent?.agent_status === "working";
+}
+
 export async function notify(effects, paneId, message) {
   try {
     // --wait --until working is load-bearing: plain `agent prompt` exits 0 even when an
-    // unattended pane never receives the message. --wait makes a stall a nonzero exit.
+    // unattended pane never receives the message. --wait makes a stall a nonzero exit, but herdr
+    // only reports agent_prompt_stalled after 5 s, so --timeout must outlast that window.
+    // A pane already `working` shows no transition to `working` after submission, so --wait times
+    // out though the prompt is queued behind the active turn: that timeout counts as sent.
+    // `agent_prompted` alone does not — herdr returns it too for a prompt it has yet to judge stalled.
     const result = await paneHostExec(
       effects,
-      ["agent", "prompt", paneId, message, "--wait", "--until", "working", "--timeout", "2000"],
-      5000,
+      ["agent", "prompt", paneId, message, "--wait", "--until", "working", "--timeout", "6000"],
+      8000,
     );
-    if (result.code !== 0) {
+    if (result.code !== 0 && !queuedBehindTurn(result)) {
       const reason = `herdr agent prompt exit=${result.code} ${failureDetail(result)}`;
       effects.log?.(`NOTIFY-FAIL ${reason}`);
       return { sent: false, reason };

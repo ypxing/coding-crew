@@ -553,6 +553,13 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [[ "$output" != *"STALLED:"* ]]
 }
 
+@test "crew-summary --stall-reason prints the reason in place of the blockers line" {
+  init_sprint calc
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc --stalled --stall-reason "listing the tracker failed (gh: EOF) — re-run (/crew-afk)"
+  [[ "$output" == *"STALLED: listing the tracker failed (gh: EOF) — re-run (/crew-afk)"* ]]
+  [[ "$output" != *"resolve blockers"* ]]
+}
+
 @test "state blocked records the reason for every blocked issue, branch or not" {
   init_sprint calc
   state blocked --slug r --reason "requires failed: docker not running" >/dev/null

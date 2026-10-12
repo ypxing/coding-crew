@@ -374,3 +374,382 @@ test("a poll whose mid-run lint throws re-lints those issues on the next poll an
   await run;
   assert.deepEqual(h.started, ["a"]);
 });
+
+const EOF_ERROR = 'gh issue list failed (exit 1): Post "https://api.github.com/graphql": EOF';
+
+/** --open-pr against stub effects: every bash call is recorded, open-pr.sh answers with a URL. */
+async function withOpenPr(h) {
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  h.ctx.options.openPr = true;
+  Object.assign(h.ctx.sprint, {
+    env: { SPRINT_DIR: mkdtempSync(join(tmpdir(), "list-failed-")) },
+    featureBranch: "crew/demo",
+    readState: () => ({}),
+    getList: () => [],
+  });
+  h.ctx.effects.gitRead = () => ({ code: 1, stdout: "" });
+  h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
+  const calls = [];
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => {
+    calls.push({ name, args });
+    return name === "open-pr.sh" ? { code: 0, stdout: "PR: http://x/1\n", stderr: "" } : bash(name, args, o);
+  };
+  return calls;
+}
+
+const argAfter = (call, flag) => call?.args[call.args.indexOf(flag) + 1];
+
+test("a claim listing that fails with nothing in flight stalls the run at once, names the failure, and no worker lists again", async () => {
+  const { readFileSync } = await import("node:fs");
+  const h = harness({ pollInterval: 0, parallel: 2 });
+  const calls = await withOpenPr(h);
+  const list = h.ctx.tracker.selectDispatchable;
+  let failures = 0;
+  h.ctx.tracker.selectDispatchable = (...a) => {
+    if (h.done.has("a")) { failures++; throw new Error(EOF_ERROR); }
+    return list(...a);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  h.gates.get("a")();
+  const result = await run;
+  assert.equal(result.stalled, true);
+  assert.equal(failures, 1);
+  const summary = calls.find((c) => c.name === "crew-summary.sh");
+  assert.ok(summary.args.includes("--stalled"));
+  assert.match(argAfter(summary, "--stall-reason"), /listing the tracker failed.*EOF/);
+  const pr = calls.find((c) => c.name === "open-pr.sh");
+  const note = readFileSync(argAfter(pr, "--note-file"), "utf8");
+  assert.match(note, /listing the tracker failed.*EOF/);
+  assert.match(note, /<!-- crew-afk:draft stalled -->/);
+});
+
+test("a claim listing that fails while a sibling is in flight claims nothing; the next wake lists again and the sprint completes", async () => {
+  const h = harness({ pollInterval: 0, parallel: 2, initial: ["a", "b"] });
+  const logs = [];
+  h.ctx.log = (m, level) => logs.push({ m: String(m), level });
+  const list = h.ctx.tracker.selectDispatchable;
+  let failNext = false;
+  h.ctx.tracker.selectDispatchable = (...a) => {
+    if (failNext) { failNext = false; throw new Error(EOF_ERROR); }
+    return list(...a);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  assert.deepEqual(h.started, ["a", "b"]);
+  failNext = true;
+  h.gates.get("a")();
+  await settle();
+  assert.ok(logs.some((l) => l.level === "warn" && /\[CLAIM-LIST-FAILED\].*EOF/.test(l.m)), JSON.stringify(logs));
+  h.ready.push({ slug: "c", number: null });
+  h.gates.get("b")();
+  await settle();
+  assert.deepEqual(h.started, ["a", "b", "c"]);
+  h.gates.get("c")();
+  const result = await run;
+  assert.equal(result.stalled, false);
+});
+
+/** Runs a one-issue sprint whose tracker throws where `arm` says; returns the result, bash calls and output. */
+async function stalledRun(h, arm) {
+  const calls = [];
+  const out = [];
+  h.ctx.out = (s) => out.push(s);
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => { calls.push({ name, args }); return bash(name, args, o); };
+  arm();
+  const run = runSprint(h.ctx);
+  await settle();
+  h.gates.get("a")();
+  const result = await run;
+  const summary = calls.find((c) => c.name === "crew-summary.sh");
+  return { result, calls, out: out.join("\n"), reason: argAfter(summary, "--stall-reason") };
+}
+
+test("a failed listing in cappedByMaxRounds stalls the run naming it", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  h.ctx.options.maxRounds = 3;
+  const list = h.ctx.tracker.selectDispatchable;
+  // Listing 1 is the run-start seenNow, 2 and 3 the claims (a, then nothing); 4 is the drain's round-cap check.
+  const { result, reason } = await stalledRun(h, () => {
+    h.ctx.tracker.selectDispatchable = (...a) => {
+      if (h.listings.n >= 3) throw new Error(EOF_ERROR);
+      return list(...a);
+    };
+  });
+  assert.equal(result.stalled, true);
+  assert.equal(result.capped, false);
+  assert.match(reason, /listing the tracker failed.*EOF/);
+});
+
+test("a failed listing in unclaimedByCap stalls the run naming it", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  let t = 0;
+  h.ctx.now = () => t;
+  h.ctx.options.maxWallMinutes = 10;
+  const list = h.ctx.tracker.selectDispatchable;
+  const { result, reason } = await stalledRun(h, () => {
+    h.ctx.tracker.selectDispatchable = (...a) => {
+      if (t) throw new Error(EOF_ERROR);
+      return list(...a);
+    };
+    h.ctx.stages.runHousekeeping = async (_c, w) => { t = 10 * 60_000; h.done.add(w.issue.slug); return { status: "complete" }; };
+  });
+  assert.equal(result.stalled, true);
+  assert.match(reason, /listing the tracker failed.*EOF/);
+});
+
+test("a failed openIssues listing stalls the run naming it instead of ending green", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  const { result, reason } = await stalledRun(h, () => {
+    h.ctx.tracker.listFeatureIssues = () => { throw new Error(EOF_ERROR); };
+  });
+  assert.equal(result.stalled, true);
+  assert.match(reason, /listing the tracker failed.*EOF/);
+});
+
+test("a failed listing while awaiting a fix issue ends the wait: the ref is named unlisted and the run stalls naming it", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  h.ctx.tracker.fixIssuesCreatedReady = true;
+  h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
+  h.ctx.sprint.state = () => {};
+  h.ctx.effects.gitRead = () => ({ code: 1, stdout: "" });
+  const reviews = [];
+  h.ctx.stages.runFeatureReview = async (_c, opts) => {
+    reviews.push(opts);
+    return { report: "r.md", findings: [], promoted: 1, promotedRef: 7 };
+  };
+  const { result, reason, out } = await stalledRun(h, () => {
+    h.ctx.tracker.listFeatureIssues = () => { throw new Error(EOF_ERROR); };
+  });
+  assert.equal(result.stalled, true);
+  assert.match(reason, /listing the tracker failed.*EOF/);
+  assert.match(out, /#7 \(review findings\) was created but never appeared in the milestone listing/);
+  assert.equal(reviews.length, 1, "no closing review after a failed listing");
+});
+
+test("a failed seenNow listing is a warning: the run continues and dispatches the remaining issues", async () => {
+  const h = harness({ pollInterval: 5, parallel: 2, initial: ["a", "b"] });
+  const logs = [];
+  h.ctx.log = (m, level) => logs.push({ m: String(m), level });
+  const list = h.ctx.tracker.selectDispatchable;
+  h.ctx.tracker.selectDispatchable = (...a) => {
+    if (h.listings.n === 0) { h.listings.n++; throw new Error(EOF_ERROR); }
+    return list(...a);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  assert.deepEqual(h.started, ["a", "b"]);
+  assert.ok(logs.some((l) => l.level === "warn" && /\[SEEN-LIST-FAILED\].*EOF/.test(l.m)), JSON.stringify(logs));
+  h.gates.get("a")(); h.gates.get("b")();
+  const result = await run;
+  assert.equal(result.stalled, false);
+});
+
+test("a run that stalls on a failed listing still releases the in-progress labels it holds", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  h.ready[0].number = 41;
+  h.ctx.stages.runHousekeeping = async () => ({ status: "partial" });
+  const list = h.ctx.tracker.selectDispatchable;
+  const { result, calls } = await stalledRun(h, () => {
+    h.ctx.tracker.selectDispatchable = (...a) => {
+      if (h.started.length) throw new Error(EOF_ERROR);
+      return list(...a);
+    };
+  });
+  assert.equal(result.stalled, true);
+  const labels = calls.filter((c) => c.name === "issue-labels.sh").map((c) => c.args.join(" "));
+  assert.deepEqual(labels, ["claim 41", "release 41"]);
+});
+
+for (const pollInterval of [5, 0]) {
+  test(`--poll-interval ${pollInterval}: an issue made ready mid-run and claimed when a worker finishes is linted first; a lint ERROR blocks it`, async () => {
+    const h = harness({ pollInterval, parallel: 1, lintBlocks: ["bad"] });
+    const run = runSprint(h.ctx);
+    await settle();
+    h.ready.push({ slug: "bad", number: null }, { slug: "good", number: null });
+    h.gates.get("a")();
+    await settle();
+    assert.deepEqual(h.linted, ["bad", "good"]);
+    assert.ok(h.blocked.has("bad"));
+    assert.deepEqual(h.started, ["a", "good"]);
+    h.gates.get("good")();
+    await run;
+    assert.deepEqual(h.started, ["a", "good"]);
+  });
+}
+
+/** Runs `order` to completion, one release per settle; returns the run's result. */
+async function runInOrder(h, order) {
+  const run = runSprint(h.ctx);
+  for (const slug of order) {
+    await settle();
+    h.gates.get(slug)();
+  }
+  return run;
+}
+
+test("--poll-interval 0: issues listed at run start and a fix issue Phase 2 promotes are claimed without a lint", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1, initial: ["a", "b"] });
+  let flushed = false;
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => {
+    if (name === "promote-findings.sh" && args[0] === "flush" && !flushed) {
+      flushed = true;
+      h.ready.push({ slug: "parked-fix", number: null, path: "/m/.scratch/demo/issues/open/03-parked-fix.md" });
+      return { code: 0, stdout: "flushed: .scratch/demo/issues/open/03-parked-fix.md\nFLUSH: promoted=1", stderr: "" };
+    }
+    return bash(name, args, o);
+  };
+  await runInOrder(h, ["a", "b", "parked-fix"]);
+  assert.deepEqual(h.started, ["a", "b", "parked-fix"]);
+  assert.deepEqual(h.linted, []);
+});
+
+test("--poll-interval 0: a github fix issue the feature review created ready is claimed without a lint", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  h.ctx.tracker.fixIssuesCreatedReady = true;
+  h.ctx.tracker.listFeatureIssues = () => h.ready;
+  h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
+  h.ctx.sprint.state = () => {};
+  h.ctx.effects.gitRead = () => ({ code: 1, stdout: "" });
+  h.ctx.stages.runFeatureReview = async (_c, { promote }) => {
+    if (!promote) return { skipped: true };
+    h.ready.push({ slug: "review-fix", number: 7 });
+    return { report: "r.md", findings: [], promoted: 1, promotedRef: 7 };
+  };
+  await runInOrder(h, ["a", "review-fix"]);
+  assert.deepEqual(h.started, ["a", "review-fix"]);
+  assert.deepEqual(h.linted, []);
+});
+
+test("a claim-time lint that throws with a sibling in flight claims nothing; the issue stays unseen and the next claim lints it", async () => {
+  const h = harness({ pollInterval: 0, parallel: 2, initial: ["a", "c"] });
+  const lint = h.ctx.stages.lintMidRunIssues;
+  let tries = 0;
+  h.ctx.stages.lintMidRunIssues = async (c, issues) => {
+    if (tries++ === 0) throw new Error("gh issue comment failed (exit 1): EOF");
+    return lint(c, issues);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  h.ready.push({ slug: "b", number: null });
+  h.gates.get("a")();
+  await settle();
+  assert.deepEqual(h.started, ["a", "c"]);
+  h.gates.get("c")();
+  await settle();
+  assert.equal(tries, 2);
+  assert.deepEqual(h.linted, ["b"]);
+  assert.deepEqual(h.started, ["a", "c", "b"]);
+  h.gates.get("b")();
+  const result = await run;
+  assert.equal(result.stalled, false);
+});
+
+test("a claim-time lint that throws with nothing in flight claims nothing and resolves the run stalled naming the lint failure", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  h.ctx.stages.lintMidRunIssues = async () => { throw new Error("gh issue comment failed (exit 1): EOF"); };
+  const { result, reason } = await stalledRun(h, () => {
+    h.ctx.stages.runHousekeeping = async (_c, w) => {
+      h.done.add(w.issue.slug);
+      h.ready.push({ slug: "b", number: null });
+      return { status: "complete" };
+    };
+  });
+  assert.deepEqual(h.started, ["a"]);
+  assert.equal(result.stalled, true);
+  assert.match(result.stallReason, /linting a mid-run issue failed.*EOF/);
+  assert.match(reason, /linting a mid-run issue failed.*EOF/);
+});
+
+test("a mid-run lint that blocks one issue then throws does not lint (or block) that issue a second time", async () => {
+  const h = harness({ pollInterval: 5 });
+  const calls = [];
+  h.ctx.stages.lintMidRunIssues = async (_c, issues) => {
+    calls.push(issues.map((i) => i.slug));
+    if (calls.length === 1) {
+      h.blocked.add("bad1");
+      throw new Error("gh issue comment failed (exit 1): EOF");
+    }
+    return [];
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  h.ready.push({ slug: "bad1", number: null }, { slug: "bad2", number: null });
+  h.sleeps.shift()();
+  await settle();
+  h.sleeps.shift()();
+  await settle();
+  assert.deepEqual(calls, [["bad1", "bad2"], ["bad2"]]);
+  h.gates.get("a")();
+  await settle();
+  h.gates.get("bad2")?.();
+  await run;
+});
+
+test("after a flush, an issue a human readied during the drain is linted; the flushed fix issue is not", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1, lintBlocks: ["bad"] });
+  let flushes = 0;
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => {
+    if (name === "promote-findings.sh" && args[0] === "flush" && ++flushes === 1) {
+      h.ready.push({ slug: "fix", number: null, path: "/m/.scratch/demo/issues/open/09-fix.md" }, { slug: "bad", number: null });
+      return { code: 0, stdout: "flushed: .scratch/demo/issues/open/09-fix.md\nFLUSH: promoted=1", stderr: "" };
+    }
+    return bash(name, args, o);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  h.gates.get("a")();
+  await settle();
+  assert.deepEqual(h.linted, ["bad"]);
+  assert.ok(h.blocked.has("bad"));
+  assert.deepEqual(h.started, ["a", "fix"]);
+  h.gates.get("fix")();
+  await run;
+});
+
+test("a red drain's 'Not run' feature-review entry survives a later drain whose unclaimedByCap listing fails", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  let t = 0;
+  h.ctx.now = () => t;
+  h.ctx.options.maxWallMinutes = 10;
+  h.ctx.options.integrationCheck = true;
+  h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
+  h.ctx.sprint.state = () => {};
+  let checks = 0;
+  h.ctx.stages.runIntegrationCheck = () =>
+    ++checks === 1 ? { status: "fail", commit: "a".repeat(40), failed: [], reason: "red" } : { status: "pass", commit: "b".repeat(40), failed: [] };
+  h.ctx.stages.fixIntegration = async () => ({ verdict: "not-fixable", reason: "stub", commit: "a".repeat(40) });
+  h.ctx.stages.runFeatureReview = async (_c, { integration }) =>
+    integration?.status === "fail" ? { skipped: "the integration check is red" } : { report: "r.md", findings: [] };
+  let flushes = 0;
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => {
+    if (name === "promote-findings.sh" && args[0] === "flush" && ++flushes === 1) {
+      h.ready.push({ slug: "fix", number: null, path: "/m/.scratch/demo/issues/open/09-fix.md" });
+      return { code: 0, stdout: "flushed: .scratch/demo/issues/open/09-fix.md\nFLUSH: promoted=1", stderr: "" };
+    }
+    return bash(name, args, o);
+  };
+  const list = h.ctx.tracker.selectDispatchable;
+  h.ctx.tracker.selectDispatchable = (...a) => {
+    if (t) throw new Error(EOF_ERROR);
+    return list(...a);
+  };
+  const out = [];
+  h.ctx.out = (s) => out.push(s);
+  const run = runSprint(h.ctx);
+  await settle();
+  h.gates.get("a")();
+  await settle();
+  t = 10 * 60_000;
+  h.gates.get("fix")();
+  const result = await run;
+  assert.equal(result.stalled, true);
+  assert.match(out.join("\n"), /## Feature Review/);
+});

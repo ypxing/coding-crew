@@ -372,16 +372,63 @@ test("notifyWatchSession (herdr) prompts the watch agent by its recorded pane id
   const effects = fakeHerdrEffects([json({ result: { type: "ok" } })], { mainRoot: "/root" });
   const result = await withHerdrPaneId("w1:trigger", () => notifyWatchSession(watching(effects, "w1:p1"), "crew-afk (alpha): sprint finished."));
   assert.deepEqual(effects._calls, [
-    ["herdr", "agent", "prompt", "w1:p1", "crew-afk (alpha): sprint finished.", "--wait", "--until", "working", "--timeout", "2000"],
+    ["herdr", "agent", "prompt", "w1:p1", "crew-afk (alpha): sprint finished.", "--wait", "--until", "working", "--timeout", "6000"],
   ]);
   assert.deepEqual(result, { sent: true });
 });
 
+// herdr only reports agent_prompt_stalled after its own 5000 ms window, so a shorter --timeout
+// would turn every stall into a bare timeout; the outer kill must outlast herdr's --timeout.
+test("notifyWatchSession (herdr) waits past herdr's 5s stall window, and kills herdr only after its own timeout", async () => {
+  const effects = fakeHerdrEffects([json({ result: { type: "ok" } })], { mainRoot: "/root" });
+  await notifyWatchSession(watching(effects, "w1:p1"), "msg");
+  const args = effects._calls[0];
+  const herdrTimeout = Number(args[args.indexOf("--timeout") + 1]);
+  assert.ok(herdrTimeout > 5000, `--timeout ${herdrTimeout} is inside herdr's stall window`);
+  assert.ok(effects._timeouts[0] > herdrTimeout, `outer kill ${effects._timeouts[0]}ms does not outlast --timeout ${herdrTimeout}`);
+});
+
+/** `agent prompt --wait`'s reply, as herdr 0.9.3 prints it. */
+const herdrPromptReply = (code, type, agentStatus) => ({
+  code,
+  stdout: JSON.stringify({ id: "cli:agent:prompt", result: { agent: { agent: "claude", agent_status: agentStatus, pane_id: "w1:p1" }, type } }),
+  stderr: "",
+});
+
+test("notifyWatchSession (herdr) counts a timeout while the pane is already working as sent — the prompt is queued behind its turn", async () => {
+  const effects = fakeHerdrEffects([herdrPromptReply(124, "agent_prompted", "working")], { mainRoot: "/root" });
+  const result = await notifyWatchSession(watching(effects, "w1:p1"), "msg");
+  assert.deepEqual(result, { sent: true });
+});
+
+test("a milestone push into a busy herdr pane that times out is not logged as MILESTONE-PUSH-SKIPPED", async () => {
+  const lines = [];
+  const effects = { paneHost: "herdr", mainRoot: "/root", spawnWithTimeout: async () => herdrPromptReply(124, "agent_prompted", "working") };
+  const ctx = { effects, sprint: { featureSlug: "demo" }, log: (text, level = levelFor(text)) => lines.push({ text, level }) };
+  watching(effects, "w1:p1");
+  notifyMilestone(ctx, { slug: "alpha" }, "coder finished");
+  await drainPaneNotices(effects);
+  assert.deepEqual(lines.filter((l) => /MILESTONE-PUSH-SKIPPED/.test(l.text)), []);
+});
+
 test("notifyWatchSession (herdr) reports a stalled push as a failure instead of a false success", async () => {
-  const effects = fakeHerdrEffects([{ code: 1, stdout: "", stderr: "agent_prompt_stalled" }], { mainRoot: "/root" });
+  const effects = fakeHerdrEffects([herdrPromptReply(1, "agent_prompt_stalled", "idle")], { mainRoot: "/root" });
   const result = await notifyWatchSession(watching(effects, "w1:p1"), "crew-afk (alpha): sprint finished.");
   assert.equal(result.sent, false);
-  assert.match(result.reason, /agent_prompt_stalled/);
+  assert.match(result.reason, /stalled/);
+});
+
+test("notifyWatchSession (herdr) reports a timeout that is not from a working pane as a failure", async () => {
+  for (const [name, reply] of [
+    ["timed out from idle", herdrPromptReply(124, "agent_prompted", "idle")],
+    ["timed out with no JSON", { code: 124, stdout: "", stderr: "" }],
+    ["timed out with unparseable output", { code: 124, stdout: "agent_status: working", stderr: "" }],
+    ["blocked", herdrPromptReply(1, "agent_blocked", "blocked")],
+  ]) {
+    const effects = fakeHerdrEffects([reply], { mainRoot: "/root" });
+    const result = await notifyWatchSession(watching(effects, "w1:p1"), "msg");
+    assert.equal(result.sent, false, name);
+  }
 });
 
 test("notifyWatchSession (herdr) swallows a failed prompt — the sprint's own outcome is already decided by then", async () => {
