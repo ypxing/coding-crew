@@ -347,6 +347,17 @@ test("publish-prd (github) creates the PRD under a work-issue root with --parent
   assert.equal(issueOf(exec, 4).state, "OPEN");
 });
 
+test("publish-prd (github) under an existing root drops a Feature: line from the body, so it is no second root", async () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, "prd.md"), "Feature: feat\n## Decisions\n");
+  const exec = fakeGithub(ghFeature("feat", ghIssue(4, { title: "Work" })));
+  const r = await cli(dir, ["publish-prd", "--feature-slug", "feat", "--title", "Feat", "--body-file", join(dir, "prd.md")], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(issueOf(exec, 5).body, "## Decisions\n");
+  const again = await cli(dir, ["feature-issues", "--feature-slug", "feat"], exec);
+  assert.equal(again.code, 0, again.stderr);
+});
+
 test("publish-prd (github) re-publishing edits the existing PRD and keeps its marker", async () => {
   const dir = root({ github: true });
   writeFileSync(join(dir, "prd.md"), "## Decisions v2\n");

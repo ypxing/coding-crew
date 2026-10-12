@@ -13,8 +13,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - **tracker (github)**: a feature is now one root issue — the `PRD:` issue, or a single-slice feature's work issue —
   whose body carries a `Feature: <slug>` line, plus that root's sub-issues; nothing creates or reads a milestone, and
   the PRD is no longer pinned. Every issue crew-afk files (slices, promoted fix issues, integration fixes) is a
-  sub-issue of the root, and a feature of any size is read in full. New `feature-issues` op, which `close-shipped.sh`
-  and `issue-labels.sh sweep` now read. **Hard switch:** after `install.sh --update`, a feature still filed under a
+  sub-issue of the root, and a feature is read in full, past the old 30-issue cut (GitHub caps a root at 100
+  sub-issues). New `feature-issues` op, which `close-shipped.sh` and `issue-labels.sh sweep` now read. **Hard switch:** after `install.sh --update`, a feature still filed under a
   milestone is invisible to crew-afk until you move it by hand — see "Moving off milestones" in
   `.coding-crew/tracker/docs/github.md` (#441).
 

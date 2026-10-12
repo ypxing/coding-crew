@@ -267,11 +267,12 @@ export function listFeatures(mainRoot, { exec = gh, warn = (m) => process.stderr
 
 /**
  * Create an issue in the feature, returning `{number, url}`. With no root yet (`parent` null) it
- * becomes the root, marker added; otherwise a sub-issue of `parent`. `parent` undefined looks it up.
+ * becomes the root, marker added; otherwise a sub-issue of `parent`, any marker dropped. `parent`
+ * undefined looks it up.
  */
 export function createIssue({ title, body, labels = [], featureSlug }, { mainRoot, exec = gh, parent } = {}) {
   if (parent === undefined) parent = findRoot(featureSlug, { exec })?.number ?? null;
-  const text = parent === null ? withMarker(body, featureSlug) : body;
+  const text = parent === null ? withMarker(body, featureSlug) : withoutMarker(body);
 
   const bodyFile = join(tmpdir(), `crew-github-issue-${randomUUID()}.md`);
   writeFileSync(bodyFile, text);

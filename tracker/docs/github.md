@@ -208,8 +208,10 @@ re-publish of it) — never a skill — and finds a feature by it, scanning the 
 issues through the REST list API (open ones first, then all), paginated. Slices, promoted
 review-fix issues and integration-fix issues are all sub-issues of the root (`--parent <root>`).
 A feature's issues are the root plus its sub-issues, read from
-`repos/{owner}/{repo}/issues/<root>/sub_issues`, paginated, so a feature of any size is complete;
-a slug with no root reads as an empty feature. The PRD is identified by title convention
+`repos/{owner}/{repo}/issues/<root>/sub_issues`, paginated, so no page is cut short; a slug with
+no root reads as an empty feature. GitHub caps a parent at 100 sub-issues: past that, filing
+another issue in the feature fails (`gh issue create --parent` exits non-zero), so close the
+feature and start a new slug well before it. The PRD is identified by title convention
 (`PRD: <feature title>`), not a local file, whether it is the root or a sub-issue of a work-issue
 root. Work issues use the same markdown body conventions as local issues (`## Blocked by`,
 `## Acceptance criteria`, `## Requires`, `Source:`).
