@@ -13,6 +13,11 @@ HOME/.agents/skills/address-pr-comments/scripts/commit-changes.sh exec=1
 HOME/.agents/skills/address-pr-comments/scripts/fetch-review-threads.sh exec=1
 HOME/.agents/skills/address-pr-comments/scripts/push-rework.sh exec=1
 HOME/.agents/skills/address-pr-comments/scripts/reply-thread.sh exec=1
+HOME/.agents/skills/afk-feature/ /
+HOME/.agents/skills/afk-feature/SKILL.md exec=0 unrendered=0
+HOME/.agents/skills/afk-feature/scripts/ /
+HOME/.agents/skills/afk-feature/scripts/afk-feature.sh exec=1
+HOME/.agents/skills/afk-feature/scripts/verify-prompt.md exec=0
 HOME/.agents/skills/configure-tracker/ /
 HOME/.agents/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/crew-address-findings/ /
@@ -109,6 +114,24 @@ HOME/.agents/skills/upgrade-deps/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/write-pr/ /
 HOME/.agents/skills/write-pr/SKILL.md exec=0 unrendered=0
 HOME/.coding-crew/ /
+HOME/.coding-crew/afk-feature/ /
+HOME/.coding-crew/afk-feature/roles/ /
+HOME/.coding-crew/afk-feature/roles/coder.md exec=0
+HOME/.coding-crew/afk-feature/roles/followup.md exec=0
+HOME/.coding-crew/afk-feature/roles/reviewer.md exec=0
+HOME/.coding-crew/afk-feature/roles/reviewer/ /
+HOME/.coding-crew/afk-feature/roles/reviewer/feature.md exec=0
+HOME/.coding-crew/afk-feature/roles/reviewer/references/ /
+HOME/.coding-crew/afk-feature/roles/reviewer/references/backend.md exec=0
+HOME/.coding-crew/afk-feature/roles/reviewer/references/quality.md exec=0
+HOME/.coding-crew/afk-feature/roles/reviewer/references/react.md exec=0
+HOME/.coding-crew/afk-feature/roles/reviewer/references/web-security.md exec=0
+HOME/.coding-crew/afk-feature/roles/reviewer/scripts/ /
+HOME/.coding-crew/afk-feature/roles/reviewer/scripts/review-context.sh exec=1
+HOME/.coding-crew/afk-feature/roles/triage.md exec=0
+HOME/.coding-crew/afk-feature/scripts/ /
+HOME/.coding-crew/afk-feature/scripts/afk-feature.sh exec=1
+HOME/.coding-crew/afk-feature/scripts/verify-prompt.md exec=0
 HOME/.coding-crew/crew-afk/ /
 HOME/.coding-crew/crew-afk/lib/ /
 HOME/.coding-crew/crew-afk/lib/adapters/ /
@@ -193,7 +216,7 @@ HOME/.coding-crew/dep-install/scripts/run.sh exec=1
 HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-HOME/.coding-crew/manifest.json 1ed3c456134a100a8b26c3512a4a9f2c4d00dc8d
+HOME/.coding-crew/manifest.json b0a137ff2ef38608bc41a8446b4c260a2bef86cc
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
 HOME/.coding-crew/skills/_shared/fragments/ /
