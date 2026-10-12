@@ -28,7 +28,7 @@ TRACKER="$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs"
 
 ```bash
 node "$TRACKER" fetch <ref> [--comments]                  # print one issue; <ref> is its path under .scratch/
-node "$TRACKER" features                                  # list the features: <slug>, open|closed, ready-for-agent count
+node "$TRACKER" features                                  # list the features: <slug>, open|closed, count of issues that can start now
 node "$TRACKER" prd --feature-slug <slug>                 # print the feature's PRD.md
 node "$TRACKER" known --feature-slug <slug> --out <dir>   # copy the feature's issues, open and done, into <dir>
 node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace]
@@ -44,7 +44,9 @@ outside `.scratch/`, `3` not found.
 
 `features` prints one tab-separated line per `.scratch/<slug>/` directory that has an `issues/`
 subdirectory, sorted by slug: `<slug>`, `open` (`issues/open/` holds an `.md` file) or `closed`, and
-the count of `Status: ready-for-agent` files in `issues/open/`. A directory without `issues/` is
+the count of issues that can start now: `Status: ready-for-agent` files in `issues/open/` whose
+every blocker (from `issues-deps.json` when the feature has one, else `## Blocked by`) is in the
+feature's `issues/done/`, as dispatch reads them. A directory without `issues/` is
 not listed, and no `.scratch/` prints nothing.
 
 `publish-issues` writes each draft to `.scratch/<slug>/issues/open/<NN>-<slug>.md` (numbered from
