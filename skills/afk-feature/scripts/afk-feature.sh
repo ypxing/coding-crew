@@ -36,3 +36,46 @@ done
 KIND="$(node "$CLI" config | grep '^tracker=' || true)"
 [ "$KIND" = tracker=github ] || die "${KIND:-tracker=unknown}: feature-issues is a GitHub-only op"
 [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
+CFG="$ROOT/.coding-crew/config.json" DEV="$ROOT/.coding-crew/dev-commands.json"
+model() { local m; m=$(jq -r --arg r "$1" '.afk.models.claude[$r] // empty' "$CFG" 2>/dev/null || true); echo "${m:-$2}"; }
+CODER_MODEL=$(model coder sonnet) REVIEWER_MODEL=$(model reviewer opus)
+unset CREW_ORCHESTRATED # solve-issue's Step 7 closes the issue itself: the loop sees the label go
+
+# preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase
+# an existing one: a re-run lands on it as the last run left it.
+git fetch -q origin
+DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
+DEFAULT=${DEFAULT:-main}
+CUR=$(git branch --show-current)
+[ -n "$CUR" ] || die "HEAD is detached: check out a branch first"
+if [ "$CUR" = "$DEFAULT" ]; then
+  BRANCH=${BRANCH:-feature/$SLUG}
+  if git show-ref --verify -q "refs/heads/$BRANCH"; then git checkout -q "$BRANCH"
+  elif git show-ref --verify -q "refs/remotes/origin/$BRANCH"; then git checkout -q -t "origin/$BRANCH"
+  else git checkout -q -b "$BRANCH" "origin/$DEFAULT" && git push -q -u origin "$BRANCH"; fi
+else
+  BRANCH=$CUR
+fi
+
+LOGS="$ROOT/.afk-logs"
+mkdir -p "$LOGS" && echo '*' > "$LOGS/.gitignore" # ignored in any repo, so the tree stays clean
+
+PREV=""
+while :; do
+  FI=$(node "$CLI" feature-issues --feature-slug "$SLUG" --state all)
+  CLOSED=" $(jq -r '[.[] | select(.state == "CLOSED") | .number] | join(" ")' <<<"$FI") "
+  N=""
+  for c in $(jq -r '[.[] | select(.state == "OPEN" and (.root | not) and any(.labels[]; .name == "ready-for-agent")) | .number] | sort | .[]' <<<"$FI"); do
+    node "$CLI" fetch "$c" >"$LOGS/$c.issue.md"
+    ok=1
+    for b in $(awk '/^## Blocked by/{f=1;next} /^## /{f=0} f' "$LOGS/$c.issue.md" | grep -oE '#[0-9]+' | tr -d '#'); do
+      [[ "$CLOSED" == *" $b "* ]] || ok=0
+    done
+    [ "$ok" = 1 ] && { N=$c; break; }
+  done
+  [ -n "$N" ] || break
+  [ "$N" != "$PREV" ] || die "coder ran but did not close #$N"
+  LOG="$LOGS/$N.log"
+  timeout 60m claude -p "/solve-issue $N" --output-format json --max-budget-usd "$BUDGET" --model "$CODER_MODEL" >"$LOG" 2>&1 || die "coder exited non-zero"
+  PREV=$N
+done

@@ -95,6 +95,9 @@ EOF
 k=$(( $(ls "$STATE" | grep -c '^claude\.[0-9]*$') + 1 ))
 printf '%s\n' "$@" > "$STATE/claude.$k"
 env | grep -c '^CREW_ORCHESTRATED=' > "$STATE/claude.$k.env" || true
+git branch --show-current > "$STATE/claude.$k.branch"
+git ls-remote --heads origin "$(git branch --show-current)" | grep -c . > "$STATE/claude.$k.pushed" || true
+git rev-parse --abbrev-ref '@{upstream}' > "$STATE/claude.$k.upstream" 2>/dev/null || true
 prompt="$2"
 if printf '%s\n' "$@" | grep -qx -- --append-system-prompt-file; then
   report=$(printf '%s\n' "$prompt" | sed -n 's/^Write your structured verdict to \(.*\) as your last action\..*/\1/p')
@@ -195,4 +198,42 @@ claude_flag() { claude_call "$1" | grep -A1 -x -- "$2" | tail -1; }
   [ "$(git branch --show-current)" = main ]
   [ "$(claude_calls)" -eq 0 ]
   [ ! -f "$STATE/gh.log" ]
+}
+
+# --- branch ------------------------------------------------------------------------
+
+@test "on the default branch it creates feature/<slug> from origin/main and pushes it with upstream before the first claude call" {
+  git commit -q --allow-empty -m "local only, not on origin"
+  run bash "$SCRIPT" feat
+  [ "$(cat "$STATE/claude.1.branch")" = feature/feat ]
+  [ "$(cat "$STATE/claude.1.pushed")" = 1 ]
+  [ "$(cat "$STATE/claude.1.upstream")" = origin/feature/feat ]
+  [ "$(git merge-base feature/feat main)" = "$(git rev-parse origin/main)" ]
+  [ "$(git rev-parse main)" != "$(git rev-parse origin/main)" ]
+}
+
+@test "--branch names the branch made from the default branch, and an existing one is checked out as it was left" {
+  git branch mine origin/main
+  git checkout -q mine && git commit -q --allow-empty -m "earlier run" && git checkout -q main
+  local tip; tip=$(git rev-parse mine)
+  run bash "$SCRIPT" feat --branch mine
+  [ "$(cat "$STATE/claude.1.branch")" = mine ]
+  git merge-base --is-ancestor "$tip" mine
+}
+
+@test "a branch only on origin is checked out tracking it" {
+  git push -q origin origin/main:refs/heads/remote-only
+  git fetch -q origin
+  run bash "$SCRIPT" feat --branch remote-only
+  [ "$(cat "$STATE/claude.1.branch")" = remote-only ]
+  [ "$(cat "$STATE/claude.1.upstream")" = origin/remote-only ]
+}
+
+@test "on another branch it uses that branch, ignoring --branch" {
+  git checkout -q -b topic
+  run bash "$SCRIPT" feat --branch other
+  [ "$(cat "$STATE/claude.1.branch")" = topic ]
+  [ "$(git branch --show-current)" = topic ]
+  ! git show-ref --verify -q refs/heads/other
+  ! git show-ref --verify -q refs/heads/feature/feat
 }
