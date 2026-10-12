@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -714,7 +714,8 @@ test("write-section (local) replaces or appends the section in the file; (github
   writeFileSync(note, "- one: blocked on the API\n");
   const r = await cli(dir, ["write-section", path, "--heading", "Unmet criteria", "--body-file", note]);
   assert.equal(r.code, 0, r.stderr);
-  assert.equal(r.stdout, `${path}\n`);
+  // validateRef resolves symlinks (macOS's /var → /private/var on the temp dir), so compare realpaths.
+  assert.equal(r.stdout, `${realpathSync(path)}\n`);
   assert.match(readFileSync(path, "utf8"), /\n## Unmet criteria\n\n- one: blocked on the API\n$/);
   writeFileSync(note, "- one: descoped\n");
   await cli(dir, ["write-section", path, "--heading", "Unmet criteria", "--body-file", note]);
