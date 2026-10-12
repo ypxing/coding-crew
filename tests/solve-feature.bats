@@ -134,7 +134,7 @@ for ((i = 0; i < ${#args[@]}; i++)); do
 done
 case "$1 $2" in
   "pr view") [ -n "${PR_EXISTS:-}" ] || exit 1; [[ "$*" == *url* ]] && echo "https://github.com/o/r/pull/9" || echo '{"number":9}' ;;
-  "pr create") printf '%s' "${args[$((${#args[@]} - 1))]}" > "$STATE/pr-body"; echo "https://github.com/o/r/pull/10" ;;
+  "pr create") printf '%s' "${args[$((${#args[@]} - 1))]}" > "$STATE/pr-body"; printf '%s' "${args[$((${#args[@]} - 3))]}" > "$STATE/pr-title"; echo "https://github.com/o/r/pull/10" ;;
   api*)
     if [ "$patch" = PATCH ]; then
       id="${path##*/}"
@@ -478,9 +478,10 @@ progress_body() {
   [ "$(git rev-parse origin/feature/feat)" = "$(git rev-parse feature/feat)" ]
   [ "$(git ls-remote origin refs/heads/feature/feat | cut -f1)" = "$(git rev-parse feature/feat)" ]
   local last="${lines[${#lines[@]}-1]}"
-  [[ "$last" == "gh pr create --fill --body "* ]]
+  [[ "$last" == "gh pr create --title Feat --body "* ]]
   ! grep -q '^pr create' "$STATE/gh.log"
   eval "$last"
+  [ "$(cat "$STATE/pr-title")" = "Feat" ]
   [ "$(cat "$STATE/pr-body")" = "$(printf 'Closes #2\nCloses #3')" ]
   [ "$(cat "$STATE/pr-body")" = "$(node "$HOME/.coding-crew/tracker/cli.mjs" closing-refs --feature-slug feat)" ]
 }
@@ -489,6 +490,7 @@ progress_body() {
   run bash "$SCRIPT" feat --open-pr
   [ "$status" -eq 0 ]
   [ "${lines[${#lines[@]}-1]}" = "https://github.com/o/r/pull/10" ]
+  [ "$(cat "$STATE/pr-title")" = "Feat" ]
   [ "$(cat "$STATE/pr-body")" = "$(printf 'Closes #2\nCloses #3')" ]
   grep -q 'pull/10' <<<"$(progress_body)"
 

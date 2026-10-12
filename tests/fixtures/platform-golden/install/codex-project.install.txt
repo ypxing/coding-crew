@@ -198,7 +198,7 @@ REPO/.coding-crew/dep-install/scripts/run.sh exec=1
 REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-REPO/.coding-crew/manifest.json 92328427204a2948256922d546cf919c9bae91b3
+REPO/.coding-crew/manifest.json 5d4daae4a748df510944cdd7e966faf5a60018a2
 REPO/.coding-crew/skills/ /
 REPO/.coding-crew/skills/_shared/ /
 REPO/.coding-crew/skills/_shared/fragments/ /

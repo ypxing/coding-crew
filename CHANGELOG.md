@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature**: the PR it opens (or the `gh pr create` it prints) is titled after the root issue, not the
+  branch name `--fill` falls back to once the branch holds more than one commit.
 - **tracker**: new `tick <ref>` checks every criterion off on either backend (a GitHub body has no file to edit), and
   `write-section <ref> --heading H --body-file F` records a section (the issue file locally, a comment on GitHub).
   `mark-done` on an issue already in `done/` now makes its `Status:` `done` in place (#450).

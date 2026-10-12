@@ -83,7 +83,7 @@ HOME/.coding-crew/dep-install/scripts/run.sh exec=1
 HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-HOME/.coding-crew/manifest.json e94c054917ff8b5d41d30ce3f0dd49aeb13772e4
+HOME/.coding-crew/manifest.json 04d6d94857b7fc35aeae7b1f4904758270e1bcfb
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
 HOME/.coding-crew/skills/_shared/fragments/ /
