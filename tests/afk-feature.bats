@@ -12,7 +12,9 @@
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 
 setup() {
-  TEMP_DIR=$(mktemp -d)
+  # Physical path: the script's paths come from `git rev-parse --show-toplevel`, which resolves
+  # macOS's /var → /private/var symlink on the temp dir.
+  TEMP_DIR=$(cd "$(mktemp -d)" && pwd -P)
   export STATE="$TEMP_DIR/state" HOME="$TEMP_DIR/home" AFK_HOST=test-host
   mkdir -p "$STATE" "$HOME"
   unset CREW_ORCHESTRATED
