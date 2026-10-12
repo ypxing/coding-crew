@@ -285,7 +285,11 @@ export const featureDepsFile = () => null;
 
 /** Ready and unblocked: a blocker resolves once `done`; one absent from this feature still blocks. */
 export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlug, exec, includeBlocked = false } = {}) {
-  const issues = listFeatureIssues(mainRoot, { featureSlug, exec });
+  return dispatchable(listFeatureIssues(mainRoot, { featureSlug, exec }), { status, includeBlocked });
+}
+
+/** `selectDispatchable`'s rule over one feature's parsed issues, so `listFeatures` counts the same set. */
+function dispatchable(issues, { status = READY_STATUS, includeBlocked = false } = {}) {
   const statusByNumber = new Map(issues.map((i) => [i.number, i.status]));
   // `blocked` is a human's to remove, so it also keeps the issue out of `includeBlocked` (plan/preflight).
   const ready = issues.filter((i) => i.status === status && !i.labels.includes(BLOCKED_LABEL));
@@ -296,8 +300,8 @@ export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlu
 
 /**
  * Every feature, one per slug a root issue names, sorted: `open` while the root or a sub-issue is
- * open, and the count of open `ready-for-agent` issues among them. A slug on more than one root
- * warns and counts them all, rather than failing every other slug. A closed root whose
+ * open, and the count of issues among them dispatch would start now. A slug on more than one root
+ * warns and counts them all as one feature, rather than failing every other slug. A closed root whose
  * `sub_issues_summary` shows every sub-issue closed is settled without reading them.
  */
 export function listFeatures(mainRoot, { exec = gh, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
@@ -314,9 +318,8 @@ export function listFeatures(mainRoot, { exec = gh, warn = (m) => process.stderr
     const settled = (r) => !isOpen(r) && r.sub_issues_summary && r.sub_issues_summary.completed >= r.sub_issues_summary.total;
     if (roots.every(settled)) return { slug, state: "closed", ready: 0 };
     const members = new Map(roots.flatMap((r) => rootAndSubIssues(r, { exec })).map((i) => [i.number, i]));
-    const live = [...members.values()].filter(isOpen);
-    const ready = live.filter((i) => (i.labels ?? []).some((l) => (typeof l === "string" ? l : l.name) === READY_STATUS));
-    return { slug, state: live.length ? "open" : "closed", ready: ready.length };
+    const live = [...members.values()].some(isOpen);
+    return { slug, state: live ? "open" : "closed", ready: dispatchable([...members.values()].map(parseIssue)).length };
   });
 }
 
