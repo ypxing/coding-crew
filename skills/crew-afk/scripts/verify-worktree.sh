@@ -108,8 +108,10 @@ if [ "${CREW_VERIFY_DOCKER:-on}" != "off" ] && [ -n "$RUN_SCRIPT" ]; then
   # A docker-mode worktree without the crew override would make run.sh fall back to the host;
   # gen-override.sh is deterministic, so write it now.
   _vw_override="$(git -C "$WORKTREE_DIR" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)/crew-compose.override.yml"
+  # A here-string, not a pipe into grep -q: its early exit SIGPIPEs the writer, which pipefail reads as "not docker".
+  _vw_verdict="$(bash "$_vw_dep_scripts/resolve-mode.sh" "${_VW_RUN_ARGS[@]}" --no-heuristic 2>/dev/null || true)"
   if [ ! -f "$_vw_override" ] && [ -f "$_vw_dep_scripts/gen-override.sh" ] &&
-     bash "$_vw_dep_scripts/resolve-mode.sh" "${_VW_RUN_ARGS[@]}" --no-heuristic 2>/dev/null | grep -qx 'INSTALL_MODE=docker'; then
+     grep -qx 'INSTALL_MODE=docker' <<<"$_vw_verdict"; then
     bash "$_vw_dep_scripts/gen-override.sh" --project-root "$WORKTREE_DIR" --main-root "${_VW_MAIN_ROOT:-$WORKTREE_DIR}" >/dev/null 2>&1 || true
   fi
   _vw_describe="$(bash "$RUN_SCRIPT" "${_VW_RUN_ARGS[@]}" --describe 2>/dev/null || true)"
