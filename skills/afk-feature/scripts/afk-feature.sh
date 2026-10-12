@@ -24,6 +24,7 @@ for c in "$ROOT" "$COMMON" "$HOME"; do [ -f "$c/.coding-crew/tracker/cli.mjs" ] 
 KIND="$(node "$CLI" config | grep '^tracker=' || true)"
 [ "$KIND" = tracker=github ] || die "${KIND:-tracker=unknown}: feature-issues is a GitHub-only op"
 [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
+[ "$(node "$CLI" feature-issues --feature-slug "$SLUG" | jq length)" -gt 0 ] || die "no feature '$SLUG' in the tracker"
 # Installed beside this skill (.coding-crew/<skill>/scripts), else user-level, as solve-issue finds dep-install.
 scripts_of() { local d; for d in "$SELF/../../$1/scripts" "$HOME/.coding-crew/$1/scripts"; do [ -d "$d" ] && { (cd "$d" && pwd); return; }; done
   die "$1 scripts not found: run install.sh --skill afk-feature"; }

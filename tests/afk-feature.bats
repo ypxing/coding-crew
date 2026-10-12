@@ -75,7 +75,7 @@ case "\$1" in */.coding-crew/tracker/cli.mjs) ;; *) exec "$REAL_NODE" "\$@" ;; e
 printf '%s\n' "\${*:2}" >> "\$STATE/node.log"
 case "\$2" in
   config) echo "tracker=\${TRACKER_KIND:-github}"; echo configured=yes ;;
-  feature-issues) cat "\$STATE/issues.json" ;;
+  feature-issues) [ "\$4" = feat ] && cat "\$STATE/issues.json" || echo '[]' ;;
   fetch) cat "\$STATE/\$3.md" ;;
   prd) [ -f "\$STATE/prd.md" ] || exit 3; cat "\$STATE/prd.md" ;;
   closing-refs) jq -r 'sort_by(.number) | .[] | select(.state == "OPEN" and any(.labels[]; .name == "awaiting-merge")) | "Closes #\(.number)"' "\$STATE/issues.json" ;;
@@ -171,7 +171,7 @@ claude_flag() { claude_call "$1" | grep -A1 -x -- "$2" | tail -1; }
 
 # --- preconditions -------------------------------------------------------------------
 
-@test "a missing tool, a non-github tracker, an invalid slug or a dirty tree exits 1 before any checkout, claude or gh" {
+@test "a missing tool, a non-github tracker, an invalid or unknown slug or a dirty tree exits 1 before any checkout, claude or gh" {
   local tool
   for tool in claude gh jq timeout; do
     local bin="$TEMP_DIR/bin-$tool"
@@ -192,6 +192,10 @@ claude_flag() { claude_call "$1" | grep -A1 -x -- "$2" | tail -1; }
   run bash "$SCRIPT" '../x'
   [ "$status" -eq 1 ]
   [[ "$output" == *"slug"* ]]
+
+  run bash "$SCRIPT" nosuch
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"nosuch"* ]]
 
   echo dirt > dirt.txt
   run bash "$SCRIPT" feat
@@ -506,4 +510,22 @@ progress_body() {
 @test "afk-feature.sh stays under 150 lines and .afk-logs/ is gitignored here" {
   [ "$(wc -l < "$REPO_ROOT/skills/afk-feature/scripts/afk-feature.sh")" -lt 150 ]
   git -C "$REPO_ROOT" check-ignore -q .afk-logs/x.log
+}
+
+# --- packaging -----------------------------------------------------------------------
+
+@test "install.sh claude --skill afk-feature ships the script, the prompt template and the reviewer role with its scripts and references" {
+  local target="$TEMP_DIR/target"
+  mkdir -p "$target" && git -C "$target" init -q -b main
+  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" claude --skill afk-feature
+  [ "$status" -eq 0 ]
+  [ -x "$target/.coding-crew/afk-feature/scripts/afk-feature.sh" ]
+  [ -f "$target/.coding-crew/afk-feature/scripts/verify-prompt.md" ]
+  [ -f "$target/.coding-crew/afk-feature/roles/reviewer.md" ]
+  [ -n "$(ls "$target/.coding-crew/afk-feature/roles/reviewer/scripts")" ]
+  [ -n "$(ls "$target/.coding-crew/afk-feature/roles/reviewer/references")" ]
+  [ -f "$target/.claude/skills/afk-feature/SKILL.md" ]
+  [ -f "$target/.coding-crew/solve-issue/scripts/run-checks.sh" ]
+  [ -f "$target/.coding-crew/dep-install/scripts/run.sh" ]
+  [ "$(jq -c '.skills["afk-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install"]' ]
 }

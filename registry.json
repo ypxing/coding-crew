@@ -57,6 +57,25 @@
         "write-pr"
       ]
     },
+    "afk-feature": {
+      "version": "0.1.0",
+      "source-dir": "afk-feature",
+      "description": "Run one feature's ready-for-agent issues in order on one branch, each gated by the project's checks and a fresh read-only verifier.",
+      "assets": {
+        "source": "skills/afk-feature/scripts",
+        "dest": ".coding-crew/afk-feature/scripts"
+      },
+      "more-assets": [
+        {
+          "source": "orchestrator/roles",
+          "dest": ".coding-crew/afk-feature/roles"
+        }
+      ],
+      "deps": [
+        "solve-issue",
+        "dep-install"
+      ]
+    },
     "tdd": {
       "version": "1.2.4",
       "source-dir": "tdd",
