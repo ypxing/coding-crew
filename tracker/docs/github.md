@@ -53,7 +53,8 @@ never files a duplicate.
 `features` prints one tab-separated line per root issue's slug, sorted: the slug, `open` while the
 root or any of its sub-issues is open (`closed` otherwise) and the count of open `ready-for-agent`
 issues among the root and its sub-issues. A slug on more than one root is listed once, with a
-warning on stderr. A failing `gh` exits `1` with `gh`'s stderr verbatim.
+warning on stderr. A closed root whose sub-issues have all closed is listed from its
+`sub_issues_summary` without reading them. A failing `gh` exits `1` with `gh`'s stderr verbatim.
 
 `publish-issues`, `publish-prd` and `rewrite` file their issues in the feature: the first issue
 filed for a slug with no root becomes its root (the CLI adds the `Feature:` line), and every later
@@ -205,7 +206,9 @@ Feature: <slug>
 
 The tracker CLI writes that line (on the issue it creates as a root, and on every rewrite or
 re-publish of it) — never a skill — and finds a feature by it, scanning the repo's
-issues through the REST list API (open ones first, then all), paginated. Slices, promoted
+issues through the REST list API (open ones first, then all), paginated. It scans once per process
+(a crew-afk run reads its feature on every pass): later reads re-read the root it found, and scan
+again only once that issue is gone or no longer carries the line. Slices, promoted
 review-fix issues and integration-fix issues are all sub-issues of the root (`--parent <root>`).
 A feature's issues are the root plus its sub-issues, read from
 `repos/{owner}/{repo}/issues/<root>/sub_issues`, paginated, so no page is cut short; a slug with

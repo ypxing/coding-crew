@@ -36,15 +36,22 @@ export function ghFeature(slug, root, ...subs) {
   ];
 }
 
-const rest = (i) => ({
-  id: i.number * 1000,
-  number: i.number,
-  title: i.title,
-  body: i.body ?? "",
-  state: String(i.state).toLowerCase(),
-  labels: i.labels ?? [],
-  ...(i.pull_request ? { pull_request: i.pull_request } : {}),
-});
+/** `i` as the REST API prints it; `issues` gives the counts in its `sub_issues_summary`. */
+const rest = (i, issues = []) => {
+  const subs = issues.filter((s) => s.parent === i.number);
+  const completed = subs.filter((s) => String(s.state).toUpperCase() === "CLOSED").length;
+  return {
+    id: i.number * 1000,
+    number: i.number,
+    title: i.title,
+    body: i.body ?? "",
+    state: String(i.state).toLowerCase(),
+    labels: i.labels ?? [],
+    ...(i.pull_request
+      ? { pull_request: i.pull_request }
+      : { sub_issues_summary: { total: subs.length, completed, percent_completed: subs.length ? Math.floor((100 * completed) / subs.length) : 0 } }),
+  };
+};
 
 const ok = (stdout = "") => ({ code: 0, stdout, stderr: "" });
 const fail = (stderr, code = 1) => ({ code, stdout: "", stderr: `${stderr}\n` });
@@ -80,25 +87,25 @@ function api(issues, args, { lagged }) {
     const list = visible
       .filter((i) => state === "all" || String(i.state).toLowerCase() === state)
       .sort((a, b) => b.number - a.number)
-      .map(rest);
+      .map((i) => rest(i, issues));
     return paged(list, query, args);
   }
   let m = /^issues\/(\d+)\/sub_issues$/.exec(route);
   if (m && method === "GET") {
-    const list = visible.filter((i) => i.parent === Number(m[1])).sort((a, b) => a.number - b.number).map(rest);
+    const list = visible.filter((i) => i.parent === Number(m[1])).sort((a, b) => a.number - b.number).map((i) => rest(i, issues));
     return paged(list, query, args);
   }
   m = /^issues\/(\d+)\/parent$/.exec(route);
   if (m) {
     const child = issues.find((i) => i.number === Number(m[1]));
     const parent = child && issues.find((i) => i.number === child.parent);
-    return parent ? ok(JSON.stringify(rest(parent))) : fail("gh: Not Found (HTTP 404)");
+    return parent ? ok(JSON.stringify(rest(parent, issues))) : fail("gh: Not Found (HTTP 404)");
   }
   m = /^issues\/(\d+)$/.exec(route);
   if (m) {
     const issue = issues.find((i) => i.number === Number(m[1]));
     if (!issue) return fail("gh: Not Found (HTTP 404)");
-    return ok(args.includes("--jq") ? `${issue.number * 1000}\n` : JSON.stringify(rest(issue)));
+    return ok(args.includes("--jq") ? `${issue.number * 1000}\n` : JSON.stringify(rest(issue, issues)));
   }
   if (/^issues\/\d+\/dependencies\/blocked_by$/.test(route)) return ok("{}");
   return fail(`fake gh: unexpected api call: ${args.join(" ")}`);

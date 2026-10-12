@@ -2,7 +2,8 @@
  * github.mjs — the GitHub Issues tracker backend, shelling out to `gh` with argv arrays.
  * `exec` is injectable so tests stub `gh` without touching PATH. A feature is one root issue whose
  * body carries a column-0 `Feature: <slug>` line, plus that root's sub-issues: reading one is a
- * paginated scan for the root and one paginated sub-issues read, never a call per issue.
+ * paginated scan for the root (once per process) and one paginated sub-issues read, never a call
+ * per issue.
  */
 
 import { execFileSync } from "node:child_process";
@@ -200,15 +201,36 @@ function ambiguousRoots(featureSlug, roots) {
   return new Error(`feature ${featureSlug} has ${roots.length} root issues carrying 'Feature: ${featureSlug}': ${refs} — keep the line on one of them`);
 }
 
+/** Root numbers by slug, per `exec` (one GitHub): the sprint loop reads its feature on every
+ * pass, and a scan costs a page per 100 of the repo's issues. Nothing outlives the process. */
+const rootsSeen = new WeakMap();
+
+/** Issue `number` (REST JSON) while it still carries `featureSlug`'s marker, else null. */
+function stillRoot(number, featureSlug, { exec }) {
+  const r = exec("gh", ["api", `${API}/issues/${number}`]);
+  if (r.code !== 0) {
+    if (/HTTP 404|HTTP 410/i.test(r.stderr ?? "")) return null;
+    throw new Error(`gh api ${API}/issues/${number} failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  }
+  const issue = JSON.parse(r.stdout || "{}");
+  return featureMarker(issue.body) === featureSlug ? issue : null;
+}
+
 /**
  * The feature's root issue (REST JSON), or null when no issue carries its marker. An open root
- * wins over closed ones; two open, or no open and two closed, is an error naming them.
+ * wins over closed ones; two open, or no open and two closed, is an error naming them. Scans
+ * once per process: later calls re-read the root found, scanning again only once it loses its line.
  */
 function findRoot(featureSlug, { exec }) {
+  if (!rootsSeen.has(exec)) rootsSeen.set(exec, new Map());
+  const seen = rootsSeen.get(exec);
+  const known = seen.has(featureSlug) ? stillRoot(seen.get(featureSlug), featureSlug, { exec }) : null;
+  if (known) return known;
   const marked = (state) => scanIssues(state, { exec }).filter((i) => featureMarker(i.body) === featureSlug);
   let roots = marked("open");
   if (roots.length === 0) roots = marked("all");
   if (roots.length > 1) throw ambiguousRoots(featureSlug, roots);
+  if (roots[0]) seen.set(featureSlug, roots[0].number);
   return roots[0] ?? null;
 }
 
@@ -245,7 +267,8 @@ export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlu
 /**
  * Every feature, one per slug a root issue names, sorted: `open` while the root or a sub-issue is
  * open, and the count of open `ready-for-agent` issues among them. A slug on more than one root
- * warns and counts them all, rather than failing every other slug.
+ * warns and counts them all, rather than failing every other slug. A closed root whose
+ * `sub_issues_summary` shows every sub-issue closed is settled without reading them.
  */
 export function listFeatures(mainRoot, { exec = gh, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
   const rootsBySlug = new Map();
@@ -258,6 +281,8 @@ export function listFeatures(mainRoot, { exec = gh, warn = (m) => process.stderr
     const open = all.filter(isOpen);
     const roots = open.length ? open : all;
     if (roots.length > 1) warn(`WARNING: ${ambiguousRoots(slug, roots).message}`);
+    const settled = (r) => !isOpen(r) && r.sub_issues_summary && r.sub_issues_summary.completed >= r.sub_issues_summary.total;
+    if (roots.every(settled)) return { slug, state: "closed", ready: 0 };
     const members = new Map(roots.flatMap((r) => rootAndSubIssues(r, { exec })).map((i) => [i.number, i]));
     const live = [...members.values()].filter(isOpen);
     const ready = live.filter((i) => (i.labels ?? []).some((l) => (typeof l === "string" ? l : l.name) === READY_STATUS));

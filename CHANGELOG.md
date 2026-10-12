@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **tracker (github)**: a crew-afk run scans the repo's issues for its feature's root once, not on every read, and
+  `features` skips the sub-issue read of a feature whose root and sub-issues have all closed (#445).
 - **tracker (github)**: `rewrite` of an issue that sits under an epic with no `Feature:` line now makes it the
   feature's root when the slug has none, its parent left as it is, instead of exiting 1 (#445).
 - **tracker (github)**: "Moving off milestones" now moves every issue of the milestone, closed ones included, so an

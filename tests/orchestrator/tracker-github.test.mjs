@@ -95,6 +95,35 @@ test("listFeatureIssues throws on a gh failure with its stderr verbatim", () => 
   assert.throws(() => listFeatureIssues(repo(), { featureSlug: "my-feature", exec }), (e) => e.message.includes("gh: authentication required\n"));
 });
 
+test("listFeatureIssues scans once per process: a later read re-reads the root found and scans nothing", () => {
+  const exec = fakeExec([ghIssue(4), ghIssue(5)]);
+  listFeatureIssues(repo(), { featureSlug: "feat", exec });
+  exec.calls.length = 0;
+  assert.deepEqual(listFeatureIssues(repo(), { featureSlug: "feat", exec }).map((i) => i.number), [4, 5]);
+  assert.deepEqual(argv(exec), ["api repos/{owner}/{repo}/issues/4", subIssues(4)]);
+});
+
+test("listFeatureIssues scans again once the root it found loses its Feature: line", () => {
+  const exec = fakeExec([ghIssue(4), ghIssue(5)]);
+  listFeatureIssues(repo(), { featureSlug: "feat", exec });
+  exec.issues.find((i) => i.number === 4).body = "moved\n";
+  exec.issues.push({ ...ghIssue(9), body: "Feature: feat\n" });
+  assert.deepEqual(listFeatureIssues(repo(), { featureSlug: "feat", exec }).map((i) => i.number), [9]);
+});
+
+test("listFeatureIssues rescans when the root it found is gone, and throws gh's stderr on any other failure", () => {
+  const gone = fakeExec([ghIssue(4)]);
+  listFeatureIssues(repo(), { featureSlug: "feat", exec: gone });
+  gone.issues.splice(0);
+  assert.deepEqual(listFeatureIssues(repo(), { featureSlug: "feat", exec: gone }), []);
+
+  const failures = {};
+  const exec = fakeGithub(ghFeature("feat", ghIssue(4)), { fail: failures });
+  listFeatureIssues(repo(), { featureSlug: "feat", exec });
+  failures["api repos/{owner}/{repo}/issues/4"] = { stderr: "gh: Bad credentials (HTTP 401)\n" };
+  assert.throws(() => listFeatureIssues(repo(), { featureSlug: "feat", exec }), /Bad credentials/);
+});
+
 test("featureMarker reads a column-0 Feature: line holding one slug, and nothing else", () => {
   assert.equal(featureMarker("Actor: x\nFeature: my-feat\n\n## What\n"), "my-feat");
   assert.equal(featureMarker("  Feature: my-feat\n"), null);

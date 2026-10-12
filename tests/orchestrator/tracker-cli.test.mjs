@@ -466,6 +466,20 @@ test("features (github) lists one line per marked root: slug, open|closed, and t
   for (const call of exec.calls) assert.ok(!call.some((a) => /milestone/i.test(a)), call.join(" "));
 });
 
+test("features (github) reads no sub-issues of a closed root whose sub-issues have all closed", async () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, ".coding-crew/config.json"), JSON.stringify({ tracker: { kind: "github" } }));
+  const exec = fakeGithub([
+    ...ghFeature("done", ghIssue(1, { state: "CLOSED" }), ghIssue(2, { state: "CLOSED" })),
+    ...ghFeature("live", ghIssue(3, { state: "CLOSED" }), ghIssue(4, { labels: ["ready-for-agent"] })),
+  ]);
+  const r = await cli(dir, ["features"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "done\tclosed\t0\nlive\topen\t1\n");
+  const reads = exec.calls.filter((c) => /\/sub_issues/.test(c.join(" ")));
+  assert.deepEqual(reads.map((c) => /issues\/(\d+)\/sub_issues/.exec(c.join(" "))[1]), ["3"]);
+});
+
 test("features (github) lists a slug on two open roots once, with a warning, and every other slug as usual", async () => {
   const dir = root({ github: true });
   writeFileSync(join(dir, ".coding-crew/config.json"), JSON.stringify({ tracker: { kind: "github" } }));
