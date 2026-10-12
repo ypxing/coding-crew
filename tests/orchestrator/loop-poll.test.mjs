@@ -599,8 +599,8 @@ test("--poll-interval 0: issues listed at run start and a fix issue Phase 2 prom
   h.ctx.effects.bash = (name, args, o) => {
     if (name === "promote-findings.sh" && args[0] === "flush" && !flushed) {
       flushed = true;
-      h.ready.push({ slug: "parked-fix", number: null });
-      return { code: 0, stdout: "FLUSH: promoted=1", stderr: "" };
+      h.ready.push({ slug: "parked-fix", number: null, path: "/m/.scratch/demo/issues/open/03-parked-fix.md" });
+      return { code: 0, stdout: "flushed: .scratch/demo/issues/open/03-parked-fix.md\nFLUSH: promoted=1", stderr: "" };
     }
     return bash(name, args, o);
   };
@@ -664,4 +664,92 @@ test("a claim-time lint that throws with nothing in flight claims nothing and re
   assert.equal(result.stalled, true);
   assert.match(result.stallReason, /linting a mid-run issue failed.*EOF/);
   assert.match(reason, /linting a mid-run issue failed.*EOF/);
+});
+
+test("a mid-run lint that blocks one issue then throws does not lint (or block) that issue a second time", async () => {
+  const h = harness({ pollInterval: 5 });
+  const calls = [];
+  h.ctx.stages.lintMidRunIssues = async (_c, issues) => {
+    calls.push(issues.map((i) => i.slug));
+    if (calls.length === 1) {
+      h.blocked.add("bad1");
+      throw new Error("gh issue comment failed (exit 1): EOF");
+    }
+    return [];
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  h.ready.push({ slug: "bad1", number: null }, { slug: "bad2", number: null });
+  h.sleeps.shift()();
+  await settle();
+  h.sleeps.shift()();
+  await settle();
+  assert.deepEqual(calls, [["bad1", "bad2"], ["bad2"]]);
+  h.gates.get("a")();
+  await settle();
+  h.gates.get("bad2")?.();
+  await run;
+});
+
+test("after a flush, an issue a human readied during the drain is linted; the flushed fix issue is not", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1, lintBlocks: ["bad"] });
+  let flushes = 0;
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => {
+    if (name === "promote-findings.sh" && args[0] === "flush" && ++flushes === 1) {
+      h.ready.push({ slug: "fix", number: null, path: "/m/.scratch/demo/issues/open/09-fix.md" }, { slug: "bad", number: null });
+      return { code: 0, stdout: "flushed: .scratch/demo/issues/open/09-fix.md\nFLUSH: promoted=1", stderr: "" };
+    }
+    return bash(name, args, o);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  h.gates.get("a")();
+  await settle();
+  assert.deepEqual(h.linted, ["bad"]);
+  assert.ok(h.blocked.has("bad"));
+  assert.deepEqual(h.started, ["a", "fix"]);
+  h.gates.get("fix")();
+  await run;
+});
+
+test("a red drain's 'Not run' feature-review entry survives a later drain whose unclaimedByCap listing fails", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  let t = 0;
+  h.ctx.now = () => t;
+  h.ctx.options.maxWallMinutes = 10;
+  h.ctx.options.integrationCheck = true;
+  h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
+  h.ctx.sprint.state = () => {};
+  let checks = 0;
+  h.ctx.stages.runIntegrationCheck = () =>
+    ++checks === 1 ? { status: "fail", commit: "a".repeat(40), failed: [], reason: "red" } : { status: "pass", commit: "b".repeat(40), failed: [] };
+  h.ctx.stages.fixIntegration = async () => ({ verdict: "not-fixable", reason: "stub", commit: "a".repeat(40) });
+  h.ctx.stages.runFeatureReview = async (_c, { integration }) =>
+    integration?.status === "fail" ? { skipped: "the integration check is red" } : { report: "r.md", findings: [] };
+  let flushes = 0;
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => {
+    if (name === "promote-findings.sh" && args[0] === "flush" && ++flushes === 1) {
+      h.ready.push({ slug: "fix", number: null, path: "/m/.scratch/demo/issues/open/09-fix.md" });
+      return { code: 0, stdout: "flushed: .scratch/demo/issues/open/09-fix.md\nFLUSH: promoted=1", stderr: "" };
+    }
+    return bash(name, args, o);
+  };
+  const list = h.ctx.tracker.selectDispatchable;
+  h.ctx.tracker.selectDispatchable = (...a) => {
+    if (t) throw new Error(EOF_ERROR);
+    return list(...a);
+  };
+  const out = [];
+  h.ctx.out = (s) => out.push(s);
+  const run = runSprint(h.ctx);
+  await settle();
+  h.gates.get("a")();
+  await settle();
+  t = 10 * 60_000;
+  h.gates.get("fix")();
+  const result = await run;
+  assert.equal(result.stalled, true);
+  assert.match(out.join("\n"), /## Feature Review/);
 });

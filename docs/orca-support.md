@@ -67,7 +67,7 @@ confirmed with a live spike against a running orca runtime (not just the CLI ref
 | open feature agent                 | `tab create --workspace <the feature worktree's> --cwd <_feature> --label <slug>-watch --no-focus`, then `pane run <pane> "bash '<launch.sh>'"` | `terminal create --worktree path:<_feature> --title <slug>-watch --command "bash '<launch.sh>'" --json`; with `_feature` not named, none (`WARN`) |
 | feature agent still live           | `pane list` has the pane with an `agent_status` other than `unknown` | `terminal show --terminal <handle> --json` has `agentIdentity`, and is not `orphaned: true`, `writable: false` or `connected: false` |
 | run a dispatch (worker tab)        | `tab create --workspace <the feature worktree's> --cwd <the dispatch's cwd> --label <slug> <agent> --no-focus`, then `pane run <pane> "bash '<run.sh>'"`; `tab close <tabId>` after | `terminal create --worktree path:<its worktree, else _feature> --title <slug> <agent> --command "bash '<run.sh>'" --json`; neither named: headless; `terminal close` after |
-| notify feature agent               | `agent prompt <paneId> <msg> --wait --until working --timeout-ms 2000` | `terminal send --terminal <handle> --text <msg> --enter --json`  |
+| notify feature agent               | `agent prompt <paneId> <msg> --wait --until working --timeout 6000` | `terminal send --terminal <handle> --text <msg> --enter --json`  |
 | launching pane (ambient env)       | `HERDR_PANE_ID`                                              | `ORCA_TERMINAL_HANDLE` |
 | preflight readiness check          | `herdr status` (text: `status: running`)                     | `orca status --json` → `result.runtime.reachable`                          |
 
@@ -135,7 +135,9 @@ never edits an issue's `Status:` or criteria boxes.
 - **stdout.** With a live agent the summary text goes only to that file during the run; stdout
   ends with one line naming the agent's worktree and the file when the end push was sent, else
   with the file's whole content. With no agent stdout streams the summary as before.
-- **herdr.** Pushes use `agent prompt --wait --until working --timeout 2000`; herdrdev/herdr#4537
+- **herdr.** Pushes use `agent prompt --wait --until working --timeout 6000`, outlasting herdr's 5s
+  stall window; a `--wait` timeout whose reply shows `agent_status: working` counts as sent (the
+  prompt is queued behind the pane's turn). herdrdev/herdr#4537
   is still open upstream and a long-running agent was not reproduced, so a push stays advisory:
   the log tab, the summary file and the exit code carry the same information.
 - **None.** `--dry-run`, `CREW_PANE_HOST=none` or no host open no agent and write no

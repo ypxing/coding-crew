@@ -5,7 +5,7 @@
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { resumeRoute, runHousekeeping, runWorker } from "./pipeline.mjs";
 import { getTracker } from "./tracker.mjs";
@@ -25,6 +25,8 @@ export async function runSprint(ctx) {
   const tracker = ctx.tracker ?? (await getTracker(effects.mainRoot));
   const stages = ctx.stages ?? { runWorker, runHousekeeping, checkRequires, lintMidRunIssues };
   const reviewFeature = stages.runFeatureReview ?? runFeatureReview;
+  const integrationCheck = stages.runIntegrationCheck ?? runIntegrationCheck;
+  const triageIntegration = stages.fixIntegration ?? fixIntegration;
   const parallel = Math.max(1, options.parallel ?? 1);
   const inFlight = new Set();
   // One merge-conflict retry at a time: two against one tip would conflict with each other's resolution.
@@ -79,9 +81,11 @@ export async function runSprint(ctx) {
     listTracker(tag, () => tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }), opts);
   const featureIssues = (tag) => listTracker(tag, () => tracker.listFeatureIssues(effects.mainRoot, { featureSlug: sprint.featureSlug }));
 
-  // A failure here costs at most a second lint of an already-seen issue.
-  const seenNow = () => {
-    for (const i of dispatchable("SEEN-LIST-FAILED", { soft: true }) ?? []) seen.add(i.slug);
+  // A failure here costs at most a second lint of an already-seen issue. `files` narrows it to those issue files.
+  const seenNow = (files = null) => {
+    for (const i of dispatchable("SEEN-LIST-FAILED", { soft: true }) ?? []) {
+      if (!files || (i.path && files.has(basename(i.path)))) seen.add(i.slug);
+    }
   };
 
   // Serialized, so a poll and a claim listing the same newcomer lint it (and write its block) once.
@@ -89,7 +93,8 @@ export async function runSprint(ctx) {
   /** Every mid-run newcomer is linted here before any claim; this run's own fix issues are exempt. */
   function lintUnseen(issues) {
     const run = linting.then(async () => {
-      const fresh = issues.filter((i) => !seen.has(i.slug) && !ownRefs.has(i.number));
+      // Blocked this run: an earlier lint that threw part-way already wrote its Blocked section.
+      const fresh = issues.filter((i) => !seen.has(i.slug) && !ownRefs.has(i.number) && !sprint.isBlockedThisRun(i.slug));
       if (fresh.length) await stages.lintMidRunIssues(ctx, fresh);
       // Only after the lint returned: a lint that throws leaves its issues unseen, to be linted again.
       for (const i of issues) seen.add(i.slug);
@@ -294,10 +299,10 @@ export async function runSprint(ctx) {
     }
     // First at every drain, with whatever has merged so far (nothing merged, nothing new to check).
     if (options.integrationCheck && !options.dryRun && sprint.get("merged")) {
-      integration = runIntegrationCheck(ctx);
+      integration = integrationCheck(ctx);
       integration.fix = null;
       if (integration.status === "fail") {
-        const fix = await fixIntegration(ctx, tracker, integration, integrationFixes);
+        const fix = await triageIntegration(ctx, tracker, integration, integrationFixes);
         integration.fix = fix;
         if (!fix.repeat) integrationFixes.push(fix);
         if (fix.number) ownRefs.add(fix.number);
@@ -312,11 +317,11 @@ export async function runSprint(ctx) {
     if (!featureReviewed && !options.dryRun && sprint.get("merged")) {
       const red = integration?.status === "fail";
       featureReviewed = !red;
+      const unclaimed = unclaimedByCap();
+      if (listingFailed) break;
       // A red drain's skip entry gives way to a later drain's review.
       if (redSkipped) featureReviews.pop();
       redSkipped = red;
-      const unclaimed = unclaimedByCap();
-      if (listingFailed) break;
       const promote = (Number(sprint.get("feature-review-promotions")) || 0) < FEATURE_REVIEW_PROMOTIONS;
       const review = await reviewFeature(ctx, {
         integration,
@@ -335,9 +340,10 @@ export async function runSprint(ctx) {
       flushSkipped = parkedCount(ctx) > 0 || unseen.size > 0;
       break;
     }
-    if (flush(ctx) > 0) {
-      // Promoted fix issues are this run's own: not newcomers to lint.
-      seenNow();
+    const flushed = flush(ctx);
+    if (flushed.size) {
+      // Promoted fix issues are this run's own: not newcomers to lint. Anything else readied meanwhile is.
+      seenNow(flushed);
       continue;
     }
     if (unseen.size) {
@@ -426,10 +432,9 @@ function flush(ctx) {
   });
   const text = r.stdout.trim();
   ctx.log(text, "debug"); // promote-findings.sh traced [FLUSH]
-  const m = /FLUSH:\s*promoted=(\d+)/.exec(text);
-  const promoted = m ? Number(m[1]) : 0;
-  if (promoted > 0) ctx.log(`Phase 2: ${promoted} fix issue(s) re-entered the loop.`);
-  return promoted;
+  const flushed = new Set([...text.matchAll(/^flushed: (.+)$/gm)].map((m) => basename(m[1].trim())));
+  if (flushed.size) ctx.log(`Phase 2: ${flushed.size} fix issue(s) re-entered the loop.`);
+  return flushed;
 }
 
 async function wrapUp(ctx, { tracker, stalled, stallReason = null, capped = false, wallCap = null, unlisted = [], waiting = [], integration = null, integrationFixes = [], featureReviews = [] }) {
