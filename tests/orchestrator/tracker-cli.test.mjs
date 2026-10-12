@@ -422,6 +422,23 @@ test("feature-issues (github) prints [] for a slug with no root, exits 1 naming 
   }
 });
 
+// --- closing-refs ------------------------------------------------------------------
+
+test("closing-refs (github) prints closingRefs' Closes lines, one per line, and nothing when nothing ships", async () => {
+  const dir = root({ github: true });
+  const prd = ghIssue(2, { title: "PRD: Feat" });
+  const shipped = fakeGithub(ghFeature("feat", prd, ghIssue(7, { labels: ["awaiting-merge"] }), ghIssue(4, { labels: ["awaiting-merge"] })));
+  const r = await cli(dir, ["closing-refs", "--feature-slug", "feat"], shipped);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "Closes #2\nCloses #4\nCloses #7\n");
+  const none = await cli(dir, ["closing-refs", "--feature-slug", "feat"], fakeGithub(ghFeature("feat", prd, ghIssue(4, { labels: ["ready-for-agent"] }))));
+  assert.equal(none.code, 0, none.stderr);
+  assert.equal(none.stdout, "");
+  for (const argv of [[], ["--feature-slug", "../x"], ["--feature-slug", "feat", "--bogus"]]) {
+    assert.equal((await cli(dir, ["closing-refs", ...argv])).code, 2, argv.join(" "));
+  }
+});
+
 // --- features ----------------------------------------------------------------------
 
 function writeFeatureIssue(dir, slug, state, name, status) {

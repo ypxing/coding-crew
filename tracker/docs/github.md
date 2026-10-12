@@ -37,6 +37,7 @@ node "$TRACKER" publish-prd --feature-slug <slug> --title "<feature title>" --bo
 node "$TRACKER" rewrite <number> --body-file <file> --status <status> --feature-slug <slug>
 node "$TRACKER" mark-done <number> [--force]
 node "$TRACKER" feature-issues --feature-slug <slug> [--state open|all]   # the feature's issues as JSON
+node "$TRACKER" closing-refs --feature-slug <slug>       # the feature PR's `Closes #n` lines
 ```
 
 Exit codes, every op: `0` ok, `1` the op failed (stderr carries `gh`'s own error, verbatim), `2` a
@@ -80,6 +81,10 @@ of another feature. One exception: an issue that becomes the root keeps a parent
 the open ones — as one JSON array of `{number, title, state, labels}`, the root's entry also
 carrying `"root": true`, `[]` for a slug with no root. `close-shipped.sh`, `issue-labels.sh sweep`
 and `afk-feature.sh` read a feature only through it.
+
+`closing-refs` prints the `Closes #<n>` lines the feature's PR body needs, one per line, by the
+rule below: every open `awaiting-merge` issue of the feature, plus its `PRD:` issue (and that
+PRD's `Origin:` issues) once no open work issue is left. It prints nothing when nothing ships.
 
 Every op that reads a feature exits `1` naming them when its slug is ambiguous: two open issues
 carrying the same `Feature:` line, or none open and two or more closed. Remove the line from all
