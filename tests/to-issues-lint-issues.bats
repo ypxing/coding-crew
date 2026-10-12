@@ -156,7 +156,7 @@ J
   printf -- '- **D10** Unmarked orphan.\n' >> "$W/PRD.md"
   lint_clean --prd "$W/PRD.md"
   [ "$status" -eq 0 ]
-  [[ "$output" != *D9* ]]
+  [[ "${output//$W/}" != *D9* ]]
   [[ "$output" == *"WARN "*"PRD.md: D10 is not named by any issue's ## Implements"* ]]
 }
 
