@@ -14,6 +14,7 @@ import {
   isSourceGuarded,
   sectionBody,
   spliceSection,
+  tickCriteria,
 } from "./body-format.mjs";
 
 export const READY_STATUS = "ready-for-agent";
@@ -322,18 +323,40 @@ export function rewriteIssue(mainRoot, path, { body, status } = {}) {
   return true;
 }
 
+/** Every criterion in the file at `path` ticked; the count, or null when there is no such file. */
+export function tickIssue(mainRoot, path) {
+  if (!existsSync(path) || !statSync(path).isFile()) return null;
+  const { text, ticked } = tickCriteria(readFileSync(path, "utf8"));
+  if (ticked) writeFileSync(path, text);
+  return ticked;
+}
+
+/** `## <heading>` written into the file at `path`, replacing one already there; null when there is no such file. */
+export function writeSection(mainRoot, path, { heading, body } = {}) {
+  if (!existsSync(path) || !statSync(path).isFile()) return null;
+  writeIssueSection(path, heading, body);
+  return true;
+}
+
 /** What `mark-done` closes at `path`: its name, its sprint dir, and whether it is already done or missing. */
 export function doneTarget(mainRoot, path) {
   const name = basename(path);
   const stateDir = dirname(path);
   const doneDir = join(dirname(stateDir), "done");
   const sprintDir = dirname(dirname(stateDir));
-  if (basename(stateDir) === "done" && existsSync(path)) return { name, sprintDir, alreadyDone: `${name} already closed (${path})` };
+  if (basename(stateDir) === "done" && existsSync(path)) return { name, sprintDir, alreadyDone: `${name} already closed (${path})`, donePath: path };
   if (!existsSync(path)) {
     const done = join(doneDir, name);
-    return existsSync(done) ? { name, sprintDir, alreadyDone: `${name} already closed (${done})` } : { name, sprintDir, missing: true };
+    return existsSync(done) ? { name, sprintDir, alreadyDone: `${name} already closed (${done})`, donePath: done } : { name, sprintDir, missing: true };
   }
   return { name, sprintDir };
+}
+
+/** A file already in done/ (moved by hand, or a re-run): its `Status:` made `done` in place, nothing else touched. */
+export function reconcileDone(mainRoot, donePath) {
+  const text = readFileSync(donePath, "utf8");
+  const next = text.replace(/^Status: *.*$/gm, "Status: done");
+  if (next !== text) writeFileSync(donePath, next);
 }
 
 export function readIssueBody(mainRoot, path) {

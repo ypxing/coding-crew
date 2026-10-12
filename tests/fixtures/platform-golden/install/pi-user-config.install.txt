@@ -83,7 +83,7 @@ HOME/.coding-crew/dep-install/scripts/run.sh exec=1
 HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-HOME/.coding-crew/manifest.json 331bab88b8d14f91b174d952c0486b0c0137e27e
+HOME/.coding-crew/manifest.json f01cdac762d93072d64625afb122c96fa5ec4886
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
 HOME/.coding-crew/skills/_shared/fragments/ /
@@ -93,6 +93,24 @@ HOME/.coding-crew/skills/_shared/fragments/human-issue.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
+HOME/.coding-crew/solve-feature/ /
+HOME/.coding-crew/solve-feature/roles/ /
+HOME/.coding-crew/solve-feature/roles/coder.md exec=0
+HOME/.coding-crew/solve-feature/roles/followup.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/ /
+HOME/.coding-crew/solve-feature/roles/reviewer/feature.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/references/ /
+HOME/.coding-crew/solve-feature/roles/reviewer/references/backend.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/references/quality.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/references/react.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/references/web-security.md exec=0
+HOME/.coding-crew/solve-feature/roles/reviewer/scripts/ /
+HOME/.coding-crew/solve-feature/roles/reviewer/scripts/review-context.sh exec=1
+HOME/.coding-crew/solve-feature/roles/triage.md exec=0
+HOME/.coding-crew/solve-feature/scripts/ /
+HOME/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
+HOME/.coding-crew/solve-feature/scripts/verify-prompt.md exec=0
 HOME/.coding-crew/solve-issue/ /
 HOME/.coding-crew/solve-issue/scripts/ /
 HOME/.coding-crew/solve-issue/scripts/check-requires.sh exec=1
@@ -192,6 +210,11 @@ CONFIG/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 CONFIG/skills/domain-modeling/references/ /
 CONFIG/skills/domain-modeling/references/adr-format.md exec=0
 CONFIG/skills/domain-modeling/references/context-format.md exec=0
+CONFIG/skills/solve-feature/ /
+CONFIG/skills/solve-feature/SKILL.md exec=0 unrendered=0
+CONFIG/skills/solve-feature/scripts/ /
+CONFIG/skills/solve-feature/scripts/solve-feature.sh exec=0
+CONFIG/skills/solve-feature/scripts/verify-prompt.md exec=0
 CONFIG/skills/solve-issue/ /
 CONFIG/skills/solve-issue/SKILL.md exec=0 unrendered=0
 CONFIG/skills/solve-issue/references/ /

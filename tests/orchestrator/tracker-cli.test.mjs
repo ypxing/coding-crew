@@ -392,7 +392,7 @@ test("github.mjs's create-issue and link-blockers stay reachable through the CLI
 
 // --- feature-issues ----------------------------------------------------------------
 
-test("feature-issues (github) prints the root and its sub-issues as JSON, open ones only with --state open", async () => {
+test("feature-issues (github) prints the root, marked root: true, and its sub-issues as JSON, open ones only with --state open", async () => {
   const dir = root({ github: true });
   const exec = fakeGithub(
     ghFeature("feat", ghIssue(3, { title: "PRD: Feat" }), ghIssue(4, { labels: ["awaiting-merge"] }), ghIssue(5, { state: "CLOSED", labels: ["in-progress"] })),
@@ -400,7 +400,7 @@ test("feature-issues (github) prints the root and its sub-issues as JSON, open o
   const all = await cli(dir, ["feature-issues", "--feature-slug", "feat"], exec);
   assert.equal(all.code, 0, all.stderr);
   assert.deepEqual(JSON.parse(all.stdout), [
-    { number: 3, title: "PRD: Feat", state: "OPEN", labels: [] },
+    { number: 3, title: "PRD: Feat", state: "OPEN", labels: [], root: true },
     { number: 4, title: "Issue 4", state: "OPEN", labels: [{ name: "awaiting-merge" }] },
     { number: 5, title: "Issue 5", state: "CLOSED", labels: [{ name: "in-progress" }] },
   ]);
@@ -419,6 +419,23 @@ test("feature-issues (github) prints [] for a slug with no root, exits 1 naming 
   assert.match(dup.stderr, /#3, #5/);
   for (const argv of [[], ["--feature-slug", "../x"], ["--feature-slug", "feat", "--state", "closed"], ["--feature-slug", "feat", "--bogus"]]) {
     assert.equal((await cli(dir, ["feature-issues", ...argv])).code, 2, argv.join(" "));
+  }
+});
+
+// --- closing-refs ------------------------------------------------------------------
+
+test("closing-refs (github) prints closingRefs' Closes lines, one per line, and nothing when nothing ships", async () => {
+  const dir = root({ github: true });
+  const prd = ghIssue(2, { title: "PRD: Feat" });
+  const shipped = fakeGithub(ghFeature("feat", prd, ghIssue(7, { labels: ["awaiting-merge"] }), ghIssue(4, { labels: ["awaiting-merge"] })));
+  const r = await cli(dir, ["closing-refs", "--feature-slug", "feat"], shipped);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "Closes #2\nCloses #4\nCloses #7\n");
+  const none = await cli(dir, ["closing-refs", "--feature-slug", "feat"], fakeGithub(ghFeature("feat", prd, ghIssue(4, { labels: ["ready-for-agent"] }))));
+  assert.equal(none.code, 0, none.stderr);
+  assert.equal(none.stdout, "");
+  for (const argv of [[], ["--feature-slug", "../x"], ["--feature-slug", "feat", "--bogus"]]) {
+    assert.equal((await cli(dir, ["closing-refs", ...argv])).code, 2, argv.join(" "));
   }
 });
 

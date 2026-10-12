@@ -6,6 +6,22 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **tracker**: new `tick <ref>` checks every criterion off on either backend (a GitHub body has no file to edit), and
+  `write-section <ref> --heading H --body-file F` records a section (the issue file locally, a comment on GitHub).
+  `mark-done` on an issue already in `done/` now makes its `Status:` `done` in place (#450).
+- **solve-issue**: Step 7 ticks through `tick` then `mark-done`, so a direct run closes a GitHub issue too; Step 8
+  records `## Unmet criteria` through `write-section` (#450).
+- **crew-afk**: `close-issue.sh` ticks and closes through the tracker CLI (`tick`, `mark-done --force`) on both
+  backends instead of its own awk and `gh issue edit`; the local path now needs the issue under `.scratch/` (#450).
+- **solve-feature** (new): `solve-feature.sh <slug>` runs one feature's `ready-for-agent` issues in order on one branch.
+  After each `/solve-issue` coder run, the script itself runs the checks and then a fresh read-only verifier against
+  the issue's criteria, and stops at the first failure with the log path. Progress is one comment on the feature's
+  root issue, and the end prints (or, with `--open-pr`, opens) the PR. GitHub tracker only. Both `claude` processes
+  run with `bypassPermissions`, so run it in a worktree, container or runner (#450).
+- **tracker (github)**: `feature-issues` marks the root's entry `"root": true`, and the new `closing-refs` op prints the
+  feature PR's `Closes #<n>` lines, the rule crew-afk's PR already uses (#450).
+- **tracker**: `mark-done` now refuses, with exit 4, an issue whose body has no `## Acceptance criteria` section, on
+  both backends; it used to close on the coder's say-so. Add the section, or pass `--force` (#449).
 - **crew-afk**: `close-shipped.sh` and `issue-labels.sh sweep` run against a tracker CLI without `feature-issues` now
   name that CLI and say to run `install.sh --update`, instead of failing with `unknown op` (#445).
 - **tracker (github)**: `publish-issues` run seconds after `publish-prd` now files under the PRD it created instead of

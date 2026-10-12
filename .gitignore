@@ -6,6 +6,7 @@
 .claude/agents/
 .claude/skills/
 .scratch/
+.solve-feature/
 .claude/worktrees/
 .codex/agents/
 .pi/agents/

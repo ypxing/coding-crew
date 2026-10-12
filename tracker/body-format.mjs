@@ -91,6 +91,14 @@ export function criteriaSection(text) {
   return sectionBody(text, "Acceptance criteria") ?? sectionBody(text, "Acceptance Criteria") ?? "";
 }
 
+/**
+ * Whether `text` has its own `## Acceptance criteria` heading, outside a fence. `## Cross-cutting
+ * Requirements` does not count: it carries the PRD's rules, not the issue's criteria.
+ */
+export function hasCriteriaSection(text) {
+  return sectionBody(text, "Acceptance criteria") !== null || sectionBody(text, "Acceptance Criteria") !== null;
+}
+
 /** A `Source:` line marks a fix issue promoted from review findings: findings against it are never promoted again. */
 export function isSourceGuarded(text) {
   // Only where promote-findings.sh writes it: column 0, outside a ``` / ~~~ fence.
@@ -123,6 +131,22 @@ export function uncheckedCriteria(text) {
     if (inside && /^\s*[-*]\s*\[\s\]/.test(line)) unchecked.push(line);
   }
   return unchecked;
+}
+
+/** `text` with every `- [ ]` under either criteria heading ticked, and how many were: what `cli.mjs tick` writes. */
+export function tickCriteria(text) {
+  let inside = false;
+  let ticked = 0;
+  const lines = String(text).split("\n").map((line) => {
+    if (/^#{1,6}\s+/.test(line)) {
+      inside = CRITERIA_HEADING_RE.test(line);
+      return line;
+    }
+    if (!inside || !/^\s*[-*]\s*\[\s\]/.test(line)) return line;
+    ticked += 1;
+    return line.replace(/\[\s\]/, "[x]");
+  });
+  return { text: lines.join("\n"), ticked };
 }
 
 /**

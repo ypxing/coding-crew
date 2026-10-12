@@ -34,6 +34,8 @@ node "$TRACKER" known --feature-slug <slug> --out <dir>   # copy the feature's i
 node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace]
 node "$TRACKER" publish-prd --feature-slug <slug> --title "<feature title>" --body-file <file>
 node "$TRACKER" rewrite <ref> --body-file <file> --status <status> --feature-slug <slug>
+node "$TRACKER" tick <ref>                                # check every criterion off
+node "$TRACKER" write-section <ref> --heading <h> --body-file <file>   # write `## <h>` into the issue file
 node "$TRACKER" mark-done <ref> [--force]
 ```
 
@@ -54,13 +56,18 @@ nothing. `publish-prd` writes `.scratch/<slug>/PRD.md`.
 
 `mark-done` does not evaluate criteria for you — it only checks that you already did. Before
 running it, verify every `- [ ]` in `## Acceptance criteria` (and `## Cross-cutting Requirements`,
-if present) against the implemented code and check off the ones the code satisfies. It then
-refuses the close in two cases, and both refusals are correct:
+if present) against the implemented code; once all of them hold, `tick <ref>` checks them off in
+one write (it prints `TICKED: <file> — <n> criteria`; a body with no criteria section ticks
+nothing). `write-section <ref> --heading <h> --body-file <file>` replaces, or appends, the `## <h>`
+section of the file: how `## Unmet criteria` is recorded. `mark-done` then refuses the close in two
+cases, and both refusals are correct:
 
 | Exit | Meaning                                                                    | What to do                                                                                                                          |
 | ---- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `3`  | An orchestrator owns this close (`.scratch/<slug>/.orchestrated` exists, or `CREW_ORCHESTRATED=1`) | Nothing. Report your status and stop — the orchestrator closes the issue after its own verification, criteria and review gates pass. |
 | `4`  | Criteria are still unchecked                                               | Do not move the file. Add a `## Unmet criteria` section saying what is missing and why (descoped, blocked, split out), then stop.     |
+
+It also exits `4` for an issue with no `## Acceptance criteria` section at all, unless `--force`.
 
 Pass `--force` only to override a stale marker left by a crashed sprint, or a criterion
 deliberately recorded as descoped. On success it sets `Status: done` and moves the file to

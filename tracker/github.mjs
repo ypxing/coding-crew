@@ -16,6 +16,7 @@ import {
   criteriaSection,
   isSourceGuarded,
   sectionBody,
+  tickCriteria,
 } from "./body-format.mjs";
 
 export const READY_STATUS = "ready-for-agent";
@@ -581,6 +582,26 @@ export function rewriteIssue(mainRoot, number, { body, status, featureSlug, exec
   return true;
 }
 
+/** Every criterion of issue `number`'s live body ticked; the count, or null when gh knows no such issue. */
+export function tickIssue(mainRoot, number, { exec = gh } = {}) {
+  const r = exec("gh", ["issue", "view", String(number), "--json", "body", "--jq", ".body"]);
+  if (r.code !== 0) {
+    if (NOT_FOUND.test(r.stderr ?? "")) return null;
+    throw new Error(`gh issue view failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  }
+  const { text, ticked } = tickCriteria(r.stdout ?? "");
+  if (!ticked) return 0;
+  const edit = withBodyFile(text, (f) => exec("gh", ["issue", "edit", String(number), "--body-file", f]));
+  if (edit.code !== 0) throw new Error(`gh issue edit failed (exit ${edit.code}): ${edit.stderr || edit.stdout}`);
+  return ticked;
+}
+
+/** `## <heading>` as a new comment on issue `number`, never a body edit: the body stays whoever wrote it's. */
+export function writeSection(mainRoot, number, { heading, body, exec = gh } = {}) {
+  writeProgress({ number }, body, { heading, mainRoot, exec });
+  return true;
+}
+
 /** What `mark-done` closes: a github issue has no file, so no sprint dir of its own (the CLI falls back to the env). */
 export function doneTarget(mainRoot, number) {
   return { name: `issue #${number}`, sprintDir: null };
@@ -665,8 +686,9 @@ const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /**
  * `feature-issues --feature-slug S [--state open|all] [--main-root DIR]` — the feature's issues as
- * one JSON array of `{number, title, state, labels}` (state `OPEN`|`CLOSED`), `[]` for a slug with
- * no root: the one membership read close-shipped.sh and issue-labels.sh make.
+ * one JSON array of `{number, title, state, labels, root?}` (state `OPEN`|`CLOSED`; `root: true` on
+ * the root only), `[]` for a slug with no root: the one membership read close-shipped.sh,
+ * issue-labels.sh and solve-feature.sh make.
  */
 function cliFeatureIssues(argv, { exec = gh, out }) {
   const opts = { state: "all" };
@@ -687,15 +709,41 @@ function cliFeatureIssues(argv, { exec = gh, out }) {
   }
   if (!SLUG.test(opts.featureSlug ?? "")) throw usage("feature-issues requires a valid --feature-slug");
   if (!["open", "all"].includes(opts.state)) throw usage(`feature-issues: --state must be open or all, not ${opts.state}`);
-  const issues = featureIssuesJson(opts.featureSlug, { exec })
+  // rootAndSubIssues puts the root first.
+  const all = featureIssuesJson(opts.featureSlug, { exec });
+  const issues = all
     .filter((i) => opts.state === "all" || isOpen(i))
     .map((i) => ({
       number: i.number,
       title: i.title ?? "",
       state: String(i.state).toUpperCase(),
       labels: (i.labels ?? []).map((l) => ({ name: typeof l === "string" ? l : l.name })),
+      ...(i === all[0] ? { root: true } : {}),
     }));
   out(`${JSON.stringify(issues)}\n`);
+}
+
+/**
+ * `closing-refs --feature-slug S [--main-root DIR]` — closingRefs' `Closes #n` lines, one per line,
+ * nothing when the feature ships nothing: the PR body solve-feature.sh writes.
+ */
+function cliClosingRefs(argv, { exec = gh, out }) {
+  let featureSlug;
+  let mainRoot;
+  for (let i = 0; i < argv.length; i++) {
+    switch (argv[i]) {
+      case "--feature-slug":
+        featureSlug = argv[++i];
+        break;
+      case "--main-root":
+        mainRoot = argv[++i];
+        break;
+      default:
+        throw usage(`closing-refs: unknown argument: ${argv[i]}`);
+    }
+  }
+  if (!SLUG.test(featureSlug ?? "")) throw usage("closing-refs requires a valid --feature-slug");
+  for (const line of closingRefs(mainRoot, { featureSlug, exec })) out(`${line}\n`);
 }
 
 /** `link-blockers --issue <n> [--main-root <dir>]` — always exits 0; failures warn on stderr. */
@@ -719,6 +767,7 @@ function cliLinkBlockers(argv, { exec, err }) {
 
 /** This backend's own `tracker/cli.mjs` ops, beyond the ones every backend has. */
 export const cliOps = {
+  "closing-refs": cliClosingRefs,
   "create-issue": cliCreateIssue,
   "feature-issues": cliFeatureIssues,
   "link-blockers": cliLinkBlockers,

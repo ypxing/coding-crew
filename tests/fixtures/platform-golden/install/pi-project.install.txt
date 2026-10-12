@@ -83,7 +83,7 @@ REPO/.coding-crew/dep-install/scripts/run.sh exec=1
 REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-REPO/.coding-crew/manifest.json 331bab88b8d14f91b174d952c0486b0c0137e27e
+REPO/.coding-crew/manifest.json f01cdac762d93072d64625afb122c96fa5ec4886
 REPO/.coding-crew/skills/ /
 REPO/.coding-crew/skills/_shared/ /
 REPO/.coding-crew/skills/_shared/fragments/ /
@@ -93,6 +93,24 @@ REPO/.coding-crew/skills/_shared/fragments/human-issue.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
+REPO/.coding-crew/solve-feature/ /
+REPO/.coding-crew/solve-feature/roles/ /
+REPO/.coding-crew/solve-feature/roles/coder.md exec=0
+REPO/.coding-crew/solve-feature/roles/followup.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer/ /
+REPO/.coding-crew/solve-feature/roles/reviewer/feature.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer/references/ /
+REPO/.coding-crew/solve-feature/roles/reviewer/references/backend.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer/references/quality.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer/references/react.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer/references/web-security.md exec=0
+REPO/.coding-crew/solve-feature/roles/reviewer/scripts/ /
+REPO/.coding-crew/solve-feature/roles/reviewer/scripts/review-context.sh exec=1
+REPO/.coding-crew/solve-feature/roles/triage.md exec=0
+REPO/.coding-crew/solve-feature/scripts/ /
+REPO/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
+REPO/.coding-crew/solve-feature/scripts/verify-prompt.md exec=0
 REPO/.coding-crew/solve-issue/ /
 REPO/.coding-crew/solve-issue/scripts/ /
 REPO/.coding-crew/solve-issue/scripts/check-requires.sh exec=1
@@ -193,6 +211,11 @@ REPO/.pi/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/domain-modeling/references/ /
 REPO/.pi/skills/domain-modeling/references/adr-format.md exec=0
 REPO/.pi/skills/domain-modeling/references/context-format.md exec=0
+REPO/.pi/skills/solve-feature/ /
+REPO/.pi/skills/solve-feature/SKILL.md exec=0 unrendered=0
+REPO/.pi/skills/solve-feature/scripts/ /
+REPO/.pi/skills/solve-feature/scripts/solve-feature.sh exec=0
+REPO/.pi/skills/solve-feature/scripts/verify-prompt.md exec=0
 REPO/.pi/skills/solve-issue/ /
 REPO/.pi/skills/solve-issue/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/solve-issue/references/ /

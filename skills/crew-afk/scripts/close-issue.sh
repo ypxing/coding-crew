@@ -5,8 +5,9 @@ set -euo pipefail
 # Status: done, every criterion ticked, file moved to done/ (github: body ticked, label swapped).
 # Usage: close-issue.sh <issue-file-path>          # tracker: local
 #        close-issue.sh <issue-number> <branch>    # tracker: github (the receipt is keyed by branch)
-# The receipt for this issue's own slug stops a close off a sibling's branch. Ticking lives here,
-# after the gate, because a worker ticking its own boxes would defeat mark-done's guard.
+# The receipt for this issue's own slug stops a close off a sibling's branch. Ticking happens here,
+# after the gate, through the tracker CLI's `tick`, then `mark-done --force` closes: the receipt is
+# the re-verification, and the sprint's .orchestrated marker would refuse a plain mark-done.
 
 ISSUE_PATH="${1:-}"
 
@@ -14,19 +15,6 @@ if [ -z "$ISSUE_PATH" ]; then
   echo "Usage: $0 <issue-file-path>" >&2
   exit 1
 fi
-
-# tick_criteria [status] — stdin → stdout: `- [ ]` under Acceptance criteria / Cross-cutting
-# Requirements (mark-done's own scoping) becomes `- [x]`; with a status, the Status: line too.
-tick_criteria() {
-  awk -v status="${1:-}" '
-    status != "" && /^Status:[ 	]*/            { print "Status: " status; next }
-    /^##+[ 	]*[Aa]cceptance [Cc]riteria/       { inside = 1; print; next }
-    /^##+[ 	]*[Cc]ross-cutting [Rr]equirements/ { inside = 1; print; next }
-    /^##/                                       { inside = 0; print; next }
-    inside && /^[ 	]*[-*][ 	]+\[[ ]\]/ { sub(/\[[ ]\]/, "[x]"); print; next }
-    { print }
-  '
-}
 
 # No CLI, no node or an invalid config is an error, never a silent local.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -57,22 +45,12 @@ if [ "$TRACKER_KIND" = "github" ]; then
     bash "$RECEIPTS_SCRIPT" check ac --branch "$BRANCH_ARG"
   fi
 
-  # Fetched live, so a human's edit is kept. A failure only warns: the label swap marks the close.
-  if BODY="$(gh issue view "$ISSUE_NUMBER" --json body --jq .body)"; then
-    TICKED="$(printf '%s\n' "$BODY" | tick_criteria)"
-    if [ "$TICKED" != "$BODY" ]; then
-      BODY_FILE="$(mktemp)"
-      printf '%s\n' "$TICKED" > "$BODY_FILE"
-      gh issue edit "$ISSUE_NUMBER" --body-file "$BODY_FILE" >/dev/null \
-        || echo "WARNING: could not tick the criteria on issue #$ISSUE_NUMBER" >&2
-      rm -f "$BODY_FILE"
-    fi
-  else
-    echo "WARNING: could not fetch issue #$ISSUE_NUMBER to tick its criteria" >&2
-  fi
+  # Fetched live by the CLI, so a human's edit is kept. A failure only warns: the label swap marks the close.
+  node "$TRACKER_CLI" tick "$ISSUE_NUMBER" --main-root "$MAIN_ROOT" >/dev/null \
+    || echo "WARNING: could not tick the criteria on issue #$ISSUE_NUMBER" >&2
 
   # Merged into the feature branch is not shipped: the issue stays open, awaiting-merge, until the
-  # PR's Closes keyword. --force: the receipt is the re-verification, and .orchestrated would refuse.
+  # PR's Closes keyword.
   node "$TRACKER_CLI" mark-done "$ISSUE_NUMBER" --force --main-root "$MAIN_ROOT" >/dev/null
 
   _trace CLOSE "issue=$ISSUE_NUMBER"
@@ -81,17 +59,13 @@ if [ "$TRACKER_KIND" = "github" ]; then
   exit 0
 fi
 
-
-# finalize_issue — Status: done plus every criterion ticked, in one awk pass to a temp file: `sed -i`
-# is not portable, and the file is never observable half-rewritten.
+# finalize_issue — every criterion ticked, then Status: done and the move to done/, both the CLI's:
+# `mark-done` is the one writer of Status:, and --force because the receipt gate above is the check.
 finalize_issue() {
-  local file="$1"
-  local tmp="${file}.tmp.$$"
-
-  tick_criteria done < "$file" > "$tmp" || {
-    rm -f "$tmp"; echo "ERROR: could not rewrite $file" >&2; return 1; }
-
-  mv "$tmp" "$file"
+  node "$TRACKER_CLI" tick "$1" --main-root "$MAIN_ROOT" >/dev/null || {
+    echo "ERROR: could not tick the criteria in $1" >&2; return 1; }
+  node "$TRACKER_CLI" mark-done "$1" --force --main-root "$MAIN_ROOT" >/dev/null || {
+    echo "ERROR: could not close $1" >&2; return 1; }
 }
 
 if [ ! -f "$ISSUE_PATH" ]; then
@@ -121,10 +95,7 @@ finalize_issue "$ISSUE_PATH"
 
 OPEN_DIR=$(dirname "$ISSUE_PATH")
 DONE_DIR=$(dirname "$OPEN_DIR")/done
-mkdir -p "$DONE_DIR"
-
 FILENAME=$(basename "$ISSUE_PATH")
-mv "$ISSUE_PATH" "$DONE_DIR/$FILENAME"
 
 _trace CLOSE "issue=$FILENAME"
 
