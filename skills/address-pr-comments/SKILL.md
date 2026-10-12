@@ -73,17 +73,16 @@ gh auth status >/dev/null 2>&1 || { echo "Error: gh found but not authenticated 
 If the user passed a PR number or URL as an argument, use it. Otherwise run:
 
 ```
-gh pr view --json number,url,title,headRefName,body
+gh pr view --json number,url,title,body
 ```
 
-Confirm the PR number with the user before proceeding if it is ambiguous. Keep `headRefName` and
-`body` for Steps 5 and 5.5.
+Confirm the PR number with the user before proceeding if it is ambiguous. Keep `body` for Steps 5,
+5.5 and 6.
 
 **crew-afk PR.** A PR whose body has the crew-afk block (a `<!-- crew-afk:begin -->` line) is
-crew-afk's. Its `<slug>` is the one the block's `<!-- crew-afk:slug <slug> -->` line names. A block
-with no slug marker (a PR opened by an older crew-afk) takes `<slug>` from a `feature/<slug>` head
-branch; with any other head branch it has no `<slug>`. The head branch alone never makes a PR
-crew-afk's: the feature branch's name is configurable (`afk.branchPrefix`, `--jira`).
+crew-afk's. Its `<slug>` is the one the block's `<!-- crew-afk:slug <slug> -->` line names; a block
+with no slug marker (a PR opened by an older crew-afk) has no `<slug>`. The head branch alone never
+makes a PR crew-afk's: the feature branch's name is configurable (`afk.branchPrefix`, `--jira`).
 
 ## Step 2 — Fetch all review comments
 
