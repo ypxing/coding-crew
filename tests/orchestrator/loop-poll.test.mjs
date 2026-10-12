@@ -473,10 +473,10 @@ test("a failed listing in cappedByMaxRounds stalls the run naming it", async () 
   const h = harness({ pollInterval: 0, parallel: 1 });
   h.ctx.options.maxRounds = 3;
   const list = h.ctx.tracker.selectDispatchable;
-  // Listings 1 and 2 are the claims (a, then nothing); 3 is the drain's round-cap check.
+  // Listing 1 is the run-start seenNow, 2 and 3 the claims (a, then nothing); 4 is the drain's round-cap check.
   const { result, reason } = await stalledRun(h, () => {
     h.ctx.tracker.selectDispatchable = (...a) => {
-      if (h.listings.n >= 2) throw new Error(EOF_ERROR);
+      if (h.listings.n >= 3) throw new Error(EOF_ERROR);
       return list(...a);
     };
   });
@@ -564,3 +564,20 @@ test("a run that stalls on a failed listing still releases the in-progress label
   const labels = calls.filter((c) => c.name === "issue-labels.sh").map((c) => c.args.join(" "));
   assert.deepEqual(labels, ["claim 41", "release 41"]);
 });
+
+for (const pollInterval of [5, 0]) {
+  test(`--poll-interval ${pollInterval}: an issue made ready mid-run and claimed when a worker finishes is linted first; a lint ERROR blocks it`, async () => {
+    const h = harness({ pollInterval, parallel: 1, lintBlocks: ["bad"] });
+    const run = runSprint(h.ctx);
+    await settle();
+    h.ready.push({ slug: "bad", number: null }, { slug: "good", number: null });
+    h.gates.get("a")();
+    await settle();
+    assert.deepEqual(h.linted, ["bad", "good"]);
+    assert.ok(h.blocked.has("bad"));
+    assert.deepEqual(h.started, ["a", "good"]);
+    h.gates.get("good")();
+    await run;
+    assert.deepEqual(h.started, ["a", "good"]);
+  });
+}

@@ -52,21 +52,26 @@ export async function runSprint(ctx) {
   let pollerRunning = false;
   let handoff = [];
   // Slugs already seen (and linted, or exempt) — the baseline a mid-run newcomer is measured against.
+  // Kept with the poller off too: claimNext lints newcomers either way.
   const seen = new Set();
   // Fix issues this run created (github numbers): never re-linted.
   const ownRefs = new Set();
 
-  // The first listing that failed where an unknown answer cannot be read as "nothing left": once set,
-  // nothing is claimed and the run stalls naming it. Retrying is the tracker's job (retryTransient).
+  // The first listing (or claim-time lint) that failed where an unknown answer cannot be read as
+  // "nothing left": once set, nothing is claimed and the run stalls naming it. Retrying is the tracker's
+  // job (retryTransient).
   let listingFailed = null;
+  function warnOrStall(tag, what, err, soft) {
+    const why = err?.message ?? String(err);
+    ctx.log(`[${tag}] ${what} failed${soft ? "" : "; the run stalls"} — ${why}`, "warn");
+    if (!soft) listingFailed ??= `${what} failed (${why}) — re-run (/crew-afk) once the tracker answers`;
+  }
   /** Every tracker listing in the loop: the issues, or null after a warning. `soft` keeps the run going. */
   function listTracker(tag, read, { soft = false } = {}) {
     try {
       return read();
     } catch (err) {
-      const why = err?.message ?? String(err);
-      ctx.log(`[${tag}] listing the tracker failed${soft ? "" : "; the run stalls"} — ${why}`, "warn");
-      if (!soft) listingFailed ??= `listing the tracker failed (${why}) — re-run (/crew-afk) once the tracker answers`;
+      warnOrStall(tag, "listing the tracker", err, soft);
       return null;
     }
   }
@@ -79,14 +84,24 @@ export async function runSprint(ctx) {
     for (const i of dispatchable("SEEN-LIST-FAILED", { soft: true }) ?? []) seen.add(i.slug);
   };
 
+  // Serialized, so a poll and a claim listing the same newcomer lint it (and write its block) once.
+  let linting = Promise.resolve();
+  /** Every mid-run newcomer is linted here before any claim; this run's own fix issues are exempt. */
+  function lintUnseen(issues) {
+    const run = linting.then(async () => {
+      const fresh = issues.filter((i) => !seen.has(i.slug) && !ownRefs.has(i.number));
+      if (fresh.length) await stages.lintMidRunIssues(ctx, fresh);
+      // Only after the lint returned: a lint that throws leaves its issues unseen, to be linted again.
+      for (const i of issues) seen.add(i.slug);
+    });
+    linting = run.catch(() => {});
+    return run;
+  }
+
   async function pollOnce() {
     const issues = dispatchable("POLL-FAILED", { soft: true });
     if (!issues) return;
-    const fresh = issues.filter((i) => !seen.has(i.slug));
-    const linted = fresh.filter((i) => !ownRefs.has(i.number));
-    if (linted.length) await stages.lintMidRunIssues(ctx, linted);
-    // Only after the lint returned: a lint that throws leaves its issues for the next poll to lint.
-    for (const i of issues) seen.add(i.slug);
+    await lintUnseen(issues);
     const claimable = issues.filter((i) => isClaimable(i));
     handoff = claimable;
     const n = Math.min(claimable.length, waiters.length);
@@ -160,16 +175,31 @@ export async function runSprint(ctx) {
     return true;
   }
 
-  function claimNext() {
+  /** The next issue to run, already in `inFlight` so no sibling claims it across this await. */
+  async function claimNext() {
     if (claimsStopped()) return null;
-    // What a poll just listed goes first, so N woken workers cost one listing, not N.
+    // What a poll just listed (and linted) goes first, so N woken workers cost one listing, not N.
     while (handoff.length) {
       const i = handoff.shift();
-      if (isClaimable(i)) return i;
+      if (isClaimable(i)) return claim(i);
     }
-    // A sibling in flight wakes this worker again, and that wake lists again.
+    // A sibling in flight wakes this worker again, and that wake lists (and lints) again.
     const issues = dispatchable("CLAIM-LIST-FAILED", { soft: inFlight.size > 0 });
-    return issues?.find(isClaimable) ?? null;
+    if (!issues) return null;
+    try {
+      await lintUnseen(issues);
+    } catch (err) {
+      warnOrStall("CLAIM-LINT-FAILED", "linting a mid-run issue", err, inFlight.size > 0);
+      return null;
+    }
+    if (claimsStopped()) return null;
+    const i = issues.find(isClaimable);
+    return i ? claim(i) : null;
+  }
+
+  function claim(issue) {
+    inFlight.add(issue.slug);
+    return issue;
   }
 
   function isConflictRetry(slug) {
@@ -221,7 +251,7 @@ export async function runSprint(ctx) {
   // Claims until nothing is claimable and no sibling is still running work that could free more.
   async function workerLoop() {
     while (true) {
-      const issue = claimNext();
+      const issue = await claimNext();
       if (issue) {
         await runOne(issue);
         continue;
@@ -241,7 +271,7 @@ export async function runSprint(ctx) {
   // Every red drain's outcome (integration-fix.mjs), for the cap, the repeat check and the summary.
   const integrationFixes = [];
   const integrationRefs = new Set();
-  if (pollMs) seenNow();
+  seenNow();
   while (true) {
     await Promise.all(Array.from({ length: parallel }, () => workerLoop()));
     handoff = [];
@@ -307,7 +337,7 @@ export async function runSprint(ctx) {
     }
     if (flush(ctx) > 0) {
       // Promoted fix issues are this run's own: not newcomers to lint.
-      if (pollMs) seenNow();
+      seenNow();
       continue;
     }
     if (unseen.size) {
