@@ -52,8 +52,7 @@ MERGED_ANY="$(printf '%s' "$PRS" | jq -r --arg base "$DEFAULT_BRANCH" \
 
 MERGED_PR="$(printf '%s' "$PRS" | jq -r --arg base "$DEFAULT_BRANCH" '[.[] | select(.baseRefName == $base)][0].number // ""')"
 
-# The CLI's stderr (its reason, or a retry warning) passes straight through: stdout is the JSON.
-if ! ISSUES="$(node "$TRACKER_CLI" feature-issues --feature-slug "$SLUG" --state open --main-root "$MAIN_ROOT")"; then
+if ! ISSUES="$(tracker_feature_issues "$MAIN_ROOT" "$SLUG" open)"; then
   fail "reading feature $SLUG's issues failed"
 fi
 

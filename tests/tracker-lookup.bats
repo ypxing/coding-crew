@@ -315,6 +315,17 @@ GH
   [[ "$output" != *"SWEPT:"* ]]
 }
 
+@test "issue-labels.sh sweep: a tracker CLI older than feature-issues says to update it" {
+  cp -R "$REPO_ROOT/tracker" "$TEMP_DIR/old-tracker"
+  sed -i.bak '/"feature-issues": cliFeatureIssues,/d' "$TEMP_DIR/old-tracker/github.mjs"
+  export CREW_TRACKER_CLI="$TEMP_DIR/old-tracker/cli.mjs"
+  sweep_gh '[]'
+  run bash "$AFK/issue-labels.sh" sweep demo
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$TEMP_DIR/old-tracker/cli.mjs has no feature-issues op"*"install.sh --update"* ]]
+}
+
 @test "issue-labels.sh claim/release/sweep: tracker local touches nothing" {
   printf '{"tracker": {"kind": "local"}}\n' > .coding-crew/config.json
   export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"

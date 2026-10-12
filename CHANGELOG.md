@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **crew-afk**: `close-shipped.sh` and `issue-labels.sh sweep` run against a tracker CLI without `feature-issues` now
+  name that CLI and say to run `install.sh --update`, instead of failing with `unknown op` (#445).
 - **tracker (github)**: `publish-issues` run seconds after `publish-prd` now files under the PRD it created instead of
   making a second root: GitHub's issue list lags a new issue, so the issues past its newest are read by number (#445).
 - **tracker (github)**: a crew-afk run scans the repo's issues for its feature's root once, not on every read, and

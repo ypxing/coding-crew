@@ -63,7 +63,7 @@ case "$CMD" in
     edit "$ARG" --add-label blocked --remove-label in-progress
     echo "LABELLED: blocked #$ARG" ;;
   sweep)
-    if ! OUT="$(node "$TRACKER_CLI" feature-issues --feature-slug "$ARG" --state all --main-root "$MAIN_ROOT")"; then
+    if ! OUT="$(tracker_feature_issues "$MAIN_ROOT" "$ARG" all)"; then
       echo "issue-labels.sh: reading feature $ARG's issues failed" >&2
       exit 1
     fi

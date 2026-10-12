@@ -62,6 +62,17 @@ merged_pr() { # <number> <base> <body>
   mv "$GH_PRS.new" "$GH_PRS"
 }
 
+@test "close-shipped: a tracker CLI older than feature-issues says to update it" {
+  sed -i.bak '/"feature-issues": cliFeatureIssues,/d' "$TEMP_DIR/install/tracker/github.mjs"
+  issues "$(issue 49 'lease' awaiting-merge)"
+  merged_pr 57 main 'Closes #49'
+  run bash "$CLOSE_SHIPPED" demo feature/demo
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$TEMP_DIR/install/tracker/cli.mjs has no feature-issues op"*"install.sh --update"* ]]
+  ! grep -q '^issue close' "$GH_LOG"
+}
+
 @test "close-shipped: closes each awaiting-merge issue a merged PR names, then the PRD" {
   issues "$(issue 48 'PRD: lease')" "$(issue 49 'lease' awaiting-merge)" "$(issue 50 'blocked label' awaiting-merge)"
   merged_pr 57 main $'Feature (#49, #50).\n\nCloses #49\nfixes: #50\n'
