@@ -29,8 +29,9 @@ as is; the script exits 1 naming a slug the tracker has no feature for.
 ## What one run does
 
 1. **Preconditions**, before touching anything: `claude`, `gh`, `jq`, `node`, `git` and `timeout` on
-   `PATH`; the tracker CLI installed and set to `github`; a valid slug with a feature in the
-   tracker; a clean working tree. Any miss exits 1 with one line naming it.
+   `PATH` (macOS ships no `timeout`: `brew install coreutils`, then put its `gnubin` on `PATH` or
+   link `gtimeout` as `timeout`); the tracker CLI installed and set to `github`; a valid slug with a
+   feature in the tracker; a clean working tree. Any miss exits 1 with one line naming it.
 2. **Branch.** On the default branch it checks out `--branch` (default: one named after the slug),
    creating it from `origin/<default>` and pushing it when it exists neither locally nor on
    `origin`. On any other branch it uses that branch. It never resets or rebases a branch, so a
@@ -77,6 +78,10 @@ own commands. The coder can therefore run anything your user can, so give it a w
 or runner rather than the checkout you work in. The verifier keeps to `Bash`, `Read` and
 `ToolSearch`, and the script checks that it left HEAD and the tree as they were. Models come from
 `.coding-crew/config.json` `afk.models.claude.coder` and `.reviewer` (defaults `sonnet` and `opus`).
+
+**One run per feature at a time.** The script takes no lock: two runs on the same slug both pick
+the same lowest ready issue and both push to the same branch. Start a second host only after the
+first has stopped.
 
 ## Where to run it
 

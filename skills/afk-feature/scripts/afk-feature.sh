@@ -24,7 +24,8 @@ for c in "$ROOT" "$COMMON" "$HOME"; do [ -f "$c/.coding-crew/tracker/cli.mjs" ] 
 KIND="$(node "$CLI" config | grep '^tracker=' || true)"
 [ "$KIND" = tracker=github ] || die "${KIND:-tracker=unknown}: feature-issues is a GitHub-only op"
 [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
-[ "$(node "$CLI" feature-issues --feature-slug "$SLUG" | jq length)" -gt 0 ] || die "no feature '$SLUG' in the tracker"
+FI=$(node "$CLI" feature-issues --feature-slug "$SLUG") || die "feature-issues failed for '$SLUG' (see above)"
+[ "$(jq length <<<"$FI")" -gt 0 ] || die "no feature '$SLUG' in the tracker"
 # Installed beside this skill (.coding-crew/<skill>/scripts), else user-level, as solve-issue finds dep-install.
 scripts_of() { local d; for d in "$SELF/../../$1/scripts" "$HOME/.coding-crew/$1/scripts"; do [ -d "$d" ] && { (cd "$d" && pwd); return; }; done
   die "$1 scripts not found: run install.sh --skill afk-feature"; }
@@ -33,7 +34,8 @@ ROLES="$(cd "$SELF/../roles" 2>/dev/null && pwd)" || die "reviewer role not foun
 CFG="$ROOT/.coding-crew/config.json"
 model() { local m; m=$(jq -r --arg r "$1" '.afk.models.claude[$r] // empty' "$CFG" 2>/dev/null || true); echo "${m:-$2}"; }
 CODER_MODEL=$(model coder sonnet) REVIEWER_MODEL=$(model reviewer opus)
-unset CREW_ORCHESTRATED # solve-issue's Step 7 closes the issue itself: the loop sees the label go# Unattended `claude -p` denies what it would prompt for, and an allow-list, `auto` mode and the sandbox all
+unset CREW_ORCHESTRATED # solve-issue's Step 7 closes the issue itself: the loop sees the label go
+# Unattended `claude -p` denies what it would prompt for, and an allow-list, `auto` mode and the sandbox all
 # refuse solve-issue's compound commands: bypass, as crew-afk does. The verifier stays read-only by --tools.
 PERM=(--permission-mode bypassPermissions)
 
