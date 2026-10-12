@@ -114,7 +114,7 @@ while :; do
   LOG="$LOGS/$N.log" CLOG="$LOGS/$N.checks.log" VLOG="$LOGS/$N.verify.log" REPORT="$LOGS/$N.verify.json"
   before=$(git rev-parse HEAD); row · · ·
   timeout 60m claude -p "/solve-issue $N" --output-format json --max-budget-usd "$BUDGET" --model "$CODER_MODEL" \
-    "${PERM[@]}" >"$LOG" 2>&1 || stop solve "coder exited non-zero" "$LOG"
+    "${PERM[@]}" </dev/null >"$LOG" 2>&1 || stop solve "coder exited non-zero" "$LOG"
   assert_tree solve "$LOG"; row ✓ · ·
   rc=0; bash "$CHECKS_DIR/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$DEP_DIR" >"$CLOG" 2>&1 || rc=$?
   [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand first" "$CLOG"
@@ -124,7 +124,7 @@ while :; do
   rm -f "$REPORT"; head=$(git rev-parse HEAD)
   timeout 20m claude -p "$(verify_prompt "$before" "$evidence")" --append-system-prompt-file "$ROLES/reviewer.md" \
     --tools Bash Read ToolSearch --settings '{"disableClaudeAiConnectors":true,"disableBundledSkills":true}' \
-    --output-format json --max-budget-usd 2 --model "$REVIEWER_MODEL" "${PERM[@]}" >"$VLOG" 2>&1 || true
+    --output-format json --max-budget-usd 2 --model "$REVIEWER_MODEL" "${PERM[@]}" </dev/null >"$VLOG" 2>&1 || true
   assert_tree verify "$VLOG" "$head"
   [ -f "$REPORT" ] || stop verify "no report at $REPORT" "$VLOG"
   verdict=$(jq -r '.verdict // empty' "$REPORT" 2>/dev/null || true)
