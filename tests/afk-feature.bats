@@ -103,6 +103,7 @@ if printf '%s\n' "$@" | grep -qx -- --append-system-prompt-file; then
   report=$(printf '%s\n' "$prompt" | sed -n 's/^Write your structured verdict to \(.*\) as your last action\..*/\1/p')
   [ -n "${VERIFIER_NO_REPORT:-}" ] || printf '{"verdict":"%s","detail":"criterion 1 unmet"}\n' "${VERDICT:-all-met}" > "$report"
   [ -z "${VERIFIER_DIRTY:-}" ] || echo dirt > verifier-dirt.txt
+  [ -z "${VERIFIER_COMMIT:-}" ] || git commit -q --allow-empty -m "verifier wrote"
   exit 0
 fi
 n="${prompt#/solve-issue }"
@@ -318,4 +319,56 @@ coder_issues() {
   [ "$(claude_calls)" -eq 2 ]
   [[ "$output" == *"criterion 1 unmet"* ]]
   [[ "$output" == *"$WORK/.afk-logs/2.verify.log"* ]]
+}
+
+# --- stops ---------------------------------------------------------------------------
+
+# fails_with <log> <env…> — the run stops non-zero after issue #2's coder, naming <log> on stdout.
+fails_with() {
+  local log="$1"; shift
+  # Each scenario starts as setup left it: #2 ready, no claude calls, a clean tree.
+  [ -f "$STATE/issues.orig" ] || cp "$STATE/issues.json" "$STATE/issues.orig"
+  cp "$STATE/issues.orig" "$STATE/issues.json"
+  rm -f "$STATE"/claude.*
+  git checkout -q -f "$(git show-ref --verify -q refs/heads/feature/feat && echo feature/feat || echo main)"
+  git clean -qfd
+  run env "$@" bash "$SCRIPT" feat
+  [ "$status" -ne 0 ] || { echo "$*: exit 0"; return 1; }
+  [[ "$output" == *"$WORK/.afk-logs/$log"* ]] || { echo "$*: $output"; return 1; }
+  [ "$(coder_issues)" = 2 ] || { echo "$*: coder ran on $(coder_issues)"; return 1; }
+  [ -f "$WORK/.afk-logs/$log" ] || { echo "$*: no $log"; return 1; }
+}
+
+@test "a coder non-zero exit, a branch change or a dirty tree after the coder stops with the coder log's path" {
+  fails_with 2.log CODER_EXIT=3
+  fails_with 2.log CODER_SWITCH=1
+  fails_with 2.log CODER_DIRTY=1
+}
+
+@test "run-checks.sh exit 1 or 3 stops with the checks log's path; 3 says to discover the checks by hand" {
+  fails_with 2.checks.log CHECKS_RC=1
+  [ "$(claude_calls)" -eq 1 ]
+  fails_with 2.checks.log CHECKS_RC=3
+  [[ "$output" == *"run /solve-issue or dep-install once by hand first"* ]]
+}
+
+@test "a missing report, a dirty tree or a moved HEAD after the verifier, or a verdict other than all-met stops with the verifier log's path" {
+  fails_with 2.verify.log VERIFIER_NO_REPORT=1
+  fails_with 2.verify.log VERIFIER_DIRTY=1
+  fails_with 2.verify.log VERIFIER_COMMIT=1
+  [[ "$output" == *"HEAD moved"* ]]
+  fails_with 2.verify.log VERDICT=unmet
+}
+
+@test "a re-run with the failed issue closed proceeds to the next issue on the same branch" {
+  VERDICT=unmet run bash "$SCRIPT" feat
+  [ "$status" -ne 0 ]
+  local tip; tip=$(git rev-parse HEAD)
+  jq 'map(if .number == 2 then .state = "CLOSED" else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  rm -f "$STATE"/claude.*
+  run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ "$(coder_issues)" = 3 ]
+  git merge-base --is-ancestor "$tip" HEAD
+  [ "$(git branch --show-current)" = feature/feat ]
 }
