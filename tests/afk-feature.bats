@@ -108,7 +108,7 @@ if printf '%s\n' "$@" | grep -qx -- --append-system-prompt-file; then
 fi
 n="${prompt#/solve-issue }"
 echo "coder log for #$n"
-[ -z "${CODER_EXIT:-}" ] || exit "$CODER_EXIT"
+[ -z "${CODER_EXIT:-}" ] || { for i in $(seq 1 30); do echo "coder line $i"; done; exit "$CODER_EXIT"; }
 [ -z "${CODER_SWITCH:-}" ] || git checkout -q -b elsewhere
 echo "$n" > "work-$n.txt"
 [ -n "${CODER_DIRTY:-}" ] || { git add "work-$n.txt"; git commit -q -m "[$n] work"; }
@@ -131,7 +131,7 @@ for ((i = 0; i < ${#args[@]}; i++)); do
   esac
 done
 case "$1 $2" in
-  "pr view") [ -n "${PR_EXISTS:-}" ] || exit 1; echo '{"number":9,"url":"https://github.com/o/r/pull/9"}' ;;
+  "pr view") [ -n "${PR_EXISTS:-}" ] || exit 1; [[ "$*" == *url* ]] && echo "https://github.com/o/r/pull/9" || echo '{"number":9}' ;;
   "pr create") printf '%s' "${args[$((${#args[@]} - 1))]}" > "$STATE/pr-body"; echo "https://github.com/o/r/pull/10" ;;
   api*)
     if [ "$patch" = PATCH ]; then
@@ -423,4 +423,53 @@ JSON
   [ "$status" -eq 0 ]
   [ "$(claude_flag 1 --model)" = haiku ]
   [ "$(claude_flag 2 --model)" = sonnet ]
+}
+
+# --- progress comment ----------------------------------------------------------------
+
+# progress_body — the one afk-progress comment's body; fails unless exactly one exists.
+progress_body() {
+  [ "$(jq '[.[] | select(.body | contains("<!-- afk-progress -->"))] | length' "$STATE/comments.json")" = 1 ] || return 1
+  jq -r '.[] | select(.body | contains("<!-- afk-progress -->")) | .body' "$STATE/comments.json"
+}
+
+@test "one progress comment on the root issue, created once then edited in place, with a line per issue and the PR command" {
+  run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  local body; body=$(progress_body)
+  grep -qE '^afk — feature feat — host test-host — [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$' <<<"$body"
+  grep -qx '#2  solve ✓  checks ✓  verify ✓' <<<"$body"
+  grep -qx '#3  solve ✓  checks ✓  verify ✓' <<<"$body"
+  grep -q 'gh pr create' <<<"$body"
+  [ "$(grep -c '^api repos/{owner}/{repo}/issues/1/comments -f body=' "$STATE/gh.log")" -eq 1 ]
+  [ "$(grep -c '^api -X PATCH repos/{owner}/{repo}/issues/comments/100 -f body=' "$STATE/gh.log")" -ge 8 ]
+
+  # A re-run finds the comment by its marker and edits it: still one, never a second create.
+  run bash "$SCRIPT" feat
+  progress_body >/dev/null
+  [ "$(grep -c '^api repos/{owner}/{repo}/issues/1/comments -f body=' "$STATE/gh.log")" -eq 1 ]
+}
+
+@test "a stop puts the failing step and the last 20 lines of its log in the comment" {
+  CODER_EXIT=1 run bash "$SCRIPT" feat
+  [ "$status" -ne 0 ]
+  local body; body=$(progress_body)
+  grep -qx '#2  solve ✗  checks ·  verify ·' <<<"$body"
+  grep -q 'solve' <<<"$(grep -i 'stopped' <<<"$body")"
+  grep -qx 'coder line 30' <<<"$body"
+  grep -qx 'coder line 11' <<<"$body"
+  ! grep -qx 'coder line 10' <<<"$body"
+  grep -qx '```' <<<"$body"
+}
+
+@test "a failing gh api call on the comment warns and leaves the exit code alone" {
+  GH_API_FAIL=1 run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"warning"* ]]
+  [ "$(coder_issues)" = "2 3" ]
+  jq 'map(.labels = (if .root then [] else [{"name":"ready-for-agent"}] end))' "$STATE/issues.json" > "$STATE/i.tmp"
+  mv "$STATE/i.tmp" "$STATE/issues.json"
+  GH_API_FAIL=1 VERDICT=unmet run bash "$SCRIPT" feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"#2 verify failed"* ]]
 }
