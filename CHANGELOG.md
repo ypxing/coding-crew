@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.1.0]
+
 ### Highlights
 
 - **Run several features at once.** Each sprint works in its own `crew/<slug>/_feature` worktree and never switches
