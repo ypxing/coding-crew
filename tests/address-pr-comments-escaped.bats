@@ -24,3 +24,7 @@ setup() {
   [ "$(sed -n '2p' "$d/case-template.md")" = "mode: feature" ]
   ! grep -lx 'mode: branch' "$d"/cases/*.md
 }
+
+@test "address-pr-comments reads a crew-afk PR's slug from its body, so Step 1 does not fetch the head branch" {
+  ! grep -n 'headRefName' "$REPO_ROOT/skills/address-pr-comments/SKILL.md"
+}
