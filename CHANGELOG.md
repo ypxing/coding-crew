@@ -9,8 +9,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - **afk-feature** (new): `afk-feature.sh <slug>` runs one feature's `ready-for-agent` issues in order on one branch.
   After each `/solve-issue` coder run, the script itself runs the checks and then a fresh read-only verifier against
   the issue's criteria, and stops at the first failure with the log path. Progress is one comment on the feature's
-  root issue, and the end prints (or, with `--open-pr`, opens) the PR. GitHub tracker only; `AFK_SANDBOXED=1` for
-  containers and runners (#450).
+  root issue, and the end prints (or, with `--open-pr`, opens) the PR. GitHub tracker only. Both `claude` processes
+  run with `bypassPermissions`, so run it in a worktree, container or runner (#450).
 - **tracker (github)**: `feature-issues` marks the root's entry `"root": true`, and the new `closing-refs` op prints the
   feature PR's `Closes #<n>` lines, the rule crew-afk's PR already uses (#450).
 - **tracker**: `mark-done` now refuses, with exit 4, an issue whose body has no `## Acceptance criteria` section, on

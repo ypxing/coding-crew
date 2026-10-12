@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # afk-feature.sh <slug> [--branch <name>] [--budget <usd>] [--open-pr] — run one feature's ready-for-agent
-# issues in order on one branch, each gated by the checks and a fresh read-only verifier. Env: AFK_SANDBOXED=1,
-# AFK_HOST. Exit 0 once no ready issue is left (last stdout line: the PR URL or `gh pr create` command), else 1.
+# issues in order on one branch, each gated by the checks and a fresh read-only verifier. Env: AFK_HOST.
+# Exit 0 once no ready issue is left (last stdout line: the PR URL or `gh pr create` command), else 1.
 set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 die() { echo "afk-feature: $*" >&2; exit 1; }
@@ -30,18 +30,12 @@ scripts_of() { local d; for d in "$SELF/../../$1/scripts" "$HOME/.coding-crew/$1
   die "$1 scripts not found: run install.sh --skill afk-feature"; }
 CHECKS_DIR=$(scripts_of solve-issue) DEP_DIR=$(scripts_of dep-install)
 ROLES="$(cd "$SELF/../roles" 2>/dev/null && pwd)" || die "reviewer role not found beside $SELF: run install.sh --skill afk-feature"
-CFG="$ROOT/.coding-crew/config.json" DEV="$ROOT/.coding-crew/dev-commands.json"
+CFG="$ROOT/.coding-crew/config.json"
 model() { local m; m=$(jq -r --arg r "$1" '.afk.models.claude[$r] // empty' "$CFG" 2>/dev/null || true); echo "${m:-$2}"; }
 CODER_MODEL=$(model coder sonnet) REVIEWER_MODEL=$(model reviewer opus)
-unset CREW_ORCHESTRATED # solve-issue's Step 7 closes the issue itself: the loop sees the label go
-# A bare host gets an allow-list (anything else is denied, not prompted); a sandbox gets everything.
+unset CREW_ORCHESTRATED # solve-issue's Step 7 closes the issue itself: the loop sees the label go# Unattended `claude -p` denies what it would prompt for, and an allow-list, `auto` mode and the sandbox all
+# refuse solve-issue's compound commands: bypass, as crew-afk does. The verifier stays read-only by --tools.
 PERM=(--permission-mode bypassPermissions)
-if [ "${AFK_SANDBOXED:-}" != 1 ]; then
-  PERM=(--permission-mode acceptEdits --permission-prompts none --allowedTools "Bash(git *)" "Bash(node *)" "Bash(gh *)" "Bash(bash *)")
-  # The checks run-checks.sh runs: typecheck, lint, test, then every other key but its non-check ones.
-  [ ! -f "$DEV" ] || while IFS= read -r c; do PERM+=("Bash($c)"); done < <(jq -r '[.typecheck, .lint, .test] + [to_entries[]
-    | select(.key | IN("typecheck", "lint", "test", "install", "install_mode", "env", "credential_target", "docker_service") | not) | .value] | .[] | strings' "$DEV")
-fi
 
 # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase
 # an existing one: a re-run lands on it as the last run left it.
@@ -76,7 +70,9 @@ progress() { # the root issue's one afk-progress comment, rewritten whole; a fai
   fi || echo "afk-feature: warning: progress comment on #$ROOT_N not written" >&2
 }
 stop() { # <step> <reason> <log>
-  NOTE="Stopped at $1: $2"$'\n```\n'"$(tail -n 20 "$3" 2>/dev/null)"$'\n```'
+  local t # a claude log is one JSON line: its result text is what a reader needs
+  t=$(jq -rR 'fromjson? | objects | .result // empty' "$3" 2>/dev/null | tail -n 20 || true)
+  NOTE="Stopped at $1: $2"$'\n```\n'"${t:-$(tail -n 20 "$3" 2>/dev/null)}"$'\n```'
   case $1 in solve) row ✗ · · ;; checks) row ✓ ✗ · ;; verify) row ✓ ✓ ✗ ;; esac
   echo "afk-feature: #$N $1 failed: $2 — log: $3"; exit 1
 }
@@ -109,13 +105,16 @@ while :; do
     [ "$ok" = 1 ] && { N=$c; break; }
   done
   [ -n "$N" ] || { N=$PREV; break; }
-  [ "$N" != "$PREV" ] || stop solve "coder ran but did not close #$N" "$LOGS/$N.log"
   [ -z "$ROW" ] || ROWS+="$ROW"$'\n'
   LOG="$LOGS/$N.log" CLOG="$LOGS/$N.checks.log" VLOG="$LOGS/$N.verify.log" REPORT="$LOGS/$N.verify.json"
   before=$(git rev-parse HEAD); row · · ·
   timeout 60m claude -p "/solve-issue $N" --output-format json --max-budget-usd "$BUDGET" --model "$CODER_MODEL" \
     "${PERM[@]}" </dev/null >"$LOG" 2>&1 || stop solve "coder exited non-zero" "$LOG"
-  assert_tree solve "$LOG"; row ✓ · ·
+  assert_tree solve "$LOG"
+  # solve-issue's close swaps the label; still ready means it stopped short (partial, blocked).
+  node "$CLI" feature-issues --feature-slug "$SLUG" --state open | jq -e --argjson n "$N" \
+    'any(.[]; .number == $n and any(.labels[]; .name == "ready-for-agent")) | not' >/dev/null || stop solve "coder ran but did not close #$N" "$LOG"
+  row ✓ · ·
   rc=0; bash "$CHECKS_DIR/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$DEP_DIR" >"$CLOG" 2>&1 || rc=$?
   [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand first" "$CLOG"
   [ "$rc" = 0 ] || stop checks "run-checks.sh exit $rc" "$CLOG"; row ✓ ✓ ·

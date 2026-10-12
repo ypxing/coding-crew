@@ -15,7 +15,7 @@ setup() {
   TEMP_DIR=$(mktemp -d)
   export STATE="$TEMP_DIR/state" HOME="$TEMP_DIR/home" AFK_HOST=test-host
   mkdir -p "$STATE" "$HOME"
-  unset AFK_SANDBOXED CREW_ORCHESTRATED
+  unset CREW_ORCHESTRATED
 
   INSTALL="$HOME/.coding-crew"
   mkdir -p "$INSTALL/afk-feature" "$INSTALL/solve-issue/scripts" "$INSTALL/dep-install/scripts" "$INSTALL/tracker"
@@ -112,7 +112,7 @@ echo "coder log for #$n"
 [ -z "${CODER_SWITCH:-}" ] || git checkout -q -b elsewhere
 echo "$n" > "work-$n.txt"
 [ -n "${CODER_DIRTY:-}" ] || { git add "work-$n.txt"; git commit -q -m "[$n] work"; }
-[ -n "${CODER_NO_CLOSE:-}" ] && exit 0
+[ -n "${CODER_NO_CLOSE:-}" ] && { echo '{"type":"result","result":"BLOCKED: Bash denied\nnothing was started"}'; exit 0; }
 jq --argjson n "$n" 'map(if .number == $n then .labels = [{"name":"awaiting-merge"}] else . end)' "$STATE/issues.json" > "$STATE/i.tmp"
 mv "$STATE/i.tmp" "$STATE/issues.json"
 EOF
@@ -272,11 +272,12 @@ coder_issues() {
   [ "$(coder_issues)" = "3 7" ]
 }
 
-@test "the same issue selected twice in a row stops: coder ran but did not close #<n>" {
+@test "a coder that exits 0 but leaves its issue ready stops at solve, before the checks and the verifier" {
   CODER_NO_CLOSE=1 run bash "$SCRIPT" feat
   [ "$status" -ne 0 ]
-  [[ "$output" == *"coder ran but did not close #2"* ]]
-  [ "$(coder_issues)" = "2" ]
+  [[ "$output" == *"#2 solve failed: coder ran but did not close #2"*"$WORK/.afk-logs/2.log"* ]]
+  [ "$(claude_calls)" -eq 1 ]
+  [ ! -f "$STATE/checks.log" ]
 }
 
 # --- the gate ------------------------------------------------------------------------
@@ -379,35 +380,14 @@ fails_with() {
 
 # --- permissions and models ----------------------------------------------------------
 
-# allowed_tools <k> — the args after --allowedTools in claude call k, up to the next flag.
-allowed_tools() { claude_call "$1" | sed -n '/^--allowedTools$/,$p' | sed '1d' | sed '/^--/,$d'; }
-
-@test "without AFK_SANDBOXED every claude call gets acceptEdits, no prompts, and an allow-list with each dev-commands.json check" {
-  git checkout -q -b topic
-  cat > .coding-crew/dev-commands.json <<'JSON'
-{"test": "make test", "lint": "npm run lint", "typecheck": null, "install": "npm ci", "install_mode": "host", "env": null, "credential_target": "x", "docker_service": "app", "coverage": "make cov", "integration": null}
-JSON
-  git add -A && git commit -q -m "dev commands"
+@test "every claude call runs with bypassPermissions and no allow-list or prompt flags" {
   run bash "$SCRIPT" feat
   [ "$status" -eq 0 ]
-  local k expected
-  expected=$(printf '%s\n' 'Bash(git *)' 'Bash(node *)' 'Bash(gh *)' 'Bash(bash *)' 'Bash(npm run lint)' 'Bash(make test)' 'Bash(make cov)')
+  local k
   [ "$(claude_calls)" -eq 4 ]
   for k in 1 2 3 4; do
-    [ "$(claude_flag "$k" --permission-mode)" = acceptEdits ] || { echo "call $k"; return 1; }
-    [ "$(claude_flag "$k" --permission-prompts)" = none ] || { echo "call $k"; return 1; }
-    [ "$(allowed_tools "$k")" = "$expected" ] || { echo "call $k: $(allowed_tools "$k")"; return 1; }
-    ! grep -qE 'bypassPermissions|--dangerously-skip-permissions' "$STATE/claude.$k"
-  done
-}
-
-@test "with AFK_SANDBOXED=1 every claude call gets bypassPermissions and no allow-list" {
-  AFK_SANDBOXED=1 run bash "$SCRIPT" feat
-  [ "$status" -eq 0 ]
-  local k
-  for k in 1 2 3 4; do
     [ "$(claude_flag "$k" --permission-mode)" = bypassPermissions ] || { echo "call $k"; return 1; }
-    ! grep -qE '^--allowedTools$|--dangerously-skip-permissions' "$STATE/claude.$k"
+    ! grep -qE '^--allowedTools$|^--permission-prompts$|--dangerously-skip-permissions' "$STATE/claude.$k"
   done
 }
 
@@ -464,6 +444,16 @@ progress_body() {
   grep -qx 'coder line 11' <<<"$body"
   ! grep -qx 'coder line 10' <<<"$body"
   grep -qx '```' <<<"$body"
+}
+
+@test "a stop on a claude JSON log puts its result text, not the raw JSON, in the comment" {
+  CODER_NO_CLOSE=1 run bash "$SCRIPT" feat
+  [ "$status" -ne 0 ]
+  local body; body=$(progress_body)
+  grep -qx '#2  solve ✗  checks ·  verify ·' <<<"$body"
+  grep -qx 'BLOCKED: Bash denied' <<<"$body"
+  grep -qx 'nothing was started' <<<"$body"
+  ! grep -q '"type":"result"' <<<"$body"
 }
 
 @test "a failing gh api call on the comment warns and leaves the exit code alone" {

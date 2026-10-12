@@ -39,7 +39,8 @@ as is; the script exits 1 naming a slug the tracker has no feature for.
    excluded, and any whose `## Blocked by` names an issue that is neither closed nor
    `awaiting-merge`):
    - the coder: `claude -p "/solve-issue <n>"` with a 60-minute timeout and `--budget` (default 5 USD).
-     solve-issue closes the issue itself (`mark-done`, which labels it `awaiting-merge`);
+     solve-issue closes the issue itself (`mark-done`, which labels it `awaiting-merge`); an issue
+     still `ready-for-agent` after the coder exits stops the run there;
    - the checks: solve-issue's `run-checks.sh`, run by the script, not the coder;
    - the verifier: a separate `claude -p` with the shipped reviewer protocol, read-only tools, a
      20-minute timeout and 2 USD, judging `git diff <before>..HEAD` against the issue's criteria.
@@ -47,8 +48,8 @@ as is; the script exits 1 naming a slug the tracker has no feature for.
 
    Any failure stops the run with exit 1 and the step's log path: a coder error, a branch change,
    a dirty tree or moved HEAD, a failing check, `DISCOVER` (run `/solve-issue` or `dep-install` once
-   by hand first), a missing report, a verdict other than `all-met`, or an issue still ready after
-   its coder ran. Fix the cause, then re-run: issues already done are skipped.
+   by hand first), a missing report, or a verdict other than `all-met`. Fix the cause, then re-run:
+   issues already done are skipped.
 4. **Finish**, when no ready issue is left: push the branch, then print `gh pr create` with the
    feature's `Closes #<n>` lines as the body (the tracker's `closing-refs`), or with `--open-pr`
    create the PR when none exists and print its URL.
@@ -58,8 +59,8 @@ Logs are under `.afk-logs/` (`<n>.log`, `<n>.checks.log`, `<n>.verify.log`, `<n>
 
 **Progress** is one comment on the feature's root issue, marked `<!-- afk-progress -->`, edited in
 place at every step: the host, a line per issue (`solve`, `checks`, `verify`: ✓, ✗ or ·), on a stop
-the failing step and the last 20 lines of its log, and at the end the PR URL or command. A failed
-comment write only warns.
+the failing step and the last 20 lines of its log (of a `claude` log, its result text), and at the
+end the PR URL or command. A failed comment write only warns.
 
 ## Flags and environment
 
@@ -68,13 +69,14 @@ comment write only warns.
 | `--branch <name>`   | The branch to use when started on the default branch                                     |
 | `--budget <usd>`    | The coder's `--max-budget-usd` per issue (default 5)                                     |
 | `--open-pr`         | Create the PR at the end when none exists                                                |
-| `AFK_SANDBOXED=1`   | Run both `claude` processes with `bypassPermissions`: only in a container or runner      |
 | `AFK_HOST`          | The host name the progress comment shows (default: `hostname`)                           |
 
-Without `AFK_SANDBOXED`, both run with `acceptEdits`, no permission prompts, and an allow-list:
-`git`, `node`, `gh`, `bash`, and each check command in `.coding-crew/dev-commands.json`. A command
-outside it is denied, and the coder fails. Models come from `.coding-crew/config.json`
-`afk.models.claude.coder` and `.reviewer` (defaults `sonnet` and `opus`).
+Both `claude` processes run with `bypassPermissions`, as crew-afk's do: unattended, nobody can
+answer a prompt, and an allow-list, `auto` mode and Claude Code's sandbox all refuse solve-issue's
+own commands. The coder can therefore run anything your user can, so give it a worktree, container
+or runner rather than the checkout you work in. The verifier keeps to `Bash`, `Read` and
+`ToolSearch`, and the script checks that it left HEAD and the tree as they were. Models come from
+`.coding-crew/config.json` `afk.models.claude.coder` and `.reviewer` (defaults `sonnet` and `opus`).
 
 ## Where to run it
 
@@ -83,7 +85,7 @@ outside it is denied, and the coder fails. Models come from `.coding-crew/config
   from that worktree, on its branch or the default one.
 - **An OpenRig seat**: the same command as the seat's command, from a clone.
 - **A GitHub Actions step**: check out, install coding-crew and the `claude` CLI, then
-  `AFK_SANDBOXED=1 bash .coding-crew/afk-feature/scripts/afk-feature.sh <slug> --open-pr`, with the
+  `bash .coding-crew/afk-feature/scripts/afk-feature.sh <slug> --open-pr`, with the
   API key as a secret and `contents`, `issues` and `pull-requests` write permissions.
 - **A cloud Claude Code session**: launch, don't host. Start one of the above from it (a
   `gh workflow run` for an Actions workflow, say) rather than running the loop inside the session,
