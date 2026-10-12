@@ -655,6 +655,23 @@ test("mark-done exits 4 while a criterion is unchecked in a fresh read, on both 
   assert.equal(exec.find("issue edit 12").length, 1);
 });
 
+const NO_SECTION = "# T\n\nStatus: ready-for-agent\n\n## What to build\n\nA.\n";
+
+test("mark-done exits 4 for a body with no acceptance-criteria section, on both backends", async () => {
+  const dir = root();
+  const path = localIssue(dir, NO_SECTION);
+  const local = await cli(dir, ["mark-done", path]);
+  assert.equal(local.code, 4);
+  assert.match(local.stderr, /^REFUSED: .*no '## Acceptance criteria' section/);
+  assert.equal(existsSync(path), true);
+
+  const exec = fakeGh({ "issue view 12": { stdout: NO_SECTION }, "label create": {}, "issue edit 12": {} });
+  const gh = await cli(root({ github: true }), ["mark-done", "12"], exec);
+  assert.equal(gh.code, 4);
+  assert.match(gh.stderr, /^REFUSED: .*no '## Acceptance criteria' section/);
+  assert.equal(exec.find("issue edit").length, 0);
+});
+
 test("mark-done ignores unchecked boxes outside the criteria sections", async () => {
   const dir = root();
   const r = await cli(dir, ["mark-done", localIssue(dir, `${MET}\n## Notes\n\n- [ ] someone else's todo\n`)]);

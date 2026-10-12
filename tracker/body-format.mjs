@@ -91,6 +91,14 @@ export function criteriaSection(text) {
   return sectionBody(text, "Acceptance criteria") ?? sectionBody(text, "Acceptance Criteria") ?? "";
 }
 
+/**
+ * Whether `text` has its own `## Acceptance criteria` heading, outside a fence. `## Cross-cutting
+ * Requirements` does not count: it carries the PRD's rules, not the issue's criteria.
+ */
+export function hasCriteriaSection(text) {
+  return sectionBody(text, "Acceptance criteria") !== null || sectionBody(text, "Acceptance Criteria") !== null;
+}
+
 /** A `Source:` line marks a fix issue promoted from review findings: findings against it are never promoted again. */
 export function isSourceGuarded(text) {
   // Only where promote-findings.sh writes it: column 0, outside a ``` / ~~~ fence.

@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { uncheckedCriteria } from "./body-format.mjs";
+import { hasCriteriaSection, uncheckedCriteria } from "./body-format.mjs";
 import { getTracker } from "./index.mjs";
 import { readTrackerConfig } from "./tracker-config.mjs";
 
@@ -283,9 +283,9 @@ const OPS = {
   },
 
   /**
-   * The two close guards, for every backend: an orchestrator owns the close (exit 3); a criterion is
-   * unchecked in a fresh read (exit 4). `--force` skips both: a crashed sprint's stale marker, or a
-   * criterion descoped on purpose.
+   * The close guards, for every backend: an orchestrator owns the close (exit 3); a fresh read has no
+   * criteria section, or a criterion still unchecked (exit 4). `--force` skips them all: a crashed
+   * sprint's stale marker, or a criterion descoped on purpose.
    */
   async "mark-done"(argv, { tracker, mainRoot, exec, cwd, out, err, env }) {
     const args = parseArgs("mark-done", argv, { positionals: 1, flags: ["force"] });
@@ -312,7 +312,15 @@ const OPS = {
         );
         return EXIT.ORCHESTRATED;
       }
-      const unchecked = uncheckedCriteria(tracker.readIssueBody(mainRoot, ref, { exec }));
+      const body = tracker.readIssueBody(mainRoot, ref, { exec });
+      if (!hasCriteriaSection(body)) {
+        err(
+          `REFUSED: ${target.name} has no '## Acceptance criteria' section — not closing it.\n` +
+            "  Add the section with one '- [ ]' line per criterion and check each off, or re-run with --force.\n",
+        );
+        return EXIT.UNCHECKED;
+      }
+      const unchecked = uncheckedCriteria(body);
       if (unchecked.length) {
         err(
           `REFUSED: ${target.name} still has unchecked criteria — not closing it.\n${unchecked.join("\n")}\n` +
