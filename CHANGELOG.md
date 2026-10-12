@@ -6,6 +6,24 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **crew-afk**: `close-shipped.sh` and `issue-labels.sh sweep` run against a tracker CLI without `feature-issues` now
+  name that CLI and say to run `install.sh --update`, instead of failing with `unknown op` (#445).
+- **tracker (github)**: `publish-issues` run seconds after `publish-prd` now files under the PRD it created instead of
+  making a second root: GitHub's issue list lags a new issue, so the issues past its newest are read by number (#445).
+- **tracker (github)**: a crew-afk run scans the repo's issues for its feature's root once, not on every read, and
+  `features` skips the sub-issue read of a feature whose root and sub-issues have all closed (#445).
+- **tracker (github)**: `rewrite` of an issue that sits under an epic with no `Feature:` line now makes it the
+  feature's root when the slug has none, its parent left as it is, instead of exiting 1 (#445).
+- **tracker (github)**: "Moving off milestones" now moves every issue of the milestone, closed ones included, so an
+  open issue whose blocker already closed is not left blocked after the move (#443).
+- **tracker (github)**: a feature is now one root issue — the `PRD:` issue, or a single-slice feature's work issue —
+  whose body carries a `Feature: <slug>` line, plus that root's sub-issues; nothing creates or reads a milestone, and
+  the PRD is no longer pinned. Every issue crew-afk files (slices, promoted fix issues, integration fixes) is a
+  sub-issue of the root, and a feature is read in full, past the old 30-issue cut (GitHub caps a root at 100
+  sub-issues). New `feature-issues` op, which `close-shipped.sh` and `issue-labels.sh sweep` now read. **Hard switch:** after `install.sh --update`, a feature still filed under a
+  milestone is invisible to crew-afk until you move it by hand — see "Moving off milestones" in
+  `.coding-crew/tracker/docs/github.md` (#441).
+
 ## [2.1.0]
 
 ### Highlights

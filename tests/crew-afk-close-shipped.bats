@@ -2,8 +2,8 @@
 
 # close-shipped.sh — close a feature's awaiting-merge issues (then its PRD) once a merged PR's
 # body names them, without relying on GitHub having linked the `Closes #n` lines. `gh` is
-# stubbed on PATH: `pr list` prints $GH_PRS, `issue list` prints $GH_ISSUES, and every call is
-# logged to $GH_LOG.
+# stubbed on PATH: `pr list` prints $GH_PRS; the issue and api calls go to tests/helpers/fake-github.mjs
+# over $GH_ISSUES, where feature `demo` is root #1 and its sub-issues; every call is logged to $GH_LOG.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 CLOSE_SHIPPED="$REPO_ROOT/skills/crew-afk/scripts/close-shipped.sh"
@@ -21,6 +21,7 @@ setup() {
   export CREW_INSTALL_DIR="$TEMP_DIR/install"
 
   export GH_LOG="$TEMP_DIR/gh.log" GH_PRS="$TEMP_DIR/prs.json" GH_ISSUES="$TEMP_DIR/issues.json"
+  export FAKE_GITHUB="$REPO_ROOT/tests/helpers/fake-github.mjs"
   : > "$GH_LOG"
   echo '[]' > "$GH_PRS"
   echo '[]' > "$GH_ISSUES"
@@ -29,19 +30,13 @@ setup() {
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GH_LOG"
 case "$1 $2" in
-  "repo view") echo "o/r main" ;;
-  "pr list") cat "$GH_PRS" ;;
-  "issue list")
-    [ -n "${GH_NO_MILESTONE:-}" ] && { echo 'could not add to milestone: not found' >&2; exit 1; }
-    cat "$GH_ISSUES" ;;
-  "issue view")
-    case "$*" in
-      *"--json body"*) [ -n "${GH_FAIL_VIEW:-}" ] && { echo nope >&2; exit 1; }; cat "$TEMP_DIR/body.$3" 2>/dev/null || true ;;
-      *"--json state"*) cat "$TEMP_DIR/state.$3" 2>/dev/null || echo OPEN ;;
-    esac ;;
-  "issue close") [ "${GH_FAIL_CLOSE_N:-}" = "$3" ] && { echo denied >&2; exit 1; }; [ -n "${GH_FAIL_CLOSE:-}" ] && { echo denied >&2; exit 1; }; exit 0 ;;
-  *) exit 1 ;;
+  "repo view") echo "o/r main"; exit 0 ;;
+  "pr list") cat "$GH_PRS"; exit 0 ;;
+  "issue view") [ -n "${GH_FAIL_VIEW:-}" ] && [[ "$*" == *"--json body"* ]] && { echo nope >&2; exit 1; } ;;
+  "issue close") [ "${GH_FAIL_CLOSE_N:-}" = "$3" ] && { echo denied >&2; exit 1; }; [ -n "${GH_FAIL_CLOSE:-}" ] && { echo denied >&2; exit 1; } ;;
+  api*) [ -n "${GH_FAIL_API:-}" ] && { echo "$GH_FAIL_API" >&2; exit 1; } ;;
 esac
+exec node "$FAKE_GITHUB" "$GH_ISSUES" "$@"
 EOF
   chmod +x "$TEMP_DIR/stub/gh"
   export PATH="$TEMP_DIR/stub:$PATH"
@@ -51,14 +46,31 @@ teardown() {
   rm -rf "$TEMP_DIR"
 }
 
-issue() { # <number> <title> [label…]
+issue() { # <number> <title> [label…] — open; BODY/STATE override its body and state
   local n=$1 t=$2; shift 2
-  jq -c -n --argjson n "$n" --arg t "$t" '{number: $n, title: $t, labels: ($ARGS.positional | map({name: .}))}' --args "$@"
+  jq -c -n --argjson n "$n" --arg t "$t" --arg body "${BODY:-}" --arg state "${STATE:-OPEN}" \
+    '{number: $n, title: $t, body: $body, state: $state, labels: ($ARGS.positional | map({name: .}))}' --args "$@"
 }
-issues() { printf '%s\n' "$@" | jq -s . > "$GH_ISSUES"; }
+# issues <issue-json>… — feature demo: closed root #1 (the shipped single-slice work it started
+# from) carrying `Feature: demo`, every issue given its sub-issue; plus an unrelated open #2.
+issues() {
+  { STATE=CLOSED BODY=$'Feature: demo\n' issue 1 'root'; issue 2 'unrelated' awaiting-merge
+    printf '%s\n' "$@" | jq -c '. + {parent: 1}'; } | jq -s . > "$GH_ISSUES"
+}
 merged_pr() { # <number> <base> <body>
   jq --argjson n "$1" --arg base "$2" --arg body "$3" '. + [{number: $n, baseRefName: $base, body: $body}]' "$GH_PRS" > "$GH_PRS.new"
   mv "$GH_PRS.new" "$GH_PRS"
+}
+
+@test "close-shipped: a tracker CLI older than feature-issues says to update it" {
+  sed -i.bak '/"feature-issues": cliFeatureIssues,/d' "$TEMP_DIR/install/tracker/github.mjs"
+  issues "$(issue 49 'lease' awaiting-merge)"
+  merged_pr 57 main 'Closes #49'
+  run bash "$CLOSE_SHIPPED" demo feature/demo
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$TEMP_DIR/install/tracker/cli.mjs has no feature-issues op"*"install.sh --update"* ]]
+  ! grep -q '^issue close' "$GH_LOG"
 }
 
 @test "close-shipped: closes each awaiting-merge issue a merged PR names, then the PRD" {
@@ -72,7 +84,8 @@ merged_pr() { # <number> <base> <body>
   [[ "$output" == *"CLOSED: PRD #48"* ]]
   [[ "$output" == *"SHIPPED: 2"* ]]
   grep -q '^pr list --head feature/demo --state merged' "$GH_LOG"
-  grep -q '^issue list --milestone demo --state open' "$GH_LOG"
+  ! grep -q 'milestone' "$GH_LOG"
+  ! grep -q '^issue list' "$GH_LOG"
   grep -q '^issue close 49 --reason completed --comment Shipped in #57' "$GH_LOG"
   grep -q '^issue close 48 --reason completed' "$GH_LOG"
 }
@@ -131,11 +144,35 @@ merged_pr() { # <number> <base> <body>
   ! grep -q '^issue close 51' "$GH_LOG"
 }
 
-@test "close-shipped: a milestone that does not exist yet is nothing to close" {
-  export GH_NO_MILESTONE=1
+@test "close-shipped: a slug with no root issue is nothing to close" {
+  STATE=OPEN BODY=$'Feature: other\n' issue 49 'lease' awaiting-merge | jq -s . > "$GH_ISSUES"
+  merged_pr 57 main 'Closes #49'
   run bash "$CLOSE_SHIPPED" demo feature/demo
   [ "$status" -eq 0 ]
   [[ "$output" == *"SHIPPED: 0"* ]]
+  ! grep -q '^issue close' "$GH_LOG"
+}
+
+@test "close-shipped: closes a single-slice root that is itself awaiting merge" {
+  STATE=OPEN BODY=$'Feature: demo\n' issue 49 'lease' awaiting-merge | jq -s . > "$GH_ISSUES"
+  merged_pr 57 main 'Closes #49'
+  run bash "$CLOSE_SHIPPED" demo feature/demo
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"CLOSED: #49 (PR #57)"* ]]
+  [[ "$output" == *"SHIPPED: 1"* ]]
+}
+
+@test "close-shipped: two open roots for the slug, or a failing feature read, exits 1 with the reason" {
+  { STATE=OPEN BODY=$'Feature: demo\n' issue 3 'a'; STATE=OPEN BODY=$'Feature: demo\n' issue 5 'b'; } | jq -s . > "$GH_ISSUES"
+  run bash "$CLOSE_SHIPPED" demo feature/demo
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"#3, #5"* ]]
+  [[ "$output" != *"SHIPPED:"* ]]
+
+  issues
+  GH_FAIL_API="HTTP 401: Bad credentials" run bash "$CLOSE_SHIPPED" demo feature/demo
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HTTP 401: Bad credentials"* ]]
 }
 
 @test "close-shipped: a failed close exits 1, and the PRD stays open" {
@@ -162,9 +199,9 @@ merged_pr() { # <number> <base> <body>
 }
 
 @test "close-shipped: closes Origin: issues with the PRD, skips a closed one, names PRD and PR" {
-  issues "$(issue 48 'PRD: lease')" "$(issue 49 'lease' awaiting-merge)"
-  printf 'Actor: dev\nOrigin: #7, #8\n\nbody\n' > "$TEMP_DIR/body.48"
-  echo CLOSED > "$TEMP_DIR/state.8"
+  issues "$(BODY=$'Actor: dev\nOrigin: #7, #8\n\nbody\n' issue 48 'PRD: lease')" "$(issue 49 'lease' awaiting-merge)"
+  jq '. + [{number: 7, title: "o7", body: "", state: "OPEN", labels: []}, {number: 8, title: "o8", body: "", state: "CLOSED", labels: []}]' "$GH_ISSUES" > "$GH_ISSUES.new"
+  mv "$GH_ISSUES.new" "$GH_ISSUES"
   merged_pr 57 main 'Closes #49'
   run bash "$CLOSE_SHIPPED" demo feature/demo
   [ "$status" -eq 0 ]
@@ -175,16 +212,16 @@ merged_pr() { # <number> <base> <body>
 }
 
 @test "close-shipped: Origin: issues stay open while the PRD stays open" {
-  issues "$(issue 48 'PRD: lease')" "$(issue 49 'lease' awaiting-merge)" "$(issue 60 'later' awaiting-merge)"
-  printf 'Origin: #7\n' > "$TEMP_DIR/body.48"
+  issues "$(BODY=$'Origin: #7\n' issue 48 'PRD: lease')" "$(issue 49 'lease' awaiting-merge)" "$(issue 60 'later' awaiting-merge)"
   merged_pr 57 main 'Closes #49'
   run bash "$CLOSE_SHIPPED" demo feature/demo
   ! grep -q '^issue close 7 ' "$GH_LOG"
 }
 
 @test "close-shipped: a failed Origin close still closes the PRD and exits 1" {
-  issues "$(issue 48 'PRD: lease')" "$(issue 49 'lease' awaiting-merge)"
-  printf 'Origin: #7\n' > "$TEMP_DIR/body.48"
+  issues "$(BODY=$'Origin: #7\n' issue 48 'PRD: lease')" "$(issue 49 'lease' awaiting-merge)"
+  jq '. + [{number: 7, title: "o7", body: "", state: "OPEN", labels: []}]' "$GH_ISSUES" > "$GH_ISSUES.new"
+  mv "$GH_ISSUES.new" "$GH_ISSUES"
   merged_pr 57 main 'Closes #49'
   GH_FAIL_CLOSE_N=7 run bash "$CLOSE_SHIPPED" demo feature/demo
   [ "$status" -eq 1 ]

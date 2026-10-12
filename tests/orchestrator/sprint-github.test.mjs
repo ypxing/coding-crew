@@ -33,7 +33,7 @@ import { REPO, MAIN, TMPDIR, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, traceLog,
  */
 
 
-test("plan resolves the github backend and lists a milestone issue instead of silently finding nothing", () => {
+test("plan resolves the github backend and lists the feature's issue instead of silently finding nothing", () => {
   const root = githubFixtureRepo();
   const { stub, log } = stubGh(root, [GH_ALPHA]);
   const r = sh("node", [MAIN, "plan", "--platform", "pi", "--feature-slug", "demo"], {
@@ -44,7 +44,8 @@ test("plan resolves the github backend and lists a milestone issue instead of si
   assert.match(r.stdout, /dispatchable now \(1\):/);
   assert.match(r.stdout, /- alpha .*#1/);
   const calls = readFileSync(log, "utf8");
-  assert.match(calls, /issue list .*--milestone demo/, "plan never called gh issue list at all");
+  assert.match(calls, /^api repos\/\{owner\}\/\{repo\}\/issues\/1\/sub_issues/m, "plan never read the feature's issues at all");
+  assert.doesNotMatch(calls, /milestone/);
 });
 
 function leaseRun(root, stub, extra = []) {
@@ -103,7 +104,8 @@ test("a github-configured sprint dispatches, marks the issue awaiting-merge with
   });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const calls = readFileSync(log, "utf8");
-  assert.match(calls, /issue list .*--milestone demo/, "the dispatch loop never listed github issues");
+  assert.match(calls, /^api repos\/\{owner\}\/\{repo\}\/issues\/1\/sub_issues/m, "the dispatch loop never listed github issues");
+  assert.doesNotMatch(calls, /milestone/);
   assert.match(calls, /issue edit 1 --add-label awaiting-merge --remove-label ready-for-agent/, "the issue was never marked done via gh");
   assert.doesNotMatch(calls, /issue close/, "merged into the feature branch is not shipped — only the PR closes it");
   const alpha = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.number === 1);
@@ -210,7 +212,7 @@ test("github: a requires-failed issue never carries in-progress or blocked", () 
   assert.ok(!ghLines(log).some((l) => /in-progress/.test(l) && l.startsWith("issue edit 1")), "the issue was labelled in-progress");
 });
 
-test("github: the new lease holder sweeps in-progress from the milestone before dispatching, and the label gates nothing", () => {
+test("github: the new lease holder sweeps in-progress from the feature before dispatching, and the label gates nothing", () => {
   const root = githubFixtureRepo();
   const stale = { number: 2, title: "stale", body: "# stale\n", labels: [{ name: "in-progress" }], state: "CLOSED" };
   const { stub, log, issuesFile } = stubGh(root, [{ ...GH_ALPHA, labels: [{ name: "ready-for-agent" }, { name: "in-progress" }] }, stale]);

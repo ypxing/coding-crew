@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { run } from "../../tracker/cli.mjs";
+import { fakeGithub, ghFeature, ghIssue } from "../helpers/fake-github.mjs";
 
 // tracker/cli.mjs — the read ops (`fetch`, `prd`, `known`) on both backends, `gh` stubbed through
 // the injected `exec` (as tracker-github.test.mjs does), plus a few real-process runs for the exit
@@ -77,25 +78,32 @@ test("prd (local) exits 3 when the feature has no PRD.md", async () => {
   assert.equal(r.stdout, "");
 });
 
-test("prd (github) prints the milestone's PRD: issue body", async () => {
-  const exec = fakeGh({
-    "issue list": {
-      stdout: JSON.stringify([
-        { number: 4, title: "Work", body: "work body", labels: [], state: "OPEN" },
-        { number: 3, title: "PRD: Feat", body: "## Decisions\n\n- **D1** — x\n", labels: [], state: "OPEN" },
-      ]),
-    },
-  });
-  const r = await cli(root({ github: true }), ["prd", "--feature-slug", "feat"], exec);
-  assert.equal(r.code, 0);
-  assert.match(r.stdout, /## Decisions\n\n- \*\*D1\*\* — x/);
-  assert.match(exec.calls[0].join(" "), /--milestone feat/);
+test("prd (github) prints the feature's PRD: issue body, whether it is the root or a sub-issue", async () => {
+  const prd = { ...ghIssue(3, { title: "PRD: Feat" }), body: "## Decisions\n\n- **D1** — x\n" };
+  for (const issues of [ghFeature("feat", prd, ghIssue(4)), ghFeature("feat", ghIssue(4), prd)]) {
+    const exec = fakeGithub(issues);
+    const r = await cli(root({ github: true }), ["prd", "--feature-slug", "feat"], exec);
+    assert.equal(r.code, 0);
+    assert.match(r.stdout, /^<!-- PRD issue #3: PRD: Feat -->\n/);
+    assert.match(r.stdout, /## Decisions\n\n- \*\*D1\*\* — x/);
+  }
 });
 
-test("prd (github) exits 3 when the milestone has no PRD: issue", async () => {
-  const exec = fakeGh({ "issue list": { stdout: JSON.stringify([{ number: 4, title: "Work", body: "", labels: [], state: "OPEN" }]) } });
-  const r = await cli(root({ github: true }), ["prd", "--feature-slug", "feat"], exec);
-  assert.equal(r.code, 3);
+test("prd (github) exits 3 when the feature has no PRD: issue, or no root at all", async () => {
+  for (const issues of [ghFeature("feat", ghIssue(4, { title: "Work" })), [ghIssue(4, { title: "PRD: Other" })]]) {
+    const r = await cli(root({ github: true }), ["prd", "--feature-slug", "feat"], fakeGithub(issues));
+    assert.equal(r.code, 3);
+  }
+});
+
+test("prd and known (github) exit 1 naming both when two open issues carry the slug's Feature: line", async () => {
+  const issues = [...ghFeature("feat", ghIssue(3)), ...ghFeature("feat", ghIssue(5))];
+  for (const argv of [["prd", "--feature-slug", "feat"], ["known", "--feature-slug", "feat", "--out", "x"]]) {
+    const dir = root({ github: true });
+    const r = await cli(dir, argv.map((a) => (a === "x" ? join(dir, "known") : a)), fakeGithub(issues));
+    assert.equal(r.code, 1, argv.join(" "));
+    assert.match(r.stderr, /#3, #5/);
+  }
 });
 
 test("a feature slug that could leave .scratch/ is a usage error", async () => {
@@ -216,7 +224,7 @@ test("a legacy front matter naming repo: fails every op, exit 1, before any gh c
 test("a failing gh call exits 1 with gh's stderr verbatim", async () => {
   const stderr = "HTTP 401: Bad credentials (https://api.github.com/graphql)\nTry authenticating with:  gh auth login\n";
   for (const argv of [["fetch", "12"], ["prd", "--feature-slug", "feat"], ["known", "--feature-slug", "feat", "--out", "x"]]) {
-    const exec = fakeGh({ issue: { code: 1, stderr } });
+    const exec = fakeGh({ issue: { code: 1, stderr }, api: { code: 1, stderr } });
     const dir = root({ github: true });
     const r = await cli(dir, argv.map((a) => (a === "x" ? join(dir, "known") : a)), exec);
     assert.equal(r.code, 1, argv.join(" "));
@@ -246,16 +254,15 @@ test("known (local) with no issues writes an empty directory", async () => {
   assert.deepEqual(readdirSync(out), []);
 });
 
-test("known (github) writes <n>-<slug>.md for every issue, open and closed, but not the PRD", async () => {
-  const exec = fakeGh({
-    "issue list": {
-      stdout: JSON.stringify([
-        { number: 7, title: "Add the store", body: "## Implements\n\nD1", labels: [{ name: "ready-for-agent" }], state: "OPEN" },
-        { number: 5, title: "Old: thing!", body: "done body", labels: [], state: "CLOSED" },
-        { number: 3, title: "PRD: Feat", body: "prd", labels: [], state: "OPEN" },
-      ]),
-    },
-  });
+test("known (github) writes <n>-<slug>.md for the root and every sub-issue, open and closed, but not the PRD", async () => {
+  const exec = fakeGithub(
+    ghFeature(
+      "feat",
+      { ...ghIssue(3, { title: "PRD: Feat" }), body: "prd" },
+      { ...ghIssue(7, { title: "Add the store", labels: ["ready-for-agent"] }), body: "## Implements\n\nD1" },
+      { ...ghIssue(5, { title: "Old: thing!", state: "CLOSED" }), body: "done body" },
+    ),
+  );
   const dir = root({ github: true });
   const out = join(dir, "known");
   const r = await cli(dir, ["known", "--feature-slug", "feat", "--out", out], exec);
@@ -264,10 +271,26 @@ test("known (github) writes <n>-<slug>.md for every issue, open and closed, but 
   assert.equal(readFileSync(join(out, "7-add-the-store.md"), "utf8"), "# Add the store\n\n## Implements\n\nD1\n");
 });
 
+test("known (github) writes all 34 sub-issues of a feature whose PRD is its root", async () => {
+  const subs = Array.from({ length: 34 }, (_, i) => ghIssue(i + 2, { title: `Slice ${i + 2}`, state: i % 3 ? "OPEN" : "CLOSED" }));
+  const exec = fakeGithub(ghFeature("feat", ghIssue(1, { title: "PRD: Big" }), ...subs));
+  const dir = root({ github: true });
+  const out = join(dir, "known");
+  const r = await cli(dir, ["known", "--feature-slug", "feat", "--out", out], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(readdirSync(out).length, 34);
+});
+
+test("known (github) writes nothing for a slug with no root", async () => {
+  const dir = root({ github: true });
+  const out = join(dir, "known");
+  const r = await cli(dir, ["known", "--feature-slug", "feat", "--out", out], fakeGithub([ghIssue(1)]));
+  assert.equal(r.code, 0);
+  assert.deepEqual(readdirSync(out), []);
+});
+
 test("lint-issues.sh --known resolves Blocked by refs to the files known wrote", async () => {
-  const exec = fakeGh({
-    "issue list": { stdout: JSON.stringify([{ number: 7, title: "Add the store", body: "b", labels: [], state: "CLOSED" }]) },
-  });
+  const exec = fakeGithub(ghFeature("feat", ghIssue(7, { title: "Add the store", state: "CLOSED" })));
   const dir = root({ github: true });
   const out = join(dir, "known");
   await cli(dir, ["known", "--feature-slug", "feat", "--out", out], exec);
@@ -351,20 +374,52 @@ test("the CLI finds the main root from a linked worktree's cwd", () => {
   assert.equal(r.stdout, "the prd\n");
 });
 
-test("github.mjs's create-issue and link-blockers stay reachable through the CLI", async () => {
+test("github.mjs's create-issue and link-blockers stay reachable through the CLI; create-issue files under the root", async () => {
   const dir = root({ github: true });
   writeFileSync(join(dir, "body.md"), "body\n");
-  const exec = fakeGh({
-    "api repos/{owner}/{repo}/milestones?state=all": { stdout: "1\topen\tfeat\n" },
-    "issue create": { stdout: "https://github.com/o/n/issues/9\n" },
-  });
+  const exec = fakeGithub(ghFeature("feat", ghIssue(8)));
   const r = await cli(dir, ["create-issue", "--title", "T", "--body-file", join(dir, "body.md"), "--feature-slug", "feat", "--label", "ready-for-agent"], exec);
   assert.equal(r.code, 0, r.stderr);
-  assert.equal(r.stdout, "https://github.com/o/n/issues/9\n");
+  assert.equal(r.stdout, "https://github.com/o/r/issues/9\n");
+  const create = exec.calls.find((c) => c[2] === "create");
+  assert.equal(create[create.indexOf("--parent") + 1], "8");
+  assert.equal(exec.issues.find((i) => i.number === 9).body, "body\n");
 
   const links = await cli(dir, ["link-blockers", "--issue", "9"], fakeGh({ "issue view 9": { stdout: "no blockers" } }));
   assert.equal(links.code, 0);
   assert.equal(existsSync(join(dir, "known")), false);
+});
+
+// --- feature-issues ----------------------------------------------------------------
+
+test("feature-issues (github) prints the root and its sub-issues as JSON, open ones only with --state open", async () => {
+  const dir = root({ github: true });
+  const exec = fakeGithub(
+    ghFeature("feat", ghIssue(3, { title: "PRD: Feat" }), ghIssue(4, { labels: ["awaiting-merge"] }), ghIssue(5, { state: "CLOSED", labels: ["in-progress"] })),
+  );
+  const all = await cli(dir, ["feature-issues", "--feature-slug", "feat"], exec);
+  assert.equal(all.code, 0, all.stderr);
+  assert.deepEqual(JSON.parse(all.stdout), [
+    { number: 3, title: "PRD: Feat", state: "OPEN", labels: [] },
+    { number: 4, title: "Issue 4", state: "OPEN", labels: [{ name: "awaiting-merge" }] },
+    { number: 5, title: "Issue 5", state: "CLOSED", labels: [{ name: "in-progress" }] },
+  ]);
+  const open = await cli(dir, ["feature-issues", "--feature-slug", "feat", "--state", "open"], exec);
+  assert.deepEqual(JSON.parse(open.stdout).map((i) => i.number), [3, 4]);
+  for (const call of exec.calls) assert.ok(!call.some((a) => /milestone/i.test(a)), call.join(" "));
+});
+
+test("feature-issues (github) prints [] for a slug with no root, exits 1 naming duplicate roots, 2 on bad arguments", async () => {
+  const dir = root({ github: true });
+  const none = await cli(dir, ["feature-issues", "--feature-slug", "feat"], fakeGithub([ghIssue(1)]));
+  assert.equal(none.code, 0, none.stderr);
+  assert.equal(none.stdout, "[]\n");
+  const dup = await cli(dir, ["feature-issues", "--feature-slug", "feat"], fakeGithub([...ghFeature("feat", ghIssue(3)), ...ghFeature("feat", ghIssue(5))]));
+  assert.equal(dup.code, 1);
+  assert.match(dup.stderr, /#3, #5/);
+  for (const argv of [[], ["--feature-slug", "../x"], ["--feature-slug", "feat", "--state", "closed"], ["--feature-slug", "feat", "--bogus"]]) {
+    assert.equal((await cli(dir, ["feature-issues", ...argv])).code, 2, argv.join(" "));
+  }
 });
 
 // --- features ----------------------------------------------------------------------
@@ -395,19 +450,44 @@ test("features (local) with no .scratch/ exits 0 and prints nothing", async () =
   assert.deepEqual(r, { code: 0, stdout: "", stderr: "" });
 });
 
-test("features (github) lists every milestone, open and closed, with its open ready-for-agent count", async () => {
+test("features (github) lists one line per marked root: slug, open|closed, and the open ready-for-agent count among root and sub-issues", async () => {
   const dir = root({ github: true });
   writeFileSync(join(dir, ".coding-crew/config.json"), JSON.stringify({ tracker: { kind: "github" } }));
-  const exec = fakeGh({
-    "api repos/{owner}/{repo}/milestones?state=all": { stdout: "2\topen\tzeta\n1\tclosed\talpha\n3\topen\tempty\n" },
-    "issue list": {
-      stdout: JSON.stringify([{ milestone: { title: "zeta" } }, { milestone: { title: "zeta" } }, { milestone: null }, { milestone: { title: "alpha" } }]),
-    },
-  });
+  const ready = ["ready-for-agent"];
+  const exec = fakeGithub([
+    ...ghFeature("zeta", ghIssue(2, { labels: ready }), ghIssue(5, { labels: ready }), ghIssue(6, { labels: ready, state: "CLOSED" })),
+    ...ghFeature("alpha", ghIssue(1, { state: "CLOSED" }), ghIssue(7, { state: "CLOSED" })),
+    ...ghFeature("reopened", ghIssue(3, { state: "CLOSED" }), ghIssue(8, { labels: ready })),
+    ghIssue(9, { labels: ready }),
+  ]);
   const r = await cli(dir, ["features"], exec);
-  assert.equal(r.code, 0);
-  assert.equal(r.stdout, "alpha\tclosed\t1\nempty\topen\t0\nzeta\topen\t2\n");
-  assert.ok(exec.calls.some((c) => c.includes("--label") && c.includes("ready-for-agent") && c.includes("open")));
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "alpha\tclosed\t0\nreopened\topen\t1\nzeta\topen\t2\n");
+  for (const call of exec.calls) assert.ok(!call.some((a) => /milestone/i.test(a)), call.join(" "));
+});
+
+test("features (github) reads no sub-issues of a closed root whose sub-issues have all closed", async () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, ".coding-crew/config.json"), JSON.stringify({ tracker: { kind: "github" } }));
+  const exec = fakeGithub([
+    ...ghFeature("done", ghIssue(1, { state: "CLOSED" }), ghIssue(2, { state: "CLOSED" })),
+    ...ghFeature("live", ghIssue(3, { state: "CLOSED" }), ghIssue(4, { labels: ["ready-for-agent"] })),
+  ]);
+  const r = await cli(dir, ["features"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "done\tclosed\t0\nlive\topen\t1\n");
+  const reads = exec.calls.filter((c) => /\/sub_issues/.test(c.join(" ")));
+  assert.deepEqual(reads.map((c) => /issues\/(\d+)\/sub_issues/.exec(c.join(" "))[1]), ["3"]);
+});
+
+test("features (github) lists a slug on two open roots once, with a warning, and every other slug as usual", async () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, ".coding-crew/config.json"), JSON.stringify({ tracker: { kind: "github" } }));
+  const exec = fakeGithub([...ghFeature("dup", ghIssue(3)), ...ghFeature("dup", ghIssue(5)), ...ghFeature("solo", ghIssue(6))]);
+  const r = await cli(dir, ["features"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "dup\topen\t0\nsolo\topen\t0\n");
+  assert.match(r.stderr, /WARNING: .*dup.*#3, #5/);
 });
 
 test("features (github) exits 1 with gh's stderr verbatim when gh fails", async () => {
@@ -416,7 +496,7 @@ test("features (github) exits 1 with gh's stderr verbatim when gh fails", async 
   const r = await cli(dir, ["features"], fakeGh({ "api ": { code: 4, stderr: "gh: To use GitHub CLI, run: gh auth login\n" } }));
   assert.equal(r.code, 1);
   assert.equal(r.stdout, "");
-  assert.equal(r.stderr, "gh: To use GitHub CLI, run: gh auth login\n");
+  assert.ok(r.stderr.includes("gh: To use GitHub CLI, run: gh auth login\n"), r.stderr);
 });
 
 test("features exits 2 on an extra argument, on both trackers", async () => {

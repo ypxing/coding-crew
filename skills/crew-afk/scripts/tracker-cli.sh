@@ -48,3 +48,19 @@ resolve_tracker_cli() {
   fi
   return 0
 }
+
+# tracker_feature_issues <main-root> <slug> <open|all> — the feature's issues as `feature-issues`'
+# JSON on stdout. A CLI older than that op is an install out of step with these scripts: say so.
+tracker_feature_issues() {
+  local err rc
+  err="$(mktemp)"
+  node "$TRACKER_CLI" feature-issues --feature-slug "$2" --state "$3" --main-root "$1" 2>"$err"
+  rc=$?
+  if [ "$rc" -ne 0 ] && grep -q 'unknown op: feature-issues' "$err"; then
+    echo "ERROR: $TRACKER_CLI has no feature-issues op: it is older than these scripts. Update that install (install.sh --update), or set CREW_TRACKER_CLI to a current cli.mjs." >&2
+  else
+    cat "$err" >&2
+  fi
+  rm -f "$err"
+  return "$rc"
+}

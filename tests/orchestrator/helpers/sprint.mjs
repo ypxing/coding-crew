@@ -303,48 +303,22 @@ export function githubFixtureRepo() {
   return root;
 }
 
+/**
+ * A fake `gh` on its own PATH-prepended dir: logs every invocation (one line per call) to `gh.log`
+ * and hands every `issue` and issues-API call to tests/helpers/fake-github.mjs over `gh-issues.json`,
+ * so a re-read sees the labels, state and new issues earlier calls left. `issues` are feature
+ * `demo`: unless one already carries a `Feature:` line, the PRD (else the first issue) becomes its
+ * root and every other issue a sub-issue. GH_LIST_LAG_MS=N hides the newest created issue from
+ * list reads for N ms, as GitHub's listing lags one.
+ */
 export function stubGh(root, issues) {
   const stub = join(root, ".stub");
   mkdirSync(stub, { recursive: true });
   const log = join(root, "gh.log");
   writeFileSync(log, "");
   const issuesFile = join(root, "gh-issues.json");
-  writeFileSync(issuesFile, JSON.stringify(issues));
-  // The issues-file path is passed as a node argv, never interpolated into the -e source
-  // itself — nesting a JSON.stringify()'d path *inside* an already-double-quoted `-e "..."`
-  // string breaks out of bash's outer quoting the moment the path itself is unquoted
-  // between the two halves, silently truncating the script (node then throws before ever
-  // touching the file, node exits non-zero, but the wrapping `if` block still `exit 0`s —
-  // so a write that never happened still reports success to the caller).
-  const viewJs = "const fs=require('fs');const p=process.argv[1];const n=Number(process.argv[2]);" +
-    "const issues=JSON.parse(fs.readFileSync(p,'utf8'));" +
-    "process.stdout.write((issues.find(i=>i.number===n)||{}).body||'')";
-  const closeJs = "const fs=require('fs');const p=process.argv[1];const n=Number(process.argv[2]);" +
-    "const issues=JSON.parse(fs.readFileSync(p,'utf8'));const i=issues.find(x=>x.number===n);" +
-    "if(i)i.state='CLOSED';fs.writeFileSync(p,JSON.stringify(issues))";
-  // `issue list [--label L] [--state open|closed|all]`: filtered as gh would. GH_LIST_LAG_MS=N
-  // hides the newest created issue for N ms after its create, as GitHub's listing lags one.
-  const listJs = "const fs=require('fs');const [p,...a]=process.argv.slice(1);const v=(k)=>a.includes(k)?a[a.indexOf(k)+1]:null;" +
-    "let issues=JSON.parse(fs.readFileSync(p,'utf8'));const label=v('--label'),st=v('--state');" +
-    "const lag=p+'.lag';if(fs.existsSync(lag)){const l=JSON.parse(fs.readFileSync(lag,'utf8'));" +
-    "if(Date.now()<l.until)issues=issues.filter(i=>i.number!==l.number);}" +
-    "if(label)issues=issues.filter(i=>(i.labels||[]).some(l=>l.name===label));" +
-    "if(st&&st!=='all')issues=issues.filter(i=>i.state===st.toUpperCase());" +
-    "process.stdout.write(a.includes('--jq')?issues.map(i=>i.number).join('\\n'):JSON.stringify(issues))";
-  // `issue edit N [--add-label L] [--remove-label L]…`: the label swap close-issue.sh makes.
-  const editJs = "const fs=require('fs');const [p,n,...a]=process.argv.slice(1);" +
-    "const issues=JSON.parse(fs.readFileSync(p,'utf8'));const i=issues.find(x=>x.number===Number(n));" +
-    "if(i){const names=new Set((i.labels||[]).map(l=>l.name));" +
-    "a.forEach((x,k)=>{if(x==='--add-label')names.add(a[k+1]);if(x==='--remove-label')names.delete(a[k+1]);});" +
-    "i.labels=[...names].map(name=>({name}));}fs.writeFileSync(p,JSON.stringify(issues))";
-  // `issue create --title T --body-file F [--label L]…`: appended open, so the next list sees it.
-  const createJs = "const fs=require('fs');const [p,...a]=process.argv.slice(1);" +
-    "const issues=JSON.parse(fs.readFileSync(p,'utf8'));const v=(k)=>a[a.indexOf(k)+1];" +
-    "const labels=a.flatMap((x,i)=>x==='--label'?[{name:a[i+1]}]:[]);" +
-    "const number=Math.max(0,...issues.map(i=>i.number))+1;" +
-    "issues.push({number,title:v('--title'),body:fs.readFileSync(v('--body-file'),'utf8'),labels,state:'OPEN'});" +
-    "fs.writeFileSync(p,JSON.stringify(issues));process.stdout.write('https://github.com/o/r/issues/'+number+'\\n');" +
-    "const ms=Number(process.env.GH_LIST_LAG_MS||0);if(ms)fs.writeFileSync(p+'.lag',JSON.stringify({number,until:Date.now()+ms}))";
+  writeFileSync(issuesFile, JSON.stringify(asFeature(issues)));
+  const fakeGithub = join(REPO, "tests/helpers/fake-github.mjs");
   writeFileSync(
     join(stub, "gh"),
     [
@@ -352,17 +326,8 @@ export function stubGh(root, issues) {
       `echo "$@" >> ${JSON.stringify(log)}`,
       // GH_FAIL_CLAIM=1: the write that adds `in-progress` fails, as a revoked token or a rate limit would.
       'if [ -n "${GH_FAIL_CLAIM:-}" ] && [ "$1 $2" = "issue edit" ] && [[ " $* " == *" --add-label in-progress "* ]]; then echo denied >&2; exit 1; fi',
-      'if [ "$1" = "issue" ] && [ "$2" = "list" ]; then',
-      `  node -e ${JSON.stringify(listJs)} ${JSON.stringify(issuesFile)} "\${@:3}"`,
-      "  exit 0",
-      "fi",
-      'if [ "$1" = "issue" ] && [ "$2" = "view" ]; then',
-      `  node -e ${JSON.stringify(viewJs)} ${JSON.stringify(issuesFile)} "$3"`,
-      "  exit 0",
-      "fi",
-      'if [ "$1" = "issue" ] && [ "$2" = "create" ]; then',
-      `  node -e ${JSON.stringify(createJs)} ${JSON.stringify(issuesFile)} "\${@:3}"`,
-      "  exit 0",
+      'if [ "$1" = "issue" ] || { [ "$1" = "api" ] && [[ " $* " == *"repos/{owner}/{repo}/issues"* ]]; }; then',
+      `  exec node ${JSON.stringify(fakeGithub)} ${JSON.stringify(issuesFile)} "$@"`,
       "fi",
       // open-pr.sh: no PR yet; `pr create` keeps the body it was given, for the test to read.
       // post-findings.sh runs after the create: the PR exists, its diff shows nothing (so every
@@ -389,20 +354,19 @@ export function stubGh(root, issues) {
       '  echo https://github.com/o/r/pull/7',
       "  exit 0",
       "fi",
-      'if [ "$1" = "issue" ] && [ "$2" = "edit" ]; then',
-      `  node -e ${JSON.stringify(editJs)} ${JSON.stringify(issuesFile)} "\${@:3}"`,
-      "  exit 0",
-      "fi",
-      'if [ "$1" = "issue" ] && [ "$2" = "close" ]; then',
-      `  node -e ${JSON.stringify(closeJs)} ${JSON.stringify(issuesFile)} "$3"`,
-      "  exit 0",
-      "fi",
       "exit 0",
       "",
     ].join("\n"),
   );
   chmodSync(join(stub, "gh"), 0o755);
   return { stub, log, issuesFile };
+}
+
+/** `issues` as feature `demo`'s root and sub-issues (see stubGh). */
+function asFeature(issues) {
+  if (issues.length === 0 || issues.some((i) => /^Feature:/m.test(i.body ?? ""))) return issues;
+  const root = issues.find((i) => /^PRD:/.test(i.title)) ?? issues[0];
+  return issues.map((i) => (i === root ? { ...i, body: `Feature: demo\n\n${i.body ?? ""}` } : { parent: root.number, ...i }));
 }
 
 export const GH_ALPHA = {

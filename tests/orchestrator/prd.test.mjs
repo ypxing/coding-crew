@@ -71,7 +71,7 @@ test("github: a failed fetch warns once and falls back to the saved prd-issue.md
   assert.equal(prdPath(ctxFor(root({ github: true }), () => ({ code: 1, stdout: "" }))), null);
 });
 
-test("github: a milestone with no PRD issue (exit 3) is silent and null", () => {
+test("github: a feature with no PRD issue (exit 3) is silent and null", () => {
   const ctx = ctxFor(root({ github: true }), () => ({ code: 3, stdout: "" }));
   assert.equal(prdPath(ctx), null);
   assert.deepEqual(ctx.logs, []);

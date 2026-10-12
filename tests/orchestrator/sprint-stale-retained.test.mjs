@@ -87,7 +87,7 @@ test("dropStaleRetained drops nothing when the tracker listing fails or comes ba
   assert.deepEqual(a.dropped, []);
   assert.ok(a.logs.some((l) => /RETAINED: kept every record — could not list the tracker: .*offline/.test(l)), a.logs.join("\n"));
 
-  // An empty listing (a milestone not created, an issues dir gone) cannot tell "every issue is gone"
+  // An empty listing (a slug with no root issue, an issues dir gone) cannot tell "every issue is gone"
   // from "nothing was listed": the branch check alone still runs on nothing, so nothing is dropped.
   const b = fakeCtx({ state: st, branches: [] });
   assert.deepEqual(dropStaleRetained(b.ctx, tracker([])), []);
@@ -165,7 +165,7 @@ test("github --open-pr: with only stale records left (one closed, one absent), t
   mkdirSync(join(root, ".scratch/demo"), { recursive: true });
   branch(root, "crew/demo/gamma");
   branch(root, "crew/demo/delta");
-  // gamma: blocked in an earlier run, then shipped elsewhere and closed; delta: its issue left the milestone.
+  // gamma: blocked in an earlier run, then shipped elsewhere and closed; delta: its issue left the feature.
   seedState(root, {
     retained_branches: { gamma: "crew/demo/gamma", delta: "crew/demo/delta" },
     retention: {

@@ -51,7 +51,7 @@ EOF
   export GH_CALLS_LOG="$TEMP_DIR/gh-calls.log"
   export GH_LAST_BODY="$TEMP_DIR/gh-last-body.txt"
   export GH_VIEW_BODY_FILE="$TEMP_DIR/gh-view-body.txt"
-  export GH_MILESTONES_FILE="$TEMP_DIR/gh-milestones.json"
+  export GH_ROOTS_FILE="$TEMP_DIR/gh-roots.json"
   : > "$GH_CALLS_LOG"
 }
 
@@ -70,32 +70,26 @@ configure_github() {
   } > .coding-crew/docs/issue-tracker.md
 }
 
-# stub_gh [existing-milestones-json] — a fake `gh` on PATH. Handles the subcommands this
-# script calls: `gh issue create` (captures argv and the --body-file content, prints a fake
-# issue URL), `gh issue view <n> --json body -q .body` (prints back a canned body), and
-# `gh api repos/.../milestones` (list returns $1, default `[]`; create logs the call and
-# appends to GH_MILESTONES_FILE so a second list call in the same test observes it).
+# stub_gh [open-issues-json] — a fake `gh` on PATH. Handles the subcommands this script calls:
+# `gh issue create` (captures argv and the --body-file content, prints a fake issue URL),
+# `gh issue view <n> --json body -q .body` (prints back a canned body), and `gh api`: the open-issue
+# scan prints $1 as its one page (default: root #7 carrying `Feature: feat`), a root's sub-issues
+# none, a blocker's id its number, a blocked_by link `{}`, and any other issue read a 404.
 stub_gh() {
-  local milestones="${1:-[]}"
-  printf '%s' "$milestones" > "$GH_MILESTONES_FILE"
+  local roots="${1:-[{\"number\": 7, \"title\": \"PRD: feat\", \"body\": \"Feature: feat\\n\", \"state\": \"open\", \"labels\": []\}]}"
+  printf '%s' "$roots" > "$GH_ROOTS_FILE"
   cat > "$STUB/gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GH_CALLS_LOG"
 case "$1" in
   api)
-    shift 2
-    case "${1:-}" in
-      -f)
-        # milestone create: -f title=<slug> — record it as an existing milestone.
-        title="${2#title=}"
-        jq --arg t "$title" '. + [{title: $t}]' "$GH_MILESTONES_FILE" > "$GH_MILESTONES_FILE.tmp"
-        mv "$GH_MILESTONES_FILE.tmp" "$GH_MILESTONES_FILE"
-        echo "{}"
-        ;;
-      *)
-        # milestone list: ?state=all --paginate --jq prints number, state, title per line
-        jq -r 'to_entries[] | [.key + 1, (.value.state // "open"), .value.title] | @tsv' "$GH_MILESTONES_FILE"
-        ;;
+    case "$*" in
+      *milestone*) echo "gh-stub: milestones are gone: $*" >&2; exit 1 ;;
+      *"/sub_issues"*) echo '[[]]' ;;
+      *"/issues?state="*) printf '[%s]' "$(cat "$GH_ROOTS_FILE")" ;;
+      *POST*) echo '{}' ;;
+      *--jq*) echo 42000 ;;
+      *) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
     esac
     ;;
   *)
@@ -128,7 +122,7 @@ SH
 
 # ─── defer: github path ───────────────────────────────────────────────────────
 
-@test "defer creates a github issue labeled ready-for-agent, milestoned to the feature slug" {
+@test "defer creates a github issue labeled ready-for-agent, filed under the feature's root" {
   configure_github
   stub_gh
 
@@ -139,12 +133,13 @@ SH
 
   grep -q -- '--title Fix review findings: a' "$GH_CALLS_LOG"
   grep -q -- '--label ready-for-agent' "$GH_CALLS_LOG"
-  grep -q -- '--milestone feat' "$GH_CALLS_LOG"
+  grep -q -- '^issue create .*--parent 7' "$GH_CALLS_LOG"
+  ! grep -q -- 'milestone' "$GH_CALLS_LOG"
   # No local issue file was ever written for the github path.
   [ -z "$(ls .scratch/feat/issues/open 2>/dev/null)" ]
 }
 
-@test "defer-integration creates a ready-for-agent issue in the milestone, with Source: naming it an integration fix" {
+@test "defer-integration creates a ready-for-agent issue under the feature's root, with Source: naming it an integration fix" {
   configure_github
   stub_gh
   printf -- "- [ ] The project's checks pass on the merged feature branch\n" > integ.md
@@ -155,7 +150,7 @@ SH
   [[ "$output" == "defer-integration: https://github.com/acme/widgets/issues/42" ]]
   grep -q -- '--title Fix integration check: feat' "$GH_CALLS_LOG"
   grep -q -- '--label ready-for-agent' "$GH_CALLS_LOG"
-  grep -q -- '--milestone feat' "$GH_CALLS_LOG"
+  grep -q -- '^issue create .*--parent 7' "$GH_CALLS_LOG"
   grep -q '^Source: integration check (integration)$' "$GH_LAST_BODY"
   grep -q "^- \[ \] The project's checks pass on the merged feature branch$" "$GH_LAST_BODY"
   [ -z "$(ls .scratch/feat/issues/open 2>/dev/null)" ]
@@ -199,33 +194,24 @@ SH
   ! grep -q '## Blocked by' "$GH_LAST_BODY"
 }
 
-@test "defer bootstraps a missing milestone before creating the issue" {
+@test "defer with no root for the slug files the issue as the root, its body opening with Feature:" {
   configure_github
   stub_gh "[]"
 
   bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
 
-  grep -q -- 'api repos/{owner}/{repo}/milestones' "$GH_CALLS_LOG"
-  grep -q -- 'api repos/{owner}/{repo}/milestones -f title=feat' "$GH_CALLS_LOG"
-  jq -e '.[0].title == "feat"' "$GH_MILESTONES_FILE" >/dev/null
+  grep -q -- '^issue create ' "$GH_CALLS_LOG"
+  ! grep -q -- '--parent' "$GH_CALLS_LOG"
+  [ "$(head -1 "$GH_LAST_BODY")" = "Feature: feat" ]
 }
 
-@test "defer makes no milestone-create call when the milestone already exists" {
-  configure_github
-  stub_gh '[{"title": "feat"}]'
-
-  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
-    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
-
-  grep -q -- 'api repos/{owner}/{repo}/milestones?state=all --paginate --jq' "$GH_CALLS_LOG"
-  ! grep -q -- '-f title=feat' "$GH_CALLS_LOG"
-}
-
-@test "defer dies without creating an issue when the milestone list call fails" {
+@test "defer dies without creating an issue when the root lookup fails" {
   configure_github
   cat > "$STUB/gh" <<'SH'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "$GH_CALLS_LOG"
+echo "HTTP 401: Bad credentials" >&2
 exit 1
 SH
   chmod +x "$STUB/gh"
@@ -233,7 +219,8 @@ SH
   run bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md
   [ "$status" -ne 0 ]
-  [[ "$output" == *"gh api milestones list failed"* ]]
+  [[ "$output" == *"HTTP 401: Bad credentials"* ]]
+  ! grep -q '^issue create' "$GH_CALLS_LOG"
 }
 
 @test "defer still annotates the review report under github, same as local" {
@@ -614,7 +601,7 @@ defer_github_issue() {
   defer_github_issue
   [ "$status" -eq 0 ]
   [[ "$output" == *"https://github.com/acme/widgets/issues/42"* ]]
-  grep -q "^issue create .*--milestone feat" "$GH_CALLS_LOG"
+  grep -q "^issue create .*--parent 7" "$GH_CALLS_LOG"
 }
 
 @test "defer falls back to \$HOME/.coding-crew/tracker/cli.mjs" {

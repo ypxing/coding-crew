@@ -36,7 +36,7 @@ export async function runSprint(ctx) {
   let waiters = [];
   // Issues labelled `in-progress` this run that a merge or block did not unlabel; released at run end.
   const held = new Map();
-  // github fix issues created ready-for-agent this run, not yet in the milestone listing (awaitListed).
+  // github fix issues created ready-for-agent this run, not yet in the feature's listing (awaitListed).
   const unseen = new Set();
   const unlisted = [];
 
@@ -352,7 +352,7 @@ export async function runSprint(ctx) {
       const missing = await awaitListed(ctx, () => featureIssues("FIX-LIST-FAILED"), refs);
       for (const ref of missing) {
         const what = integrationRefs.has(ref) ? "integration fix" : "review findings";
-        const line = `#${ref} (${what}) was created but never appeared in the milestone listing — re-run to implement it.`;
+        const line = `#${ref} (${what}) was created but never appeared in the feature's listing — re-run to implement it.`;
         unlisted.push(line);
         ctx.log(`[FIX-ISSUE-UNLISTED] ${line}`, "warn");
       }

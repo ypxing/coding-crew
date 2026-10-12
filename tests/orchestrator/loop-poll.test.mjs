@@ -527,7 +527,7 @@ test("a failed listing while awaiting a fix issue ends the wait: the ref is name
   });
   assert.equal(result.stalled, true);
   assert.match(reason, /listing the tracker failed.*EOF/);
-  assert.match(out, /#7 \(review findings\) was created but never appeared in the milestone listing/);
+  assert.match(out, /#7 \(review findings\) was created but never appeared in the feature's listing/);
   assert.equal(reviews.length, 1, "no closing review after a failed listing");
 });
 

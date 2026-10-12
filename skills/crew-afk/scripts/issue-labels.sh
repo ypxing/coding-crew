@@ -63,16 +63,13 @@ case "$CMD" in
     edit "$ARG" --add-label blocked --remove-label in-progress
     echo "LABELLED: blocked #$ARG" ;;
   sweep)
-    if ! OUT="$(gh issue list --milestone "$ARG" --label in-progress --state all \
-        --json number --jq '.[].number' 2>&1)"; then
-      # A milestone not created yet has no issues, and so nothing to sweep.
-      if grep -qi milestone <<<"$OUT"; then echo "SWEPT: 0"; exit 0; fi
-      echo "issue-labels.sh: gh issue list failed: $OUT" >&2
+    if ! OUT="$(tracker_feature_issues "$MAIN_ROOT" "$ARG" all)"; then
+      echo "issue-labels.sh: reading feature $ARG's issues failed" >&2
       exit 1
     fi
     COUNT=0
     FAILED=0
-    for N in $OUT; do
+    for N in $(printf '%s' "$OUT" | jq -r '.[] | select(any(.labels[]?; .name == "in-progress")) | .number'); do
       if OUT2="$(gh issue edit "$N" --remove-label in-progress 2>&1)"; then
         COUNT=$((COUNT + 1))
       else

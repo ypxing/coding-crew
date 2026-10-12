@@ -1,7 +1,9 @@
 /**
  * github.mjs — the GitHub Issues tracker backend, shelling out to `gh` with argv arrays.
- * `exec` is injectable so tests stub `gh` without touching PATH. `listFeatureIssues` makes one
- * `gh issue list` call per invocation, never one per issue.
+ * `exec` is injectable so tests stub `gh` without touching PATH. A feature is one root issue whose
+ * body carries a column-0 `Feature: <slug>` line, plus that root's sub-issues: reading one is a
+ * paginated scan for the root (once per process) and one paginated sub-issues read, never a call
+ * per issue.
  */
 
 import { execFileSync } from "node:child_process";
@@ -19,7 +21,7 @@ import {
 export const READY_STATUS = "ready-for-agent";
 
 /** promote-findings.sh creates a fix issue `ready-for-agent` (no parked state to flush), and the
- * milestone listing lags the create, so the loop waits for it to appear. */
+ * sub-issues listing can lag the create, so the loop waits for it to appear. */
 export const fixIssuesCreatedReady = true;
 
 /** "Done" short of shipped: implemented and merged into the feature branch, closed only by the
@@ -51,7 +53,8 @@ function shellOut(cmd, args) {
     env = { ...process.env, MSYS2_ARG_CONV_EXCL: "*" };
   }
   try {
-    const stdout = execFileSync(cmd, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...(env ? { env } : {}) });
+    // stderr piped, not inherited: an expected failure (a 404 read) is no noise, and every error raised quotes it.
+    const stdout = execFileSync(cmd, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}) });
     return { code: 0, stdout, stderr: "" };
   } catch (err) {
     return {
@@ -131,7 +134,7 @@ function statusOf({ state, labels = [] }) {
   return TRIAGE_LABELS.find((name) => names.has(name)) ?? "";
 }
 
-/** The feature's PRD: a milestone issue by title convention, not a work issue (to-prd). */
+/** The feature's PRD: an issue of the feature by title convention, not a work issue (to-prd). */
 export const isPrdIssue = (issue) => /^PRD:/.test(issue.title ?? "");
 
 /** Same shape as local.mjs's `parseIssue`; `blockedBy` holds bare issue numbers. */
@@ -155,25 +158,131 @@ export function parseIssue(json) {
   };
 }
 
-/** Every issue in the milestone, open and closed (a closed blocker is resolved), in one call. */
-export function listFeatureIssues(mainRoot, { featureSlug, exec = gh } = {}) {
-  const args = ["issue", "list", "--milestone", featureSlug, "--state", "all", "--json", "number,title,body,labels,state"];
+/** `gh api` resolves the placeholders from the git remote, as every `gh issue ...` call here does. */
+const API = "repos/{owner}/{repo}";
 
-  const r = exec("gh", args);
+/** A slug on a body's column-0 `Feature: <slug>` line: written by this backend only, on a root. */
+const MARKER = /^Feature:[ \t]*([A-Za-z0-9][A-Za-z0-9._-]*)[ \t]*$/m;
+const MARKER_LINES = /^Feature:[ \t]*[A-Za-z0-9][A-Za-z0-9._-]*[ \t]*(?:\r?\n|$)/gm;
+
+/** The feature slug a root issue's body names, or null when it names none. */
+export function featureMarker(body) {
+  return MARKER.exec(body ?? "")?.[1] ?? null;
+}
+
+/** `body` as a root's: one `Feature: <featureSlug>` line, then the body. */
+function withMarker(body, featureSlug) {
+  return `Feature: ${featureSlug}\n\n${withoutMarker(body).replace(/^(?:[ \t]*\r?\n)+/, "")}`;
+}
+
+/** `body` with no `Feature:` line: a sub-issue carrying one would read as a second root. */
+function withoutMarker(body) {
+  return (body ?? "").replace(MARKER_LINES, "");
+}
+
+/** Every element of a paginated REST list; `--slurp` prints the pages as one JSON array. */
+function apiList(path, { exec }) {
+  const r = exec("gh", ["api", path, "--paginate", "--slurp"]);
+  if (r.code !== 0) throw new Error(`gh api ${path} failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  return r.stdout?.trim() ? JSON.parse(r.stdout).flat() : [];
+}
+
+/**
+ * Issues and PRs in `state` (`open`|`all`), from the REST list. It lags a create by seconds (see
+ * findRoot), but less than `gh issue list --search`'s index, and a PR's number still bounds the scan.
+ */
+function scanIssues(state, { exec }) {
+  return apiList(`${API}/issues?state=${state}&per_page=100`, { exec });
+}
+
+const isIssue = (i) => !i.pull_request;
+
+/** Issue or PR `number` as REST JSON; `{ gone: true }` when it was deleted (410), null when no such number (404). */
+function readNumber(number, { exec }) {
+  const r = exec("gh", ["api", `${API}/issues/${number}`]);
   if (r.code !== 0) {
-    // gh reports a milestone not created yet as an unresolvable filter: an empty sprint.
-    if (/milestone/i.test(r.stderr ?? "")) return [];
-    throw new Error(`gh issue list failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+    if (/HTTP 410/.test(r.stderr ?? "")) return { gone: true };
+    if (/HTTP 404/.test(r.stderr ?? "")) return null;
+    throw new Error(`gh api ${API}/issues/${number} failed (exit ${r.code}): ${r.stderr || r.stdout}`);
   }
+  return JSON.parse(r.stdout || "{}");
+}
 
-  const raw = r.stdout && r.stdout.trim() ? JSON.parse(r.stdout) : [];
-  return raw.map(parseIssue);
+/** The list lags by seconds, so only a few numbers can be past its newest; a cap, not a 404, ends the read. */
+const MAX_UNLISTED = 20;
+
+/** Every issue numbered past `newest`, read one by one up to the first number not taken. */
+function issuesAfter(newest, { exec }) {
+  const found = [];
+  for (let n = newest + 1; n <= newest + MAX_UNLISTED; n++) {
+    const issue = readNumber(n, { exec });
+    if (issue === null) return found;
+    if (!issue.gone && isIssue(issue)) found.push(issue);
+  }
+  return found;
+}
+
+const isOpen = (issue) => String(issue.state).toUpperCase() === "OPEN";
+
+function ambiguousRoots(featureSlug, roots) {
+  const refs = roots.map((r) => `#${r.number}`).sort().join(", ");
+  return new Error(`feature ${featureSlug} has ${roots.length} root issues carrying 'Feature: ${featureSlug}': ${refs} — keep the line on one of them`);
+}
+
+/** Root numbers by slug, per `exec` (one GitHub): the sprint loop reads its feature on every
+ * pass, and a scan costs a page per 100 of the repo's issues. Nothing outlives the process. */
+const rootsSeen = new WeakMap();
+
+/** Issue `number` (REST JSON) while it still carries `featureSlug`'s marker, else null. */
+function stillRoot(number, featureSlug, { exec }) {
+  const issue = readNumber(number, { exec });
+  return issue && featureMarker(issue.body) === featureSlug ? issue : null;
+}
+
+/**
+ * The feature's root issue (REST JSON), or null when no issue carries its marker. An open root
+ * wins over closed ones; two open, or no open and two closed, is an error naming them. Scans
+ * once per process: later calls re-read the root found, scanning again only once it loses its line.
+ * The list lags a create by seconds, so when it shows no open root the issues past its newest are
+ * read by number: `publish-issues` right after `publish-prd` must find the root just made.
+ */
+function findRoot(featureSlug, { exec }) {
+  if (!rootsSeen.has(exec)) rootsSeen.set(exec, new Map());
+  const seen = rootsSeen.get(exec);
+  const known = seen.has(featureSlug) ? stillRoot(seen.get(featureSlug), featureSlug, { exec }) : null;
+  if (known) return known;
+  const marked = (list) => list.filter((i) => isIssue(i) && featureMarker(i.body) === featureSlug);
+  let roots = marked(scanIssues("open", { exec }));
+  if (roots.length === 0) {
+    const all = scanIssues("all", { exec });
+    const found = marked([...all, ...issuesAfter(Math.max(0, ...all.map((i) => i.number)), { exec })]);
+    roots = found.some(isOpen) ? found.filter(isOpen) : found;
+  }
+  if (roots.length > 1) throw ambiguousRoots(featureSlug, roots);
+  if (roots[0]) seen.set(featureSlug, roots[0].number);
+  return roots[0] ?? null;
+}
+
+/** `root` and its sub-issues (one level), open and closed, as REST JSON. */
+function rootAndSubIssues(root, { exec }) {
+  return [root, ...apiList(`${API}/issues/${root.number}/sub_issues?per_page=100`, { exec })];
+}
+
+/** The feature's issues as REST JSON — none for a slug with no root. */
+function featureIssuesJson(featureSlug, { exec }) {
+  const root = findRoot(featureSlug, { exec });
+  return root ? rootAndSubIssues(root, { exec }) : [];
+}
+
+/** Every issue of the feature, open and closed (a closed blocker is resolved). */
+export function listFeatureIssues(mainRoot, { featureSlug, exec = gh } = {}) {
+  return featureIssuesJson(featureSlug, { exec }).map(parseIssue);
 }
 
 /** GitHub has no `issues-deps.json`: `## Blocked by` prose (mirrored as native links) is the map. */
 export const featureDepsFile = () => null;
 
-/** Ready and unblocked: a blocker resolves once `done`; one absent from this milestone still blocks. */
+/** Ready and unblocked: a blocker resolves once `done`; one absent from this feature still blocks. */
 export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlug, exec, includeBlocked = false } = {}) {
   const issues = listFeatureIssues(mainRoot, { featureSlug, exec });
   const statusByNumber = new Map(issues.map((i) => [i.number, i.status]));
@@ -184,69 +293,47 @@ export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlu
     .filter((i) => includeBlocked || i.blockers.length === 0);
 }
 
-/** `gh api` resolves the placeholders from the git remote, as every `gh issue ...` call here does. */
-const MILESTONES_PATH = "repos/{owner}/{repo}/milestones";
+/**
+ * Every feature, one per slug a root issue names, sorted: `open` while the root or a sub-issue is
+ * open, and the count of open `ready-for-agent` issues among them. A slug on more than one root
+ * warns and counts them all, rather than failing every other slug. A closed root whose
+ * `sub_issues_summary` shows every sub-issue closed is settled without reading them.
+ */
+export function listFeatures(mainRoot, { exec = gh, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
+  const rootsBySlug = new Map();
+  for (const issue of scanIssues("all", { exec }).filter(isIssue)) {
+    const slug = featureMarker(issue.body);
+    if (slug) rootsBySlug.set(slug, [...(rootsBySlug.get(slug) ?? []), issue]);
+  }
+  return [...rootsBySlug.keys()].sort().map((slug) => {
+    const all = rootsBySlug.get(slug);
+    const open = all.filter(isOpen);
+    const roots = open.length ? open : all;
+    if (roots.length > 1) warn(`WARNING: ${ambiguousRoots(slug, roots).message}`);
+    const settled = (r) => !isOpen(r) && r.sub_issues_summary && r.sub_issues_summary.completed >= r.sub_issues_summary.total;
+    if (roots.every(settled)) return { slug, state: "closed", ready: 0 };
+    const members = new Map(roots.flatMap((r) => rootAndSubIssues(r, { exec })).map((i) => [i.number, i]));
+    const live = [...members.values()].filter(isOpen);
+    const ready = live.filter((i) => (i.labels ?? []).some((l) => (typeof l === "string" ? l : l.name) === READY_STATUS));
+    return { slug, state: live.length ? "open" : "closed", ready: ready.length };
+  });
+}
 
 /**
- * Ensure a milestone named `featureSlug` exists, list-first so repeat calls create nothing.
- * The list paginates and includes closed milestones: a missed one reads as missing and its
- * create 422s on the taken title. A closed match is reopened.
+ * Create an issue in the feature, returning `{number, url}`. With no root yet (`parent` null) it
+ * becomes the root, marker added; otherwise a sub-issue of `parent`, any marker dropped. `parent`
+ * undefined looks it up.
  */
-function ensureMilestone(featureSlug, { exec }) {
-  const list = exec("gh", ["api", `${MILESTONES_PATH}?state=all`, "--paginate", "--jq", ".[] | [.number, .state, .title] | @tsv"]);
-  if (list.code !== 0) {
-    throw new Error(`gh api milestones list failed (exit ${list.code}): ${list.stderr || list.stdout}`);
-  }
-  const match = (list.stdout || "")
-    .split("\n")
-    .map((line) => line.split("\t"))
-    .find(([, , title]) => title === featureSlug);
-  if (match) {
-    const [number, state] = match;
-    if (state === "open") return;
-    const reopened = exec("gh", ["api", "-X", "PATCH", `${MILESTONES_PATH}/${number}`, "-f", "state=open"]);
-    if (reopened.code !== 0) {
-      throw new Error(`gh api milestone reopen failed (exit ${reopened.code}): ${reopened.stderr || reopened.stdout}`);
-    }
-    return;
-  }
-
-  const created = exec("gh", ["api", MILESTONES_PATH, "-f", `title=${featureSlug}`]);
-  if (created.code !== 0) {
-    throw new Error(`gh api milestone create failed (exit ${created.code}): ${created.stderr || created.stdout}`);
-  }
-}
-
-/** Every feature, one per milestone (a closed one is still a taken slug), sorted by title. */
-export function listFeatures(mainRoot, { exec = gh } = {}) {
-  const fail = (r) => new Error((r.stderr || r.stdout || `gh exited ${r.code}`).replace(/\n$/, ""));
-  const milestones = exec("gh", ["api", `${MILESTONES_PATH}?state=all`, "--paginate", "--jq", ".[] | [.number, .state, .title] | @tsv"]);
-  if (milestones.code !== 0) throw fail(milestones);
-  const issues = exec("gh", ["issue", "list", "--label", READY_STATUS, "--state", "open", "--limit", "1000", "--json", "milestone"]);
-  if (issues.code !== 0) throw fail(issues);
-  const ready = new Map();
-  for (const issue of issues.stdout?.trim() ? JSON.parse(issues.stdout) : []) {
-    const title = issue.milestone?.title;
-    if (title) ready.set(title, (ready.get(title) ?? 0) + 1);
-  }
-  return (milestones.stdout || "")
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => line.split("\t"))
-    .map(([, state, title]) => ({ slug: title, state, ready: ready.get(title) ?? 0 }))
-    .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
-}
-
-/** Create an issue in the feature's milestone, `body` unmodified. Returns `{number, url}`. */
-export function createIssue({ title, body, labels = [], featureSlug }, { mainRoot, exec = gh } = {}) {
-  ensureMilestone(featureSlug, { exec });
+export function createIssue({ title, body, labels = [], featureSlug }, { mainRoot, exec = gh, parent } = {}) {
+  if (parent === undefined) parent = findRoot(featureSlug, { exec })?.number ?? null;
+  const text = parent === null ? withMarker(body, featureSlug) : withoutMarker(body);
 
   const bodyFile = join(tmpdir(), `crew-github-issue-${randomUUID()}.md`);
-  writeFileSync(bodyFile, body);
+  writeFileSync(bodyFile, text);
   try {
     const args = ["issue", "create", "--title", title, "--body-file", bodyFile];
     for (const label of [].concat(labels).filter(Boolean)) args.push("--label", label);
-    args.push("--milestone", featureSlug);
+    if (parent !== null) args.push("--parent", String(parent));
 
     const result = exec("gh", args);
     if (result.code !== 0) {
@@ -255,7 +342,7 @@ export function createIssue({ title, body, labels = [], featureSlug }, { mainRoo
     const url = result.stdout.trim();
     const match = /\/(\d+)\s*$/.exec(url);
     const number = match ? Number(match[1]) : null;
-    if (number !== null) linkBlockers(number, { mainRoot, exec, body });
+    if (number !== null) linkBlockers(number, { mainRoot, exec, body: text });
     return { number, url };
   } finally {
     try {
@@ -303,30 +390,19 @@ export function linkBlockers(number, { mainRoot, exec = gh, body, warn = (m) => 
 }
 
 /**
- * The feature PR's `Closes #n` lines: every open `awaiting-merge` issue in the milestone, plus
- * its open `PRD:` issue once no open work issue is left (as `close-shipped.sh`). A PR that
- * ships nothing closes nothing.
+ * The feature PR's `Closes #n` lines: every open `awaiting-merge` issue of the feature, plus its
+ * open `PRD:` issue (and the PRD's `Origin:` issues) once no open work issue is left, as
+ * `close-shipped.sh`. A PR that ships nothing closes nothing.
  */
 export function closingRefs(mainRoot, { featureSlug, exec = gh } = {}) {
-  const args = ["issue", "list", "--milestone", featureSlug, "--state", "open", "--limit", "500", "--json", "number,title,labels"];
-  const r = exec("gh", args);
-  if (r.code !== 0) throw new Error(`gh issue list failed (exit ${r.code}): ${r.stderr || r.stdout}`);
-  const raw = r.stdout && r.stdout.trim() ? JSON.parse(r.stdout) : [];
+  const raw = featureIssuesJson(featureSlug, { exec }).filter(isOpen);
   const awaiting = (i) => (i.labels || []).some((l) => l.name === AWAITING_MERGE_LABEL);
-  const prds = raw.filter((i) => /^PRD:/.test(i.title || ""));
+  const prds = raw.filter(isPrdIssue);
   const work = raw.filter((i) => !prds.includes(i));
   const ships = work.filter(awaiting);
   const prdCloses = ships.length > 0 && ships.length === work.length ? prds : [];
-  const origins = [];
-  for (const prd of prdCloses) {
-    const v = exec("gh", ["issue", "view", String(prd.number), "--json", "body"]);
-    if (v.code !== 0) throw new Error(`gh issue view failed (exit ${v.code}): ${v.stderr || v.stdout}`);
-    let body = "";
-    try { body = JSON.parse(v.stdout || "{}").body || ""; } catch { body = ""; }
-    origins.push(...parseOrigins(body));
-  }
   const nums = new Set([...ships, ...prdCloses].map((i) => i.number));
-  for (const n of origins) nums.add(n);
+  for (const prd of prdCloses) for (const n of parseOrigins(prd.body)) nums.add(n);
   return [...nums].sort((a, b) => a - b).map((n) => `Closes #${n}`);
 }
 
@@ -371,7 +447,7 @@ export function fetchIssue(mainRoot, number, { comments = false, exec = gh } = {
   return out;
 }
 
-/** The milestone's PRD body, headed by an HTML comment naming its number and title; null when none. */
+/** The feature's PRD body, headed by an HTML comment naming its number and title; null when none. */
 export function readPrd(mainRoot, { featureSlug, exec = gh } = {}) {
   const prd = listFeatureIssues(mainRoot, { featureSlug, exec }).find(isPrdIssue);
   return prd ? `<!-- PRD issue #${prd.number}: ${prd.title} -->\n${prd.text}\n` : null;
@@ -415,57 +491,88 @@ function draftBody(text) {
     .replace(/^(?:[ \t]*\r?\n)+/, "");
 }
 
-/** `publish-issues`' github side. A milestone only accumulates, so there is no re-run guard. */
+/**
+ * `publish-issues`' github side: the first issue of a slug with no root becomes the root, every
+ * later one its sub-issue. Issues only accumulate, so there is no re-run guard.
+ */
 export function beginPublish(mainRoot, { featureSlug, exec = gh } = {}) {
+  let parent;
   return {
     create(draft) {
+      parent ??= findRoot(featureSlug, { exec })?.number ?? null;
       const { number } = createIssue(
         { title: draft.title, body: draftBody(draft.text), labels: [draft.status], featureSlug },
-        { mainRoot, exec },
+        { mainRoot, exec, parent },
       );
       if (number === null) throw new Error(`gh issue create printed no issue URL for ${draft.file}`);
+      parent ??= number;
       return { ref: String(number), blockerRef: `Issue #${number}` };
     },
   };
 }
 
 /**
- * Update the milestone's `PRD:` issue or create one, then pin it best-effort — GitHub caps
- * pinned issues at 3 a repo. Returns the issue number.
+ * Update the feature's `PRD:` issue or create one: as the root when the slug has none, else under
+ * the root. An edit keeps the root's marker. Returns the issue number.
  */
-export function publishPrd(mainRoot, { featureSlug, title, body, exec = gh, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
-  const existing = listFeatureIssues(mainRoot, { featureSlug, exec }).find(isPrdIssue);
-  let number;
-  if (existing) {
-    number = existing.number;
-    const r = withBodyFile(body, (f) => exec("gh", ["issue", "edit", String(number), "--body-file", f]));
-    if (r.code !== 0) throw new Error(`gh issue edit failed (exit ${r.code}): ${r.stderr || r.stdout}`);
-  } else {
-    number = createIssue({ title: `PRD: ${title}`, body, featureSlug }, { mainRoot, exec }).number;
+export function publishPrd(mainRoot, { featureSlug, title, body, exec = gh } = {}) {
+  const root = findRoot(featureSlug, { exec });
+  const existing = root ? rootAndSubIssues(root, { exec }).find(isPrdIssue) : null;
+  if (!existing) {
+    const { number } = createIssue({ title: `PRD: ${title}`, body, featureSlug }, { mainRoot, exec, parent: root?.number ?? null });
     if (number === null) throw new Error("gh issue create printed no issue URL for the PRD");
+    return String(number);
   }
-  const pin = exec("gh", ["issue", "pin", String(number)]);
-  if (pin.code !== 0) warn(`WARNING: could not pin PRD issue #${number} (exit ${pin.code}): ${pin.stderr || pin.stdout}`);
-  return String(number);
+  const text = existing.number === root.number ? withMarker(body, featureSlug) : withoutMarker(body);
+  const r = withBodyFile(text, (f) => exec("gh", ["issue", "edit", String(existing.number), "--body-file", f]));
+  if (r.code !== 0) throw new Error(`gh issue edit failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  return String(existing.number);
+}
+
+/** Issue `number`'s parent issue (REST JSON), or null when it has none (the API answers 404). */
+function parentOf(number, { exec }) {
+  const r = exec("gh", ["api", `${API}/issues/${number}/parent`]);
+  if (r.code !== 0) {
+    if (/HTTP 404|Not Found/i.test(r.stderr ?? "")) return null;
+    throw new Error(`gh api ${API}/issues/${number}/parent failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  }
+  const parent = JSON.parse(r.stdout || "{}");
+  return parent.number ? parent : null;
 }
 
 /**
  * Rewrite a single-slice source issue's body (a `Source:` line kept), set `status` as its only
- * triage label and move it into the feature's milestone. `--remove-label` fails on a label the
- * issue lacks, so only carried ones are named. Null when the issue does not exist.
+ * triage label and file it in the feature: as its root when the slug has none, else under the
+ * root. Never moves an issue out of another feature; a new root keeps a parent that is no root. `--remove-label` fails on a label the issue
+ * lacks, so only carried ones are named. Null when the issue does not exist.
  */
 export function rewriteIssue(mainRoot, number, { body, status, featureSlug, exec = gh } = {}) {
-  const read = exec("gh", ["issue", "view", String(number), "--json", "labels", "--jq", ".labels[].name"]);
+  const read = exec("gh", ["issue", "view", String(number), "--json", "labels,body"]);
   if (read.code !== 0) {
     if (notFound(read)) return null;
     throw new Error(`gh issue view failed (exit ${read.code}): ${read.stderr || read.stdout}`);
   }
-  const carried = new Set((read.stdout ?? "").split("\n").map((l) => l.trim()).filter(Boolean));
+  const current = JSON.parse(read.stdout || "{}");
+  const own = featureMarker(current.body);
+  if (own && own !== featureSlug) {
+    throw new Error(`rewrite: issue #${number} is the root of feature ${own} (its 'Feature: ${own}' line) — not filing it under ${featureSlug}`);
+  }
+  const carried = new Set((current.labels ?? []).map((l) => (typeof l === "string" ? l : l.name)));
   const remove = TRIAGE_LABELS.filter((name) => name !== status && carried.has(name))
     .flatMap((name) => ["--remove-label", name]);
-  ensureMilestone(featureSlug, { exec });
-  const r = withBodyFile(draftBody(body), (f) =>
-    exec("gh", ["issue", "edit", String(number), "--body-file", f, ...remove, "--add-label", status, "--milestone", featureSlug]),
+
+  const root = findRoot(featureSlug, { exec });
+  const isRoot = !root || root.number === Number(number);
+  const parent = root?.number === Number(number) ? null : parentOf(number, { exec });
+  // A new root stays under a parent that is no feature's root: making it the root moves nothing.
+  const keepsParent = !root && parent && !featureMarker(parent.body);
+  if (parent && parent.number !== root?.number && !keepsParent) {
+    throw new Error(`rewrite: issue #${number} is already a sub-issue of #${parent.number}, not of feature ${featureSlug}'s root — not moving it`);
+  }
+  const text = isRoot ? withMarker(draftBody(body), featureSlug) : withoutMarker(draftBody(body));
+  const move = isRoot || parent?.number === root.number ? [] : ["--parent", String(root.number)];
+  const r = withBodyFile(text, (f) =>
+    exec("gh", ["issue", "edit", String(number), "--body-file", f, ...remove, "--add-label", status, ...move]),
   );
   if (r.code !== 0) {
     if (notFound(r)) return null;
@@ -516,7 +623,8 @@ function usage(message) {
 
 /**
  * `create-issue --title T --body-file F --feature-slug S [--label L]… [--main-root DIR]`, so
- * `promote-findings.sh` never hand-rolls a second milestone bootstrap. Prints the issue URL.
+ * `promote-findings.sh` files its issue under the feature's root as every other create does.
+ * Prints the issue URL.
  */
 function cliCreateIssue(argv, { exec, out }) {
   const opts = { labels: [] };
@@ -552,6 +660,44 @@ function cliCreateIssue(argv, { exec, out }) {
   out(`${url}\n`);
 }
 
+/** A feature slug names a `.scratch/` directory elsewhere: one path segment, as cli.mjs checks. */
+const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
+ * `feature-issues --feature-slug S [--state open|all] [--main-root DIR]` — the feature's issues as
+ * one JSON array of `{number, title, state, labels}` (state `OPEN`|`CLOSED`), `[]` for a slug with
+ * no root: the one membership read close-shipped.sh and issue-labels.sh make.
+ */
+function cliFeatureIssues(argv, { exec = gh, out }) {
+  const opts = { state: "all" };
+  for (let i = 0; i < argv.length; i++) {
+    switch (argv[i]) {
+      case "--feature-slug":
+        opts.featureSlug = argv[++i];
+        break;
+      case "--state":
+        opts.state = argv[++i];
+        break;
+      case "--main-root":
+        i++;
+        break;
+      default:
+        throw usage(`feature-issues: unknown argument: ${argv[i]}`);
+    }
+  }
+  if (!SLUG.test(opts.featureSlug ?? "")) throw usage("feature-issues requires a valid --feature-slug");
+  if (!["open", "all"].includes(opts.state)) throw usage(`feature-issues: --state must be open or all, not ${opts.state}`);
+  const issues = featureIssuesJson(opts.featureSlug, { exec })
+    .filter((i) => opts.state === "all" || isOpen(i))
+    .map((i) => ({
+      number: i.number,
+      title: i.title ?? "",
+      state: String(i.state).toUpperCase(),
+      labels: (i.labels ?? []).map((l) => ({ name: typeof l === "string" ? l : l.name })),
+    }));
+  out(`${JSON.stringify(issues)}\n`);
+}
+
 /** `link-blockers --issue <n> [--main-root <dir>]` — always exits 0; failures warn on stderr. */
 function cliLinkBlockers(argv, { exec, err }) {
   const opts = {};
@@ -574,5 +720,6 @@ function cliLinkBlockers(argv, { exec, err }) {
 /** This backend's own `tracker/cli.mjs` ops, beyond the ones every backend has. */
 export const cliOps = {
   "create-issue": cliCreateIssue,
+  "feature-issues": cliFeatureIssues,
   "link-blockers": cliLinkBlockers,
 };

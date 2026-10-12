@@ -266,29 +266,64 @@ node \"\$TRACKER\" mark-done 1"
   grep -q '^issue edit 7 --remove-label in-progress$' "$GH_LOG"
 }
 
-@test "issue-labels.sh sweep: removes in-progress from every milestone issue that carries it" {
-  export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
-  cat > "$STUB/gh" <<'GH'
+# sweep_gh <issues-json> — gh on PATH over tests/helpers/fake-github.mjs, every call logged.
+sweep_gh() {
+  printf '%s' "$1" > "$TEMP_DIR/issues.json"
+  cat > "$STUB/gh" <<GH
 #!/usr/bin/env bash
-printf '%s\n' "$*" >> "$GH_LOG"
-if [ "$1 $2" = "issue list" ]; then printf '3\n5\n'; fi
-exit 0
+printf '%s\n' "\$*" >> "\$GH_LOG"
+exec node "$REPO_ROOT/tests/helpers/fake-github.mjs" "$TEMP_DIR/issues.json" "\$@"
 GH
+  chmod +x "$STUB/gh"
+}
+
+@test "issue-labels.sh sweep: removes in-progress from the root and every sub-issue that carries it, open or closed" {
+  export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
+  sweep_gh '[
+    {"number": 1, "title": "PRD: demo", "body": "Feature: demo\n", "state": "OPEN", "labels": [{"name": "in-progress"}]},
+    {"number": 3, "title": "a", "body": "", "state": "OPEN", "labels": [{"name": "in-progress"}, {"name": "ready-for-agent"}], "parent": 1},
+    {"number": 4, "title": "b", "body": "", "state": "OPEN", "labels": [{"name": "ready-for-agent"}], "parent": 1},
+    {"number": 5, "title": "c", "body": "", "state": "CLOSED", "labels": [{"name": "in-progress"}], "parent": 1},
+    {"number": 6, "title": "elsewhere", "body": "", "state": "OPEN", "labels": [{"name": "in-progress"}]}
+  ]'
   run bash "$AFK/issue-labels.sh" sweep demo
   echo "$output"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"SWEPT: 2"* ]]
-  grep -q '^issue list .*--milestone demo --label in-progress --state all' "$GH_LOG"
+  [[ "$output" == *"SWEPT: 3"* ]]
+  ! grep -qi 'milestone' "$GH_LOG"
+  grep -q '^issue edit 1 --remove-label in-progress$' "$GH_LOG"
   grep -q '^issue edit 3 --remove-label in-progress$' "$GH_LOG"
   grep -q '^issue edit 5 --remove-label in-progress$' "$GH_LOG"
+  ! grep -q '^issue edit [46] ' "$GH_LOG"
 }
 
-@test "issue-labels.sh sweep: a milestone that does not exist yet is nothing to sweep" {
+@test "issue-labels.sh sweep: a slug with no root issue is nothing to sweep" {
   export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
-  printf '#!/usr/bin/env bash\necho "no milestone found" >&2; exit 1\n' > "$STUB/gh"
+  sweep_gh '[{"number": 6, "title": "x", "body": "", "state": "OPEN", "labels": [{"name": "in-progress"}]}]'
   run bash "$AFK/issue-labels.sh" sweep demo
   [ "$status" -eq 0 ]
   [[ "$output" == *"SWEPT: 0"* ]]
+  ! grep -q '^issue edit' "$GH_LOG"
+}
+
+@test "issue-labels.sh sweep: a failing feature read exits 1 with gh's stderr" {
+  export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
+  printf '#!/usr/bin/env bash\necho "HTTP 401: Bad credentials" >&2; exit 1\n' > "$STUB/gh"
+  run bash "$AFK/issue-labels.sh" sweep demo
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HTTP 401: Bad credentials"* ]]
+  [[ "$output" != *"SWEPT:"* ]]
+}
+
+@test "issue-labels.sh sweep: a tracker CLI older than feature-issues says to update it" {
+  cp -R "$REPO_ROOT/tracker" "$TEMP_DIR/old-tracker"
+  sed -i.bak '/"feature-issues": cliFeatureIssues,/d' "$TEMP_DIR/old-tracker/github.mjs"
+  export CREW_TRACKER_CLI="$TEMP_DIR/old-tracker/cli.mjs"
+  sweep_gh '[]'
+  run bash "$AFK/issue-labels.sh" sweep demo
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$TEMP_DIR/old-tracker/cli.mjs has no feature-issues op"*"install.sh --update"* ]]
 }
 
 @test "issue-labels.sh claim/release/sweep: tracker local touches nothing" {
