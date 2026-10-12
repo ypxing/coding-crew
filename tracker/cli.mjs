@@ -200,9 +200,9 @@ const OPS = {
     return EXIT.OK;
   },
 
-  async features(argv, { tracker, mainRoot, exec, out }) {
+  async features(argv, { tracker, mainRoot, exec, out, err }) {
     parseArgs("features", argv, {});
-    for (const f of tracker.listFeatures(mainRoot, { exec })) out(`${f.slug}\t${f.state}\t${f.ready}\n`);
+    for (const f of tracker.listFeatures(mainRoot, { exec, warn: (m) => err(`${m}\n`) })) out(`${f.slug}\t${f.state}\t${f.ready}\n`);
     return EXIT.OK;
   },
 
