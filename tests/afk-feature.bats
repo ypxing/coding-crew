@@ -78,7 +78,7 @@ case "\$2" in
   feature-issues) cat "\$STATE/issues.json" ;;
   fetch) cat "\$STATE/\$3.md" ;;
   prd) [ -f "\$STATE/prd.md" ] || exit 3; cat "\$STATE/prd.md" ;;
-  closing-refs) jq -r '.[] | select(.state == "OPEN" and any(.labels[]; .name == "awaiting-merge")) | "Closes #\(.number)"' "\$STATE/issues.json" ;;
+  closing-refs) jq -r 'sort_by(.number) | .[] | select(.state == "OPEN" and any(.labels[]; .name == "awaiting-merge")) | "Closes #\(.number)"' "\$STATE/issues.json" ;;
   *) exit 2 ;;
 esac
 EOF
@@ -472,4 +472,38 @@ progress_body() {
   GH_API_FAIL=1 VERDICT=unmet run bash "$SCRIPT" feat
   [ "$status" -eq 1 ]
   [[ "$output" == *"#2 verify failed"* ]]
+}
+
+# --- finish --------------------------------------------------------------------------
+
+@test "with no ready issue left it pushes the branch and prints a gh pr create command whose body is the closing-refs output" {
+  run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ "$(git rev-parse origin/feature/feat)" = "$(git rev-parse feature/feat)" ]
+  [ "$(git ls-remote origin refs/heads/feature/feat | cut -f1)" = "$(git rev-parse feature/feat)" ]
+  local last="${lines[${#lines[@]}-1]}"
+  [[ "$last" == "gh pr create --fill --body "* ]]
+  ! grep -q '^pr create' "$STATE/gh.log"
+  eval "$last"
+  [ "$(cat "$STATE/pr-body")" = "$(printf 'Closes #2\nCloses #3')" ]
+  [ "$(cat "$STATE/pr-body")" = "$(node "$HOME/.coding-crew/tracker/cli.mjs" closing-refs --feature-slug feat)" ]
+}
+
+@test "--open-pr creates the PR only when gh pr view finds none, and prints its URL" {
+  run bash "$SCRIPT" feat --open-pr
+  [ "$status" -eq 0 ]
+  [ "${lines[${#lines[@]}-1]}" = "https://github.com/o/r/pull/10" ]
+  [ "$(cat "$STATE/pr-body")" = "$(printf 'Closes #2\nCloses #3')" ]
+  grep -q 'pull/10' <<<"$(progress_body)"
+
+  rm -f "$STATE/pr-body"
+  PR_EXISTS=1 run bash "$SCRIPT" feat --open-pr
+  [ "$status" -eq 0 ]
+  [ "${lines[${#lines[@]}-1]}" = "https://github.com/o/r/pull/9" ]
+  [ ! -f "$STATE/pr-body" ]
+}
+
+@test "afk-feature.sh stays under 150 lines and .afk-logs/ is gitignored here" {
+  [ "$(wc -l < "$REPO_ROOT/skills/afk-feature/scripts/afk-feature.sh")" -lt 150 ]
+  git -C "$REPO_ROOT" check-ignore -q .afk-logs/x.log
 }
