@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **tracker (github)**: "Moving off milestones" now moves every issue of the milestone, closed ones included, so an
+  open issue whose blocker already closed is not left blocked after the move (#443).
 - **tracker (github)**: a feature is now one root issue — the `PRD:` issue, or a single-slice feature's work issue —
   whose body carries a `Feature: <slug>` line, plus that root's sub-issues; nothing creates or reads a milestone, and
   the PRD is no longer pinned. Every issue crew-afk files (slices, promoted fix issues, integration fixes) is a

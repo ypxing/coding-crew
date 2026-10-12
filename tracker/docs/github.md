@@ -237,10 +237,13 @@ to crew-afk (it reads as empty) until you move it by hand. For each feature stil
    Feature: <slug>
    ```
 
-2. Make each of the milestone's open issues a sub-issue of the root:
+2. Make every issue of the milestone a sub-issue of the root — closed ones too, not just open
+   ones: a `## Blocked by` issue resolves only when it is in the feature and `done`, so an open
+   issue whose blocker closed but was left behind stays blocked forever:
 
    ```bash
-   gh issue edit <number> --parent <root>
+   gh issue list --milestone <slug> --state all --limit 1000 --json number -q '.[].number' |
+     while read -r n; do [ "$n" = <root> ] || gh issue edit "$n" --parent <root>; done
    ```
 
 3. Close the milestone (on GitHub: Issues → Milestones → Close), so it stops collecting issues.
