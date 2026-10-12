@@ -31,7 +31,7 @@
   ],
   "skills": {
     "crew-afk": {
-      "version": "2.41.4",
+      "version": "2.42.0",
       "source-dir": "crew-afk",
       "description": "Run an unattended sprint: implement, review and merge every ready-for-agent issue into one feature branch.",
       "assets": {
@@ -117,7 +117,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.20.1",
+      "version": "1.20.2",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
@@ -127,7 +127,7 @@
       }
     },
     "to-prd": {
-      "version": "1.8.0",
+      "version": "1.8.1",
       "source-dir": "to-prd",
       "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
       "source": "mattpocock/skills"
@@ -173,7 +173,7 @@
       ]
     },
     "configure-tracker": {
-      "version": "1.4.0",
+      "version": "1.4.1",
       "source-dir": "configure-tracker",
       "description": "Choose where the project's issues live: local markdown files or GitHub Issues."
     },

@@ -117,7 +117,7 @@ test("without issues-deps.json or a PRD the linter is passed neither flag", () =
   assert.deepEqual(lintArgv(root), ["--issue", join(root, ".scratch/demo/issues/open/01-alpha.md")]);
 });
 
-test("under github the linter gets one written-out body file per open milestone issue, each done one as --known, and the PRD issue", () => {
+test("under github the linter gets one written-out body file per open issue of the feature, each done one as --known, and the PRD issue", () => {
   const root = githubFixtureRepo();
   const closed = { ...GH_ALPHA, number: 2, title: "beta", state: "CLOSED" };
   const prd = { number: 9, title: "PRD: Demo", body: "# PRD\n\n- **D1** thing\n", labels: [], state: "OPEN" };

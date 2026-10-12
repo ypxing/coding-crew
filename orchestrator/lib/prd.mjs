@@ -40,7 +40,7 @@ function locatePrd({ sprint, effects, log = () => {} }) {
 
   const cli = process.env.CREW_TRACKER_CLI || TRACKER_CLI;
   const r = effects.exec("node", [cli, "prd", "--feature-slug", sprint.featureSlug, "--main-root", effects.mainRoot], { mutating: false });
-  if (r.code === 3) return null; // the milestone has no PRD issue
+  if (r.code === 3) return null; // the feature has no PRD issue
   if (r.code !== 0 || r.error) {
     log(`[WARN] PRD: could not fetch the PRD issue (exit ${r.code}) — using the saved copy, if any`, "warn");
     return saved();
@@ -72,7 +72,7 @@ function intentIssue({ sprint, effects, log = () => {} }) {
       const cli = process.env.CREW_TRACKER_CLI || TRACKER_CLI;
       tmp = mkdtempSync(join(tmpdir(), "intent-known-"));
       const r = effects.exec("node", [cli, "known", "--feature-slug", sprint.featureSlug, "--out", tmp, "--main-root", effects.mainRoot], { mutating: false });
-      if (r.code === 3) return saved(); // the milestone has no issues
+      if (r.code === 3) return saved(); // the feature has no issues
       if (r.code !== 0 || r.error) {
         log(`[WARN] PRD: could not list the feature's issues for its decisions (exit ${r.code}) — using the saved intent issue, if any`, "warn");
         return saved();

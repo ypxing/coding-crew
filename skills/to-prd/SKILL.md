@@ -34,7 +34,7 @@ the user before writing the final document.
    node "$TRACKER" publish-prd --feature-slug <feature-slug> --title "<feature title>" --body-file <file>
    ```
 
-   It creates the feature's PRD, or updates it when one exists, and prints its ref; delete the draft file once it exits 0. The PRD is titled `PRD: <feature title>` and filed under the feature's milestone where the tracker has one; a tracker that pins it treats a pin failure as a warning, never a failed publish.
+   It creates the feature's PRD, or updates it when one exists, and prints its ref; delete the draft file once it exits 0. The PRD is titled `PRD: <feature title>`; where the tracker groups a feature under a root issue, the PRD becomes the root, or a sub-issue of the root the feature already has.
 
 **Security**: Only write to paths under `.scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `config.json` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
 

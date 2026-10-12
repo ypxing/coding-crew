@@ -4,29 +4,25 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { closingRefs, createIssue, linkBlockers, listFeatureIssues, parseIssue, retryTransient, selectDispatchable, writeProgress } from "../../tracker/github.mjs";
+import { closingRefs, createIssue, featureMarker, linkBlockers, listFeatureIssues, parseIssue, retryTransient, selectDispatchable, writeProgress } from "../../tracker/github.mjs";
+import { fakeGithub, ghFeature, ghIssue } from "../helpers/fake-github.mjs";
 
-// github.mjs's read path (issue 04): listFeatureIssues/parseIssue/selectDispatchable, all `gh`
-// calls stubbed via an injected fake exec — no real network access, no PATH stubbing.
+// github.mjs's read path: listFeatureIssues/parseIssue/selectDispatchable, all `gh` calls stubbed
+// via an injected fake exec — no real network access, no PATH stubbing. A feature is a root issue
+// carrying `Feature: <slug>` and the root's sub-issues (tests/helpers/fake-github.mjs models both).
 // See tests/orchestrator/tracker.test.mjs for the equivalent local-backend coverage and
 // tests/orchestrator/body-format.test.mjs for the shared markdown-body helpers this reuses.
 //
-// The write path (issue 05) — createIssue/writeProgress — is covered further
-// down this same file, same stubbing approach.
+// The write path — createIssue/writeProgress — is covered further down this same file.
 
 function repo() {
   return mkdtempSync(join(tmpdir(), "crew-tracker-github-"));
 }
 
-/** A fake `exec` that records every call and returns one JSON payload for `gh issue list`. */
+/** The fake GitHub holding `issues` as feature `feat`: the first is its root, the rest sub-issues. */
 function fakeExec(issues) {
-  const calls = [];
-  const exec = (cmd, args) => {
-    calls.push([cmd, ...args]);
-    return { code: 0, stdout: JSON.stringify(issues), stderr: "" };
-  };
-  exec.calls = calls;
-  return exec;
+  const [root, ...subs] = issues;
+  return fakeGithub(root ? ghFeature("feat", root, ...subs) : []);
 }
 
 function failingExec(stderr, code = 1) {
@@ -39,36 +35,71 @@ function failingExec(stderr, code = 1) {
   return exec;
 }
 
-test("listFeatureIssues issues exactly one gh issue list call, scoped to the milestone, all states", () => {
-  const root = repo();
-  const exec = fakeExec([]);
-  listFeatureIssues(root, { featureSlug: "my-feature", exec });
-  assert.equal(exec.calls.length, 1);
-  const argv = exec.calls[0].join(" ");
-  assert.equal(exec.calls[0][0], "gh");
-  assert.match(argv, /issue list/);
-  assert.match(argv, /--milestone my-feature/);
-  assert.match(argv, /--state all/);
-  assert.match(argv, /--json number,title,body,labels,state/);
-  assert.doesNotMatch(argv, /--repo/);
+const argv = (exec) => exec.calls.map((c) => c.slice(1).join(" "));
+const SCAN_OPEN = "api repos/{owner}/{repo}/issues?state=open&per_page=100 --paginate --slurp";
+const SCAN_ALL = "api repos/{owner}/{repo}/issues?state=all&per_page=100 --paginate --slurp";
+const subIssues = (n) => `api repos/{owner}/{repo}/issues/${n}/sub_issues?per_page=100 --paginate --slurp`;
+
+test("listFeatureIssues finds the root among open issues, then reads its sub-issues, both paginated", () => {
+  const exec = fakeExec([ghIssue(4), ghIssue(5, { state: "CLOSED" })]);
+  const issues = listFeatureIssues(repo(), { featureSlug: "feat", exec });
+  assert.deepEqual(issues.map((i) => i.number), [4, 5]);
+  assert.deepEqual(argv(exec), [SCAN_OPEN, subIssues(4)]);
+  for (const call of exec.calls) assert.ok(!call.includes("--repo"), call.join(" "));
 });
 
-test("listFeatureIssues returns an empty list for a milestone that does not exist yet, not an error", () => {
-  const root = repo();
-  const exec = failingExec("gh: could not resolve to a Milestone with the name 'my-feature'.");
-  assert.deepEqual(listFeatureIssues(root, { featureSlug: "my-feature", exec }), []);
+test("listFeatureIssues returns every one of a feature's 34 sub-issues, past the API's page size", () => {
+  const subs = Array.from({ length: 34 }, (_, i) => ghIssue(i + 2, { state: i % 2 ? "CLOSED" : "OPEN" }));
+  const exec = fakeExec([ghIssue(1, { title: "PRD: big" }), ...subs]);
+  const issues = listFeatureIssues(repo(), { featureSlug: "feat", exec });
+  assert.equal(issues.filter((i) => i.number !== 1).length, 34);
 });
 
-test("listFeatureIssues returns an empty list when gh succeeds with an empty milestone", () => {
-  const root = repo();
-  const exec = fakeExec([]);
-  assert.deepEqual(listFeatureIssues(root, { featureSlug: "my-feature", exec }), []);
+test("listFeatureIssues finds a root past the first page of open issues, and drops pull requests", () => {
+  const others = Array.from({ length: 150 }, (_, i) => ghIssue(i + 10));
+  const pr = { ...ghIssue(500, { pr: true }), body: "Feature: feat\n" };
+  const exec = fakeGithub([...ghFeature("feat", ghIssue(2), ghIssue(3)), ...others, pr]);
+  assert.deepEqual(listFeatureIssues(repo(), { featureSlug: "feat", exec }).map((i) => i.number), [2, 3]);
 });
 
-test("listFeatureIssues throws on a real gh failure unrelated to the milestone", () => {
-  const root = repo();
-  const exec = failingExec("gh: authentication required");
-  assert.throws(() => listFeatureIssues(root, { featureSlug: "my-feature", exec }), /gh issue list failed/);
+test("listFeatureIssues reads a slug with no root as an empty feature, after scanning open then all issues", () => {
+  const exec = fakeGithub([...ghFeature("other", ghIssue(1), ghIssue(2)), ghIssue(3, { body: "  Feature: feat\nFeature: feat-two\n" })]);
+  assert.deepEqual(listFeatureIssues(repo(), { featureSlug: "feat", exec }), []);
+  assert.deepEqual(argv(exec), [SCAN_OPEN, SCAN_ALL]);
+});
+
+test("listFeatureIssues finds a closed root when no open issue carries the marker", () => {
+  const exec = fakeGithub(ghFeature("feat", ghIssue(7, { state: "CLOSED" }), ghIssue(8)));
+  assert.deepEqual(listFeatureIssues(repo(), { featureSlug: "feat", exec }).map((i) => i.number), [7, 8]);
+  assert.deepEqual(argv(exec), [SCAN_OPEN, SCAN_ALL, subIssues(7)]);
+});
+
+test("listFeatureIssues: one open root wins over closed ones carrying the same marker", () => {
+  const exec = fakeGithub([...ghFeature("feat", ghIssue(2, { state: "CLOSED" })), ...ghFeature("feat", ghIssue(9), ghIssue(10))]);
+  assert.deepEqual(listFeatureIssues(repo(), { featureSlug: "feat", exec }).map((i) => i.number), [9, 10]);
+});
+
+test("listFeatureIssues throws naming both when two open issues carry the same Feature: line", () => {
+  const exec = fakeGithub([...ghFeature("feat", ghIssue(3)), ...ghFeature("feat", ghIssue(5))]);
+  assert.throws(() => listFeatureIssues(repo(), { featureSlug: "feat", exec }), /#3.*#5|#5.*#3/);
+});
+
+test("listFeatureIssues throws naming both when no root is open and two closed ones carry the marker", () => {
+  const closed = { state: "CLOSED" };
+  const exec = fakeGithub([...ghFeature("feat", ghIssue(3, closed)), ...ghFeature("feat", ghIssue(5, closed))]);
+  assert.throws(() => listFeatureIssues(repo(), { featureSlug: "feat", exec }), /#3.*#5|#5.*#3/);
+});
+
+test("listFeatureIssues throws on a gh failure with its stderr verbatim", () => {
+  const exec = failingExec("gh: authentication required\n");
+  assert.throws(() => listFeatureIssues(repo(), { featureSlug: "my-feature", exec }), (e) => e.message.includes("gh: authentication required\n"));
+});
+
+test("featureMarker reads a column-0 Feature: line holding one slug, and nothing else", () => {
+  assert.equal(featureMarker("Actor: x\nFeature: my-feat\n\n## What\n"), "my-feat");
+  assert.equal(featureMarker("  Feature: my-feat\n"), null);
+  assert.equal(featureMarker("Feature: login form\n"), null);
+  assert.equal(featureMarker(""), null);
 });
 
 test("parseIssue is a pure transform producing local.mjs's exact output shape", () => {
@@ -196,7 +227,7 @@ test("selectDispatchable includes a ready issue whose blocker is open but awaiti
   assert.deepEqual(picked, [2]);
 });
 
-test("selectDispatchable calls gh exactly once regardless of issue or blocker count (the N+1 this avoids)", () => {
+test("selectDispatchable makes the same two gh calls regardless of issue or blocker count (the N+1 this avoids)", () => {
   const root = repo();
   const issues = Array.from({ length: 5 }, (_, idx) => ({
     number: idx + 1,
@@ -207,7 +238,12 @@ test("selectDispatchable calls gh exactly once regardless of issue or blocker co
   }));
   const exec = fakeExec(issues);
   selectDispatchable(root, { featureSlug: "feat", exec });
-  assert.equal(exec.calls.length, 1);
+  assert.equal(exec.calls.length, 2);
+});
+
+test("selectDispatchable finds nothing for a slug with no root", () => {
+  const exec = fakeGithub([ghIssue(1, { labels: ["ready-for-agent"] })]);
+  assert.deepEqual(selectDispatchable(repo(), { featureSlug: "feat", exec }), []);
 });
 
 test("selectDispatchable skips a non-ready status", () => {
@@ -216,126 +252,41 @@ test("selectDispatchable skips a non-ready status", () => {
   assert.deepEqual(selectDispatchable(root, { featureSlug: "feat", exec }), []);
 });
 
-// ─────────────────────────────── write path (issue 05) ───────────────────────────────
+// ─────────────────────────────── write path ───────────────────────────────
 //
 // createIssue/writeProgress, all `gh` calls stubbed via an injected fake exec.
 
-/**
- * A stateful fake `exec` that models just enough of `gh api .../milestones` and
- * `gh issue create/view/close/comment` to exercise the write path without a real
- * network call: a "list" milestones call (no `-f`) reflects whichever milestone
- * titles have been "created" so far (an actual create call carries `-f`), and
- * `gh issue view --json body` returns whatever `body` was last set (defaults to
- * `initialViewBody`), independent of whatever the caller's own cached `issue.text` says.
- */
-function fakeGhWrite({ milestoneTitles = [], closedMilestoneTitles = [], viewBody = "" } = {}) {
-  const calls = [];
-  const milestones = [
-    ...milestoneTitles.map((title) => ({ title, state: "open" })),
-    ...closedMilestoneTitles.map((title) => ({ title, state: "closed" })),
-  ].map((m, i) => ({ ...m, number: i + 1 }));
-  const exec = (cmd, args) => {
-    calls.push([cmd, ...args]);
-    if (args[0] === "api") {
-      const patch = args.indexOf("PATCH");
-      if (patch !== -1) {
-        const number = Number(args[patch + 1].split("/").pop());
-        milestones.find((m) => m.number === number).state = "open";
-        return { code: 0, stdout: "", stderr: "" };
-      }
-      const createMatch = args.indexOf("-f");
-      if (createMatch !== -1) {
-        const title = args[createMatch + 1].replace(/^title=/, "");
-        milestones.push({ title, state: "open", number: milestones.length + 1 });
-        return { code: 0, stdout: "", stderr: "" };
-      }
-      // Like the real API: open milestones only unless `?state=all`, one page of 30 unless
-      // the call paginates, and `--jq` prints the tab-separated number/state/title lines.
-      const all = args[1].includes("state=all");
-      const visible = milestones.filter((m) => all || m.state === "open");
-      const listed = args.includes("--paginate") ? visible : visible.slice(0, 30);
-      const stdout = args.includes("--jq")
-        ? listed.map((m) => `${m.number}\t${m.state}\t${m.title}\n`).join("")
-        : JSON.stringify(listed);
-      return { code: 0, stdout, stderr: "" };
-    }
-    if (args[0] === "issue" && args[1] === "create") {
-      return { code: 0, stdout: "https://github.com/owner/name/issues/42\n", stderr: "" };
-    }
-    if (args[0] === "issue" && args[1] === "view") {
-      return { code: 0, stdout: `${viewBody}\n`, stderr: "" };
-    }
-    if ((args[0] === "issue" && ["close", "comment", "edit"].includes(args[1])) || (args[0] === "label" && args[1] === "create")) {
-      return { code: 0, stdout: "", stderr: "" };
-    }
-    return { code: 0, stdout: "", stderr: "" };
-  };
-  exec.calls = calls;
-  return exec;
-}
+const createCall = (exec) => exec.calls.find((c) => c[1] === "issue" && c[2] === "create");
+const flagOf = (call, name) => (call.includes(name) ? call[call.indexOf(name) + 1] : undefined);
+const noMilestone = (exec) => {
+  for (const call of exec.calls) assert.ok(!call.some((a) => /milestone/i.test(a)), call.join(" "));
+};
 
-function apiCreateCalls(exec) {
-  return exec.calls.filter((c) => c[1] === "api" && c.includes("-f"));
-}
-
-test("createIssue's milestone bootstrap is idempotent: a second call for the same featureSlug makes no create request", () => {
-  const root = repo();
-  const exec = fakeGhWrite();
-  createIssue({ title: "First", body: "body one", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: root, exec });
-  createIssue({ title: "Second", body: "body two", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: root, exec });
-  assert.equal(apiCreateCalls(exec).length, 1);
+test("createIssue for a slug with no root files the issue as its root: a Feature: line first, no --parent", () => {
+  const exec = fakeGithub([ghIssue(1)]);
+  const r = createIssue({ title: "New work", body: "## What\n\nx\n", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: repo(), exec });
+  assert.equal(r.number, 2);
+  assert.equal(exec.issues.find((i) => i.number === 2).body, "Feature: feat\n\n## What\n\nx\n");
+  assert.equal(flagOf(createCall(exec), "--parent"), undefined);
+  assert.equal(flagOf(createCall(exec), "--label"), "ready-for-agent");
+  noMilestone(exec);
 });
 
-test("createIssue finds an existing milestone past the API's first page of 30 and makes no create request", () => {
-  const root = repo();
-  const others = Array.from({ length: 30 }, (_, i) => `other-${i}`);
-  const exec = fakeGhWrite({ milestoneTitles: [...others, "feat"] });
-  createIssue({ title: "First", body: "body", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: root, exec });
-  assert.equal(apiCreateCalls(exec).length, 0);
-});
-
-test("createIssue reopens the feature's closed milestone instead of creating a duplicate", () => {
-  const root = repo();
-  const exec = fakeGhWrite({ milestoneTitles: ["other"], closedMilestoneTitles: ["feat"] });
-  createIssue({ title: "First", body: "body", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: root, exec });
-  assert.equal(apiCreateCalls(exec).filter((c) => !c.includes("PATCH")).length, 0);
-  assert.ok(exec.calls.some((c) => c.join(" ").includes("-X PATCH repos/{owner}/{repo}/milestones/2 -f state=open")));
-});
-
-test("createIssue calls gh issue create with title, body-file, label and milestone; body passed through unmodified", () => {
-  const root = repo();
-  let bodyFileContentsAtCallTime = null;
-  const exec = (cmd, args) => {
-    if (args[0] === "issue" && args[1] === "create") {
-      const bodyFileIdx = args.indexOf("--body-file");
-      bodyFileContentsAtCallTime = readFileSync(args[bodyFileIdx + 1], "utf8");
-      return { code: 0, stdout: "https://github.com/owner/name/issues/42\n", stderr: "" };
-    }
-    return { code: 0, stdout: "[]", stderr: "" };
-  };
+test("createIssue files the issue under the feature's root with --parent, its body passed through unmodified", () => {
+  const exec = fakeGithub(ghFeature("feat", ghIssue(3, { title: "PRD: f" })));
   const body = "## Blocked by\n\n- Issue 3\n\nSource: review\n";
-  createIssue({ title: "New work", body, labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: root, exec });
-  // The body-file is a throwaway temp file, cleaned up once gh issue create has read it —
-  // so assert on the contents captured at call time, not on the (now-deleted) path.
-  assert.equal(bodyFileContentsAtCallTime, body);
+  const r = createIssue({ title: "New work", body, labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: repo(), exec });
+  assert.equal(flagOf(createCall(exec), "--parent"), "3");
+  assert.equal(flagOf(createCall(exec), "--title"), "New work");
+  const made = exec.issues.find((i) => i.number === r.number);
+  assert.equal(made.body, body);
+  assert.equal(made.parent, 3);
+  noMilestone(exec);
 });
 
-test("createIssue calls gh issue create with title, label and milestone flags", () => {
-  const root = repo();
-  const exec = fakeGhWrite();
-  createIssue({ title: "New work", body: "b", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: root, exec });
-  const createCall = exec.calls.find((c) => c[1] === "issue" && c[2] === "create");
-  assert.ok(createCall, "expected a gh issue create call");
-  assert.match(createCall.join(" "), /--title New work/);
-  assert.match(createCall.join(" "), /--label ready-for-agent/);
-  assert.match(createCall.join(" "), /--milestone feat/);
-  assert.ok(createCall.includes("--body-file"));
-});
-
-test("createIssue never passes --repo: gh targets the git remote, milestones included", () => {
-  const root = repo();
-  const exec = fakeGhWrite();
-  createIssue({ title: "New work", body: "## Blocked by\n- Issue #3\n", labels: [], featureSlug: "feat" }, { mainRoot: root, exec });
+test("createIssue never passes --repo: gh targets the git remote", () => {
+  const exec = fakeGithub(ghFeature("feat", ghIssue(3), ghIssue(4)));
+  createIssue({ title: "New work", body: "## Blocked by\n- Issue #4\n", labels: [], featureSlug: "feat" }, { mainRoot: repo(), exec });
   for (const call of exec.calls) assert.ok(!call.includes("--repo"), call.join(" "));
   const apiPaths = exec.calls.filter((c) => c[1] === "api").map((c) => c.find((a) => a.startsWith("repos/")));
   assert.ok(apiPaths.length > 0);
@@ -343,20 +294,22 @@ test("createIssue never passes --repo: gh targets the git remote, milestones inc
 });
 
 test("createIssue surfaces a gh issue create failure rather than swallowing it", () => {
-  const root = repo();
-  const exec = (cmd, args) => {
-    if (args[0] === "api") return { code: 0, stdout: "[]", stderr: "" };
-    return { code: 1, stdout: "", stderr: "gh: something went wrong" };
-  };
+  const exec = fakeGithub([], { fail: { "issue create": { stderr: "gh: something went wrong" } } });
   assert.throws(
-    () => createIssue({ title: "New work", body: "b", labels: [], featureSlug: "feat" }, { mainRoot: root, exec }),
-    /gh issue create failed/,
+    () => createIssue({ title: "New work", body: "b", labels: [], featureSlug: "feat" }, { mainRoot: repo(), exec }),
+    /gh issue create failed.*something went wrong/,
   );
+});
+
+test("createIssue exits with both roots named when the slug's root is ambiguous, creating nothing", () => {
+  const exec = fakeGithub([...ghFeature("feat", ghIssue(3)), ...ghFeature("feat", ghIssue(5))]);
+  assert.throws(() => createIssue({ title: "T", body: "b", featureSlug: "feat" }, { mainRoot: repo(), exec }), /#3.*#5|#5.*#3/);
+  assert.equal(createCall(exec), undefined);
 });
 
 test("writeProgress always calls gh issue comment, never gh issue edit", () => {
   const root = repo();
-  const exec = fakeGhWrite();
+  const exec = fakeGithub([ghIssue(3)]);
   const issue = { number: 3, text: "" };
   writeProgress(issue, "started work", { heading: "Progress", mainRoot: root, exec });
   assert.ok(exec.calls.some((c) => c[1] === "issue" && c[2] === "comment"));
@@ -365,7 +318,7 @@ test("writeProgress always calls gh issue comment, never gh issue edit", () => {
 
 test("a `## Blocked` write goes through the same writeProgress/comment path, with no `blocked` label", () => {
   const root = repo();
-  const exec = fakeGhWrite();
+  const exec = fakeGithub([ghIssue(3)]);
   const issue = { number: 3, text: "" };
   writeProgress(issue, "waiting on issue 5", { heading: "Blocked", mainRoot: root, exec });
   const commentCall = exec.calls.find((c) => c[1] === "issue" && c[2] === "comment");
@@ -375,53 +328,51 @@ test("a `## Blocked` write goes through the same writeProgress/comment path, wit
   assert.ok(!commentCall.includes("--label"));
 });
 
-/** `gh issue list --state open` of a milestone: one payload of {number,title,labels}. */
-const issue = (number, label, title = `Work ${number}`) => ({ number, title, labels: label ? [{ name: label }] : [] });
-const prd = (number) => issue(number, "", "PRD: the feature");
+/** A feature `feat` of open issues: PRD #2 as its root when `withPrd`, else work issue #1. */
+const issue = (number, label, title = `Work ${number}`) => ghIssue(number, { title, labels: label ? [label] : [] });
+const prd = (number, body = "") => ({ ...ghIssue(number, { title: "PRD: the feature" }), body });
+const feature = (...issues) => {
+  const root = issues.find((i) => i.title.startsWith("PRD:")) ?? ghIssue(1, { title: "Root", state: "CLOSED" });
+  return fakeGithub(ghFeature("feat", root, ...issues.filter((i) => i !== root)));
+};
 
-test("closingRefs lists the milestone's open awaiting-merge issues as Closes lines, in number order", () => {
-  const root = repo();
-  const exec = fakeExec([issue(12, "awaiting-merge"), issue(3, "awaiting-merge")]);
-  assert.deepEqual(closingRefs(root, { featureSlug: "feat", exec }), ["Closes #3", "Closes #12"]);
-  const argv = exec.calls[0].join(" ");
-  assert.match(argv, /issue list --milestone feat --state open .*--json number,title,labels/);
+test("closingRefs lists the feature's open awaiting-merge issues as Closes lines, in number order", () => {
+  const exec = feature(issue(12, "awaiting-merge"), issue(3, "awaiting-merge"));
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec }), ["Closes #3", "Closes #12"]);
+  noMilestone(exec);
 });
 
 test("closingRefs adds the PRD's line when only awaiting-merge work issues are open, sorted by number", () => {
-  const exec = fakeExec([issue(12, "awaiting-merge"), prd(2), issue(3, "awaiting-merge")]);
+  const exec = feature(issue(12, "awaiting-merge"), prd(2), issue(3, "awaiting-merge"));
   assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec }), ["Closes #2", "Closes #3", "Closes #12"]);
 });
 
 test("closingRefs omits the PRD's line while any open work issue is not awaiting-merge", () => {
   for (const label of ["ready-for-agent", "blocked", "ready-for-human", "needs-triage", ""]) {
-    const exec = fakeExec([prd(2), issue(3, "awaiting-merge"), issue(4, label)]);
+    const exec = feature(prd(2), issue(3, "awaiting-merge"), issue(4, label));
     assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec }), ["Closes #3"], `label: ${label || "none"}`);
   }
 });
 
 test("closingRefs returns no lines when nothing is awaiting-merge, PRD or not", () => {
-  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: fakeExec([prd(2)]) }), []);
-  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: fakeExec([prd(2), issue(4, "ready-for-agent")]) }), []);
-  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: fakeExec([]) }), []);
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: feature(prd(2)) }), []);
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: feature(prd(2), issue(4, "ready-for-agent")) }), []);
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: fakeGithub([]) }), []);
 });
 
-test("closingRefs yields the work issues' lines alone for a milestone with no PRD issue", () => {
-  const exec = fakeExec([issue(5, "awaiting-merge"), issue(4, "awaiting-merge")]);
+test("closingRefs yields the work issues' lines alone for a feature with no PRD issue", () => {
+  const exec = feature(issue(5, "awaiting-merge"), issue(4, "awaiting-merge"));
   assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec }), ["Closes #4", "Closes #5"]);
 });
 
-test("closingRefs does not list a closed PRD issue", () => {
-  // `--state open` leaves a closed PRD out of the list; the query must say so.
-  const exec = fakeExec([issue(3, "awaiting-merge")]);
-  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec }), ["Closes #3"]);
-  assert.ok(exec.calls[0].join(" ").includes("--state open"));
+test("closingRefs lists a single-slice root awaiting merge, and never a closed issue", () => {
+  const exec = fakeGithub(ghFeature("feat", ghIssue(7, { labels: ["awaiting-merge"] }), ghIssue(8, { state: "CLOSED", labels: ["awaiting-merge"] })));
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec }), ["Closes #7"]);
 });
 
 test("closingRefs surfaces a gh failure rather than reporting nothing to close", () => {
-  const root = repo();
-  assert.throws(() => closingRefs(root, { featureSlug: "feat", exec: failingExec("boom") }), /gh issue list failed/);
+  assert.throws(() => closingRefs(repo(), { featureSlug: "feat", exec: failingExec("boom") }), /boom/);
 });
-
 // link-blockers: native blocked_by relationships mirrored from the body's `## Blocked by`.
 function fakeLink({ body, failLink = "", noBlocker = false }) {
   const calls = [];
@@ -475,26 +426,16 @@ test("linkBlockers resolves the repo from the git remote", () => {
 });
 
 test("createIssue links blockers for the issue it created, and a link failure does not fail creation", () => {
-  const root = repo();
-  const inner = fakeGhWrite();
-  const exec = (cmd, args) => {
-    if (args[0] === "api" && args.includes("--jq") && !args[1].includes("/milestones")) return { code: 1, stdout: "", stderr: "nope" };
-    return inner(cmd, args);
-  };
-  const r = createIssue({ title: "T", body: "## Blocked by\n- Issue #3\n", featureSlug: "feat" }, { mainRoot: root, exec });
-  assert.equal(r.number, 42);
+  const exec = fakeGithub(ghFeature("feat", ghIssue(1)), { fail: { "api repos/{owner}/{repo}/issues/3 ": { stderr: "nope" } } });
+  const r = createIssue({ title: "T", body: "## Blocked by\n- Issue #3\n", featureSlug: "feat" }, { mainRoot: repo(), exec });
+  assert.equal(r.number, 2);
 });
 
 test("closingRefs adds Origin: issues exactly when the PRD's line is returned", () => {
-  const calls = [];
-  const mk = (issues) => (cmd, args) => {
-    calls.push(args);
-    if (args[1] === "view") return { code: 0, stdout: JSON.stringify({ body: "Actor: x\nOrigin: #7, #5\n" }), stderr: "" };
-    return { code: 0, stdout: JSON.stringify(issues), stderr: "" };
-  };
-  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: mk([prd(2), issue(3, "awaiting-merge")]) }),
+  const body = "Actor: x\nOrigin: #7, #5\n";
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: feature(prd(2, body), issue(3, "awaiting-merge")) }),
     ["Closes #2", "Closes #3", "Closes #5", "Closes #7"]);
-  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: mk([prd(2), issue(3, "awaiting-merge"), issue(4, "blocked")]) }), ["Closes #3"]);
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: feature(prd(2, body), issue(3, "awaiting-merge"), issue(4, "blocked")) }), ["Closes #3"]);
 });
 
 test("parseIssue reads blockedBy after an indented closing code fence", () => {
@@ -523,14 +464,15 @@ function scriptedExec(results) {
   return exec;
 }
 
-test("listFeatureIssues retries a gh issue list that failed with a GraphQL EOF and returns the issues", () => {
+test("listFeatureIssues retries a gh api read that failed with an EOF and returns the issues", () => {
   const dir = repo();
   const count = join(dir, "calls");
   const gh = join(dir, "fake-gh.sh");
-  const listed = JSON.stringify([{ number: 1, title: "A", body: "", labels: [{ name: "ready-for-agent" }], state: "OPEN" }]);
+  const root = JSON.stringify([[{ number: 1, title: "A", body: "Feature: feat\n", labels: [{ name: "ready-for-agent" }], state: "open" }]]);
   writeFileSync(
     gh,
-    `#!/usr/bin/env bash\necho x >> '${count}'\nif [ "$(wc -l < '${count}')" -eq 1 ]; then printf '%s' '${EOF_STDERR.trim()}' >&2; exit 1; fi\nprintf '%s' '${listed}'\n`,
+    `#!/usr/bin/env bash\necho x >> '${count}'\nif [ "$(wc -l < '${count}')" -eq 1 ]; then printf '%s' '${EOF_STDERR.trim()}' >&2; exit 1; fi\n` +
+      `case "$2" in *sub_issues*) printf '[[]]' ;; *) printf '%s' '${root}' ;; esac\n`,
     { mode: 0o755 },
   );
   const prev = process.env.CREW_FAKE_GH;
@@ -538,7 +480,7 @@ test("listFeatureIssues retries a gh issue list that failed with a GraphQL EOF a
   try {
     const issues = listFeatureIssues(dir, { featureSlug: "feat" });
     assert.deepEqual(issues.map((i) => i.number), [1]);
-    assert.equal(readFileSync(count, "utf8").split("\n").filter(Boolean).length, 2);
+    assert.equal(readFileSync(count, "utf8").split("\n").filter(Boolean).length, 3);
   } finally {
     if (prev === undefined) delete process.env.CREW_FAKE_GH;
     else process.env.CREW_FAKE_GH = prev;
@@ -582,7 +524,7 @@ for (const [what, args] of [
   ["gh issue create", ["issue", "create", "--title", "T", "--body-file", "f"]],
   ["gh issue comment", ["issue", "comment", "7", "--body", "b"]],
   ["gh api -X POST", ["api", "-X", "POST", "repos/{owner}/{repo}/issues/9/dependencies/blocked_by", "-F", "issue_id=1"]],
-  ["gh api with a field (an implicit POST)", ["api", "repos/{owner}/{repo}/milestones", "-f", "title=feat"]],
+  ["gh api with a field (an implicit POST)", ["api", "repos/{owner}/{repo}/issues/9/sub_issues", "-F", "sub_issue_id=1"]],
 ]) {
   test(`${what} is not retried after an ambiguous failure, but is after one before the request was sent`, () => {
     const ambiguous = scriptedExec([{ code: 1, stdout: "", stderr: EOF_STDERR }, { code: 0, stdout: "ok", stderr: "" }]);

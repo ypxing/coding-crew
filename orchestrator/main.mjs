@@ -176,7 +176,7 @@ function existingFeatureSlugs(mainRoot) {
 
 /**
  * Feature slug → its ready issue slugs, so a bare invocation refuses when two features have ready
- * issues rather than let session-init.sh pick one. Local-only: a github milestone query needs the slug.
+ * issues rather than let session-init.sh pick one. Local-only: a github feature query needs the slug.
  */
 function readyFeatureCandidates(mainRoot) {
   const byFeature = new Map();
@@ -705,7 +705,7 @@ async function main() {
         console.error(line);
         if (sprint.traceLog) writeLog(sprint.traceLog, line, level);
       };
-      // Holding the lease means no other run is alive: any `in-progress` left in the milestone is a dead run's.
+      // Holding the lease means no other run is alive: any `in-progress` left in the feature is a dead run's.
       sweepInProgress({ effects, sprint, log: leaseLog });
       // …and every awaiting-merge issue is settled: those a merged PR names have shipped.
       closeShipped({ effects, sprint, log: leaseLog });

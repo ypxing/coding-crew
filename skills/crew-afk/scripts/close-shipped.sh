@@ -5,8 +5,8 @@ set -uo pipefail
 # Usage: close-shipped.sh <feature-slug> <feature-branch>
 # GitHub can fail to link a PR's closing keywords, so this reads them itself: an open `awaiting-merge`
 # issue a PR merged into the default branch names is closed, and once no work issue is left, so is
-# the PRD. Prints `CLOSED: …` lines, then `SHIPPED: <count>`; exit 1 only when a gh call fails. The
-# milestone is left open: closing it is a human's call.
+# the PRD. The feature's issues come from the tracker CLI's `feature-issues`, none for a slug with
+# no root. Prints `CLOSED: …` lines, then `SHIPPED: <count>`; exit 1 only when a gh call fails.
 
 MAIN_ROOT="${MAIN_ROOT:-.}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,11 +52,9 @@ MERGED_ANY="$(printf '%s' "$PRS" | jq -r --arg base "$DEFAULT_BRANCH" \
 
 MERGED_PR="$(printf '%s' "$PRS" | jq -r --arg base "$DEFAULT_BRANCH" '[.[] | select(.baseRefName == $base)][0].number // ""')"
 
-if ! ISSUES="$(gh issue list --milestone "$SLUG" --state open --limit 500 \
-    --json number,title,labels 2>&1)"; then
-  # A milestone not created yet has no issues, and so nothing to close.
-  if grep -qi milestone <<<"$ISSUES"; then echo "SHIPPED: 0"; exit 0; fi
-  fail "gh issue list failed: $ISSUES"
+# The CLI's stderr (its reason, or a retry warning) passes straight through: stdout is the JSON.
+if ! ISSUES="$(node "$TRACKER_CLI" feature-issues --feature-slug "$SLUG" --state open --main-root "$MAIN_ROOT")"; then
+  fail "reading feature $SLUG's issues failed"
 fi
 
 COUNT=0
