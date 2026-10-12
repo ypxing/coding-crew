@@ -24,6 +24,7 @@ export async function runSprint(ctx) {
   // Resolved once per sprint: the backend tracker-config.mjs names, not tracker.mjs's local re-exports.
   const tracker = ctx.tracker ?? (await getTracker(effects.mainRoot));
   const stages = ctx.stages ?? { runWorker, runHousekeeping, checkRequires, lintMidRunIssues };
+  const reviewFeature = stages.runFeatureReview ?? runFeatureReview;
   const parallel = Math.max(1, options.parallel ?? 1);
   const inFlight = new Set();
   // One merge-conflict retry at a time: two against one tip would conflict with each other's resolution.
@@ -54,12 +55,33 @@ export async function runSprint(ctx) {
   const seen = new Set();
   // Fix issues this run created (github numbers): never re-linted.
   const ownRefs = new Set();
+
+  // The first listing that failed where an unknown answer cannot be read as "nothing left": once set,
+  // nothing is claimed and the run stalls naming it. Retrying is the tracker's job (retryTransient).
+  let listingFailed = null;
+  /** Every tracker listing in the loop: the issues, or null after a warning. `soft` keeps the run going. */
+  function listTracker(tag, read, { soft = false } = {}) {
+    try {
+      return read();
+    } catch (err) {
+      const why = err?.message ?? String(err);
+      ctx.log(`[${tag}] listing the tracker failed${soft ? "" : "; the run stalls"} — ${why}`, "warn");
+      if (!soft) listingFailed ??= `listing the tracker failed (${why}) — re-run (/crew-afk) once the tracker answers`;
+      return null;
+    }
+  }
+  const dispatchable = (tag, opts) =>
+    listTracker(tag, () => tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }), opts);
+  const featureIssues = (tag) => listTracker(tag, () => tracker.listFeatureIssues(effects.mainRoot, { featureSlug: sprint.featureSlug }));
+
+  // A failure here costs at most a second lint of an already-seen issue.
   const seenNow = () => {
-    for (const i of tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug })) seen.add(i.slug);
+    for (const i of dispatchable("SEEN-LIST-FAILED", { soft: true }) ?? []) seen.add(i.slug);
   };
 
   async function pollOnce() {
-    const issues = tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug });
+    const issues = dispatchable("POLL-FAILED", { soft: true });
+    if (!issues) return;
     const fresh = issues.filter((i) => !seen.has(i.slug));
     const linted = fresh.filter((i) => !ownRefs.has(i.number));
     if (linted.length) await stages.lintMidRunIssues(ctx, linted);
@@ -86,7 +108,7 @@ export async function runSprint(ctx) {
           try {
             await pollOnce();
           } catch (err) {
-            ctx.log(`[POLL-FAILED] listing the tracker failed; polling again next interval — ${err?.message ?? err}`, "warn");
+            ctx.log(`[POLL-FAILED] the poll failed; polling again next interval — ${err?.message ?? err}`, "warn");
           }
         }
       } finally {
@@ -122,15 +144,14 @@ export async function runSprint(ctx) {
   const startedAt = now();
   const wallMs = Math.max(0, Number(options.maxWallMinutes) || 0) * 60_000;
   const wallElapsed = () => wallMs > 0 && now() - startedAt >= wallMs;
-  const unclaimedByCap = () =>
-    wallElapsed() ? tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).filter((i) => isClaimable(i)) : [];
+  const unclaimedByCap = () => (wallElapsed() ? (dispatchable("CAP-LIST-FAILED") ?? []).filter((i) => isClaimable(i)) : []);
   let wallLogged = false;
   // The drain loop broke on the cap before Phase 2: parked fix issues wait for the next run.
   let flushSkipped = false;
 
-  /** Nothing new is claimed (nor polled for) past a red baseline or the wall-clock cap. */
+  /** Nothing new is claimed (nor polled for) past a red baseline, a failed listing or the wall-clock cap. */
   function claimsStopped() {
-    if (baselineFailed) return true;
+    if (baselineFailed || listingFailed) return true;
     if (!wallElapsed()) return false;
     if (!wallLogged) {
       wallLogged = true;
@@ -146,8 +167,9 @@ export async function runSprint(ctx) {
       const i = handoff.shift();
       if (isClaimable(i)) return i;
     }
-    const issues = tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug });
-    return issues.find(isClaimable) ?? null;
+    // A sibling in flight wakes this worker again, and that wake lists again.
+    const issues = dispatchable("CLAIM-LIST-FAILED", { soft: inFlight.size > 0 });
+    return issues?.find(isClaimable) ?? null;
   }
 
   function isConflictRetry(slug) {
@@ -166,7 +188,7 @@ export async function runSprint(ctx) {
   /** Some open issue is at its attempt cap (CREW_MAX_ROUNDS), not done or blocked. */
   function cappedByMaxRounds() {
     if (!options.maxRounds) return false;
-    return tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).some(
+    return (dispatchable("ROUND-CAP-LIST-FAILED") ?? []).some(
       (i) => !sprint.isBlockedThisRun(i.slug) && sprint.attemptCount(i.slug) >= options.maxRounds,
     );
   }
@@ -232,7 +254,9 @@ export async function runSprint(ctx) {
       return { stalled: false, history, baselineFailed };
     }
 
+    if (listingFailed) break;
     capped = cappedByMaxRounds();
+    if (listingFailed) break;
     if (capped) {
       flush(ctx);
       ctx.log(`Round cap reached (${options.maxRounds} attempts per issue).`);
@@ -262,8 +286,9 @@ export async function runSprint(ctx) {
       if (redSkipped) featureReviews.pop();
       redSkipped = red;
       const unclaimed = unclaimedByCap();
+      if (listingFailed) break;
       const promote = (Number(sprint.get("feature-review-promotions")) || 0) < FEATURE_REVIEW_PROMOTIONS;
-      const review = await runFeatureReview(ctx, {
+      const review = await reviewFeature(ctx, {
         integration,
         wallCap: unclaimed.length ? { minutes: options.maxWallMinutes, unclaimed: unclaimed.length } : null,
         promote,
@@ -288,36 +313,39 @@ export async function runSprint(ctx) {
     if (unseen.size) {
       const refs = [...unseen];
       unseen.clear();
-      const missing = await awaitListed(ctx, tracker, refs);
+      const missing = await awaitListed(ctx, () => featureIssues("FIX-LIST-FAILED"), refs);
       for (const ref of missing) {
         const what = integrationRefs.has(ref) ? "integration fix" : "review findings";
         const line = `#${ref} (${what}) was created but never appeared in the milestone listing — re-run to implement it.`;
         unlisted.push(line);
         ctx.log(`[FIX-ISSUE-UNLISTED] ${line}`, "warn");
       }
-      if (missing.length < refs.length) continue;
+      if (missing.length < refs.length && !listingFailed) continue;
     }
     break;
   }
 
   // The closing review, report-only: what merged after the first feature review reaches the PR reviewed.
   const reviewedThisRun = featureReviews.some((r) => r.report && !r.failed);
-  if (reviewedThisRun && !options.dryRun && !wallElapsed()) {
-    const review = await runFeatureReview(ctx, { integration, wallCap: null, promote: false, drain: featureReviews.length + 1 });
+  if (reviewedThisRun && !options.dryRun && !wallElapsed() && !listingFailed) {
+    const review = await reviewFeature(ctx, { integration, wallCap: null, promote: false, drain: featureReviews.length + 1 });
     if (!review.skipped) featureReviews.push(review);
   }
 
   // Unclaimed because of the cap: claimable issues, listed before anything releases them.
-  const wallUnclaimed = unclaimedByCap().map((i) => i.slug);
+  const wallUnclaimed = listingFailed ? [] : unclaimedByCap().map((i) => i.slug);
   const wallCap = wallUnclaimed.length || flushSkipped ? { minutes: options.maxWallMinutes, unclaimed: wallUnclaimed } : null;
   // A cap hit stalls the run even when the attempt cap (CREW_MAX_ROUNDS) also ended it.
   let unfinished = null;
-  const unfinishedIssues = () => (unfinished ??= openIssues(tracker, effects.mainRoot, sprint.featureSlug));
+  const unfinishedIssues = () =>
+    (unfinished ??= (listingFailed ? null : openIssues(tracker, featureIssues("OPEN-LIST-FAILED"))) ?? []);
   const stalled =
     Boolean(wallCap) ||
     (!capped &&
       // The last drain's check: a drain red at the fix-issue limit stalls only if none later turned green.
-      (integration?.fix?.verdict === "limit" || unfinishedIssues().length > 0));
+      (integration?.fix?.verdict === "limit" || unfinishedIssues().length > 0)) ||
+    // Last, so a failed openIssues listing above counts too.
+    Boolean(listingFailed);
   // A person's work, not an agent's: the summary names it, so a stall says whom it waits on.
   const waiting = stalled ? unfinishedIssues().filter((i) => i.status === "ready-for-human") : [];
 
@@ -325,23 +353,28 @@ export async function runSprint(ctx) {
   for (const issue of held.values()) labelIssue(ctx, "release", issue);
   held.clear();
 
-  await wrapUp(ctx, { tracker, stalled, capped, wallCap, unlisted, waiting, integration, integrationFixes, featureReviews });
-  return { stalled, capped, wallCapped: Boolean(wallCap), history };
+  const stallReason = listingFailed;
+  await wrapUp(ctx, { tracker, stalled, stallReason, capped, wallCap, unlisted, waiting, integration, integrationFixes, featureReviews });
+  return { stalled, stallReason, capped, wallCapped: Boolean(wallCap), history };
 }
 
-/** The feature's work issues not yet `done`, parked fix issues included; the PRD issue is not work. */
-function openIssues(tracker, mainRoot, featureSlug) {
-  return tracker.listFeatureIssues(mainRoot, { featureSlug }).filter((i) => i.status !== "done" && !tracker.isPrdIssue(i));
+/** The feature's work issues not yet `done`, parked fix issues included; the PRD issue is not work. Null when the listing failed. */
+function openIssues(tracker, listed) {
+  return listed?.filter((i) => i.status !== "done" && !tracker.isPrdIssue(i)) ?? null;
 }
 
 const LISTED_POLL = { tries: 15, delayMs: 2000 };
 
-/** github's listing lags a create by seconds: waits, bounded, for every ref; returns those never listed. */
-async function awaitListed(ctx, tracker, refs) {
-  const { effects, sprint } = ctx;
+/**
+ * github's listing lags a create by seconds: waits, bounded, for every ref; returns those never listed.
+ * A listing that fails (null) ends the wait.
+ */
+async function awaitListed(ctx, list, refs) {
   let missing = refs;
   for (let n = 0; ; n++) {
-    const listed = new Set(tracker.listFeatureIssues(effects.mainRoot, { featureSlug: sprint.featureSlug }).map((i) => i.number));
+    const issues = list();
+    if (!issues) return missing;
+    const listed = new Set(issues.map((i) => i.number));
     missing = missing.filter((ref) => !listed.has(ref));
     if (n && missing.length < refs.length) ctx.log(`fix issue(s) listed after ${n} poll(s)`);
     if (!missing.length || n >= LISTED_POLL.tries) return missing;
@@ -370,7 +403,7 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, unlisted = [], waiting = [], integration = null, integrationFixes = [], featureReviews = [] }) {
+async function wrapUp(ctx, { tracker, stalled, stallReason = null, capped = false, wallCap = null, unlisted = [], waiting = [], integration = null, integrationFixes = [], featureReviews = [] }) {
   const { sprint, effects, options } = ctx;
 
   // The coder's runtime wrote the commits, so its adapter's trailer credits it.
@@ -396,9 +429,10 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, u
 
   // The PR first, so the summary can point at it; the last review dispatched decides featureReviewFailed.
   const featureReviewFailed = featureReviews.findLast((r) => !r.skipped)?.failed ?? null;
-  const pr = await pullRequest(ctx, tracker, integration, { stalled, capped, wallCap, unfixedFindings: unfixedFeatureFindings(sprint), featureReviewFailed });
+  const pr = await pullRequest(ctx, tracker, integration, { stalled, stallReason, capped, wallCap, unfixedFindings: unfixedFeatureFindings(sprint), featureReviewFailed });
   const summaryArgs = ["--promoted", promoteSeverities(sprint.fixFindings)];
   if (stalled) summaryArgs.push("--stalled");
+  if (stallReason) summaryArgs.push("--stall-reason", stallReason);
   if (wallCap) summaryArgs.push("--capped");
   if (pr?.posted != null) summaryArgs.push("--posted-to", pr.url);
   const summary = effects.bash("crew-summary.sh", summaryArgs, { env: sprint.childEnv() });
@@ -454,11 +488,11 @@ function featureReviewLine(sprint, r, n, total) {
  * Why a run is not green, one per cause. A check that could not run is not green; one switched off
  * is not held against it; a feature review with no valid report is, or the PR would look reviewed.
  */
-function notGreenCauses({ exitCode = 0, blocked = [], integration = null, capped = false, integrationEnabled = true, wallCap = null, unfixedFindings = [], featureReviewFailed = null }) {
+function notGreenCauses({ exitCode = 0, stallReason = null, blocked = [], integration = null, capped = false, integrationEnabled = true, wallCap = null, unfixedFindings = [], featureReviewFailed = null }) {
   const causes = [];
   const add = (kind, text) => causes.push({ kind, text });
   if (wallCap) add("wall-cap", `the ${wallCap.minutes}-minute wall-clock cap was hit (${wallCap.unclaimed.length ? `${wallCap.unclaimed.length} issue(s) unclaimed` : "Phase 2 fix issues stayed parked"})`);
-  else if (exitCode !== 0) add("stalled", "the run stalled with issues unfinished");
+  else if (exitCode !== 0) add("stalled", stallReason ?? "the run stalled with issues unfinished");
   if (blocked.length) add("blocked", `${blocked.length} issue(s) blocked`);
   if (capped) add("capped", "the run stopped at its per-issue attempt cap");
   if (integration?.status === "skipped") add("integration", `the integration check was skipped (${integration.reason})`);
@@ -489,7 +523,7 @@ export const isGreen = (state) => notGreenReasons(state).length === 0;
  * Last, after squash: the feature PR (open-pr.sh), the tracker's closing lines under the PR writer's
  * body. Without `openPr`, those lines are printed for the human's own PR.
  */
-async function pullRequest(ctx, tracker, integration, { stalled = false, capped = false, wallCap = null, unfixedFindings = [], featureReviewFailed = null } = {}) {
+async function pullRequest(ctx, tracker, integration, { stalled = false, stallReason = null, capped = false, wallCap = null, unfixedFindings = [], featureReviewFailed = null } = {}) {
   const { sprint, effects, options } = ctx;
   let refs = [];
   let refsError = null;
@@ -521,7 +555,7 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
   // its marker rewritten to name `integration`.
   if (integration?.status === "fail") {
     const notOpened = `**Not opened:** the integration check failed on ${sprint.featureBranch} — see ## Integration check above.`;
-    const marker = draftMarker({ exitCode: stalled ? 2 : 0, blocked: sprint.getList("blocked"), integration, capped, wallCap, unfixedFindings, featureReviewFailed });
+    const marker = draftMarker({ exitCode: stalled ? 2 : 0, stallReason, blocked: sprint.getList("blocked"), integration, capped, wallCap, unfixedFindings, featureReviewFailed });
     const r = effects.bash("open-pr.sh", ["--no-push", "--draft", "--draft-marker", marker], { env: sprint.childEnv() });
     const url = /^PR: (.*)$/m.exec(r.stdout ?? "")?.[1]?.trim();
     if (r.dryRun || r.code !== 0 || !url || url === "none") return { text: notOpened };
@@ -542,7 +576,7 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
   const body = await writePrBody(ctx, { integration });
   const blockedSlugs = sprint.getList("blocked");
   const { retention = {}, blocked_reasons: blockedReasons = {} } = sprint.readState();
-  const state = { exitCode: stalled ? 2 : 0, blocked: blockedSlugs, integration, capped, wallCap, integrationEnabled: options.integrationCheck !== false, unfixedFindings, featureReviewFailed };
+  const state = { exitCode: stalled ? 2 : 0, stallReason, blocked: blockedSlugs, integration, capped, wallCap, integrationEnabled: options.integrationCheck !== false, unfixedFindings, featureReviewFailed };
   const reasons = notGreenReasons(state);
   const green = reasons.length === 0;
   const args = ["--closes-file", closesFile];

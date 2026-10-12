@@ -374,3 +374,55 @@ test("a poll whose mid-run lint throws re-lints those issues on the next poll an
   await run;
   assert.deepEqual(h.started, ["a"]);
 });
+
+const EOF_ERROR = 'gh issue list failed (exit 1): Post "https://api.github.com/graphql": EOF';
+
+/** --open-pr against stub effects: every bash call is recorded, open-pr.sh answers with a URL. */
+async function withOpenPr(h) {
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  h.ctx.options.openPr = true;
+  Object.assign(h.ctx.sprint, {
+    env: { SPRINT_DIR: mkdtempSync(join(tmpdir(), "list-failed-")) },
+    featureBranch: "crew/demo",
+    readState: () => ({}),
+    getList: () => [],
+  });
+  h.ctx.effects.gitRead = () => ({ code: 1, stdout: "" });
+  h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
+  const calls = [];
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => {
+    calls.push({ name, args });
+    return name === "open-pr.sh" ? { code: 0, stdout: "PR: http://x/1\n", stderr: "" } : bash(name, args, o);
+  };
+  return calls;
+}
+
+const argAfter = (call, flag) => call?.args[call.args.indexOf(flag) + 1];
+
+test("a claim listing that fails with nothing in flight stalls the run at once, names the failure, and no worker lists again", async () => {
+  const { readFileSync } = await import("node:fs");
+  const h = harness({ pollInterval: 0, parallel: 2 });
+  const calls = await withOpenPr(h);
+  const list = h.ctx.tracker.selectDispatchable;
+  let failures = 0;
+  h.ctx.tracker.selectDispatchable = (...a) => {
+    if (h.done.has("a")) { failures++; throw new Error(EOF_ERROR); }
+    return list(...a);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  h.gates.get("a")();
+  const result = await run;
+  assert.equal(result.stalled, true);
+  assert.equal(failures, 1);
+  const summary = calls.find((c) => c.name === "crew-summary.sh");
+  assert.ok(summary.args.includes("--stalled"));
+  assert.match(argAfter(summary, "--stall-reason"), /listing the tracker failed.*EOF/);
+  const pr = calls.find((c) => c.name === "open-pr.sh");
+  const note = readFileSync(argAfter(pr, "--note-file"), "utf8");
+  assert.match(note, /listing the tracker failed.*EOF/);
+  assert.match(note, /<!-- crew-afk:draft stalled -->/);
+});
