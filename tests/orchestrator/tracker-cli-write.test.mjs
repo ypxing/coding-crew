@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { run } from "../../tracker/cli.mjs";
+import { featureMarker } from "../../tracker/github.mjs";
 import { fakeGithub, ghFeature, ghIssue } from "../helpers/fake-github.mjs";
 
 // tracker/cli.mjs — the write ops (`publish-issues`, `publish-prd`, `rewrite`, `mark-done`) on
@@ -345,6 +346,19 @@ test("publish-prd (github) creates the PRD under a work-issue root with --parent
   assert.equal(flag(ghCreates(exec)[0], "--parent"), "4");
   assert.equal(issueOf(exec, 5).body, "## Decisions\n");
   assert.equal(issueOf(exec, 4).state, "OPEN");
+});
+
+test("publish-issues (github) right after publish-prd files under the PRD it created, though the issue list has not caught up", async () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, "prd.md"), "## Decisions\n");
+  const exec = fakeGithub([ghIssue(1, { title: "Unrelated" }), ghIssue(2, { title: "A PR", pr: true })], { lagCreates: true });
+  const prd = await cli(dir, ["publish-prd", "--feature-slug", "feat", "--title", "Feat", "--body-file", join(dir, "prd.md")], exec);
+  assert.equal(prd.stdout, "3\n", prd.stderr);
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", drafts(dir)], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(issueOf(exec, 4).parent, 3);
+  assert.equal(issueOf(exec, 5).parent, 3);
+  assert.equal(featureMarker(issueOf(exec, 4).body), null);
 });
 
 test("publish-prd (github) under an existing root drops a Feature: line from the body, so it is no second root", async () => {

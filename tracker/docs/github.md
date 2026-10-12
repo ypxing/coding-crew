@@ -206,9 +206,11 @@ Feature: <slug>
 
 The tracker CLI writes that line (on the issue it creates as a root, and on every rewrite or
 re-publish of it) — never a skill — and finds a feature by it, scanning the repo's
-issues through the REST list API (open ones first, then all), paginated. It scans once per process
-(a crew-afk run reads its feature on every pass): later reads re-read the root it found, and scan
-again only once that issue is gone or no longer carries the line. Slices, promoted
+issues through the REST list API (open ones first, then all), paginated. That list lags a new
+issue by a few seconds, so when it shows no open root the issues numbered past its newest are read
+one by one: `publish-issues` right after `publish-prd` finds the root just created. It scans once
+per process (a crew-afk run reads its feature on every pass): later reads re-read the root it
+found, and scan again only once that issue is gone or no longer carries the line. Slices, promoted
 review-fix issues and integration-fix issues are all sub-issues of the root (`--parent <root>`).
 A feature's issues are the root plus its sub-issues, read from
 `repos/{owner}/{repo}/issues/<root>/sub_issues`, paginated, so no page is cut short; a slug with

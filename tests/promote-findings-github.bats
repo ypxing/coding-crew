@@ -74,7 +74,7 @@ configure_github() {
 # `gh issue create` (captures argv and the --body-file content, prints a fake issue URL),
 # `gh issue view <n> --json body -q .body` (prints back a canned body), and `gh api`: the open-issue
 # scan prints $1 as its one page (default: root #7 carrying `Feature: feat`), a root's sub-issues
-# none, a blocker's id its number, and a blocked_by link `{}`.
+# none, a blocker's id its number, a blocked_by link `{}`, and any other issue read a 404.
 stub_gh() {
   local roots="${1:-[{\"number\": 7, \"title\": \"PRD: feat\", \"body\": \"Feature: feat\\n\", \"state\": \"open\", \"labels\": []\}]}"
   printf '%s' "$roots" > "$GH_ROOTS_FILE"
@@ -88,7 +88,8 @@ case "$1" in
       *"/sub_issues"*) echo '[[]]' ;;
       *"/issues?state="*) printf '[%s]' "$(cat "$GH_ROOTS_FILE")" ;;
       *POST*) echo '{}' ;;
-      *) echo 42000 ;;
+      *--jq*) echo 42000 ;;
+      *) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
     esac
     ;;
   *)

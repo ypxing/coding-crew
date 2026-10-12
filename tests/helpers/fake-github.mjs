@@ -179,14 +179,21 @@ export function handle(issues, args, { lagged = () => false } = {}) {
   }
 }
 
-/** An in-process `exec`: `fail` maps an argv prefix ("api repos/…") to the `{code, stderr}` it returns. */
-export function fakeGithub(issues = [], { fail: failures = {} } = {}) {
+/**
+ * An in-process `exec`: `fail` maps an argv prefix ("api repos/…") to the `{code, stderr}` it returns.
+ * `lagCreates` hides every issue it creates from list reads, as GitHub's lists lag a create by seconds.
+ */
+export function fakeGithub(issues = [], { fail: failures = {}, lagCreates = false } = {}) {
   const calls = [];
+  const created = new Set();
+  const lagged = (i) => lagCreates && created.has(i.number);
   const exec = (cmd, args) => {
     calls.push([cmd, ...args]);
     const key = Object.keys(failures).find((k) => args.join(" ").startsWith(k));
     if (key) return { code: failures[key].code ?? 1, stdout: "", stderr: failures[key].stderr ?? "" };
-    return handle(exec.issues, args);
+    const r = handle(exec.issues, args, { lagged });
+    if (args[0] === "issue" && args[1] === "create" && r.code === 0) created.add(Math.max(...exec.issues.map((i) => i.number)));
+    return r;
   };
   exec.issues = issues.map((i) => ({ ...i }));
   exec.calls = calls;

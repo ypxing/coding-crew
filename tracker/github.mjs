@@ -53,7 +53,8 @@ function shellOut(cmd, args) {
     env = { ...process.env, MSYS2_ARG_CONV_EXCL: "*" };
   }
   try {
-    const stdout = execFileSync(cmd, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...(env ? { env } : {}) });
+    // stderr piped, not inherited: an expected failure (a 404 read) is no noise, and every error raised quotes it.
+    const stdout = execFileSync(cmd, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}) });
     return { code: 0, stdout, stderr: "" };
   } catch (err) {
     return {
@@ -187,11 +188,38 @@ function apiList(path, { exec }) {
 }
 
 /**
- * Issues in `state` (`open`|`all`), from the REST list: `gh issue list --search` reads an index
- * that lags, so a root created a moment ago would be missed and a second one filed.
+ * Issues and PRs in `state` (`open`|`all`), from the REST list. It lags a create by seconds (see
+ * findRoot), but less than `gh issue list --search`'s index, and a PR's number still bounds the scan.
  */
 function scanIssues(state, { exec }) {
-  return apiList(`${API}/issues?state=${state}&per_page=100`, { exec }).filter((i) => !i.pull_request);
+  return apiList(`${API}/issues?state=${state}&per_page=100`, { exec });
+}
+
+const isIssue = (i) => !i.pull_request;
+
+/** Issue or PR `number` as REST JSON; `{ gone: true }` when it was deleted (410), null when no such number (404). */
+function readNumber(number, { exec }) {
+  const r = exec("gh", ["api", `${API}/issues/${number}`]);
+  if (r.code !== 0) {
+    if (/HTTP 410/.test(r.stderr ?? "")) return { gone: true };
+    if (/HTTP 404/.test(r.stderr ?? "")) return null;
+    throw new Error(`gh api ${API}/issues/${number} failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  }
+  return JSON.parse(r.stdout || "{}");
+}
+
+/** The list lags by seconds, so only a few numbers can be past its newest; a cap, not a 404, ends the read. */
+const MAX_UNLISTED = 20;
+
+/** Every issue numbered past `newest`, read one by one up to the first number not taken. */
+function issuesAfter(newest, { exec }) {
+  const found = [];
+  for (let n = newest + 1; n <= newest + MAX_UNLISTED; n++) {
+    const issue = readNumber(n, { exec });
+    if (issue === null) return found;
+    if (!issue.gone && isIssue(issue)) found.push(issue);
+  }
+  return found;
 }
 
 const isOpen = (issue) => String(issue.state).toUpperCase() === "OPEN";
@@ -207,28 +235,29 @@ const rootsSeen = new WeakMap();
 
 /** Issue `number` (REST JSON) while it still carries `featureSlug`'s marker, else null. */
 function stillRoot(number, featureSlug, { exec }) {
-  const r = exec("gh", ["api", `${API}/issues/${number}`]);
-  if (r.code !== 0) {
-    if (/HTTP 404|HTTP 410/i.test(r.stderr ?? "")) return null;
-    throw new Error(`gh api ${API}/issues/${number} failed (exit ${r.code}): ${r.stderr || r.stdout}`);
-  }
-  const issue = JSON.parse(r.stdout || "{}");
-  return featureMarker(issue.body) === featureSlug ? issue : null;
+  const issue = readNumber(number, { exec });
+  return issue && featureMarker(issue.body) === featureSlug ? issue : null;
 }
 
 /**
  * The feature's root issue (REST JSON), or null when no issue carries its marker. An open root
  * wins over closed ones; two open, or no open and two closed, is an error naming them. Scans
  * once per process: later calls re-read the root found, scanning again only once it loses its line.
+ * The list lags a create by seconds, so when it shows no open root the issues past its newest are
+ * read by number: `publish-issues` right after `publish-prd` must find the root just made.
  */
 function findRoot(featureSlug, { exec }) {
   if (!rootsSeen.has(exec)) rootsSeen.set(exec, new Map());
   const seen = rootsSeen.get(exec);
   const known = seen.has(featureSlug) ? stillRoot(seen.get(featureSlug), featureSlug, { exec }) : null;
   if (known) return known;
-  const marked = (state) => scanIssues(state, { exec }).filter((i) => featureMarker(i.body) === featureSlug);
-  let roots = marked("open");
-  if (roots.length === 0) roots = marked("all");
+  const marked = (list) => list.filter((i) => isIssue(i) && featureMarker(i.body) === featureSlug);
+  let roots = marked(scanIssues("open", { exec }));
+  if (roots.length === 0) {
+    const all = scanIssues("all", { exec });
+    const found = marked([...all, ...issuesAfter(Math.max(0, ...all.map((i) => i.number)), { exec })]);
+    roots = found.some(isOpen) ? found.filter(isOpen) : found;
+  }
   if (roots.length > 1) throw ambiguousRoots(featureSlug, roots);
   if (roots[0]) seen.set(featureSlug, roots[0].number);
   return roots[0] ?? null;
@@ -272,7 +301,7 @@ export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlu
  */
 export function listFeatures(mainRoot, { exec = gh, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
   const rootsBySlug = new Map();
-  for (const issue of scanIssues("all", { exec })) {
+  for (const issue of scanIssues("all", { exec }).filter(isIssue)) {
     const slug = featureMarker(issue.body);
     if (slug) rootsBySlug.set(slug, [...(rootsBySlug.get(slug) ?? []), issue]);
   }

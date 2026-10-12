@@ -65,13 +65,14 @@ test("listFeatureIssues finds a root past the first page of open issues, and dro
 test("listFeatureIssues reads a slug with no root as an empty feature, after scanning open then all issues", () => {
   const exec = fakeGithub([...ghFeature("other", ghIssue(1), ghIssue(2)), ghIssue(3, { body: "  Feature: feat\nFeature: feat-two\n" })]);
   assert.deepEqual(listFeatureIssues(repo(), { featureSlug: "feat", exec }), []);
-  assert.deepEqual(argv(exec), [SCAN_OPEN, SCAN_ALL]);
+  // The list lags a create, so the number past its newest (#3) is read too: not taken, so no root.
+  assert.deepEqual(argv(exec), [SCAN_OPEN, SCAN_ALL, "api repos/{owner}/{repo}/issues/4"]);
 });
 
 test("listFeatureIssues finds a closed root when no open issue carries the marker", () => {
   const exec = fakeGithub(ghFeature("feat", ghIssue(7, { state: "CLOSED" }), ghIssue(8)));
   assert.deepEqual(listFeatureIssues(repo(), { featureSlug: "feat", exec }).map((i) => i.number), [7, 8]);
-  assert.deepEqual(argv(exec), [SCAN_OPEN, SCAN_ALL, subIssues(7)]);
+  assert.deepEqual(argv(exec), [SCAN_OPEN, SCAN_ALL, "api repos/{owner}/{repo}/issues/9", subIssues(7)]);
 });
 
 test("listFeatureIssues: one open root wins over closed ones carrying the same marker", () => {
@@ -122,6 +123,15 @@ test("listFeatureIssues rescans when the root it found is gone, and throws gh's 
   listFeatureIssues(repo(), { featureSlug: "feat", exec });
   failures["api repos/{owner}/{repo}/issues/4"] = { stderr: "gh: Bad credentials (HTTP 401)\n" };
   assert.throws(() => listFeatureIssues(repo(), { featureSlug: "feat", exec }), /Bad credentials/);
+});
+
+test("listFeatureIssues stops reading past the list's newest issue after a bounded few, even if every number answers", () => {
+  const exec = (cmd, args) => {
+    const path = args[1];
+    if (/issues\?state=/.test(path)) return { code: 0, stdout: "[[]]", stderr: "" };
+    return { code: 0, stdout: JSON.stringify({ number: 1, body: "", state: "open" }), stderr: "" };
+  };
+  assert.deepEqual(listFeatureIssues(repo(), { featureSlug: "feat", exec }), []);
 });
 
 test("featureMarker reads a column-0 Feature: line holding one slug, and nothing else", () => {
