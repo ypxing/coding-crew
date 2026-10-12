@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **address-pr-comments**: a PR solve-feature opened (a `<!-- solve-feature:begin -->` body block) is handled like a
+  crew-afk PR — its fix commit is pushed after green checks and escaped defects are recorded — and under `--auto` it is
+  marked ready with `gh pr ready` once every `crew-finding:` comment on it was handled this run (#458).
 - **solve-feature**: once two or more of a feature's issues are on the branch, Finish runs one read-only
   whole-feature verify (crew-afk's feature-mode reviewer, with the PRD and every per-issue `note`) and posts its
   findings and the notes as one review on the PR; the PR body gains a `<!-- solve-feature:begin -->` block with a
