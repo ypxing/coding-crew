@@ -473,10 +473,10 @@ test("a failed listing in cappedByMaxRounds stalls the run naming it", async () 
   const h = harness({ pollInterval: 0, parallel: 1 });
   h.ctx.options.maxRounds = 3;
   const list = h.ctx.tracker.selectDispatchable;
-  // Listings 1 and 2 are the claims (a, then nothing); 3 is the drain's round-cap check.
+  // Listing 1 is the run-start seenNow, 2 and 3 the claims (a, then nothing); 4 is the drain's round-cap check.
   const { result, reason } = await stalledRun(h, () => {
     h.ctx.tracker.selectDispatchable = (...a) => {
-      if (h.listings.n >= 2) throw new Error(EOF_ERROR);
+      if (h.listings.n >= 3) throw new Error(EOF_ERROR);
       return list(...a);
     };
   });
@@ -563,4 +563,105 @@ test("a run that stalls on a failed listing still releases the in-progress label
   assert.equal(result.stalled, true);
   const labels = calls.filter((c) => c.name === "issue-labels.sh").map((c) => c.args.join(" "));
   assert.deepEqual(labels, ["claim 41", "release 41"]);
+});
+
+for (const pollInterval of [5, 0]) {
+  test(`--poll-interval ${pollInterval}: an issue made ready mid-run and claimed when a worker finishes is linted first; a lint ERROR blocks it`, async () => {
+    const h = harness({ pollInterval, parallel: 1, lintBlocks: ["bad"] });
+    const run = runSprint(h.ctx);
+    await settle();
+    h.ready.push({ slug: "bad", number: null }, { slug: "good", number: null });
+    h.gates.get("a")();
+    await settle();
+    assert.deepEqual(h.linted, ["bad", "good"]);
+    assert.ok(h.blocked.has("bad"));
+    assert.deepEqual(h.started, ["a", "good"]);
+    h.gates.get("good")();
+    await run;
+    assert.deepEqual(h.started, ["a", "good"]);
+  });
+}
+
+/** Runs `order` to completion, one release per settle; returns the run's result. */
+async function runInOrder(h, order) {
+  const run = runSprint(h.ctx);
+  for (const slug of order) {
+    await settle();
+    h.gates.get(slug)();
+  }
+  return run;
+}
+
+test("--poll-interval 0: issues listed at run start and a fix issue Phase 2 promotes are claimed without a lint", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1, initial: ["a", "b"] });
+  let flushed = false;
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => {
+    if (name === "promote-findings.sh" && args[0] === "flush" && !flushed) {
+      flushed = true;
+      h.ready.push({ slug: "parked-fix", number: null });
+      return { code: 0, stdout: "FLUSH: promoted=1", stderr: "" };
+    }
+    return bash(name, args, o);
+  };
+  await runInOrder(h, ["a", "b", "parked-fix"]);
+  assert.deepEqual(h.started, ["a", "b", "parked-fix"]);
+  assert.deepEqual(h.linted, []);
+});
+
+test("--poll-interval 0: a github fix issue the feature review created ready is claimed without a lint", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  h.ctx.tracker.fixIssuesCreatedReady = true;
+  h.ctx.tracker.listFeatureIssues = () => h.ready;
+  h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
+  h.ctx.sprint.state = () => {};
+  h.ctx.effects.gitRead = () => ({ code: 1, stdout: "" });
+  h.ctx.stages.runFeatureReview = async (_c, { promote }) => {
+    if (!promote) return { skipped: true };
+    h.ready.push({ slug: "review-fix", number: 7 });
+    return { report: "r.md", findings: [], promoted: 1, promotedRef: 7 };
+  };
+  await runInOrder(h, ["a", "review-fix"]);
+  assert.deepEqual(h.started, ["a", "review-fix"]);
+  assert.deepEqual(h.linted, []);
+});
+
+test("a claim-time lint that throws with a sibling in flight claims nothing; the issue stays unseen and the next claim lints it", async () => {
+  const h = harness({ pollInterval: 0, parallel: 2, initial: ["a", "c"] });
+  const lint = h.ctx.stages.lintMidRunIssues;
+  let tries = 0;
+  h.ctx.stages.lintMidRunIssues = async (c, issues) => {
+    if (tries++ === 0) throw new Error("gh issue comment failed (exit 1): EOF");
+    return lint(c, issues);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  h.ready.push({ slug: "b", number: null });
+  h.gates.get("a")();
+  await settle();
+  assert.deepEqual(h.started, ["a", "c"]);
+  h.gates.get("c")();
+  await settle();
+  assert.equal(tries, 2);
+  assert.deepEqual(h.linted, ["b"]);
+  assert.deepEqual(h.started, ["a", "c", "b"]);
+  h.gates.get("b")();
+  const result = await run;
+  assert.equal(result.stalled, false);
+});
+
+test("a claim-time lint that throws with nothing in flight claims nothing and resolves the run stalled naming the lint failure", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  h.ctx.stages.lintMidRunIssues = async () => { throw new Error("gh issue comment failed (exit 1): EOF"); };
+  const { result, reason } = await stalledRun(h, () => {
+    h.ctx.stages.runHousekeeping = async (_c, w) => {
+      h.done.add(w.issue.slug);
+      h.ready.push({ slug: "b", number: null });
+      return { status: "complete" };
+    };
+  });
+  assert.deepEqual(h.started, ["a"]);
+  assert.equal(result.stalled, true);
+  assert.match(result.stallReason, /linting a mid-run issue failed.*EOF/);
+  assert.match(reason, /linting a mid-run issue failed.*EOF/);
 });
