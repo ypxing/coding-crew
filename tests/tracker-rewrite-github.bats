@@ -4,7 +4,8 @@
 #
 # rewrite sets the slice's status as the issue's only triage label: it reads the issue's labels,
 # then removes every other triage label the issue carries in the same `gh issue edit` that adds the
-# status. `gh` is stubbed on PATH: these tests pin argument shape and exit codes.
+# status, and files it under the feature's root. `gh` is stubbed on PATH: these tests pin argument
+# shape and exit codes.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 
@@ -41,23 +42,20 @@ teardown() {
   rm -rf "$TEMP_DIR"
 }
 
-# stub_gh [view-exit] [view-stderr] — logs every call; `issue view` prints $GH_LABELS (one label
-# per line) or fails with the given exit and stderr; the milestone api calls succeed.
+# stub_gh [view-exit] [view-stderr] — logs every call; `issue view` fails with the given exit and
+# stderr, else every call goes to tests/helpers/fake-github.mjs, where feature `feat` is root #5
+# and issue 42 carries $GH_LABELS (one label per line, read at the first call).
 stub_gh() {
   local view_rc="${1:-0}" view_err="${2:-}"
   cat > "$STUB/gh" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$GH_LOG"
-case "\$1 \$2" in
-  "issue view")
-    if [ $view_rc -ne 0 ]; then printf '%s\n' "$view_err" >&2; exit $view_rc; fi
-    cat "$GH_LABELS"
-    exit 0
-    ;;
-  "issue edit") exit 0 ;;
-esac
-if [ "\$1" = "api" ]; then printf '5\topen\tfeat\n'; exit 0; fi
-exit 1
+if [ "\$1 \$2" = "issue view" ] && [ $view_rc -ne 0 ]; then printf '%s\n' "$view_err" >&2; exit $view_rc; fi
+issues="$TEMP_DIR/issues.json"
+[ -f "\$issues" ] || jq -R -s '[{number: 5, title: "Root", body: "Feature: feat\\n", state: "OPEN", labels: []},
+  {number: 42, title: "Title", body: "old", state: "OPEN", labels: (split("\\n") | map(select(. != "")) | map({name: .}))}]' \
+  "$GH_LABELS" > "\$issues"
+exec node "$REPO_ROOT/tests/helpers/fake-github.mjs" "\$issues" "\$@"
 EOF
   chmod +x "$STUB/gh"
   export CREW_FAKE_GH="$STUB/gh"
@@ -78,8 +76,9 @@ edit_call() { grep '^issue edit' "$GH_LOG" || true; }
   [ "$status" -eq 0 ]
   call="$(edit_call)"
   [[ "$call" == *"--remove-label needs-info"* ]]
-  [[ "$call" == *"--add-label ready-for-agent"* ]]
+  [[ "$call" == *"--add-label ready-for-agent --parent 5"* ]]
   [[ "$call" != *"--remove-label needs-triage"* ]]
+  ! grep -qi milestone "$GH_LOG"
   [[ "$call" != *"--remove-label ready-for-human"* ]]
 }
 
