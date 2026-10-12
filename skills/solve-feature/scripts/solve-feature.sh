@@ -26,6 +26,8 @@ KIND="$(node "$CLI" config | grep '^tracker=' || true)"
 [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
 FI=$(node "$CLI" feature-issues --feature-slug "$SLUG") || die "feature-issues failed for '$SLUG' (see above)"
 [ "$(jq length <<<"$FI")" -gt 0 ] || die "no feature '$SLUG' in the tracker"
+# The PR's title: `--fill` would use the branch name once the branch holds more than one commit.
+TITLE=$(jq -r '.[] | select(.root) | .title' <<<"$FI" | sed 's/^PRD: //')
 # Installed beside this skill (.coding-crew/<skill>/scripts), else user-level, as solve-issue finds dep-install.
 scripts_of() { local d; for d in "$SELF/../../$1/scripts" "$HOME/.coding-crew/$1/scripts"; do [ -d "$d" ] && { (cd "$d" && pwd); return; }; done
   die "$1 scripts not found: run install.sh --skill solve-feature"; }
@@ -137,9 +139,9 @@ git push -q -u origin "$BRANCH"
 # Shared with crew-afk's PR: every awaiting-merge issue, and the PRD once no work issue is left open.
 REFS=$(node "$CLI" closing-refs --feature-slug "$SLUG")
 if [ "$OPEN_PR" = 1 ]; then
-  if gh pr view --json number >/dev/null 2>&1; then URL=$(gh pr view --json url -q .url); else URL=$(gh pr create --fill --body "$REFS"); fi
+  if gh pr view --json number >/dev/null 2>&1; then URL=$(gh pr view --json url -q .url); else URL=$(gh pr create --title "$TITLE" --body "$REFS"); fi
   NOTE="PR: $URL"; progress; echo "$URL"
 else
-  CMD="gh pr create --fill --body $(printf %q "$REFS")"
+  CMD="gh pr create --title $(printf %q "$TITLE") --body $(printf %q "$REFS")"
   NOTE="Open the PR: \`$CMD\`"; progress; echo "$CMD"
 fi
