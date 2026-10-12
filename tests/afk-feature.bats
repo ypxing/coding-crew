@@ -273,3 +273,49 @@ coder_issues() {
   [[ "$output" == *"coder ran but did not close #2"* ]]
   [ "$(coder_issues)" = "2" ]
 }
+
+# --- the gate ------------------------------------------------------------------------
+
+@test "after the coder the script runs run-checks.sh, then a read-only verifier whose prompt names the issue file, the diff and the report" {
+  local base; base=$(git rev-parse origin/main)
+  run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ "$(claude_calls)" -eq 4 ]
+  [ "$(head -1 "$STATE/checks.log")" = "--project-root $WORK --main-root $WORK --dep-scripts $HOME/.coding-crew/dep-install/scripts" ]
+  [ "$(wc -l < "$STATE/checks.log")" -eq 2 ]
+
+  claude_call 2 | grep -qx -- --append-system-prompt-file
+  [[ "$(claude_flag 2 --append-system-prompt-file)" == */roles/reviewer.md ]]
+  [ -f "$(claude_flag 2 --append-system-prompt-file)" ]
+  [ "$(claude_call 2 | grep -A3 -x -- --tools | tail -3 | paste -sd' ' -)" = "Bash Read ToolSearch" ]
+  [ "$(claude_flag 2 --max-budget-usd)" = 2 ]
+  [ "$(claude_flag 2 --settings)" = '{"disableClaudeAiConnectors":true,"disableBundledSkills":true}' ]
+  local prompt; prompt=$(sed -n '/^-p$/,/^--append-system-prompt-file$/p' "$STATE/claude.2")
+  [[ "$prompt" == *"Issue file: $WORK/.afk-logs/2.issue.md"* ]]
+  [[ "$prompt" == *"Gather the diff: git diff $base..HEAD"* ]]
+  [[ "$prompt" == *"Write your structured verdict to $WORK/.afk-logs/2.verify.json as your last action."* ]]
+  [[ "$prompt" == *"Branch: feature/feat"* ]]
+  [[ "$prompt" == *"Slug: feat"* ]]
+  [[ "$prompt" == *'- [ ] works for `<before>` & co'* ]]
+  [[ "$prompt" == *"Review assets: $HOME/.coding-crew/afk-feature/roles/reviewer"* ]]
+  [[ "$prompt" == *"Checks already run by the pipeline in this branch's worktree: test=pass, lint=not_run."* ]]
+  [[ "$prompt" == *"PRD: $WORK/.afk-logs/prd.md"* ]]
+  [ "$(cat "$WORK/.afk-logs/prd.md")" = "# PRD: Feat" ]
+  [ -z "$(git status --porcelain)" ]
+}
+
+@test "the verifier prompt omits PRD: when the tracker has no PRD (exit 3)" {
+  rm "$STATE/prd.md"
+  run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  grep -q '^Issue file: ' "$STATE/claude.2"
+  ! grep -q '^PRD:' "$STATE/claude.2"
+}
+
+@test "the loop continues only on an all-met verdict" {
+  VERDICT=unmet run bash "$SCRIPT" feat
+  [ "$status" -ne 0 ]
+  [ "$(claude_calls)" -eq 2 ]
+  [[ "$output" == *"criterion 1 unmet"* ]]
+  [[ "$output" == *"$WORK/.afk-logs/2.verify.log"* ]]
+}

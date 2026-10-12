@@ -36,6 +36,14 @@ done
 KIND="$(node "$CLI" config | grep '^tracker=' || true)"
 [ "$KIND" = tracker=github ] || die "${KIND:-tracker=unknown}: feature-issues is a GitHub-only op"
 [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
+# Installed beside this skill (.coding-crew/<skill>/scripts), else user-level, as solve-issue finds dep-install.
+scripts_of() {
+  local d
+  for d in "$SELF/../../$1/scripts" "$HOME/.coding-crew/$1/scripts"; do [ -d "$d" ] && { (cd "$d" && pwd); return; }; done
+  die "$1 scripts not found: run install.sh --skill afk-feature"
+}
+CHECKS_DIR=$(scripts_of solve-issue) DEP_DIR=$(scripts_of dep-install)
+ROLES="$(cd "$SELF/../roles" 2>/dev/null && pwd)" || die "reviewer role not found beside $SELF: run install.sh --skill afk-feature"
 CFG="$ROOT/.coding-crew/config.json" DEV="$ROOT/.coding-crew/dev-commands.json"
 model() { local m; m=$(jq -r --arg r "$1" '.afk.models.claude[$r] // empty' "$CFG" 2>/dev/null || true); echo "${m:-$2}"; }
 CODER_MODEL=$(model coder sonnet) REVIEWER_MODEL=$(model reviewer opus)
@@ -59,6 +67,28 @@ fi
 
 LOGS="$ROOT/.afk-logs"
 mkdir -p "$LOGS" && echo '*' > "$LOGS/.gitignore" # ignored in any repo, so the tree stays clean
+PRD=""
+rc=0; node "$CLI" prd --feature-slug "$SLUG" >"$LOGS/prd.md" || rc=$?
+case $rc in 0) PRD="$LOGS/prd.md" ;; 3) rm -f "$LOGS/prd.md" ;; *) die "reading the feature's PRD failed (exit $rc)" ;; esac
+
+stop() { echo "afk-feature: #$N $1 failed: $2 — log: $3"; exit 1; }
+assert_tree() { # <step> <log> [<head>] — the branch, a clean tree and, when given, an unchanged HEAD
+  [ "$(git branch --show-current)" = "$BRANCH" ] || stop "$1" "branch changed to '$(git branch --show-current)'" "$2"
+  [ -z "$(git status --porcelain)" ] || stop "$1" "working tree left dirty" "$2"
+  [ -z "${3:-}" ] || [ "$(git rev-parse HEAD)" = "$3" ] || stop "$1" "HEAD moved" "$2"
+}
+# patsub_replacement would read `&` in issue text as the matched placeholder.
+shopt -u patsub_replacement 2>/dev/null || true
+verify_prompt() { # <before> <checks>; criteria go in last, so a placeholder named inside them stays literal
+  local t crit
+  t=$(cat "$SELF/verify-prompt.md")
+  [ -n "$PRD" ] || t=$(grep -vx 'PRD: <prd>' <<<"$t")
+  crit=$(awk 'tolower($0) ~ /^## acceptance criteria/{f=1;next} /^## /{f=0} f' "$LOGS/$N.issue.md")
+  t=${t//<review-assets>/$ROLES/reviewer}; t=${t//<branch>/$BRANCH}; t=${t//<slug>/$SLUG}
+  t=${t//<issue-file>/$LOGS/$N.issue.md}; t=${t//<prd>/$PRD}; t=${t//<before>/$1}; t=${t//<checks>/$2}
+  t=${t//<report>/$LOGS/$N.verify.json}
+  printf '%s\n' "${t//<criteria>/$(sed -e '/./,$!d' <<<"$crit")}"
+}
 
 PREV=""
 while :; do
@@ -76,7 +106,24 @@ while :; do
   done
   [ -n "$N" ] || break
   [ "$N" != "$PREV" ] || die "coder ran but did not close #$N"
-  LOG="$LOGS/$N.log"
-  timeout 60m claude -p "/solve-issue $N" --output-format json --max-budget-usd "$BUDGET" --model "$CODER_MODEL" >"$LOG" 2>&1 || die "coder exited non-zero"
+  LOG="$LOGS/$N.log" CLOG="$LOGS/$N.checks.log" VLOG="$LOGS/$N.verify.log" REPORT="$LOGS/$N.verify.json"
+  before=$(git rev-parse HEAD)
+  timeout 60m claude -p "/solve-issue $N" --output-format json --max-budget-usd "$BUDGET" --model "$CODER_MODEL" \
+    >"$LOG" 2>&1 || stop solve "coder exited non-zero" "$LOG"
+  assert_tree solve "$LOG"
+
+  rc=0; bash "$CHECKS_DIR/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$DEP_DIR" >"$CLOG" 2>&1 || rc=$?
+  [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand first" "$CLOG"
+  [ "$rc" = 0 ] || stop checks "run-checks.sh exit $rc" "$CLOG"
+
+  evidence=$(sed -nE 's/^([a-z][a-z0-9_]*): pass.*/\1=pass/p; s/^([a-z][a-z0-9_]*): fail.*/\1=fail/p; s/^([a-z][a-z0-9_]*): (NOT RUN|deferred).*/\1=not_run/p' "$CLOG" | paste -sd, - | sed 's/,/, /g')
+  rm -f "$REPORT"; head=$(git rev-parse HEAD)
+  timeout 20m claude -p "$(verify_prompt "$before" "$evidence")" --append-system-prompt-file "$ROLES/reviewer.md" \
+    --tools Bash Read ToolSearch --settings '{"disableClaudeAiConnectors":true,"disableBundledSkills":true}' \
+    --output-format json --max-budget-usd 2 --model "$REVIEWER_MODEL" >"$VLOG" 2>&1 || true
+  assert_tree verify "$VLOG" "$head"
+  [ -f "$REPORT" ] || stop verify "no report at $REPORT" "$VLOG"
+  verdict=$(jq -r '.verdict // empty' "$REPORT" 2>/dev/null || true)
+  [ "$verdict" = all-met ] || stop verify "verdict '${verdict:-unreadable}': $(jq -r '.detail // empty' "$REPORT" 2>/dev/null || true)" "$VLOG"
   PREV=$N
 done
