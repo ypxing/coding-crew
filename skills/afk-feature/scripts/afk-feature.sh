@@ -63,13 +63,14 @@ mkdir -p "$LOGS" && echo '*' > "$LOGS/.gitignore" # ignored in any repo, so the 
 PREV=""
 while :; do
   FI=$(node "$CLI" feature-issues --feature-slug "$SLUG" --state all)
-  CLOSED=" $(jq -r '[.[] | select(.state == "CLOSED") | .number] | join(" ")' <<<"$FI") "
+  # The tracker's `done`: an awaiting-merge blocker's work is already on this branch.
+  DONE=" $(jq -r '[.[] | select(.state == "CLOSED" or any(.labels[]; .name == "awaiting-merge")) | .number] | join(" ")' <<<"$FI") "
   N=""
   for c in $(jq -r '[.[] | select(.state == "OPEN" and (.root | not) and any(.labels[]; .name == "ready-for-agent")) | .number] | sort | .[]' <<<"$FI"); do
     node "$CLI" fetch "$c" >"$LOGS/$c.issue.md"
     ok=1
     for b in $(awk '/^## Blocked by/{f=1;next} /^## /{f=0} f' "$LOGS/$c.issue.md" | grep -oE '#[0-9]+' | tr -d '#'); do
-      [[ "$CLOSED" == *" $b "* ]] || ok=0
+      [[ "$DONE" == *" $b "* ]] || ok=0
     done
     [ "$ok" = 1 ] && { N=$c; break; }
   done

@@ -111,7 +111,9 @@ echo "coder log for #$n"
 [ -z "${CODER_SWITCH:-}" ] || git checkout -q -b elsewhere
 echo "$n" > "work-$n.txt"
 [ -n "${CODER_DIRTY:-}" ] || { git add "work-$n.txt"; git commit -q -m "[$n] work"; }
-[ -n "${CODER_NO_CLOSE:-}" ] || jq --argjson n "$n" 'map(if .number == $n then .labels = [{"name":"awaiting-merge"}] else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+[ -n "${CODER_NO_CLOSE:-}" ] && exit 0
+jq --argjson n "$n" 'map(if .number == $n then .labels = [{"name":"awaiting-merge"}] else . end)' "$STATE/issues.json" > "$STATE/i.tmp"
+mv "$STATE/i.tmp" "$STATE/issues.json"
 EOF
 
   cat > "$STUB/gh" <<'EOF'
@@ -236,4 +238,38 @@ claude_flag() { claude_call "$1" | grep -A1 -x -- "$2" | tail -1; }
   [ "$(git branch --show-current)" = topic ]
   ! git show-ref --verify -q refs/heads/other
   ! git show-ref --verify -q refs/heads/feature/feat
+}
+
+# --- selection -----------------------------------------------------------------------
+
+# coder_issues — the issue numbers the coder was run on, in order.
+coder_issues() {
+  local k
+  for k in $(seq 1 "$(claude_calls)"); do
+    claude_call "$k" | grep -qx -- --append-system-prompt-file || claude_flag "$k" -p | sed 's|^/solve-issue ||'
+  done | paste -sd' ' -
+}
+
+@test "issues run lowest number first, skipping the root, closed issues and any whose blocker is neither CLOSED nor awaiting-merge" {
+  issues '[{"number":1,"title":"PRD: Feat","state":"OPEN","labels":[{"name":"ready-for-agent"}],"root":true},
+           {"number":7,"title":"Seven","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
+           {"number":3,"title":"Three","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
+           {"number":2,"title":"Two","state":"CLOSED","labels":[{"name":"ready-for-agent"}]},
+           {"number":4,"title":"Four","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
+           {"number":5,"title":"Five","state":"OPEN","labels":[{"name":"ready-for-human"}]},
+           {"number":6,"title":"Six","state":"OPEN","labels":[{"name":"ready-for-agent"}]}]'
+  issue_body 3 "- Issue #2"
+  issue_body 4 "- Issue #5"
+  issue_body 6 "- Issue #99"
+  issue_body 7 "- Issue #3"
+  run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ "$(coder_issues)" = "3 7" ]
+}
+
+@test "the same issue selected twice in a row stops: coder ran but did not close #<n>" {
+  CODER_NO_CLOSE=1 run bash "$SCRIPT" feat
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"coder ran but did not close #2"* ]]
+  [ "$(coder_issues)" = "2" ]
 }
