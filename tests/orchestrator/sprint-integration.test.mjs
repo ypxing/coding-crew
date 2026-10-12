@@ -328,7 +328,7 @@ test("fix issues whose merged tree differs from their verified tree stay red: th
   assert.match(traceLog(root), /\[INTEGRATION-TRIAGE\] commit=[0-9a-f]{12} verdict=limit/);
 });
 
-test("github: a fixable red integration check creates the fix issue in the milestone, ready-for-agent, and implements it", () => {
+test("github: a fixable red integration check creates the fix issue under the feature's root, ready-for-agent, and implements it", () => {
   const root = githubFixtureRepo();
   const GH_BETA = { ...GH_ALPHA, number: 2, title: "beta", body: "# beta\n\n## Acceptance criteria\n\n- [x] beta exists\n" };
   const { stub, issuesFile } = stubGh(root, [GH_ALPHA, GH_BETA]);
@@ -353,7 +353,8 @@ test("github: a fixable red integration check creates the fix issue in the miles
   assert.ok(fix, `the integration fix issue was never created\n${traceLog(root)}`);
   assert.match(fix.body, /^Source: integration check \(integration\)$/m);
   assert.doesNotMatch(fix.body, /\.scratch\//);
-  assert.match(fix.body, /^- \[ \] The project's checks pass on the merged feature branch/m);
+  assert.match(fix.body, /^- \[[ x]\] The project's checks pass on the merged feature branch/m);
+  assert.equal(fix.parent, 1, "the fix issue was not filed under the feature's root");
   assert.ok(fix.labels.some((l) => l.name === "ready-for-agent" || l.name === "awaiting-merge"));
   assert.ok(fix.labels.some((l) => l.name === "awaiting-merge"), `the fix issue was never implemented\n${traceLog(root)}`);
   assert.match(traceLog(root), /fix issue\(s\) listed after \d+ poll/);
