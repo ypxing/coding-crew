@@ -672,6 +672,41 @@ test("mark-done exits 4 for a body with no acceptance-criteria section, on both 
   assert.equal(exec.find("issue edit").length, 0);
 });
 
+test("mark-done counts neither a fenced heading nor Cross-cutting Requirements as the criteria section", async () => {
+  for (const fence of ["```", "~~~"]) {
+    const dir = root();
+    const body = `${NO_SECTION}\n${fence}md\n## Acceptance criteria\n\n- [x] quoted\n${fence}\n`;
+    const r = await cli(dir, ["mark-done", localIssue(dir, body)]);
+    assert.equal(r.code, 4, fence);
+    assert.match(r.stderr, /no '## Acceptance criteria' section/);
+  }
+  const dir = root();
+  const r = await cli(dir, ["mark-done", localIssue(dir, `${NO_SECTION}\n## Cross-cutting Requirements\n\n- [x] docs\n`)]);
+  assert.equal(r.code, 4);
+  assert.match(r.stderr, /no '## Acceptance criteria' section/);
+});
+
+test("mark-done accepts the published, drafted and promoted fixtures as having the section", async () => {
+  for (const body of [MET, DRAFT_A.replace("- [ ]", "- [x]"), PROMOTED_BODY.replace("- [ ]", "- [x]")]) {
+    const dir = root();
+    const r = await cli(dir, ["mark-done", localIssue(dir, body)]);
+    assert.equal(r.code, 0, `${r.stderr}\n${body}`);
+  }
+});
+
+test("mark-done --force closes a body with no acceptance-criteria section, on both backends", async () => {
+  const dir = root();
+  const path = localIssue(dir, NO_SECTION);
+  const local = await cli(dir, ["mark-done", path, "--force"]);
+  assert.equal(local.code, 0, local.stderr);
+  assert.equal(existsSync(join(dir, ".scratch/feat/issues/done/01-t.md")), true);
+
+  const exec = fakeGh({ "issue view 12": { stdout: NO_SECTION }, "label create": {}, "issue edit 12": {} });
+  const gh = await cli(root({ github: true }), ["mark-done", "12", "--force"], exec);
+  assert.equal(gh.code, 0, gh.stderr);
+  assert.equal(exec.find("issue edit 12").length, 1);
+});
+
 test("mark-done ignores unchecked boxes outside the criteria sections", async () => {
   const dir = root();
   const r = await cli(dir, ["mark-done", localIssue(dir, `${MET}\n## Notes\n\n- [ ] someone else's todo\n`)]);
