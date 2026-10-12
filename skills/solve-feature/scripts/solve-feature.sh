@@ -102,7 +102,8 @@ while :; do
   # The tracker's `done`: an awaiting-merge blocker's work is already on this branch.
   DONE=" $(jq -r '[.[] | select(.state == "CLOSED" or any(.labels[]; .name == "awaiting-merge")) | .number] | join(" ")' <<<"$FI") "
   N=""
-  for c in $(jq -r '[.[] | select(.state == "OPEN" and (.root | not) and any(.labels[]; .name == "ready-for-agent")) | .number] | sort | .[]' <<<"$FI"); do
+  # What selectDispatchable picks: the root included (a one-slice feature's root is its work issue), `blocked` out.
+  for c in $(jq -r '[.[] | select(.state == "OPEN" and any(.labels[]; .name == "ready-for-agent") and (any(.labels[]; .name == "blocked") | not)) | .number] | sort | .[]' <<<"$FI"); do
     node "$CLI" fetch "$c" >"$LOGS/$c.issue.md"
     ok=1; for b in $(awk '/^## Blocked by/{f=1;next} /^## /{f=0} f' "$LOGS/$c.issue.md" | grep -oE '#[0-9]+' | tr -d '#'); do
       [[ "$DONE" == *" $b "* ]] || ok=0; done

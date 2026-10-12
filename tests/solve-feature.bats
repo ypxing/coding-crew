@@ -257,14 +257,15 @@ coder_issues() {
   done | paste -sd' ' -
 }
 
-@test "issues run lowest number first, skipping the root, closed issues and any whose blocker is neither CLOSED nor awaiting-merge" {
-  issues '[{"number":1,"title":"PRD: Feat","state":"OPEN","labels":[{"name":"ready-for-agent"}],"root":true},
+@test "issues run lowest number first, skipping closed and blocked-labelled issues and any whose blocker is neither CLOSED nor awaiting-merge" {
+  issues '[{"number":1,"title":"PRD: Feat","state":"OPEN","labels":[],"root":true},
            {"number":7,"title":"Seven","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
            {"number":3,"title":"Three","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
            {"number":2,"title":"Two","state":"CLOSED","labels":[{"name":"ready-for-agent"}]},
            {"number":4,"title":"Four","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
            {"number":5,"title":"Five","state":"OPEN","labels":[{"name":"ready-for-human"}]},
-           {"number":6,"title":"Six","state":"OPEN","labels":[{"name":"ready-for-agent"}]}]'
+           {"number":6,"title":"Six","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
+           {"number":8,"title":"Eight","state":"OPEN","labels":[{"name":"ready-for-agent"},{"name":"blocked"}]}]'
   issue_body 3 "- Issue #2"
   issue_body 4 "- Issue #5"
   issue_body 6 "- Issue #99"
@@ -272,6 +273,16 @@ coder_issues() {
   run bash "$SCRIPT" feat
   [ "$status" -eq 0 ]
   [ "$(coder_issues)" = "3 7" ]
+}
+
+@test "a one-slice feature's root is its work issue: it runs, and the PR is titled after it" {
+  issues '[{"number":1,"title":"Feat alone","state":"OPEN","labels":[{"name":"ready-for-agent"}],"root":true}]'
+  issue_body 1 "None"
+  run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ "$(coder_issues)" = "1" ]
+  [[ "${lines[${#lines[@]}-1]}" == "gh pr create --title Feat\\ alone --body "* ]]
+  grep -q '^#1  solve ✓  checks ✓  verify ✓' <<<"$(progress_body)"
 }
 
 @test "a coder that exits 0 but leaves its issue ready stops at solve, before the checks and the verifier" {

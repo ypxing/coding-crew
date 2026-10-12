@@ -205,22 +205,29 @@ test("a run whose install is missing an asset stops before any dispatch, naming 
 // verify-worktree.sh runs the project's whole test suite. Run through spawnSync it froze the
 // event loop: one verify at a time across every worker loop, and no coder dispatched meanwhile.
 
-/** A verify-worktree.sh that records start/end (ms) per stem to <log>, sleeps <slow[stem]> s, then runs the real one. */
+/**
+ * A verify-worktree.sh that records start/end (ms) per stem to <log>, then runs the real one. Per
+ * stem, <slow[stem]> is seconds to sleep first, or a <log> line prefix to wait for (30 s at most):
+ * a barrier a slow runner cannot turn into a false failure, as a fixed sleep did on CI.
+ */
 function timedVerify(scripts, log, secondsFor) {
   const real = join(scripts, "_real-verify-worktree.sh");
   cpSync(join(scripts, "verify-worktree.sh"), real);
-  const cases = Object.entries(secondsFor).map(([stem, s]) => `  *${stem}*) SLEEP=${s} ;;`).join("\n");
+  const cases = Object.entries(secondsFor)
+    .map(([stem, s]) => (typeof s === "number" ? `  *${stem}*) SLEEP=${s} ;;` : `  *${stem}*) WAIT=${JSON.stringify(s)} ;;`))
+    .join("\n");
   writeFileSync(
     join(scripts, "verify-worktree.sh"),
     [
       "#!/usr/bin/env bash",
       'now() { node -p "Date.now()"; }',
-      "SLEEP=0",
+      "SLEEP=0 WAIT=",
       'case " $* " in',
       cases,
       "esac",
       'STEM=$(echo "$*" | sed -E "s/.*--stem ([^ ]+).*/\\1/")',
       `echo "verify-start $STEM $(now)" >> ${JSON.stringify(log)}`,
+      `for _ in $(seq 1 300); do [ -n "$WAIT" ] && ! grep -q "^$WAIT" ${JSON.stringify(log)} || break; sleep 0.1; done`,
       'sleep "$SLEEP"',
       `echo "verify-end $STEM $(now)" >> ${JSON.stringify(log)}`,
       `exec bash ${JSON.stringify(real)} "$@"`,
@@ -277,7 +284,7 @@ test("a slow verify does not delay dispatching another ready issue into a free s
   addIssue(root, "03-gamma.md");
   const scripts = privateScripts();
   const log = join(root, "times.log");
-  timedVerify(scripts, log, { alpha: 5 });
+  timedVerify(scripts, log, { alpha: "coder-start 03-gamma" }); // ends once gamma is dispatched, or after 30 s
   const dispatcher = timedDispatch(root, log);
   const { r } = commandLines(root, ["--max-parallel", "2"], { scripts, env: { CREW_FAKE_DISPATCH: dispatcher } });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
