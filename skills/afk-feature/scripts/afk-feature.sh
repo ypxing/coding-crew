@@ -49,6 +49,17 @@ model() { local m; m=$(jq -r --arg r "$1" '.afk.models.claude[$r] // empty' "$CF
 CODER_MODEL=$(model coder sonnet) REVIEWER_MODEL=$(model reviewer opus)
 unset CREW_ORCHESTRATED # solve-issue's Step 7 closes the issue itself: the loop sees the label go
 
+# A bare host gets an allow-list (anything else is denied, not prompted); a sandbox gets everything.
+PERM=(--permission-mode bypassPermissions)
+if [ "${AFK_SANDBOXED:-}" != 1 ]; then
+  PERM=(--permission-mode acceptEdits --permission-prompts none --allowedTools "Bash(git *)" "Bash(node *)" "Bash(gh *)" "Bash(bash *)")
+  # The checks run-checks.sh runs: typecheck, lint, test, then every other key but its non-check ones.
+  [ ! -f "$DEV" ] || while IFS= read -r c; do PERM+=("Bash($c)"); done < <(jq -r '
+    ["install", "install_mode", "env", "credential_target", "docker_service"] as $skip
+    | [.typecheck, .lint, .test] + [to_entries[] | select(.key as $k | ["typecheck", "lint", "test"] + $skip | index($k) | not) | .value]
+    | .[] | strings' "$DEV")
+fi
+
 # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase
 # an existing one: a re-run lands on it as the last run left it.
 git fetch -q origin
@@ -109,7 +120,7 @@ while :; do
   LOG="$LOGS/$N.log" CLOG="$LOGS/$N.checks.log" VLOG="$LOGS/$N.verify.log" REPORT="$LOGS/$N.verify.json"
   before=$(git rev-parse HEAD)
   timeout 60m claude -p "/solve-issue $N" --output-format json --max-budget-usd "$BUDGET" --model "$CODER_MODEL" \
-    >"$LOG" 2>&1 || stop solve "coder exited non-zero" "$LOG"
+    "${PERM[@]}" >"$LOG" 2>&1 || stop solve "coder exited non-zero" "$LOG"
   assert_tree solve "$LOG"
 
   rc=0; bash "$CHECKS_DIR/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$DEP_DIR" >"$CLOG" 2>&1 || rc=$?
@@ -120,7 +131,7 @@ while :; do
   rm -f "$REPORT"; head=$(git rev-parse HEAD)
   timeout 20m claude -p "$(verify_prompt "$before" "$evidence")" --append-system-prompt-file "$ROLES/reviewer.md" \
     --tools Bash Read ToolSearch --settings '{"disableClaudeAiConnectors":true,"disableBundledSkills":true}' \
-    --output-format json --max-budget-usd 2 --model "$REVIEWER_MODEL" >"$VLOG" 2>&1 || true
+    --output-format json --max-budget-usd 2 --model "$REVIEWER_MODEL" "${PERM[@]}" >"$VLOG" 2>&1 || true
   assert_tree verify "$VLOG" "$head"
   [ -f "$REPORT" ] || stop verify "no report at $REPORT" "$VLOG"
   verdict=$(jq -r '.verdict // empty' "$REPORT" 2>/dev/null || true)

@@ -372,3 +372,55 @@ fails_with() {
   git merge-base --is-ancestor "$tip" HEAD
   [ "$(git branch --show-current)" = feature/feat ]
 }
+
+# --- permissions and models ----------------------------------------------------------
+
+# allowed_tools <k> — the args after --allowedTools in claude call k, up to the next flag.
+allowed_tools() { claude_call "$1" | sed -n '/^--allowedTools$/,$p' | sed '1d' | sed '/^--/,$d'; }
+
+@test "without AFK_SANDBOXED every claude call gets acceptEdits, no prompts, and an allow-list with each dev-commands.json check" {
+  git checkout -q -b topic
+  cat > .coding-crew/dev-commands.json <<'JSON'
+{"test": "make test", "lint": "npm run lint", "typecheck": null, "install": "npm ci", "install_mode": "host", "env": null, "credential_target": "x", "docker_service": "app", "coverage": "make cov", "integration": null}
+JSON
+  git add -A && git commit -q -m "dev commands"
+  run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  local k expected
+  expected=$(printf '%s\n' 'Bash(git *)' 'Bash(node *)' 'Bash(gh *)' 'Bash(bash *)' 'Bash(npm run lint)' 'Bash(make test)' 'Bash(make cov)')
+  [ "$(claude_calls)" -eq 4 ]
+  for k in 1 2 3 4; do
+    [ "$(claude_flag "$k" --permission-mode)" = acceptEdits ] || { echo "call $k"; return 1; }
+    [ "$(claude_flag "$k" --permission-prompts)" = none ] || { echo "call $k"; return 1; }
+    [ "$(allowed_tools "$k")" = "$expected" ] || { echo "call $k: $(allowed_tools "$k")"; return 1; }
+    ! grep -qE 'bypassPermissions|--dangerously-skip-permissions' "$STATE/claude.$k"
+  done
+}
+
+@test "with AFK_SANDBOXED=1 every claude call gets bypassPermissions and no allow-list" {
+  AFK_SANDBOXED=1 run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  local k
+  for k in 1 2 3 4; do
+    [ "$(claude_flag "$k" --permission-mode)" = bypassPermissions ] || { echo "call $k"; return 1; }
+    ! grep -qE '^--allowedTools$|--dangerously-skip-permissions' "$STATE/claude.$k"
+  done
+}
+
+@test "models default to sonnet and opus, and the coder never sees CREW_ORCHESTRATED" {
+  CREW_ORCHESTRATED=1 run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ "$(claude_flag 1 --model)" = sonnet ]
+  [ "$(claude_flag 2 --model)" = opus ]
+  [ "$(cat "$STATE/claude.1.env")" = 0 ]
+}
+
+@test "models come from afk.models.claude.coder and .reviewer" {
+  git checkout -q -b topic
+  echo '{"tracker":{"kind":"github"},"afk":{"models":{"claude":{"coder":"haiku","reviewer":"sonnet"}}}}' > .coding-crew/config.json
+  git commit -q -am "models"
+  run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ "$(claude_flag 1 --model)" = haiku ]
+  [ "$(claude_flag 2 --model)" = sonnet ]
+}
