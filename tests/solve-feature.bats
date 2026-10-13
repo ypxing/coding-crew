@@ -90,7 +90,8 @@ case "\$2" in
     done; exit 3 ;;
   fetch) cat "\$STATE/\${3//\//_}.md" ;;
   prd) [ -f "\$STATE/prd.md" ] || exit 3; cat "\$STATE/prd.md" ;;
-  closing-refs) [ "\${TRACKER_KIND:-github}" = local ] || jq -r 'sort_by(.number) | .[] | select(.state == "OPEN" and any(.labels[]; .name == "awaiting-merge")) | "Closes #\(.number)"' "\$STATE/issues.json" ;;
+  closing-refs) [ -z "\${CLOSING_REFS_RC:-}" ] || { echo "gh: boom" >&2; exit "\$CLOSING_REFS_RC"; }
+    [ "\${TRACKER_KIND:-github}" = github ] || exit 0; jq -r 'sort_by(.number) | .[] | select(.state == "OPEN" and any(.labels[]; .name == "awaiting-merge")) | "Closes #\(.number)"' "\$STATE/issues.json" ;;
   *) exit 2 ;;
 esac
 EOF
@@ -431,10 +432,10 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
   [ "$status" -eq 0 ]
   [ "$(coder_issues)" = "1" ]
   [ "$(cat "$STATE/pr-title")" = Feat ]
-  grep -qx '#1  solve ✓  checks ✓' <<<"$(progress_body)"
+  grep -qx '1  solve ✓  checks ✓' <<<"$(progress_body)"
 }
 
-@test "a local tracker: path refs reach the coder and the logs, no Closes line, the title is the first landed issue's" {
+@test "a local tracker: path refs reach the coder and the logs, closing-refs adds no Closes line, the title is the first landed issue's" {
   export TRACKER_KIND=local
   issues '[{"number":1,"ref":".scratch/feat/issues/open/01-a.md","title":"A","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
            {"number":2,"ref":".scratch/feat/issues/open/02-b.md","title":"B","state":"OPEN","labels":[{"name":"ready-for-agent"}]}]'
@@ -448,10 +449,23 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
   [ -f "$WORK/.solve-feature/.scratch_feat_issues_open_01-a.md.checks.log" ]
   [ "$(cat "$STATE/pr-title")" = "Local A" ]
   ! grep -q '^Closes' "$STATE/pr-body"
+  grep -qx 'closing-refs --feature-slug feat' "$STATE/node.log"
+  ! grep -q '^config' "$STATE/node.log"
   grep -q '^### .scratch/feat/issues/open/02-b.md — Local B$' "$STATE/pr-body"
 }
 
-@test "a github feature whose prd exits 3 titles the PR after the first landed issue; an unusable ref stops before the coder" {
+@test "the loop names no tracker kind: no config read, no KIND, no github test, no .scratch, no match on the ref" {
+  ! grep -nE 'KIND|github|\.scratch|"\$CLI" config|\$REF" =~' "$SCRIPT"
+}
+
+@test "a failing closing-refs stops the loop with a solve-feature message naming it" {
+  CLOSING_REFS_RC=1 run bash "$SCRIPT" feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"solve-feature: closing-refs failed for 'feat'"* ]]
+  [ ! -f "$STATE/pr-created" ]
+}
+
+@test "a github feature whose prd exits 3 titles the PR after the first landed issue; a ref fetch rejects stops before the coder" {
   rm "$STATE/prd.md"
   run bash "$SCRIPT" feat
   [ "$status" -eq 0 ]
@@ -461,7 +475,7 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
   rm -f "$STATE"/claude.*
   NEXT_PRINTS='2; rm -rf /' run bash "$SCRIPT" feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"ref"* ]]
+  [[ "$output" == *"fetch 2; rm -rf / failed"* ]]
   [ "$(agent_calls claude)" -eq 0 ]
 }
 
@@ -492,7 +506,7 @@ fails_with() {
 
 @test "a coder that exits 0 but leaves its issue first in next stops at solve, before the checks" {
   fails_with 2.log CODER_NO_CLOSE=1
-  [[ "$output" == *"#2 solve failed: coder ran but did not close #2"* ]]
+  [[ "$output" == *"solve-feature: 2 solve failed: coder ran but did not close 2"* ]]
   [ ! -f "$STATE/checks.log" ]
   [ ! -f "$STATE/pr-created" ]
 }
@@ -648,14 +662,14 @@ EOF
   [ "$status" -eq 0 ]
   local body; body=$(progress_body)
   grep -qE '^solve-feature — feat — host test-host — [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$' <<<"$body"
-  grep -qx '#2  solve ✓  checks ✓' <<<"$body"
-  grep -qx '#3  solve ✓  checks ✓' <<<"$body"
+  grep -qx '2  solve ✓  checks ✓' <<<"$body"
+  grep -qx '3  solve ✓  checks ✓' <<<"$body"
   ! grep -q verify <<<"$body"
   [ "$(grep -c '^api repos/{owner}/{repo}/issues/10/comments -f body=' "$STATE/gh.log")" -eq 1 ]
   [ "$(grep -c '^api -X PATCH repos/{owner}/{repo}/issues/comments/100 -f body=' "$STATE/gh.log")" -ge 3 ]
   ! grep -q 'issues/1/comments' "$STATE/gh.log"
   # Before the PR existed, #2's rows went to stdout and no comment call was made before `pr create`.
-  grep -qx '#2  solve · checks ·' <<<"$output" || grep -qx '#2  solve ·  checks ·' <<<"$output"
+  grep -qx '2  solve · checks ·' <<<"$output" || grep -qx '2  solve ·  checks ·' <<<"$output"
   [ "$(grep -n -m1 'comments' "$STATE/gh.log" | cut -d: -f1)" -gt "$(grep -n -m1 '^pr create' "$STATE/gh.log" | cut -d: -f1)" ]
 
   # A re-run finds the comment by its marker and edits it: still one, never a second create.
@@ -671,7 +685,7 @@ EOF
   [ "$status" -eq 1 ]
   [ ! -f "$STATE/review.log" ]
   local body; body=$(progress_body)
-  grep -qx '#2  solve ✗  checks ·' <<<"$body"
+  grep -qx '2  solve ✗  checks ·' <<<"$body"
   grep -q 'solve' <<<"$(grep -i 'stopped' <<<"$body")"
   grep -qx 'coder line 30' <<<"$body"
   grep -qx 'coder line 11' <<<"$body"
@@ -684,7 +698,7 @@ EOF
   CODER_NO_CLOSE=1 run bash "$SCRIPT" feat
   [ "$status" -eq 1 ]
   local body; body=$(progress_body)
-  grep -qx '#2  solve ✗  checks ·' <<<"$body"
+  grep -qx '2  solve ✗  checks ·' <<<"$body"
   grep -qx 'BLOCKED: Bash denied' <<<"$body"
   grep -qx 'nothing was started' <<<"$body"
   ! grep -q '"type":"result"' <<<"$body"
@@ -717,7 +731,7 @@ EOF
   mv "$STATE/i.tmp" "$STATE/issues.json"
   GH_API_FAIL=1 CHECKS_RC=1 run bash "$SCRIPT" feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"#2 checks failed"* ]]
+  [[ "$output" == *"solve-feature: 2 checks failed"* ]]
 }
 
 @test ".solve-feature/ is gitignored here" {

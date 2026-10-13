@@ -228,7 +228,7 @@ const OPS = {
     return EXIT.OK;
   },
 
-  /** The feature PR's `Closes #n` lines, one per line; nothing from a backend whose merge closes nothing. */
+  /** The feature PR's `Closes #n` lines, one per line; a backend without `closingRefs` (local) prints none. */
   async "closing-refs"(argv, { tracker, mainRoot, exec, out }) {
     const args = parseArgs("closing-refs", argv, { values: ["feature-slug"] });
     for (const line of tracker.closingRefs?.(mainRoot, { featureSlug: args["feature-slug"], exec }) ?? []) out(`${line}\n`);
