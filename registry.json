@@ -58,9 +58,9 @@
       ]
     },
     "solve-feature": {
-      "version": "0.6.0",
+      "version": "0.7.0",
       "source-dir": "solve-feature",
-      "description": "Run one feature's ready-for-agent issues in order on one branch, each by a fresh coder subagent gated by the project's checks, in a draft PR carrying the spec that review-pr reviews at the end.",
+      "description": "Run one feature's ready-for-agent issues in order on one branch, each by a fresh coder subagent gated by the project's checks, in a draft PR carrying the spec; at the end it is reviewed, its findings fixed, and marked ready when nothing needs a person.",
       "assets": {
         "source": "skills/solve-feature/scripts",
         "dest": ".coding-crew/solve-feature/scripts"
@@ -74,7 +74,8 @@
       "deps": [
         "solve-issue",
         "dep-install",
-        "review-pr"
+        "review-pr",
+        "tdd"
       ]
     },
     "review-pr": {
@@ -132,7 +133,7 @@
       ]
     },
     "address-pr-comments": {
-      "version": "1.6.1",
+      "version": "1.6.2",
       "source-dir": "address-pr-comments",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "scripts": [

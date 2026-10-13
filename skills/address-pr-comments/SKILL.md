@@ -245,17 +245,13 @@ once CI is green: gh pr ready <n>
 Otherwise — no push, no marker, any other kind in it, or a `crew-finding:` comment left unhandled —
 print nothing here.
 
-**solve-feature PR.** Print nothing under Ready: `review-pr` is the only thing that flips a
-solve-feature draft. Instead end the summary with one line naming the next step:
-
-```
-next: /review-pr <n>
-```
-
-which re-reviews the pushed branch against the spec and runs `gh pr ready` itself when it holds.
+**solve-feature PR.** Print nothing under Ready, and no next step: the run already reviewed the PR
+and fixed its findings, and its fix step marks the draft ready when nothing needs a person. A draft
+it left lists what does under `Needs attention` in its progress comment.
 
 On either kind the skill never runs `gh pr ready` and never waits on CI: on a crew-afk PR marking
-it ready is the developer's call once CI passes, on a solve-feature PR it is review-pr's.
+it ready is the developer's call once CI passes; on a solve-feature PR it is the run's fix step's,
+and the developer's for a draft that step left.
 
 ## Unattended mode (`--auto`)
 
@@ -283,8 +279,7 @@ confirmation or question** — nobody is there to answer. Only the differences a
 - **Step 5.5** — runs after `push-rework.sh` succeeds, with its commit sha; the file stays local
   (never committed or pushed).
 - **Step 6** — print the summary; do not ask anything after it. `--auto` never runs `gh pr ready`
-  on either kind of PR; on a solve-feature PR the summary still ends with the `next: /review-pr <n>`
-  line.
+  on either kind of PR.
 
 ---
 
