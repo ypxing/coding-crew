@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -471,6 +471,32 @@ test("next (github) prints the lowest ready, unblocked issue: not labelled block
   const then = await cli(dir, ["next", "--feature-slug", "feat"], feature({ state: "CLOSED" }));
   assert.equal(then.code, 0, then.stderr);
   assert.equal(then.stdout, "3\n");
+});
+
+test("next (local) prints the first ready file whose blockers are all in done/, as a path fetch accepts; issues-deps.json wins over prose", async () => {
+  const dir = root();
+  const write = (state, name, status, blockedBy = "None") =>
+    writeIssue(dir, state, name, `# ${name}\n\nStatus: ${status}\n\n## Acceptance criteria\n\n- [ ] x\n\n## Blocked by\n\n${blockedBy}\n`);
+  write("open", "01-a.md", "ready-for-agent");
+  write("open", "02-b.md", "ready-for-agent", "- 01-a.md");
+  write("open", "03-c.md", "ready-for-human");
+  write("open", "04-d.md", "ready-for-agent", "- 00-done.md");
+  write("done", "00-done.md", "done");
+  const snapshot = () => readdirSync(join(dir, ".scratch/feat/issues"), { recursive: true }).sort();
+  const before = snapshot();
+  const r = await cli(dir, ["next", "--feature-slug", "feat"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, ".scratch/feat/issues/open/01-a.md\n");
+  assert.deepEqual(snapshot(), before);
+  const fetched = await cli(dir, ["fetch", r.stdout.trim()]);
+  assert.equal(fetched.code, 0, fetched.stderr);
+  assert.match(fetched.stdout, /^# 01-a\.md\n/);
+
+  renameSync(join(dir, ".scratch/feat/issues/open/01-a.md"), join(dir, ".scratch/feat/issues/done/01-a.md"));
+  assert.equal((await cli(dir, ["next", "--feature-slug", "feat"])).stdout, ".scratch/feat/issues/open/02-b.md\n");
+
+  writeFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), JSON.stringify({ "02-b.md": ["03-c.md"], "04-d.md": [] }));
+  assert.equal((await cli(dir, ["next", "--feature-slug", "feat"])).stdout, ".scratch/feat/issues/open/04-d.md\n");
 });
 
 // --- features ----------------------------------------------------------------------
