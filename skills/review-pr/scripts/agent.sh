@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agent.sh — sourced, no side effects: the one owner of the coding-agent axis (claude, copilot, pi, codex)
+# agent.sh — sourced: the one owner of the coding-agent axis (claude, copilot, pi, codex)
 # for review-pr and solve-feature. Every decision that varies by agent — its name, argv, prompt form,
 # stdin, model default and log shape — lives in a `case "$agent"` here; the callers hold no agent name
 # but the one they pass through.
@@ -7,7 +7,8 @@
 #   agent_cmd <role:coder|reviewer> <agent> <model> <budget> <prompt> [<tag>]
 #                                                          sets the array AGENT_ARGV and AGENT_STDIN_FILE;
 #                                                          <tag> is the run's artifact prefix under
-#                                                          .solve-feature/ (codex's prompt file is
+#                                                          .solve-feature/, which the caller has created
+#                                                          and ignored (codex's prompt file is written as
 #                                                          <tag>.<role>.codex-prompt.md there);
 #                                                          returns 1 on an unknown agent or role (one stderr line)
 #   agent_coder_prompt <agent> <ref>                       prints the coder's prompt
@@ -78,7 +79,6 @@ agent_cmd() {
       # beside the run's other .solve-feature/ artifacts, keyed like them so runs do not overwrite each other's.
       repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
       AGENT_STDIN_FILE="$repo/.solve-feature/${tag:+$tag.}$role.codex-prompt.md"
-      mkdir -p "$repo/.solve-feature" && echo '*' >"$repo/.solve-feature/.gitignore" # ignored in any repo, so the tree stays clean
       if [ "$role" = reviewer ]; then
         # codex's read-only sandbox cannot write the report: workspace-write with .solve-feature as the
         # one writable root keeps the tree read-only; review-pr's HEAD/tree assertion is the second check.
