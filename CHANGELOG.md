@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature**: the `Dockerfile` host recipe is gone (bring your own sandbox), and so is SKILL.md's "Where to run
+  it" section; the pointer to `hosts/github-actions.yml` moved to the user guide's "solve-feature on GitHub Actions".
+  SKILL.md keeps only what the agent acts on (launch, slug, where to run, how to relay a stop, flags); the loop's
+  internals are in the script. A missing `timeout` now names the macOS fix (#469).
 - **solve-feature, review-pr**: `--agent pi` and `--agent codex` join `claude` and `copilot`. `review-pr/scripts/agent.sh`
   is now the one owner of every agent-specific decision — `agent_known` (the agent list), `agent_cmd` (argv and
   `AGENT_STDIN_FILE`: codex reads its prompt from `<run>.<role>.codex-prompt.md` in `.solve-feature/`; the codex coder

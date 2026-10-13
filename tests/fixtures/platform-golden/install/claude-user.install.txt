@@ -86,7 +86,6 @@ HOME/.claude/skills/review-pr/scripts/review-pr.sh exec=1
 HOME/.claude/skills/solve-feature/ /
 HOME/.claude/skills/solve-feature/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/solve-feature/hosts/ /
-HOME/.claude/skills/solve-feature/hosts/Dockerfile exec=0
 HOME/.claude/skills/solve-feature/hosts/github-actions.yml exec=0
 HOME/.claude/skills/solve-feature/scripts/ /
 HOME/.claude/skills/solve-feature/scripts/solve-feature.sh exec=0
@@ -221,7 +220,6 @@ HOME/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
 HOME/.coding-crew/solve-feature/ /
 HOME/.coding-crew/solve-feature/hosts/ /
-HOME/.coding-crew/solve-feature/hosts/Dockerfile exec=0
 HOME/.coding-crew/solve-feature/hosts/github-actions.yml exec=0
 HOME/.coding-crew/solve-feature/scripts/ /
 HOME/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1

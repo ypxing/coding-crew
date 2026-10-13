@@ -86,7 +86,6 @@ HOME/.agents/skills/review-pr/scripts/review-pr.sh exec=1
 HOME/.agents/skills/solve-feature/ /
 HOME/.agents/skills/solve-feature/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/solve-feature/hosts/ /
-HOME/.agents/skills/solve-feature/hosts/Dockerfile exec=0
 HOME/.agents/skills/solve-feature/hosts/github-actions.yml exec=0
 HOME/.agents/skills/solve-feature/scripts/ /
 HOME/.agents/skills/solve-feature/scripts/solve-feature.sh exec=0
@@ -221,7 +220,6 @@ HOME/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
 HOME/.coding-crew/solve-feature/ /
 HOME/.coding-crew/solve-feature/hosts/ /
-HOME/.coding-crew/solve-feature/hosts/Dockerfile exec=0
 HOME/.coding-crew/solve-feature/hosts/github-actions.yml exec=0
 HOME/.coding-crew/solve-feature/scripts/ /
 HOME/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1

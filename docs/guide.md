@@ -529,6 +529,17 @@ pushes as the App.
 
 ---
 
+### solve-feature on GitHub Actions (optional)
+
+`/solve-feature` runs one feature from a terminal or a worktree pane. To run it on a GitHub runner
+instead, on the Copilot CLI and billed to GitHub Copilot (no API key), copy
+[`hosts/github-actions.yml`](../skills/solve-feature/hosts/github-actions.yml) — installed as
+`.coding-crew/solve-feature/hosts/github-actions.yml` — to `.github/workflows/` and commit it, then
+label a feature's root issue `solve-feature` or run the workflow by hand with the slug. The file's
+header is the setup.
+
+---
+
 ### Reviewing Code Review Findings
 
 ```

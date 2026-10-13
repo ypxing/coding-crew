@@ -99,7 +99,6 @@ REPO/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
 REPO/.coding-crew/solve-feature/ /
 REPO/.coding-crew/solve-feature/hosts/ /
-REPO/.coding-crew/solve-feature/hosts/Dockerfile exec=0
 REPO/.coding-crew/solve-feature/hosts/github-actions.yml exec=0
 REPO/.coding-crew/solve-feature/scripts/ /
 REPO/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
@@ -211,7 +210,6 @@ REPO/.pi/skills/review-pr/scripts/review-pr.sh exec=1
 REPO/.pi/skills/solve-feature/ /
 REPO/.pi/skills/solve-feature/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/solve-feature/hosts/ /
-REPO/.pi/skills/solve-feature/hosts/Dockerfile exec=0
 REPO/.pi/skills/solve-feature/hosts/github-actions.yml exec=0
 REPO/.pi/skills/solve-feature/scripts/ /
 REPO/.pi/skills/solve-feature/scripts/solve-feature.sh exec=0
