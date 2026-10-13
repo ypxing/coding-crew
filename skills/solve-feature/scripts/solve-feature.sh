@@ -153,7 +153,7 @@ while :; do
   LOG="$LOGS/$RS.log" CLOG="$LOGS/$RS.checks.log"
   node "$CLI" fetch "$REF" >"$LOGS/$RS.issue.md" || die "fetch $REF failed (see above)"
   row · ·
-  agent_cmd coder "$AGENT" "$CODER_MODEL" "$BUDGET" "$(agent_coder_prompt "$AGENT" "$REF")"
+  agent_cmd coder "$AGENT" "$CODER_MODEL" "$BUDGET" "$(agent_coder_prompt "$AGENT" "$REF")" "$RS"
   timeout 60m "${AGENT_ARGV[@]}" <"$AGENT_STDIN_FILE" >"$LOG" 2>&1 || stop solve "coder exited non-zero" "$LOG"
   assert_tree solve "$LOG"
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).

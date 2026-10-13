@@ -396,14 +396,15 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
   [[ "$output" == *"pi not found"* ]]
 }
 
-@test "--agent codex: the codex coder argv with the prompt file on stdin, --model only from afk.models.codex.coder; a linked worktree adds the common git dir as a writable root" {
+@test "--agent codex: the codex coder argv with the git dir as a writable root (the main repo's in a linked worktree) and the per-issue prompt file on stdin, --model only from afk.models.codex.coder" {
   run bash "$SCRIPT" feat --agent codex
   [ "$status" -eq 0 ]
   [ "$(agent_calls claude)" -eq 0 ]
   [ "$(coder_issues codex)" = "2 3" ]
-  [ "$(agent_call codex 1 | paste -sd' ' -)" = "exec --cd $WORK --sandbox workspace-write -c sandbox_workspace_write.network_access=true --json -" ]
+  [ "$(agent_call codex 1 | paste -sd' ' -)" = "exec --cd $WORK --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c sandbox_workspace_write.writable_roots=[\"$WORK/.git\"] --json -" ]
   [ "$(cat "$STATE/codex.1.stdin")" = "Use the solve-issue skill on 2." ]
-  [ "$(cat "$WORK/.solve-feature/coder.codex-prompt.md")" = "Use the solve-issue skill on 3." ]
+  [ "$(cat "$WORK/.solve-feature/2.coder.codex-prompt.md")" = "Use the solve-issue skill on 2." ]
+  [ "$(cat "$WORK/.solve-feature/3.coder.codex-prompt.md")" = "Use the solve-issue skill on 3." ]
   [ "$(sort -u "$STATE/timeout.log")" = 60m ]
   grep -qx -- '10 --agent codex' "$STATE/review.log"
   [ -z "$(git status --porcelain)" ]

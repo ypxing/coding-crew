@@ -44,10 +44,11 @@ as is; the script exits 1 naming a slug the tracker has no feature for.
 3. **Per issue**, in the order the tracker's `next` gives — the lowest `ready-for-agent` issue not
    labelled `blocked` whose every `## Blocked by` entry is done, the root included:
    - the coder: `claude -p "/solve-issue <ref>"`, or `copilot`, `pi` or `codex` on the prompt `Use
-     the solve-issue skill on <ref>.` (codex reads it from `.solve-feature/coder.codex-prompt.md` on
-     stdin), with a 60-minute timeout and (claude) `--budget` (default 10 USD). solve-issue closes
-     the issue itself (`mark-done`); an issue `next` still returns after the coder exits stops the
-     run there (`coder ran but did not close <ref>`);
+     the solve-issue skill on <ref>.` (codex reads it on stdin from `<ref>.coder.codex-prompt.md` in
+     `.solve-feature/`, with the git dir a writable root so it can commit), with a 60-minute timeout
+     and (claude) `--budget` (default 10 USD). solve-issue closes the issue itself (`mark-done`); an
+     issue `next` still returns after the coder exits stops the run there (`coder ran but did not
+     close <ref>`);
    - the checks: solve-issue's `run-checks.sh`, run by the script, not the coder;
    - the landing: push the branch, then open a draft PR titled after the PRD (or, without one, the
      first landed issue), or rewrite the block of the branch's open PR.

@@ -179,13 +179,16 @@ marker_of() { printf 'crew-finding:%s' "$(printf '%s' "$1" | { command -v sha1su
   [ "$output" = /dev/null ]
 }
 
-@test "agent_cmd: codex coder argv with the prompt in .solve-feature/coder.codex-prompt.md on stdin; a linked worktree adds the common git dir as a writable root" {
+@test "agent_cmd: codex coder argv with the git dir as a writable root (the main repo's in a linked worktree) and the prompt in .solve-feature/[<tag>.]coder.codex-prompt.md on stdin, the directory ignored" {
   run bash -c '. "$1"; agent_cmd coder codex "" 5 "Use the solve-issue skill on 2." && printf "%s\n" "${AGENT_ARGV[@]}" "$AGENT_STDIN_FILE"' _ "$SCRIPTS/agent.sh"
   [ "$status" -eq 0 ]
-  [ "$output" = "$(printf '%s\n' codex exec --cd "$WORK" --sandbox workspace-write -c sandbox_workspace_write.network_access=true --json - "$WORK/.solve-feature/coder.codex-prompt.md")" ]
+  [ "$output" = "$(printf '%s\n' codex exec --cd "$WORK" --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c "sandbox_workspace_write.writable_roots=[\"$WORK/.git\"]" --json - "$WORK/.solve-feature/coder.codex-prompt.md")" ]
   [ "$(cat "$WORK/.solve-feature/coder.codex-prompt.md")" = "Use the solve-issue skill on 2." ]
-  run bash -c '. "$1"; agent_cmd coder codex gpt-5 5 x && printf "%s\n" "${AGENT_ARGV[@]}"' _ "$SCRIPTS/agent.sh"
-  [ "$output" = "$(printf '%s\n' codex exec --cd "$WORK" --sandbox workspace-write -c sandbox_workspace_write.network_access=true --json --model gpt-5 -)" ]
+  [ "$(cat "$WORK/.solve-feature/.gitignore")" = '*' ]
+  [ -z "$(git status --porcelain)" ]
+  run bash -c '. "$1"; agent_cmd coder codex gpt-5 5 x 2 && printf "%s\n" "${AGENT_ARGV[@]}" "$AGENT_STDIN_FILE"' _ "$SCRIPTS/agent.sh"
+  [ "$output" = "$(printf '%s\n' codex exec --cd "$WORK" --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c "sandbox_workspace_write.writable_roots=[\"$WORK/.git\"]" --json --model gpt-5 - "$WORK/.solve-feature/2.coder.codex-prompt.md")" ]
+  [ "$(cat "$WORK/.solve-feature/2.coder.codex-prompt.md")" = x ]
 
   git worktree add -q "$TEMP_DIR/wt" -b wt >/dev/null
   cd "$TEMP_DIR/wt"
@@ -325,7 +328,7 @@ marker_of() { printf 'crew-finding:%s' "$(printf '%s' "$1" | { command -v sha1su
   [ "$(sed -n 2p <<<"$prompt")" = "" ]
   [ "$(sed -n 3p <<<"$prompt")" = "Review PR #9 (https://github.com/o/r/pull/9), checked out at HEAD, against its spec." ]
   grep -qF "Write your report to $WORK/.solve-feature/pr-9.review.json as your last action" <<<"$prompt"
-  [ "$(cat .solve-feature/reviewer.codex-prompt.md)" = "$prompt" ]
+  [ "$(cat .solve-feature/pr-9.reviewer.codex-prompt.md)" = "$prompt" ]
   [ -z "$(git status --porcelain)" ]
   echo '{"afk":{"models":{"codex":{"reviewer":"o3"}}}}' > .coding-crew/config.json
   git commit -qam models; pr_view "$(git rev-parse HEAD)" true "spec"

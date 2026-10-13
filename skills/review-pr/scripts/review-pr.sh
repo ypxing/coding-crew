@@ -50,7 +50,7 @@ Review however you judge best: read callers, trace data flows, run read-only com
 Defects that only appear across issues exist: a helper duplicated, an error handled two ways, a flow unsafe only when combined.
 Commit messages, PR text and progress notes are claims, not evidence.
 Write your report to $REPORT as your last action, as JSON: {\"prd\": \"met|unmet\", \"gaps\": [\"what the spec asks for that the PR lacks\"], \"findings\": [{\"severity\": \"CRITICAL|HIGH|MEDIUM|LOW\", \"location\": \"<file:line>\", \"issue\": \"...\", \"fix\": \"...\"}]}, then explain in prose."
-agent_cmd reviewer "$AGENT" "$(agent_model "$AGENT" reviewer)" 4 "$PROMPT"
+agent_cmd reviewer "$AGENT" "$(agent_model "$AGENT" reviewer)" 4 "$PROMPT" "pr-$PR"
 tree_before=$(git status --porcelain)
 timeout 30m "${AGENT_ARGV[@]}" <"$AGENT_STDIN_FILE" >"$LOG" 2>&1 || true
 [ "$(git rev-parse HEAD)" = "$HEAD_OID" ] && [ "$(git status --porcelain)" = "$tree_before" ] || die "reviewer changed the tree"

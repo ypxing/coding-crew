@@ -4,8 +4,11 @@
 # stdin, model default and log shape — lives in a `case "$agent"` here; the callers hold no agent name
 # but the one they pass through.
 #   agent_known <agent>                                    exit 0 for a known agent, else 1
-#   agent_cmd <role:coder|reviewer> <agent> <model> <budget> <prompt>
+#   agent_cmd <role:coder|reviewer> <agent> <model> <budget> <prompt> [<tag>]
 #                                                          sets the array AGENT_ARGV and AGENT_STDIN_FILE;
+#                                                          <tag> is the run's artifact prefix under
+#                                                          .solve-feature/ (codex's prompt file is
+#                                                          <tag>.<role>.codex-prompt.md there);
 #                                                          returns 1 on an unknown agent or role (one stderr line)
 #   agent_coder_prompt <agent> <ref>                       prints the coder's prompt
 #   agent_model <agent> <role> [<default>]                 prints .coding-crew/config.json's
@@ -48,7 +51,7 @@ agent_coder_prompt() {
 }
 
 agent_cmd() {
-  local role="$1" agent="$2" model="$3" budget="$4" prompt="$5" repo common
+  local role="$1" agent="$2" model="$3" budget="$4" prompt="$5" tag="${6-}" repo common
   case "$role" in coder|reviewer) ;; *) echo "agent.sh: unknown role: $role" >&2; return 1 ;; esac
   AGENT_STDIN_FILE=/dev/null
   case "$agent" in
@@ -72,10 +75,10 @@ agent_cmd() {
       ;;
     codex)
       # codex has no prompt flag: the prompt goes on stdin from a file, which also leaves it inspectable
-      # beside the run's other .solve-feature/ artifacts.
+      # beside the run's other .solve-feature/ artifacts, keyed like them so runs do not overwrite each other's.
       repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-      AGENT_STDIN_FILE="$repo/.solve-feature/$role.codex-prompt.md"
-      mkdir -p "$repo/.solve-feature"
+      AGENT_STDIN_FILE="$repo/.solve-feature/${tag:+$tag.}$role.codex-prompt.md"
+      mkdir -p "$repo/.solve-feature" && echo '*' >"$repo/.solve-feature/.gitignore" # ignored in any repo, so the tree stays clean
       if [ "$role" = reviewer ]; then
         # codex's read-only sandbox cannot write the report: workspace-write with .solve-feature as the
         # one writable root keeps the tree read-only; review-pr's HEAD/tree assertion is the second check.
@@ -83,9 +86,11 @@ agent_cmd() {
         prompt="Your shell starts in $repo/.solve-feature, the only writable directory, where your report goes. The repository is $repo: run your commands there (cd $repo && ...)."$'\n\n'"$prompt"
       else
         AGENT_ARGV=(codex exec --cd "$repo" --sandbox workspace-write -c sandbox_workspace_write.network_access=true)
-        # A linked worktree keeps its index in the main repo's git dir, outside the sandbox's root.
+        # The sandbox keeps the top-level .git of every writable root read-only, so the git dir is a root of
+        # its own or the coder cannot commit; in a linked worktree that is the main repo's git dir, which
+        # holds the worktree's index too.
         common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-        [ -z "$common" ] || [ "$common" = "$repo/.git" ] || AGENT_ARGV+=(-c "sandbox_workspace_write.writable_roots=[\"$common\"]")
+        [ -z "$common" ] || AGENT_ARGV+=(-c "sandbox_workspace_write.writable_roots=[\"$common\"]")
         AGENT_ARGV+=(--json)
       fi
       [ -z "$model" ] || AGENT_ARGV+=(--model "$model")

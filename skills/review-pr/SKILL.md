@@ -45,7 +45,7 @@ unchanged. Tell the user to run `gh pr checkout <n>` first. It also needs the ag
    `--model` only when set). Read-only how: `claude` by `--tools Bash Read ToolSearch`, `copilot` by
    `--deny-tool write`, `pi` by `--tools read,bash`, `codex` by its sandbox — it runs in
    `.solve-feature/` as the one writable directory (its prompt, saying so, is
-   `reviewer.codex-prompt.md` there, read on stdin) and the script's HEAD/tree assertion is the
+   `pr-<n>.reviewer.codex-prompt.md` there, read on stdin) and the script's HEAD/tree assertion is the
    second check.
 3. Posts **one review** (`COMMENT`): the body opens `review-pr: prd <met|unmet>, <k> finding(s)`,
    lists the gaps, and holds the findings not on the diff's right-hand side under a heading per
