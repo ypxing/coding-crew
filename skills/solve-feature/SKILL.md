@@ -1,11 +1,9 @@
 ---
 name: solve-feature
 description: >
-  Run one feature's ready-for-agent issues unattended, in order, on one branch: after each coder run
-  the project's checks gate it and the tracker's own close confirms it; the first landed issue opens
-  a draft PR carrying the spec, progress is one comment on that PR, and review-pr reviews it at the
-  end. Local or GitHub tracker. Trigger with /solve-feature <slug>. Optional: --branch <name>,
-  --budget <usd>, --agent claude|copilot|pi|codex.
+  Run one feature's ready-for-agent issues unattended on one branch, each gated by the project's
+  checks, in a draft PR that review-pr reviews at the end. Local or GitHub tracker. Trigger with
+  /solve-feature <slug>. Optional: --branch <name>, --budget <usd>, --agent claude|copilot|pi|codex.
 argument-hint: "<feature-slug> [--branch <name>] [--budget <usd>] [--agent claude|copilot|pi|codex]"
 allowed-tools: Bash, shell
 ---
@@ -27,80 +25,21 @@ A run takes up to an hour per issue, so start it where it can outlive your turn:
 background, or tell the user to run it in a terminal. A bare word the user gave is the slug: pass it
 as is; the script exits 1 naming a slug the tracker has no feature for.
 
-## What one run does
+The coder runs with every permission granted, so suggest a worktree or container over the checkout
+the user works in. The script takes no lock: never start a second run on a slug whose run is still
+going.
 
-1. **Preconditions**, before touching anything: the coding agent's CLI (`claude`, `copilot`, `pi` or
-   `codex`, per `--agent`), `gh`, `jq`, `node`, `git` and `timeout` on `PATH` (macOS ships no `timeout`: `brew
-   install coreutils`, then put its `gnubin` on `PATH` or link `gtimeout` as `timeout`); the
-   tracker CLI installed (local or GitHub); a valid slug; a clean working tree; a committed
-   `.coding-crew/dev-commands.json` (run `/solve-issue` or `dep-install` once by hand first). Any
-   miss exits 1 with one line naming it.
-2. **Branch and prepare.** On the default branch it checks out `--branch` (default: one named after
-   the slug), creating it from `origin/<default>` and pushing it when it exists neither locally nor
-   on `origin`. On any other branch it uses that branch. It never resets or rebases a branch, so a
-   re-run continues where the last one stopped. Then dep-install's `resolve-mode.sh` picks host or
-   docker and the matching install script runs once, headlessly; a failed install only warns (the
-   coder's own solve-issue retries a missing dependency), its output in `.solve-feature/prepare.log`.
-3. **Per issue**, in the order the tracker's `next` gives — the lowest `ready-for-agent` issue not
-   labelled `blocked` whose every `## Blocked by` entry is done, the root included:
-   - the coder: `claude -p "/solve-issue <ref>"`, or `copilot`, `pi` or `codex` on the prompt `Use
-     the solve-issue skill on <ref>.` (codex reads it on stdin from `<ref>.coder.codex-prompt.md` in
-     `.solve-feature/`, with the git dir a writable root so it can commit), with a 60-minute timeout
-     and (claude) `--budget` (default 10 USD). solve-issue closes the issue itself (`mark-done`); an
-     issue `next` still returns after the coder exits stops the run there (`coder ran but did not
-     close <ref>`);
-   - the checks: solve-issue's `run-checks.sh`, run by the script, not the coder;
-   - the landing: push the branch, then open a draft PR titled after the PRD (or, without one, the
-     first landed issue), or rewrite the block of the branch's open PR.
+Every stop exits 1 with one line naming the cause and, for a failed step, its log. Relay it; once
+the cause is fixed, a re-run skips the issues already done and reuses the PR. A finished run prints
+review-pr's `REVIEW:` line and the PR URL last.
 
-   Any failure stops the run with exit 1 and the step's log path: a coder error, a branch change,
-   a dirty tree, an unclosed issue, a failing check or `DISCOVER`. Fix the cause, then re-run:
-   issues already done are skipped, the PR is reused.
-4. **Finish**, when no ready issue is left: run `review-pr` on the branch's open PR — also one an
-   earlier run or a human opened — echo its `REVIEW:` line, print the PR URL last and exit with
-   review-pr's code. No open PR (nothing ever landed) exits 0 saying so.
+| Flag / env            | Effect                                                                   |
+| --------------------- | ------------------------------------------------------------------------ |
+| `--branch <name>`     | The branch to use when started on the default branch (default: one named after the slug) |
+| `--budget <usd>`      | The coder's budget per issue (default 10; claude only)                   |
+| `--agent <agent>`     | `claude`, `copilot`, `pi` or `codex` (default `SOLVE_FEATURE_AGENT`, then `claude`) |
+| `SOLVE_FEATURE_AGENT` | The `--agent` default                                                    |
+| `SOLVE_FEATURE_HOST`  | The host name the PR's progress comment shows (default: `hostname`)      |
 
-**The PR body** holds the spec between `<!-- solve-feature:begin -->` and `<!-- solve-feature:end -->`:
-a collapsed `Spec` block with the feature's PRD and, per landed issue, `### <ref> — <title>` and its
-acceptance criteria; on GitHub the `Closes #<n>` lines; the slug. A spec over GitHub's 65,536-character
-body limit is cut inside the block with a note. Text outside the block is yours and kept; the draft
-state is review-pr's to flip. review-pr reads the block as the spec; address-pr-comments recognises
-a solve-feature PR by it.
-
-Logs are under `.solve-feature/` (`<ref>.log`, `<ref>.checks.log`, `<ref>.issue.md`,
-`<ref>.pr-body.md`, `prd.md`, `prepare.log`; a local ref's `/` becomes `_`); the directory ignores
-itself.
-
-**Progress** is one comment on the PR, marked `<!-- solve-feature-progress -->`, edited in place at
-every step: the host, a line per issue (`solve`, `checks`: ✓, ✗ or ·), on a stop the failing step and
-the last 20 lines of its log (of an agent's JSON log its final text: `claude`'s result, `copilot`'s
-last assistant message, `pi`'s last assistant `message_end`, `codex`'s last `agent_message`), and at
-the end the `REVIEW:` line and the URL. Until the PR exists the rows go to
-stdout. A failed comment write only warns.
-
-## Flags and environment
-
-| Name                           | Effect                                                                        |
-| ------------------------------ | ----------------------------------------------------------------------------- |
-| `--branch <name>`              | The branch to use when started on the default branch                          |
-| `--budget <usd>`               | The coder's `--max-budget-usd` per issue (default 10; claude only)            |
-| `--agent <agent>`              | `claude`, `copilot`, `pi` or `codex` (default `SOLVE_FEATURE_AGENT`, then `claude`) |
-| `SOLVE_FEATURE_AGENT`          | The `--agent` default                                                         |
-| `SOLVE_FEATURE_HOST`           | The host name the progress comment shows (default: `hostname`)                |
-
-The coder runs unattended with every permission granted (`claude`: `--permission-mode
-bypassPermissions`; `copilot`: `--allow-all-tools`; `pi`: `--tools read,bash,edit,write`; `codex`:
-`--sandbox workspace-write` with network on, the git dir as a writable root and, in a linked
-worktree of a non-bare repo, the main repo's git dir and checkout; a write outside those, such as a
-package manager's cache under `$HOME`, is denied), as crew-afk's does: nobody can answer a prompt, and an allow-list, `auto` mode and
-Claude Code's sandbox all refuse solve-issue's own commands. The coder can therefore run anything your
-user can, so give it a worktree, container or runner rather than the checkout you work in. review-pr's
-agent is read-only (`claude` by `--tools`, `copilot` by `--deny-tool write`, `pi` by `--tools
-read,bash`, `codex` by its sandbox). Models come from `.coding-crew/config.json`
-`afk.models.<agent>.coder` (claude defaults to `sonnet`; copilot, pi and codex pass `--model` only when
-set, else the CLI's own default runs). `.coding-crew/review-pr/scripts/agent.sh` is the one place that
-knows an agent's name, argv, prompt form, stdin, model default and log shape.
-
-**One run per feature at a time.** The script takes no lock: two runs on the same slug both pick
-the same lowest ready issue and both push to the same branch. Start a second host only after the
-first has stopped.
+The coder's model is `.coding-crew/config.json` `afk.models.<agent>.coder` (claude defaults to
+`sonnet`; the others use their CLI's default).
