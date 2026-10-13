@@ -44,7 +44,7 @@ as is; the script exits 1 naming a slug the tracker has no feature for.
 3. **Per issue**, in the order the tracker's `next` gives — the lowest `ready-for-agent` issue not
    labelled `blocked` whose every `## Blocked by` entry is done, the root included:
    - the coder: `claude -p "/solve-issue <ref>"` or `copilot -p "Use the solve-issue skill on
-     <ref>."`, with a 60-minute timeout and (claude) `--budget` (default 5 USD). solve-issue closes
+     <ref>."`, with a 60-minute timeout and (claude) `--budget` (default 10 USD). solve-issue closes
      the issue itself (`mark-done`); an issue `next` still returns after the coder exits stops the
      run there (`coder ran but did not close <ref>`);
    - the checks: solve-issue's `run-checks.sh`, run by the script, not the coder;
@@ -80,7 +80,7 @@ stdout. A failed comment write only warns.
 | Name                           | Effect                                                                        |
 | ------------------------------ | ----------------------------------------------------------------------------- |
 | `--branch <name>`              | The branch to use when started on the default branch                          |
-| `--budget <usd>`               | The coder's `--max-budget-usd` per issue (default 5; claude only)             |
+| `--budget <usd>`               | The coder's `--max-budget-usd` per issue (default 10; claude only)            |
 | `--agent claude\|copilot`      | The coding agent (default `SOLVE_FEATURE_AGENT`, then `claude`)               |
 | `SOLVE_FEATURE_AGENT`          | The `--agent` default                                                         |
 | `SOLVE_FEATURE_HOST`           | The host name the progress comment shows (default: `hostname`)                |

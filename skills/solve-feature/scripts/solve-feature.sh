@@ -9,7 +9,7 @@ set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 die() { echo "solve-feature: $*" >&2; exit 1; }
 
-SLUG="" BRANCH="" BUDGET=5 AGENT="${SOLVE_FEATURE_AGENT:-claude}"
+SLUG="" BRANCH="" BUDGET=10 AGENT="${SOLVE_FEATURE_AGENT:-claude}"
 while [ $# -gt 0 ]; do case "$1" in
     --branch) BRANCH="${2:?--branch needs a value}"; shift 2 ;;
     --budget) BUDGET="${2:?--budget needs a value}"; shift 2 ;;
