@@ -721,8 +721,47 @@ EOF
   [ -f "$target/.coding-crew/review-pr/scripts/agent.sh" ]
   [ ! -e "$target/.coding-crew/solve-feature/scripts/verify-prompt.md" ]
   [ ! -e "$target/.coding-crew/solve-feature/roles" ]
+  for f in github-actions.yml Dockerfile; do
+    [ -f "$target/.coding-crew/solve-feature/hosts/$f" ]
+    [ ! -x "$target/.coding-crew/solve-feature/hosts/$f" ]
+    [ -f "$target/.claude/skills/solve-feature/hosts/$f" ]
+  done
   [ -f "$target/.claude/skills/solve-feature/SKILL.md" ]
   [ -f "$target/.coding-crew/solve-issue/scripts/run-checks.sh" ]
   [ -f "$target/.coding-crew/dep-install/scripts/run.sh" ]
   [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install","review-pr"]' ]
 }
+
+# --- hosts ---------------------------------------------------------------------------
+
+# YAML → JSON with whatever parser the machine has: js-yaml for node, else PyYAML. Exit 3 when
+# neither exists, the parser's own non-zero exit when the file does not parse.
+yaml_to_json() {
+  if node -e 'require.resolve("js-yaml")' >/dev/null 2>&1; then
+    node -e 'const y=require("js-yaml"),fs=require("fs");fs.writeFileSync(process.argv[2],JSON.stringify(y.load(fs.readFileSync(process.argv[1],"utf8"))))' "$1" "$2"
+  elif python3 -c 'import yaml' >/dev/null 2>&1; then
+    python3 -c 'import sys,json,yaml;json.dump(yaml.safe_load(open(sys.argv[1])),open(sys.argv[2],"w"))' "$1" "$2"
+  else
+    return 3
+  fi
+}
+
+@test "hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a solve-feature label gate, four write permissions, a slug concurrency group, a solve-feature.sh --agent copilot step" {
+  local wf="$REPO_ROOT/skills/solve-feature/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
+  run yaml_to_json "$wf" "$json"
+  [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
+  [ "$status" -eq 0 ]
+  # A YAML 1.1 parser (PyYAML) reads the `on` key as the boolean true.
+  local on='(.on // .["true"])'
+  [ "$(jq -c "$on.issues.types" "$json")" = '["labeled"]' ]
+  [ "$(jq -r "$on.workflow_dispatch.inputs.slug.required" "$json")" = true ]
+  grep -q '^ *# *schedule:' "$wf"
+  [ "$(jq -r '.permissions | "\(.contents) \(.issues) \(.["pull-requests"]) \(.["copilot-requests"])"' "$json")" = "write write write write" ]
+  jq -e '[.jobs[].if // empty] | any(test("github.event.label.name == .solve-feature."))' "$json" >/dev/null
+  # The group holds the slug, so it is on the job that has it: a workflow-level group would only see the issue number.
+  local conc; conc="$(jq -c '[.concurrency // empty, (.jobs[] | .concurrency // empty)]' "$json")"
+  [ "$(jq 'length' <<<"$conc")" -eq 1 ]
+  jq -e '.[0] | (.group | test("solve-feature-.*slug")) and .["cancel-in-progress"] == false' <<<"$conc" >/dev/null
+  jq -r '.jobs[].steps[].run // empty' "$json" | grep -Eq 'solve-feature/scripts/solve-feature\.sh"? "\$SLUG" --agent copilot'
+}
+
