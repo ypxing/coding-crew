@@ -204,7 +204,7 @@ HOME/.coding-crew/dep-install/scripts/run.sh exec=1
 HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-HOME/.coding-crew/manifest.json 6580adcd0d6a2dc517d3c57cba11434034a106dd
+HOME/.coding-crew/manifest.json 613ef894a70c3fe31168af4dedb4c40f62546f44
 HOME/.coding-crew/review-pr/ /
 HOME/.coding-crew/review-pr/scripts/ /
 HOME/.coding-crew/review-pr/scripts/agent.sh exec=1

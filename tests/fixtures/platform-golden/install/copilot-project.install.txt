@@ -83,7 +83,7 @@ REPO/.coding-crew/dep-install/scripts/run.sh exec=1
 REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-REPO/.coding-crew/manifest.json 9917fb305651e56b3bf67e7c661935b66b8bee93
+REPO/.coding-crew/manifest.json 9d87cee9f977620a576043480d6883ef2140a47c
 REPO/.coding-crew/review-pr/ /
 REPO/.coding-crew/review-pr/scripts/ /
 REPO/.coding-crew/review-pr/scripts/agent.sh exec=1
