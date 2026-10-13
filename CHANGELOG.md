@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature**: the `Dockerfile` host recipe is gone — bring your own sandbox; SKILL.md's "Where to run it" lists
+  what it needs (the `--agent` CLI, coding-crew, a non-root user for claude, the tokens, a pushable `origin`).
 - **solve-feature**: hosts ship as recipe files under `.coding-crew/solve-feature/hosts/` — `github-actions.yml` (a
   workflow on the Copilot CLI, billed to GitHub Copilot: label the root issue `solve-feature` or dispatch it with the
   slug; copy it to `.github/workflows/`) and `Dockerfile` (claude and copilot CLIs, `gh`, docker CLI, coding-crew

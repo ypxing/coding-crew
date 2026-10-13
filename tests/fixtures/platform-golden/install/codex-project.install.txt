@@ -86,7 +86,6 @@ REPO/.agents/skills/review-pr/scripts/review-pr.sh exec=1
 REPO/.agents/skills/solve-feature/ /
 REPO/.agents/skills/solve-feature/SKILL.md exec=0 unrendered=0
 REPO/.agents/skills/solve-feature/hosts/ /
-REPO/.agents/skills/solve-feature/hosts/Dockerfile exec=0
 REPO/.agents/skills/solve-feature/hosts/github-actions.yml exec=0
 REPO/.agents/skills/solve-feature/scripts/ /
 REPO/.agents/skills/solve-feature/scripts/solve-feature.sh exec=0
@@ -205,7 +204,7 @@ REPO/.coding-crew/dep-install/scripts/run.sh exec=1
 REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-REPO/.coding-crew/manifest.json 613ef894a70c3fe31168af4dedb4c40f62546f44
+REPO/.coding-crew/manifest.json 6580adcd0d6a2dc517d3c57cba11434034a106dd
 REPO/.coding-crew/review-pr/ /
 REPO/.coding-crew/review-pr/scripts/ /
 REPO/.coding-crew/review-pr/scripts/agent.sh exec=1
@@ -221,7 +220,6 @@ REPO/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
 REPO/.coding-crew/solve-feature/ /
 REPO/.coding-crew/solve-feature/hosts/ /
-REPO/.coding-crew/solve-feature/hosts/Dockerfile exec=0
 REPO/.coding-crew/solve-feature/hosts/github-actions.yml exec=0
 REPO/.coding-crew/solve-feature/scripts/ /
 REPO/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1

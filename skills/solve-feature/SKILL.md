@@ -116,9 +116,11 @@ code in the loop.
   through a `COPILOT_GITHUB_TOKEN` secret is sketched in the file as unverified. review-pr runs in
   the same job, because a PR the workflow's token opens triggers no other workflow; the concurrency
   group makes a re-label wait for the run in flight.
-- **Docker**: build `.coding-crew/solve-feature/hosts/Dockerfile` (claude and copilot CLIs,
-  `gh`, docker CLI, coding-crew user-level for every platform), run it with the clone mounted at
-  `/work`, `ANTHROPIC_API_KEY` or `GH_TOKEN` in the environment and `--agent` as wanted; mount the
-  docker socket when the project's checks run in compose. The run line is the file's header.
+- **Your own sandbox** (docker or any other): run the terminal command from a clone inside it.
+  Besides the preconditions above it needs coding-crew installed with `solve-feature` (user-level
+  keeps the clone's tree clean), a non-root user for `--agent claude` (claude refuses
+  `bypassPermissions` as root), `ANTHROPIC_API_KEY` for `--agent claude` and `GH_TOKEN` for the
+  tracker, the PR and `--agent copilot`, an `origin` that token can push to, and the docker CLI and
+  socket when the project's checks run in compose.
 - **OpenRig and other cloud agents**: future recipes, the same command from a clone; the loop does
   not change for them.

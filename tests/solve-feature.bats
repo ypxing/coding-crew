@@ -721,11 +721,10 @@ EOF
   [ -f "$target/.coding-crew/review-pr/scripts/agent.sh" ]
   [ ! -e "$target/.coding-crew/solve-feature/scripts/verify-prompt.md" ]
   [ ! -e "$target/.coding-crew/solve-feature/roles" ]
-  for f in github-actions.yml Dockerfile; do
-    [ -f "$target/.coding-crew/solve-feature/hosts/$f" ]
-    [ ! -x "$target/.coding-crew/solve-feature/hosts/$f" ]
-    [ -f "$target/.claude/skills/solve-feature/hosts/$f" ]
-  done
+  [ -f "$target/.coding-crew/solve-feature/hosts/github-actions.yml" ]
+  [ ! -x "$target/.coding-crew/solve-feature/hosts/github-actions.yml" ]
+  [ -f "$target/.claude/skills/solve-feature/hosts/github-actions.yml" ]
+  [ ! -e "$target/.coding-crew/solve-feature/hosts/Dockerfile" ]
   [ -f "$target/.claude/skills/solve-feature/SKILL.md" ]
   [ -f "$target/.coding-crew/solve-issue/scripts/run-checks.sh" ]
   [ -f "$target/.coding-crew/dep-install/scripts/run.sh" ]

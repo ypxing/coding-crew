@@ -83,7 +83,7 @@ HOME/.coding-crew/dep-install/scripts/run.sh exec=1
 HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-HOME/.coding-crew/manifest.json 9d87cee9f977620a576043480d6883ef2140a47c
+HOME/.coding-crew/manifest.json 9917fb305651e56b3bf67e7c661935b66b8bee93
 HOME/.coding-crew/review-pr/ /
 HOME/.coding-crew/review-pr/scripts/ /
 HOME/.coding-crew/review-pr/scripts/agent.sh exec=1
@@ -99,7 +99,6 @@ HOME/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
 HOME/.coding-crew/solve-feature/ /
 HOME/.coding-crew/solve-feature/hosts/ /
-HOME/.coding-crew/solve-feature/hosts/Dockerfile exec=0
 HOME/.coding-crew/solve-feature/hosts/github-actions.yml exec=0
 HOME/.coding-crew/solve-feature/scripts/ /
 HOME/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
@@ -211,7 +210,6 @@ HOME/.copilot/skills/review-pr/scripts/review-pr.sh exec=1
 HOME/.copilot/skills/solve-feature/ /
 HOME/.copilot/skills/solve-feature/SKILL.md exec=0 unrendered=0
 HOME/.copilot/skills/solve-feature/hosts/ /
-HOME/.copilot/skills/solve-feature/hosts/Dockerfile exec=0
 HOME/.copilot/skills/solve-feature/hosts/github-actions.yml exec=0
 HOME/.copilot/skills/solve-feature/scripts/ /
 HOME/.copilot/skills/solve-feature/scripts/solve-feature.sh exec=0
