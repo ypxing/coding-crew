@@ -31,7 +31,6 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git rep
 COMMON="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" CLI=""
 for c in "$ROOT" "$COMMON" "$HOME"; do [ -f "$c/.coding-crew/tracker/cli.mjs" ] && { CLI="$c/.coding-crew/tracker/cli.mjs"; break; }; done
 [ -n "$CLI" ] || die "tracker CLI not found (.coding-crew/tracker/cli.mjs): run install.sh"
-KIND="$(node "$CLI" config | sed -n 's/^tracker=//p')"
 [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
 # DISCOVER needs an agent and a human once; run-checks.sh's own exit 3 guards a file that names no usable command.
 [ -f "$ROOT/.coding-crew/dev-commands.json" ] || die "no .coding-crew/dev-commands.json: run /solve-issue or dep-install once by hand and commit it"
@@ -65,8 +64,8 @@ if [ "$MODE" = docker ]; then
 else bash "$DEP_DIR/host-install.sh" --project-root "$ROOT" --main-root "$ROOT" >>"$PLOG" 2>&1 || rc=$?; fi
 case $rc in 0|2) ;; *) echo "solve-feature: warning: prepare failed (exit $rc) — see $PLOG" >&2 ;; esac
 
-PR_N="" URL="" VIEW="" CID="" ROWS="" ROW="" NOTE="" REF="" TAG=""
-row() { ROW="$TAG  solve $1  checks $2"; if [ -n "$PR_N" ]; then progress; else echo "$ROW"; fi; }
+PR_N="" URL="" VIEW="" CID="" ROWS="" ROW="" NOTE="" REF=""
+row() { ROW="$REF  solve $1  checks $2"; if [ -n "$PR_N" ]; then progress; else echo "$ROW"; fi; }
 progress() { # the PR's one solve-feature-progress comment, rewritten whole; a failed write never stops the loop
   [ -n "$PR_N" ] || return 0
   local body list
@@ -83,7 +82,7 @@ progress() { # the PR's one solve-feature-progress comment, rewritten whole; a f
 stop() { # <step> <reason> <log>
   NOTE="Stopped at $1: $2"$'\n```\n'"$(agent_log_tail "$AGENT" "$3")"$'\n```'
   case $1 in solve) row ✗ · ;; checks) row ✓ ✗ ;; esac
-  echo "solve-feature: $TAG $1 failed: $2 — log: $3"; exit 1
+  echo "solve-feature: $REF $1 failed: $2 — log: $3"; exit 1
 }
 assert_tree() { # <step> <log> — the branch and a clean tree
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop "$1" "branch changed to '$(git branch --show-current)'" "$2"
@@ -100,7 +99,7 @@ pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the prd 
   printf '%s' "$t"
 }
 pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block rebuilt with this issue appended
-  local old="$3" before after old_sections="" title crit sections head tail inner avail
+  local old="$3" before after old_sections="" title crit sections head tail inner avail refs
   if [[ "$old" == *"$BEGIN"* && "$old" == *"$END"* ]]; then
     before=$(awk -v b="$BEGIN" '$0 == b {exit} {print}' <<<"$old")
     after=$(awk -v e="$END" 'f {print} $0 == e {f = 1}' <<<"$old")
@@ -112,7 +111,8 @@ pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block reb
   [[ "$old_sections" == *"### $1 — "* ]] || sections="${old_sections:+$old_sections$'\n\n'}### $1 — $title"$'\n'"$crit"
   head="$BEGIN"$'\n'"Implemented by solve-feature (\`$SLUG\`)."$'\n\n'"<details><summary>Spec</summary>"$'\n\n'
   tail=$'\n</details>\n\n'
-  [ "$KIND" != github ] || tail+="$(node "$CLI" closing-refs --feature-slug "$SLUG")"$'\n'
+  refs=$(node "$CLI" closing-refs --feature-slug "$SLUG") || die "closing-refs failed for '$SLUG' (exit $?, see above)"
+  tail+="$refs"$'\n'
   tail+="<!-- solve-feature:slug $SLUG -->"$'\n'"$END"
   inner="${PRD_TEXT:+$PRD_TEXT$'\n\n'}$sections"$'\n'
   avail=$(( LIMIT - ${#head} - ${#tail} - ${#before} - ${#after} - 4 ))
@@ -146,12 +146,10 @@ pr_view # a re-run's stop reports on the PR an earlier run (or a human) opened; 
 while :; do
   rc=0; REF=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0) ;; 3) break ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
-  # The ref goes into the coder's prompt: only what the CLI itself would accept.
-  [[ "$REF" =~ ^[0-9]+$ ]] || { [[ "$REF" =~ ^\.scratch/[A-Za-z0-9._/-]+\.md$ && "$REF" != *..* ]]; } || die "next printed an unusable ref: '$REF'"
-  [[ "$REF" =~ ^[0-9]+$ ]] && TAG="#$REF" || TAG="$REF"
   RS=${REF//\//_}
   [ -z "$ROW" ] || ROWS+="$ROW"$'\n'
   LOG="$LOGS/$RS.log" CLOG="$LOGS/$RS.checks.log"
+  # fetch runs the backend's validateRef, so a ref it rejects stops here, before it reaches the coder's prompt.
   node "$CLI" fetch "$REF" >"$LOGS/$RS.issue.md" || die "fetch $REF failed (see above)"
   row · ·
   agent_cmd coder "$AGENT" "$CODER_MODEL" "$BUDGET" "$(agent_coder_prompt "$AGENT" "$REF")" "$RS"
@@ -160,7 +158,7 @@ while :; do
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).
   rc=0; again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
-  [ "$again" != "$REF" ] || stop solve "coder ran but did not close $TAG" "$LOG"
+  [ "$again" != "$REF" ] || stop solve "coder ran but did not close $REF" "$LOG"
   row ✓ ·
   rc=0; bash "$CHECKS_DIR/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$DEP_DIR" >"$CLOG" 2>&1 || rc=$?
   [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand and commit .coding-crew/dev-commands.json" "$CLOG"
