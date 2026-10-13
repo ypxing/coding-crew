@@ -24,8 +24,11 @@ bash "$LOOP" "$@"
 ```
 
 A run takes up to an hour per issue, so start it where it can outlive your turn: in the
-background, or tell the user to run it in a terminal. A bare word the user gave is the slug: pass it
-as is; the script exits 1 naming a slug the tracker has no feature for.
+background, or tell the user to run it in a terminal. In a cloud Claude Code session don't run it
+at all (its time limit and token cut a feature short): `gh workflow run solve-feature -f
+slug=<slug>` when the repo has the workflow. That workflow, on the Copilot CLI, ships as
+`.coding-crew/solve-feature/hosts/github-actions.yml`; its header is the setup. A bare word the user
+gave is the slug: pass it as is; the script exits 1 naming a slug the tracker has no feature for.
 
 ## What one run does
 
@@ -95,32 +98,3 @@ the checkout you work in. review-pr's agent is read-only. Models come from `.cod
 **One run per feature at a time.** The script takes no lock: two runs on the same slug both pick
 the same lowest ready issue and both push to the same branch. Start a second host only after the
 first has stopped.
-
-## Where to run it
-
-The loop is the same command everywhere; the hosts are recipes shipped as files under
-`.coding-crew/solve-feature/hosts/` (also under the platform's `skills/solve-feature/hosts/`), not
-code in the loop.
-
-- **A terminal**, from the repo: `bash .coding-crew/solve-feature/scripts/solve-feature.sh <slug>`.
-- **A herdr or orca pane in a worktree**: a worktree per feature keeps your checkout free; run the
-  same command from that worktree, on its branch or the default one.
-- **A cloud Claude Code session**: launch, don't host. Start one of the hosts below from it (`gh
-  workflow run solve-feature -f slug=<slug>`, or label the root issue) rather than running the loop
-  inside the session, whose time limit and restricted token would cut a feature short.
-- **GitHub Actions, on the Copilot CLI** (no API key; billed to GitHub Copilot): copy
-  `.coding-crew/solve-feature/hosts/github-actions.yml` to `.github/workflows/` (install.sh never
-  writes there) and commit it, then label the feature's root issue `solve-feature`, or run the
-  workflow by hand with the slug. With the workflow's own `github.token` the CLI bills under the
-  organisation policy "Allow use of Copilot CLI billed to the organization"; billing a person
-  through a `COPILOT_GITHUB_TOKEN` secret is sketched in the file as unverified. review-pr runs in
-  the same job, because a PR the workflow's token opens triggers no other workflow; the concurrency
-  group makes a re-label wait for the run in flight.
-- **Your own sandbox** (docker or any other): run the terminal command from a clone inside it.
-  Besides the preconditions above it needs coding-crew installed with `solve-feature` (user-level
-  keeps the clone's tree clean), a non-root user for `--agent claude` (claude refuses
-  `bypassPermissions` as root), `ANTHROPIC_API_KEY` for `--agent claude` and `GH_TOKEN` for the
-  tracker, the PR and `--agent copilot`, an `origin` that token can push to, and the docker CLI and
-  socket when the project's checks run in compose.
-- **OpenRig and other cloud agents**: future recipes, the same command from a clone; the loop does
-  not change for them.
