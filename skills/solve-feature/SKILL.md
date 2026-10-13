@@ -24,11 +24,8 @@ bash "$LOOP" "$@"
 ```
 
 A run takes up to an hour per issue, so start it where it can outlive your turn: in the
-background, or tell the user to run it in a terminal. In a cloud Claude Code session don't run it
-at all (its time limit and token cut a feature short): `gh workflow run solve-feature -f
-slug=<slug>` when the repo has the workflow. That workflow, on the Copilot CLI, ships as
-`.coding-crew/solve-feature/hosts/github-actions.yml`; its header is the setup. A bare word the user
-gave is the slug: pass it as is; the script exits 1 naming a slug the tracker has no feature for.
+background, or tell the user to run it in a terminal. A bare word the user gave is the slug: pass it
+as is; the script exits 1 naming a slug the tracker has no feature for.
 
 ## What one run does
 
