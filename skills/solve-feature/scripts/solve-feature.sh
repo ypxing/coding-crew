@@ -64,7 +64,7 @@ if [ "$MODE" = docker ]; then
 else bash "$DEP_DIR/host-install.sh" --project-root "$ROOT" --main-root "$ROOT" >>"$PLOG" 2>&1 || rc=$?; fi
 case $rc in 0|2) ;; *) echo "solve-feature: warning: prepare failed (exit $rc) — see $PLOG" >&2 ;; esac
 
-PR_N="" URL="" CID="" ROWS="" ROW="" NOTE="" REF="" TAG=""
+PR_N="" URL="" VIEW="" CID="" ROWS="" ROW="" NOTE="" REF="" TAG=""
 row() { ROW="$TAG  solve $1  checks $2"; if [ -n "$PR_N" ]; then progress; else echo "$ROW"; fi; }
 progress() { # the PR's one solve-feature-progress comment, rewritten whole; a failed write never stops the loop
   [ -n "$PR_N" ] || return 0
@@ -119,7 +119,7 @@ pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block reb
   tail=$'\n</details>\n\n'
   [ "$KIND" != github ] || tail+="$(node "$CLI" closing-refs --feature-slug "$SLUG")"$'\n'
   tail+="<!-- solve-feature:slug $SLUG -->"$'\n'"$END"
-  inner="${PRD_TEXT:+$PRD_TEXT$'\n\n'}$sections"
+  inner="${PRD_TEXT:+$PRD_TEXT$'\n\n'}$sections"$'\n'
   avail=$(( LIMIT - ${#head} - ${#tail} - ${#before} - ${#after} - 4 ))
   if [ "${#inner}" -gt "$avail" ]; then
     avail=$(( avail - ${#CUT_LINE} - 1 )); [ "$avail" -gt 0 ] || avail=0
@@ -127,22 +127,27 @@ pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block reb
   fi
   printf '%s' "${before:+$before$'\n'}$head$inner$tail${after:+$'\n'$after}"
 }
+pr_view() { # sets PR_N and URL (and VIEW) when the branch has an OPEN PR, else clears them
+  VIEW=$(gh pr view "$BRANCH" --json number,state,url,isDraft,body 2>/dev/null) || VIEW=""
+  if [ "$(jq -r '.state // empty' <<<"$VIEW" 2>/dev/null || true)" = OPEN ]; then
+    PR_N=$(jq -r '.number' <<<"$VIEW") URL=$(jq -r '.url' <<<"$VIEW")
+  else PR_N="" URL=""; fi
+}
 land() { # <ref> <ref-slug> — push, then open the draft PR or rewrite the block of the open one
   git push -q -u origin "$BRANCH"
-  local view state
-  view=$(gh pr view "$BRANCH" --json number,state,url,isDraft,body 2>/dev/null) || view=""
-  state=$(jq -r '.state // empty' <<<"$view" 2>/dev/null || true)
-  if [ "$state" = OPEN ]; then
-    PR_N=$(jq -r '.number' <<<"$view") URL=$(jq -r '.url' <<<"$view")
-    pr_body "$1" "$2" "$(jq -r '.body // ""' <<<"$view")" >"$LOGS/pr-body.md"
-    gh pr edit "$PR_N" --body-file "$LOGS/pr-body.md" >/dev/null || die "gh pr edit $PR_N failed"
+  local f="$LOGS/$2.pr-body.md"
+  pr_view
+  if [ -n "$PR_N" ]; then
+    pr_body "$1" "$2" "$(jq -r '.body // ""' <<<"$VIEW")" >"$f"
+    gh pr edit "$PR_N" --body-file "$f" >/dev/null || die "gh pr edit $PR_N failed"
   else
-    pr_body "$1" "$2" "" >"$LOGS/pr-body.md"
-    URL=$(gh pr create --draft --title "$(pr_title "$2")" --body-file "$LOGS/pr-body.md") || die "gh pr create failed"
+    pr_body "$1" "$2" "" >"$f"
+    URL=$(gh pr create --draft --title "$(pr_title "$2")" --body-file "$f") || die "gh pr create failed"
     PR_N="${URL##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $URL"
   fi
 }
 
+pr_view # a re-run's stop reports on the PR an earlier run (or a human) opened; before one exists, rows go to stdout
 while :; do
   rc=0; REF=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0) ;; 3) break ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
@@ -169,11 +174,8 @@ while :; do
 done
 
 # Finish: a re-run with nothing left to land still reviews the branch's open PR, whoever opened it.
-view=$(gh pr view "$BRANCH" --json number,url,state 2>/dev/null) || view=""
-if [ "$(jq -r '.state // empty' <<<"$view" 2>/dev/null || true)" != OPEN ]; then
-  echo "solve-feature: nothing landed on $BRANCH: no open PR to review"; exit 0
-fi
-PR_N=$(jq -r '.number' <<<"$view") URL=$(jq -r '.url' <<<"$view")
+pr_view
+[ -n "$PR_N" ] || { echo "solve-feature: nothing landed on $BRANCH: no open PR to review"; exit 0; }
 rc=0; REVIEW=$(bash "$REVIEW_DIR/review-pr.sh" "$PR_N" --agent "$AGENT" | grep '^REVIEW:' | tail -n 1) || rc=$?
 [ -n "$REVIEW" ] || REVIEW="REVIEW: failed (exit $rc)"
 echo "$REVIEW"

@@ -83,7 +83,7 @@ REPO/.coding-crew/dep-install/scripts/run.sh exec=1
 REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-REPO/.coding-crew/manifest.json ff347b5dc299b811a823c5c79846e655114c4168
+REPO/.coding-crew/manifest.json e820edb3fa51a170a5342b0d469b36511c40db58
 REPO/.coding-crew/review-pr/ /
 REPO/.coding-crew/review-pr/scripts/ /
 REPO/.coding-crew/review-pr/scripts/agent.sh exec=1
@@ -98,23 +98,8 @@ REPO/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
 REPO/.coding-crew/solve-feature/ /
-REPO/.coding-crew/solve-feature/roles/ /
-REPO/.coding-crew/solve-feature/roles/coder.md exec=0
-REPO/.coding-crew/solve-feature/roles/followup.md exec=0
-REPO/.coding-crew/solve-feature/roles/reviewer.md exec=0
-REPO/.coding-crew/solve-feature/roles/reviewer/ /
-REPO/.coding-crew/solve-feature/roles/reviewer/feature.md exec=0
-REPO/.coding-crew/solve-feature/roles/reviewer/references/ /
-REPO/.coding-crew/solve-feature/roles/reviewer/references/backend.md exec=0
-REPO/.coding-crew/solve-feature/roles/reviewer/references/quality.md exec=0
-REPO/.coding-crew/solve-feature/roles/reviewer/references/react.md exec=0
-REPO/.coding-crew/solve-feature/roles/reviewer/references/web-security.md exec=0
-REPO/.coding-crew/solve-feature/roles/reviewer/scripts/ /
-REPO/.coding-crew/solve-feature/roles/reviewer/scripts/review-context.sh exec=1
-REPO/.coding-crew/solve-feature/roles/triage.md exec=0
 REPO/.coding-crew/solve-feature/scripts/ /
 REPO/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
-REPO/.coding-crew/solve-feature/scripts/verify-prompt.md exec=0
 REPO/.coding-crew/solve-issue/ /
 REPO/.coding-crew/solve-issue/scripts/ /
 REPO/.coding-crew/solve-issue/scripts/check-requires.sh exec=1
@@ -224,7 +209,6 @@ REPO/.github/skills/solve-feature/ /
 REPO/.github/skills/solve-feature/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/solve-feature/scripts/ /
 REPO/.github/skills/solve-feature/scripts/solve-feature.sh exec=0
-REPO/.github/skills/solve-feature/scripts/verify-prompt.md exec=0
 REPO/.github/skills/solve-issue/ /
 REPO/.github/skills/solve-issue/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/solve-issue/references/ /

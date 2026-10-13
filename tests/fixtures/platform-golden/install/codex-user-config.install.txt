@@ -87,7 +87,6 @@ HOME/.agents/skills/solve-feature/ /
 HOME/.agents/skills/solve-feature/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/solve-feature/scripts/ /
 HOME/.agents/skills/solve-feature/scripts/solve-feature.sh exec=0
-HOME/.agents/skills/solve-feature/scripts/verify-prompt.md exec=0
 HOME/.agents/skills/solve-issue/ /
 HOME/.agents/skills/solve-issue/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/solve-issue/references/ /
@@ -203,7 +202,7 @@ HOME/.coding-crew/dep-install/scripts/run.sh exec=1
 HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-HOME/.coding-crew/manifest.json b33c5fe22d7d6cc3693edbd9d57940cd49c4eeea
+HOME/.coding-crew/manifest.json 53192b33ffeca4f0eaf2fc4744da4f2fc156e23e
 HOME/.coding-crew/review-pr/ /
 HOME/.coding-crew/review-pr/scripts/ /
 HOME/.coding-crew/review-pr/scripts/agent.sh exec=1
@@ -218,23 +217,8 @@ HOME/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
 HOME/.coding-crew/solve-feature/ /
-HOME/.coding-crew/solve-feature/roles/ /
-HOME/.coding-crew/solve-feature/roles/coder.md exec=0
-HOME/.coding-crew/solve-feature/roles/followup.md exec=0
-HOME/.coding-crew/solve-feature/roles/reviewer.md exec=0
-HOME/.coding-crew/solve-feature/roles/reviewer/ /
-HOME/.coding-crew/solve-feature/roles/reviewer/feature.md exec=0
-HOME/.coding-crew/solve-feature/roles/reviewer/references/ /
-HOME/.coding-crew/solve-feature/roles/reviewer/references/backend.md exec=0
-HOME/.coding-crew/solve-feature/roles/reviewer/references/quality.md exec=0
-HOME/.coding-crew/solve-feature/roles/reviewer/references/react.md exec=0
-HOME/.coding-crew/solve-feature/roles/reviewer/references/web-security.md exec=0
-HOME/.coding-crew/solve-feature/roles/reviewer/scripts/ /
-HOME/.coding-crew/solve-feature/roles/reviewer/scripts/review-context.sh exec=1
-HOME/.coding-crew/solve-feature/roles/triage.md exec=0
 HOME/.coding-crew/solve-feature/scripts/ /
 HOME/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
-HOME/.coding-crew/solve-feature/scripts/verify-prompt.md exec=0
 HOME/.coding-crew/solve-issue/ /
 HOME/.coding-crew/solve-issue/scripts/ /
 HOME/.coding-crew/solve-issue/scripts/check-requires.sh exec=1

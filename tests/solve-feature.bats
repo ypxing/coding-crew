@@ -256,7 +256,7 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
   run bash "$SCRIPT" feat
   [ "$status" -eq 1 ]
   [[ "$output" == *".coding-crew/dev-commands.json"* ]]
-  git revert -q --no-edit HEAD
+  git revert --no-edit HEAD >/dev/null
 
   echo dirt > dirt.txt
   run bash "$SCRIPT" feat
