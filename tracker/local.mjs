@@ -187,6 +187,9 @@ export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlu
     .filter((i) => includeBlocked || i.blockers.length === 0);
 }
 
+/** The CLI ref for `issue`: its path relative to the main root, which `validateRef` resolves back. */
+export const issueRef = (mainRoot, issue) => relative(mainRoot, issue.path);
+
 export function writeIssueSection(path, heading, body, { append = false } = {}) {
   const text = readFileSync(path, "utf8");
   const next = append ? appendToSection(text, heading, body) : spliceSection(text, heading, body);

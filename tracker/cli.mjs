@@ -50,6 +50,7 @@ const USAGE = {
   fetch: "fetch <ref> [--comments]",
   features: "features",
   prd: "prd --feature-slug S",
+  next: "next --feature-slug S",
   known: "known --feature-slug S --out DIR",
   "publish-issues": "publish-issues --feature-slug S --drafts DIR [--replace]",
   "publish-prd": "publish-prd --feature-slug S --title T --body-file F",
@@ -213,6 +214,16 @@ const OPS = {
     const text = tracker.readPrd(mainRoot, { featureSlug: args["feature-slug"], exec });
     if (text === null) return EXIT.NOT_FOUND;
     out(text);
+    return EXIT.OK;
+  },
+
+  /** The ref of the issue an unattended loop runs next: each backend's dispatch rule, lowest first. */
+  async next(argv, { tracker, mainRoot, exec, out }) {
+    const args = parseArgs("next", argv, { values: ["feature-slug"] });
+    const issues = tracker.selectDispatchable(mainRoot, { featureSlug: args["feature-slug"], exec });
+    const first = tracker.sortDispatchable ? tracker.sortDispatchable(issues)[0] : issues[0];
+    if (!first) return EXIT.NOT_FOUND;
+    out(`${tracker.issueRef(mainRoot, first)}\n`);
     return EXIT.OK;
   },
 

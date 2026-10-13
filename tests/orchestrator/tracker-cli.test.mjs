@@ -439,6 +439,40 @@ test("closing-refs (github) prints closingRefs' Closes lines, one per line, and 
   }
 });
 
+// --- next ------------------------------------------------------------------------------
+
+/** A `gh` argv that reads: `issue list`, `issue view`, or a `gh api` GET (no method or field flag). */
+const isRead = (call) => /^(issue list|issue view|api)/.test(call.slice(1, 3).join(" ")) && !call.some((a) => /^(-X|--method|-f|-F|--input)$/.test(a));
+
+const blockedBy = (...ns) => `## Blocked by\n\n${ns.map((n) => `- #${n}`).join("\n")}\n`;
+
+test("next (github) prints the lowest ready, unblocked issue: not labelled blocked, every blocker closed or awaiting-merge", async () => {
+  const dir = root({ github: true });
+  const ready = ["ready-for-agent"];
+  const feature = (two = {}) =>
+    fakeGithub([
+      ...ghFeature(
+        "feat",
+        ghIssue(1),
+        ghIssue(2, { labels: ready, ...two }),
+        ghIssue(3, { labels: ready, body: blockedBy(2) }),
+        ghIssue(4, { labels: [...ready, "blocked"] }),
+        ghIssue(5, { labels: ready, body: blockedBy(9) }),
+        ghIssue(6, { labels: ready, body: blockedBy(30) }),
+        ghIssue(9, { labels: ["awaiting-merge"] }),
+      ),
+      ghIssue(30, { labels: ready }),
+    ]);
+  const first = feature();
+  const r = await cli(dir, ["next", "--feature-slug", "feat"], first);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "2\n");
+  for (const call of first.calls) assert.ok(isRead(call), call.join(" "));
+  const then = await cli(dir, ["next", "--feature-slug", "feat"], feature({ state: "CLOSED" }));
+  assert.equal(then.code, 0, then.stderr);
+  assert.equal(then.stdout, "3\n");
+});
+
 // --- features ----------------------------------------------------------------------
 
 function writeFeatureIssue(dir, slug, state, name, status) {
