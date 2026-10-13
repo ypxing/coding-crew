@@ -5,6 +5,7 @@ description: >
   gated by the project's checks, in a draft PR that review-pr reviews at the end. Local or GitHub
   tracker. Trigger with /solve-feature <slug>. Optional: --branch <name>.
 argument-hint: "<feature-slug> [--branch <name>]"
+allowed-tools: Bash, shell
 ---
 
 # solve-feature
@@ -27,7 +28,7 @@ A bare word the user gave is the slug: pass it as is.
 
 1. **Start.** `bash <path> start <slug> [--branch <name>]`. It prints `branch=`, `coder-model=`,
    `reviewer-model=` and `pr=`; keep them.
-2. **Per issue**, until step 2a exits 3:
+2. **Per issue**, until `next` exits 3:
    1. `bash <path> next <slug>` — prints the issue's ref. Exit 3: no ready issue is left, go to step 3.
    2. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Use the solve-issue skill on <ref>`. When `coder-model=`
@@ -39,7 +40,8 @@ A bare word the user gave is the slug: pass it as is.
    report `nothing landed: no open PR to review` and end.
 
 **Any other non-zero exit stops the run.** Relay the script's message as it printed it (a stop names
-the step, the reason and, for the checks, its log) and end; do not retry, fix or close anything.
+the step, the reason and, for the checks, its log) — after a `solve` stop, with the subagent's own
+report — and end; do not retry, fix or close anything.
 Once the cause is fixed, a re-run skips the issues already done and reuses the branch and the PR.
 
 Run it where an unattended agent may change the checkout — a worktree or a container, not the one

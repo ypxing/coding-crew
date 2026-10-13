@@ -125,9 +125,12 @@ review() {
   [ "${lines[1]}" = "reviewer-model=opus" ]
 }
 
-@test "prepare removes a stale report, so post never posts an earlier run's" {
+@test "post writes .solve-feature/reviewed; prepare removes it and a stale report, so post never posts an earlier run's" {
   review '{"prd":"met","gaps":[],"findings":[]}'
   [ "$status" -eq 0 ]
+  [ "$(cat .solve-feature/reviewed)" = "pr=9 head=$HEAD_OID" ]
+  run bash "$SCRIPT" prepare 9
+  [ ! -e .solve-feature/reviewed ]
   review ""
   [ "$status" -eq 1 ]
   [[ "$output" == *"no report at $WORK/.solve-feature/pr-9.review.json"* ]]
@@ -140,6 +143,13 @@ review() {
   [[ "$output" == *"gh pr checkout 9"* ]]
   grep -q 'gh pr checkout 9' .solve-feature/stopped
   [ ! -e .solve-feature/pr-9.prompt.md ]
+  # Ahead of the PR's head: unpushed commits, not a wrong checkout.
+  git commit -q --allow-empty -m "unpushed"
+  pr_view "$(git rev-parse HEAD~1)" true "spec"
+  run bash "$SCRIPT" prepare 9
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HEAD has commits PR #9 lacks: push them first"* ]]
+  git reset -q --hard HEAD~1
   pr_view "$HEAD_OID" true "spec"
   echo dirt > dirt.txt
   run bash "$SCRIPT" prepare 9
@@ -170,7 +180,7 @@ review() {
   run bash "$SCRIPT" post 9
   [ "$status" -eq 1 ]
   [[ "$output" == *"review-pr.sh prepare 9"* ]]
-  ! grep -q 'POST' "$STATE/gh.log"
+  ! grep -q 'POST' "$STATE/gh.log"  [ ! -e .solve-feature/reviewed ]
 }
 
 @test "findings: inline where path:line is on the diff's right side, the rest in the body by severity, gaps listed, markers hashed, no ready" {

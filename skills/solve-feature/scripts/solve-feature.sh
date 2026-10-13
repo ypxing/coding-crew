@@ -8,7 +8,8 @@
 #                                   open the draft PR or rewrite its block, add a progress row; prints pr=<n>
 # Env: SOLVE_FEATURE_HOST (the progress comment's host name).
 # Exit: 0 ok; 1 a stop or a precondition miss, its reason also in .solve-feature/stopped (an Actions job's
-# last step fails on it); 2 a usage error; 3 from next when no ready issue is left.
+# last step fails on it, and on any run that did not end in review-pr's post); 2 a usage error; 3 from next
+# when no ready issue is left.
 set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGS=""
@@ -38,7 +39,7 @@ for t in gh jq node git; do command -v "$t" >/dev/null || die "$t not found on P
 [[ "$SLUG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid feature slug: '$SLUG'"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"; cd "$ROOT"
 LOGS="$ROOT/.solve-feature"
-[ "$CMD" != start ] || rm -f "$LOGS/stopped"
+[ "$CMD" != start ] || rm -f "$LOGS/stopped" "$LOGS/reviewed"
 COMMON="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" CLI=""
 for c in "$ROOT" "$COMMON" "$HOME"; do [ -f "$c/.coding-crew/tracker/cli.mjs" ] && { CLI="$c/.coding-crew/tracker/cli.mjs"; break; }; done
 [ -n "$CLI" ] || die "tracker CLI not found (.coding-crew/tracker/cli.mjs): run install.sh"
@@ -155,10 +156,11 @@ land() {
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
-  [ "$again" != "$REF" ] || stop "$REF  solve ✗  checks ·" solve "coder ran but did not close $REF"
+  [ "$again" != "$REF" ] || stop "$REF  solve ✗  checks ·" solve "coder ran but did not close $REF (its report says why)"
   rc=0; bash "$checks_dir/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$dep_dir" >"$clog" 2>&1 || rc=$?
   [ "$rc" != 3 ] || stop "$REF  solve ✓  checks ✗" checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand and commit .coding-crew/dev-commands.json" "$clog"
-  [ "$rc" = 0 ] || stop "$REF  solve ✓  checks ✗" checks "run-checks.sh exit $rc" "$clog"
+  # $REF is closed and committed but not pushed: only a land for it pushes it with its spec in the PR body.
+  [ "$rc" = 0 ] || stop "$REF  solve ✓  checks ✗" checks "run-checks.sh exit $rc; once fixed and committed, run land $SLUG $REF $BRANCH before a re-run" "$clog"
   # The body first: a closing-refs failure stops before anything is pushed.
   f="$LOGS/$rs.pr-body.md"
   pr_body "$REF" "$rs" "$( [ -z "$PR_N" ] || jq -r '.body // ""' <<<"$VIEW")" >"$f"

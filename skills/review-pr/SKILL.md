@@ -5,6 +5,7 @@ description: >
   posts one review on it and marks a draft ready when the spec is met with no CRITICAL or HIGH finding.
   Runnable by hand, by solve-feature and by a workflow. Trigger with /review-pr <pr-number>.
 argument-hint: "<pr-number>"
+allowed-tools: Bash, shell
 ---
 
 # review-pr

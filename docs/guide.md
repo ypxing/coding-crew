@@ -540,8 +540,9 @@ header is the setup.
 
 The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all-tools
 --no-color`; the Copilot CLI runs each coder and the reviewer as its own subagents. A stop exits the
-session without failing it, so `land` and `review-pr.sh post` write the reason to
-`.solve-feature/stopped` and the job's last step, `test ! -e .solve-feature/stopped`, fails on it.
+session without failing it, so the job's last step fails it unless `review-pr.sh post` wrote
+`.solve-feature/reviewed` at the end of the run: on any stop a script recorded (the reason is in
+`.solve-feature/stopped`), and on a session that ended before the review for any other reason.
 
 ---
 

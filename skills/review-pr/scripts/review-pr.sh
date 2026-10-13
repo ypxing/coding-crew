@@ -5,7 +5,8 @@
 #                prompt under .solve-feature/; prints prompt=<file> and reviewer-model= (.coding-crew/config.json
 #                solveFeature.models.reviewer, empty when unset)
 #   post <n>     HEAD and the tree are unchanged and the reviewer's report is valid: posts one COMMENT review,
-#                marks a draft ready when the spec is met with no CRITICAL/HIGH finding
+#                marks a draft ready when the spec is met with no CRITICAL/HIGH finding, and writes
+#                .solve-feature/reviewed (an Actions job's last step fails without it)
 # post's last stdout line: `REVIEW: prd=<met|unmet> findings=<k> (<i> inline) ready=<yes|no|already>`.
 # Exit: 0 ok; 1 with nothing posted on a precondition miss, a changed HEAD or tree, a missing/unreadable report
 # or a failed POST, its reason also in .solve-feature/stopped (an Actions job's last step fails on it); 2 usage.
@@ -33,7 +34,11 @@ VIEW=$(gh pr view "$PR" --json body,headRefOid,isDraft,url) || die "gh pr view $
 HEAD_OID=$(jq -r '.headRefOid' <<<"$VIEW") URL=$(jq -r '.url' <<<"$VIEW") DRAFT=$(jq -r '.isDraft' <<<"$VIEW")
 # The reviewer reads callers in the tree, and post's unchanged-tree assertion needs a known, clean start.
 if [ "$CMD" = prepare ]; then
-  [ "$(git rev-parse HEAD)" = "$HEAD_OID" ] || die "check out the PR first (gh pr checkout $PR)"
+  if [ "$(git rev-parse HEAD)" != "$HEAD_OID" ]; then
+    # Ahead of the PR: commits a stopped push left behind, not a wrong checkout.
+    ! git merge-base --is-ancestor "$HEAD_OID" HEAD 2>/dev/null || die "HEAD has commits PR #$PR lacks: push them first"
+    die "check out the PR first (gh pr checkout $PR)"
+  fi
   [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
 else
   [ "$(git rev-parse HEAD)" = "$HEAD_OID" ] || die "HEAD is no longer PR #$PR's head: the reviewer changed the tree, or the PR moved"
@@ -50,7 +55,7 @@ prepare() {
     END { if (!found) printf "%s", all }
   ' >"$SPEC"
   gh pr diff "$PR" >"$DIFF" || die "gh pr diff $PR failed"
-  rm -f "$REPORT"
+  rm -f "$REPORT" "$LOGS/reviewed"
   cat >"$PROMPT" <<EOF
 Review PR #$PR ($URL), checked out at HEAD, against its spec.
 Spec: $SPEC
@@ -134,6 +139,7 @@ post() {
   elif [ "$prd" = met ] && ! jq -e 'any(.findings // [] | .[]; ((.severity // "") | tostring | ascii_upcase) | IN("CRITICAL", "HIGH"))' "$REPORT" >/dev/null; then
     gh pr ready "$PR" || die "gh pr ready $PR failed"; ready=yes
   fi
+  printf 'pr=%s head=%s\n' "$PR" "$HEAD_OID" >"$LOGS/reviewed"
   echo "REVIEW: prd=$prd findings=$(jq -s 'length' "$TMP/annotated.jsonl") ($(jq '.comments | length' "$TMP/payload.json") inline) ready=$ready"
 }
 

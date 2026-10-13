@@ -14,8 +14,9 @@ name: solve-feature
 # The Copilot CLI runs the solve-feature skill, which runs each coder and the reviewer as its own
 # subagents. review-pr runs inside the same job, from the skill: a PR opened or marked ready with the
 # workflow's own GITHUB_TOKEN triggers no other workflow, so a `pull_request` job would never fire.
-# The session's exit code does not carry a stop, so the last step fails the job on the marker the
-# scripts write for one.
+# The session's exit code does not carry a stop, so the last step fails the job unless review-pr's
+# post wrote .solve-feature/reviewed: on a stop the scripts recorded (.solve-feature/stopped, with
+# the reason), and on a session that ended before the review for any other reason.
 #
 # Billing: with `github.token` the Copilot CLI bills under the organisation policy "Allow use of
 # Copilot CLI billed to the organization" (on by default where the CLI is enabled), see
@@ -121,7 +122,11 @@ jobs:
           # COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
         run: copilot -p "Use the solve-feature skill on $SLUG" --allow-all-tools --no-color
 
-      - name: Fail the job on a stop
+      - name: Fail the job unless the run ended in a posted review
         run: |
-          [ ! -e .solve-feature/stopped ] || echo "::error::solve-feature stopped: $(cat .solve-feature/stopped)"
-          test ! -e .solve-feature/stopped
+          if [ -e .solve-feature/stopped ]; then
+            echo "::error::solve-feature stopped: $(cat .solve-feature/stopped)"; exit 1
+          fi
+          if [ ! -e .solve-feature/reviewed ]; then
+            echo "::error::solve-feature posted no review: nothing landed, or the session ended early (see the step above)"; exit 1
+          fi

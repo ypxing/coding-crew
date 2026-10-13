@@ -307,12 +307,12 @@ land_ready() {
   [ "$(out reviewer-model)" = opus ]
 }
 
-@test "start writes .solve-feature/prd.md when the feature has a PRD, none when prd exits 3, and removes a stale stopped marker" {
-  mkdir -p .solve-feature && echo '*' > .solve-feature/.gitignore && echo old > .solve-feature/stopped
+@test "start writes .solve-feature/prd.md when the feature has a PRD, none when prd exits 3, and removes stale stopped and reviewed markers" {
+  mkdir -p .solve-feature && echo '*' > .solve-feature/.gitignore && echo old > .solve-feature/stopped && echo old > .solve-feature/reviewed
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ]
   [ "$(cat .solve-feature/prd.md)" = "$(cat "$STATE/prd.md")" ]
-  [ ! -e .solve-feature/stopped ]
+  [ ! -e .solve-feature/stopped ] && [ ! -e .solve-feature/reviewed ]
   rm "$STATE/prd.md"
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ]
@@ -382,32 +382,36 @@ stops_at() {
   run bash "$SCRIPT" next feat
   git commit -q --allow-empty -m "partial"
   run bash "$SCRIPT" land feat 2 feature/feat
-  stops_at solve "coder ran but did not close 2"
+  stops_at solve "coder ran but did not close 2 (its report says why)"
   [ ! -f "$STATE/checks.log" ]
 }
 
 @test "land runs run-checks.sh once; exit 1 or 3 stops at checks naming the log, 3 saying to discover the checks by hand" {
   land_ready
   CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
-  stops_at checks "run-checks.sh exit 1"
+  stops_at checks "run-checks.sh exit 1; once fixed and committed, run land feat 2 feature/feat before a re-run"
   [[ "$output" == *"$WORK/.solve-feature/2.checks.log"* ]]
   [ "$(cat "$STATE/checks.log")" = "--project-root $WORK --main-root $WORK --dep-scripts $HOME/.coding-crew/dep-install/scripts" ]
   CHECKS_RC=3 run bash "$SCRIPT" land feat 2 feature/feat
   stops_at checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand"
+  # The recovery the stop names: land again once the checks pass, and the issue's commits are pushed.
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
 }
 
 @test "with no PR yet a stop prints its row and Stopped note on stdout; with one it goes in the progress comment with the checks log's last 20 lines" {
   land_ready
   CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
   grep -qx '2  solve ✓  checks ✗' <<<"$output"
-  grep -qx 'Stopped at checks: run-checks.sh exit 1' <<<"$output"
+  grep -qx 'Stopped at checks: run-checks.sh exit 1; once fixed and committed, run land feat 2 feature/feat before a re-run' <<<"$output"
   [ "$(jq length "$STATE/comments.json")" -eq 0 ]
 
   CHECKS_RC=1 PR_EXISTS=1 run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 1 ]
   local body; body=$(progress_body)
   grep -qx '2  solve ✓  checks ✗' <<<"$body"
-  grep -qx 'Stopped at checks: run-checks.sh exit 1' <<<"$body"
+  grep -qx 'Stopped at checks: run-checks.sh exit 1; once fixed and committed, run land feat 2 feature/feat before a re-run' <<<"$body"
   grep -qx 'CHECKS: fail' <<<"$body"
   grep -qx 'check line 13' <<<"$body"
   ! grep -qx 'check line 12' <<<"$body"
@@ -673,7 +677,7 @@ yaml_to_json() {
   fi
 }
 
-@test "hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, four write permissions, a slug concurrency group, the skill launched by copilot -p, then a step failing on .solve-feature/stopped" {
+@test "hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, four write permissions, a slug concurrency group, the skill launched by copilot -p, then a step failing on a stop or a missing review" {
   local wf="$REPO_ROOT/skills/solve-feature/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
   run yaml_to_json "$wf" "$json"
   [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
@@ -691,6 +695,6 @@ yaml_to_json() {
   jq -e '.[0] | (.group | test("solve-feature-.*slug")) and .["cancel-in-progress"] == false' <<<"$conc" >/dev/null
   local runs; runs="$(jq -c '[.jobs.solve.steps[].run // empty]' "$json")"
   jq -e '.[-2] | contains("copilot -p \"Use the solve-feature skill on $SLUG\" --allow-all-tools --no-color")' <<<"$runs" >/dev/null
-  jq -e '.[-1] | contains("test ! -e .solve-feature/stopped")' <<<"$runs" >/dev/null
+  jq -e '.[-1] | contains("-e .solve-feature/stopped") and contains("! -e .solve-feature/reviewed")' <<<"$runs" >/dev/null
   ! grep -q 'solve-feature\.sh' "$wf"
 }
