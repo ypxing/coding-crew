@@ -83,7 +83,7 @@ REPO/.coding-crew/dep-install/scripts/run.sh exec=1
 REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-REPO/.coding-crew/manifest.json 32f8f46d171e7b7e3f240ddc452dff0080be44da
+REPO/.coding-crew/manifest.json 2cfd3a897381dadadb19704cbe8d44b50cd62cf3
 REPO/.coding-crew/review-pr/ /
 REPO/.coding-crew/review-pr/scripts/ /
 REPO/.coding-crew/review-pr/scripts/agent.sh exec=1
@@ -98,6 +98,9 @@ REPO/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
 REPO/.coding-crew/solve-feature/ /
+REPO/.coding-crew/solve-feature/hosts/ /
+REPO/.coding-crew/solve-feature/hosts/Dockerfile exec=0
+REPO/.coding-crew/solve-feature/hosts/github-actions.yml exec=0
 REPO/.coding-crew/solve-feature/scripts/ /
 REPO/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
 REPO/.coding-crew/solve-issue/ /
@@ -207,6 +210,9 @@ REPO/.pi/skills/review-pr/scripts/agent.sh exec=1
 REPO/.pi/skills/review-pr/scripts/review-pr.sh exec=1
 REPO/.pi/skills/solve-feature/ /
 REPO/.pi/skills/solve-feature/SKILL.md exec=0 unrendered=0
+REPO/.pi/skills/solve-feature/hosts/ /
+REPO/.pi/skills/solve-feature/hosts/Dockerfile exec=0
+REPO/.pi/skills/solve-feature/hosts/github-actions.yml exec=0
 REPO/.pi/skills/solve-feature/scripts/ /
 REPO/.pi/skills/solve-feature/scripts/solve-feature.sh exec=0
 REPO/.pi/skills/solve-issue/ /

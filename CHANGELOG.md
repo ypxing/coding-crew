@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature**: hosts ship as recipe files under `.coding-crew/solve-feature/hosts/` — `github-actions.yml` (a
+  workflow on the Copilot CLI, billed to GitHub Copilot: label the root issue `solve-feature` or dispatch it with the
+  slug; copy it to `.github/workflows/`) and `Dockerfile` (claude and copilot CLIs, `gh`, docker CLI, coding-crew
+  user-level) — and SKILL.md's "Where to run it" covers terminal, worktree pane, cloud Claude Code session (launch,
+  don't host), GitHub Actions and docker (#464).
 - **solve-feature**: each issue is coder → checks → the tracker's own close (no verifier; `verify-prompt.md` and the
   `roles/` tree are gone); `--agent claude|copilot` (`SOLVE_FEATURE_AGENT`) picks the coder; `next` selects issues on
   either tracker; dependencies are prepared headlessly before the first coder; the first landed issue pushes and opens

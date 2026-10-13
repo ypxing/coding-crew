@@ -83,7 +83,7 @@ HOME/.coding-crew/dep-install/scripts/run.sh exec=1
 HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-HOME/.coding-crew/manifest.json e820edb3fa51a170a5342b0d469b36511c40db58
+HOME/.coding-crew/manifest.json 9d87cee9f977620a576043480d6883ef2140a47c
 HOME/.coding-crew/review-pr/ /
 HOME/.coding-crew/review-pr/scripts/ /
 HOME/.coding-crew/review-pr/scripts/agent.sh exec=1
@@ -98,6 +98,9 @@ HOME/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
 HOME/.coding-crew/solve-feature/ /
+HOME/.coding-crew/solve-feature/hosts/ /
+HOME/.coding-crew/solve-feature/hosts/Dockerfile exec=0
+HOME/.coding-crew/solve-feature/hosts/github-actions.yml exec=0
 HOME/.coding-crew/solve-feature/scripts/ /
 HOME/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
 HOME/.coding-crew/solve-issue/ /
@@ -206,6 +209,9 @@ CONFIG/skills/review-pr/scripts/agent.sh exec=1
 CONFIG/skills/review-pr/scripts/review-pr.sh exec=1
 CONFIG/skills/solve-feature/ /
 CONFIG/skills/solve-feature/SKILL.md exec=0 unrendered=0
+CONFIG/skills/solve-feature/hosts/ /
+CONFIG/skills/solve-feature/hosts/Dockerfile exec=0
+CONFIG/skills/solve-feature/hosts/github-actions.yml exec=0
 CONFIG/skills/solve-feature/scripts/ /
 CONFIG/skills/solve-feature/scripts/solve-feature.sh exec=0
 CONFIG/skills/solve-issue/ /

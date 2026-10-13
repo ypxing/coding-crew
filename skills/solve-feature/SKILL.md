@@ -98,13 +98,27 @@ first has stopped.
 
 ## Where to run it
 
+The loop is the same command everywhere; the hosts are recipes shipped as files under
+`.coding-crew/solve-feature/hosts/` (also under the platform's `skills/solve-feature/hosts/`), not
+code in the loop.
+
 - **A terminal**, from the repo: `bash .coding-crew/solve-feature/scripts/solve-feature.sh <slug>`.
-- **A herdr or orca pane in a worktree**: a worktree per feature keeps your checkout free; start it
-  from that worktree, on its branch or the default one.
-- **An OpenRig seat**: the same command as the seat's command, from a clone.
-- **A GitHub Actions step**: check out, install coding-crew and the `claude` CLI, then
-  `bash .coding-crew/solve-feature/scripts/solve-feature.sh <slug>`, with the
-  API key as a secret and `contents`, `issues` and `pull-requests` write permissions.
-- **A cloud Claude Code session**: launch, don't host. Start one of the above from it (a
-  `gh workflow run` for an Actions workflow, say) rather than running the loop inside the session,
-  whose time limit and restricted token would cut a feature short.
+- **A herdr or orca pane in a worktree**: a worktree per feature keeps your checkout free; run the
+  same command from that worktree, on its branch or the default one.
+- **A cloud Claude Code session**: launch, don't host. Start one of the hosts below from it (`gh
+  workflow run solve-feature -f slug=<slug>`, or label the root issue) rather than running the loop
+  inside the session, whose time limit and restricted token would cut a feature short.
+- **GitHub Actions, on the Copilot CLI** (no API key; billed to GitHub Copilot): copy
+  `.coding-crew/solve-feature/hosts/github-actions.yml` to `.github/workflows/` (install.sh never
+  writes there) and commit it, then label the feature's root issue `solve-feature`, or run the
+  workflow by hand with the slug. With the workflow's own `github.token` the CLI bills under the
+  organisation policy "Allow use of Copilot CLI billed to the organization"; billing a person
+  through a `COPILOT_GITHUB_TOKEN` secret is sketched in the file as unverified. review-pr runs in
+  the same job, because a PR the workflow's token opens triggers no other workflow; the concurrency
+  group makes a re-label wait for the run in flight.
+- **Docker**: build `.coding-crew/solve-feature/hosts/Dockerfile` (claude and copilot CLIs,
+  `gh`, docker CLI, coding-crew user-level for every platform), run it with the clone mounted at
+  `/work`, `ANTHROPIC_API_KEY` or `GH_TOKEN` in the environment and `--agent` as wanted; mount the
+  docker socket when the project's checks run in compose. The run line is the file's header.
+- **OpenRig and other cloud agents**: future recipes, the same command from a clone; the loop does
+  not change for them.
