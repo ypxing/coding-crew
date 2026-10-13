@@ -88,9 +88,10 @@ agent_cmd() {
         AGENT_ARGV=(codex exec --cd "$repo" --sandbox workspace-write -c sandbox_workspace_write.network_access=true)
         # The sandbox keeps the top-level .git of every writable root read-only, so the git dir is a root of
         # its own or the coder cannot commit; in a linked worktree that is the main repo's git dir, which
-        # holds the worktree's index too.
+        # holds the worktree's index too, and the main checkout is added for the local tracker's close.
         common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
         [ -z "$common" ] || AGENT_ARGV+=(-c "sandbox_workspace_write.writable_roots=[\"$common\"]")
+        [ -z "$common" ] || [ "$(dirname "$common")" = "$repo" ] || AGENT_ARGV+=(--add-dir "$(dirname "$common")")
         AGENT_ARGV+=(--json)
       fi
       [ -z "$model" ] || AGENT_ARGV+=(--model "$model")

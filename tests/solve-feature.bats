@@ -396,7 +396,7 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
   [[ "$output" == *"pi not found"* ]]
 }
 
-@test "--agent codex: the codex coder argv with the git dir as a writable root (the main repo's in a linked worktree) and the per-issue prompt file on stdin, --model only from afk.models.codex.coder" {
+@test "--agent codex: the codex coder argv with the git dir as a writable root (the main repo's in a linked worktree, plus the main checkout) and the per-issue prompt file on stdin, --model only from afk.models.codex.coder" {
   run bash "$SCRIPT" feat --agent codex
   [ "$status" -eq 0 ]
   [ "$(agent_calls claude)" -eq 0 ]
@@ -416,7 +416,7 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
   cd "$TEMP_DIR/wt"
   run bash "$SCRIPT" feat --agent codex
   [ "$status" -eq 0 ]
-  [ "$(agent_call codex 3 | paste -sd' ' -)" = "exec --cd $TEMP_DIR/wt --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c sandbox_workspace_write.writable_roots=[\"$WORK/.git\"] --json --model gpt-5 -" ]
+  [ "$(agent_call codex 3 | paste -sd' ' -)" = "exec --cd $TEMP_DIR/wt --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c sandbox_workspace_write.writable_roots=[\"$WORK/.git\"] --add-dir $WORK --json --model gpt-5 -" ]
   [ "$(cat "$STATE/codex.3.stdin")" = "Use the solve-issue skill on 2." ]
   [ "$(cat "$STATE/codex.3.branch")" = wt ]
 }

@@ -90,8 +90,8 @@ stdout. A failed comment write only warns.
 
 The coder runs unattended with every permission granted (`claude`: `--permission-mode
 bypassPermissions`; `copilot`: `--allow-all-tools`; `pi`: `--tools read,bash,edit,write`; `codex`:
-`--sandbox workspace-write` with network on and, in a linked worktree, the main repo's git dir as a
-writable root), as crew-afk's does: nobody can answer a prompt, and an allow-list, `auto` mode and
+`--sandbox workspace-write` with network on, the git dir as a writable root and, in a linked
+worktree, the main repo's git dir and checkout), as crew-afk's does: nobody can answer a prompt, and an allow-list, `auto` mode and
 Claude Code's sandbox all refuse solve-issue's own commands. The coder can therefore run anything your
 user can, so give it a worktree, container or runner rather than the checkout you work in. review-pr's
 agent is read-only (`claude` by `--tools`, `copilot` by `--deny-tool write`, `pi` by `--tools

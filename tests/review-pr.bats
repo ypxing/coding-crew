@@ -179,7 +179,7 @@ marker_of() { printf 'crew-finding:%s' "$(printf '%s' "$1" | { command -v sha1su
   [ "$output" = /dev/null ]
 }
 
-@test "agent_cmd: codex coder argv with the git dir as a writable root (the main repo's in a linked worktree) and the prompt in .solve-feature/[<tag>.]coder.codex-prompt.md on stdin" {
+@test "agent_cmd: codex coder argv with the git dir as a writable root (the main repo's in a linked worktree, plus the main checkout for the local tracker's close) and the prompt in .solve-feature/[<tag>.]coder.codex-prompt.md on stdin" {
   mkdir .solve-feature && echo '*' >.solve-feature/.gitignore
   run bash -c '. "$1"; agent_cmd coder codex "" 5 "Use the solve-issue skill on 2." && printf "%s\n" "${AGENT_ARGV[@]}" "$AGENT_STDIN_FILE"' _ "$SCRIPTS/agent.sh"
   [ "$status" -eq 0 ]
@@ -194,7 +194,7 @@ marker_of() { printf 'crew-finding:%s' "$(printf '%s' "$1" | { command -v sha1su
   mkdir .solve-feature
   run bash -c '. "$1"; agent_cmd coder codex "" 5 x && printf "%s\n" "${AGENT_ARGV[@]}" "$AGENT_STDIN_FILE"' _ "$SCRIPTS/agent.sh"
   [ "$status" -eq 0 ]
-  [ "$output" = "$(printf '%s\n' codex exec --cd "$TEMP_DIR/wt" --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c "sandbox_workspace_write.writable_roots=[\"$WORK/.git\"]" --json - "$TEMP_DIR/wt/.solve-feature/coder.codex-prompt.md")" ]
+  [ "$output" = "$(printf '%s\n' codex exec --cd "$TEMP_DIR/wt" --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c "sandbox_workspace_write.writable_roots=[\"$WORK/.git\"]" --add-dir "$WORK" --json - "$TEMP_DIR/wt/.solve-feature/coder.codex-prompt.md")" ]
   [ "$(cat "$TEMP_DIR/wt/.solve-feature/coder.codex-prompt.md")" = x ]
 }
 
