@@ -99,7 +99,7 @@ pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the prd 
   printf '%s' "$t"
 }
 pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block rebuilt with this issue appended
-  local old="$3" before after old_sections="" title crit sections head tail inner avail
+  local old="$3" before after old_sections="" title crit sections head tail inner avail refs
   if [[ "$old" == *"$BEGIN"* && "$old" == *"$END"* ]]; then
     before=$(awk -v b="$BEGIN" '$0 == b {exit} {print}' <<<"$old")
     after=$(awk -v e="$END" 'f {print} $0 == e {f = 1}' <<<"$old")
@@ -111,7 +111,8 @@ pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block reb
   [[ "$old_sections" == *"### $1 — "* ]] || sections="${old_sections:+$old_sections$'\n\n'}### $1 — $title"$'\n'"$crit"
   head="$BEGIN"$'\n'"Implemented by solve-feature (\`$SLUG\`)."$'\n\n'"<details><summary>Spec</summary>"$'\n\n'
   tail=$'\n</details>\n\n'
-  tail+="$(node "$CLI" closing-refs --feature-slug "$SLUG")"$'\n'
+  refs=$(node "$CLI" closing-refs --feature-slug "$SLUG") || die "closing-refs failed for '$SLUG' (exit $?, see above)"
+  tail+="$refs"$'\n'
   tail+="<!-- solve-feature:slug $SLUG -->"$'\n'"$END"
   inner="${PRD_TEXT:+$PRD_TEXT$'\n\n'}$sections"$'\n'
   avail=$(( LIMIT - ${#head} - ${#tail} - ${#before} - ${#after} - 4 ))

@@ -90,7 +90,8 @@ case "\$2" in
     done; exit 3 ;;
   fetch) cat "\$STATE/\${3//\//_}.md" ;;
   prd) [ -f "\$STATE/prd.md" ] || exit 3; cat "\$STATE/prd.md" ;;
-  closing-refs) [ "\${TRACKER_KIND:-github}" = github ] || exit 0; jq -r 'sort_by(.number) | .[] | select(.state == "OPEN" and any(.labels[]; .name == "awaiting-merge")) | "Closes #\(.number)"' "\$STATE/issues.json" ;;
+  closing-refs) [ -z "\${CLOSING_REFS_RC:-}" ] || { echo "gh: boom" >&2; exit "\$CLOSING_REFS_RC"; }
+    [ "\${TRACKER_KIND:-github}" = github ] || exit 0; jq -r 'sort_by(.number) | .[] | select(.state == "OPEN" and any(.labels[]; .name == "awaiting-merge")) | "Closes #\(.number)"' "\$STATE/issues.json" ;;
   *) exit 2 ;;
 esac
 EOF
@@ -470,6 +471,13 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
 
 @test "the loop names no tracker kind: no config read, no KIND, no github test, no .scratch, no match on the ref" {
   ! grep -nE 'KIND|github|\.scratch|"\$CLI" config|\$REF" =~' "$SCRIPT"
+}
+
+@test "a failing closing-refs stops the loop with a solve-feature message naming it" {
+  CLOSING_REFS_RC=1 run bash "$SCRIPT" feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"solve-feature: closing-refs failed for 'feat'"* ]]
+  [ ! -f "$STATE/pr-created" ]
 }
 
 @test "a github feature whose prd exits 3 titles the PR after the first landed issue; a ref fetch rejects stops before the coder" {
