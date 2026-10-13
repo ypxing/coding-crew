@@ -499,6 +499,39 @@ test("next (local) prints the first ready file whose blockers are all in done/, 
   assert.equal((await cli(dir, ["next", "--feature-slug", "feat"])).stdout, ".scratch/feat/issues/open/04-d.md\n");
 });
 
+test("next (github) prints a one-slice feature's ready root; exits 3 with empty stdout when nothing is dispatchable or no root exists", async () => {
+  const dir = root({ github: true });
+  const ready = ["ready-for-agent"];
+  const solo = await cli(dir, ["next", "--feature-slug", "feat"], fakeGithub(ghFeature("feat", ghIssue(7, { labels: ready }))));
+  assert.equal(solo.code, 0, solo.stderr);
+  assert.equal(solo.stdout, "7\n");
+  const waiting = fakeGithub(ghFeature("feat", ghIssue(1), ghIssue(2, { labels: ready, body: blockedBy(3) }), ghIssue(3, { labels: ["in-progress"] })));
+  assert.deepEqual(await cli(dir, ["next", "--feature-slug", "feat"], waiting), { code: 3, stdout: "", stderr: "" });
+  assert.deepEqual(await cli(dir, ["next", "--feature-slug", "feat"], fakeGithub([ghIssue(1)])), { code: 3, stdout: "", stderr: "" });
+});
+
+test("next (local) exits 3 with empty stdout when every ready issue is blocked or the feature has no issues", async () => {
+  const dir = root();
+  writeIssue(dir, "open", "01-a.md", "# a\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 02-b.md\n");
+  writeIssue(dir, "open", "02-b.md", "# b\n\nStatus: ready-for-human\n");
+  assert.deepEqual(await cli(dir, ["next", "--feature-slug", "feat"]), { code: 3, stdout: "", stderr: "" });
+  assert.deepEqual(await cli(dir, ["next", "--feature-slug", "nope"]), { code: 3, stdout: "", stderr: "" });
+});
+
+test("next exits 2 without --feature-slug, on an invalid slug or an unknown flag; 1 naming both roots when github has two", async () => {
+  for (const dir of [root(), root({ github: true })]) {
+    for (const argv of [[], ["--feature-slug", "../x"], ["--feature-slug", "feat", "--bogus"]]) {
+      const r = await cli(dir, ["next", ...argv]);
+      assert.equal(r.code, 2, argv.join(" "));
+      assert.equal(r.stdout, "");
+    }
+  }
+  const dup = await cli(root({ github: true }), ["next", "--feature-slug", "feat"], fakeGithub([...ghFeature("feat", ghIssue(3)), ...ghFeature("feat", ghIssue(5))]));
+  assert.equal(dup.code, 1);
+  assert.equal(dup.stdout, "");
+  assert.match(dup.stderr, /#3, #5/);
+});
+
 // --- features ----------------------------------------------------------------------
 
 function writeFeatureIssue(dir, slug, state, name, status) {
