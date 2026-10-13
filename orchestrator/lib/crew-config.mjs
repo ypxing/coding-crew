@@ -15,7 +15,8 @@ export const USER_CONFIG_LABEL = "~/.coding-crew/config.json";
 export const LEGACY_REL = ".coding-crew/afk-models.json";
 
 export const ROLES = ["coder", "reviewer", "triage", "commandFinder", "prWriter"];
-const SECTIONS = ["afk", "tracker"];
+// solveFeature is solve-feature's (its coder and reviewer models): accepted here, never read.
+const SECTIONS = ["afk", "tracker", "solveFeature"];
 const REPO_ONLY_SECTIONS = ["tracker"];
 
 // `actionable`: every finding triage judges Actionable; the others: that severity and above.

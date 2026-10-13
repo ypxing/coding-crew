@@ -15,6 +15,7 @@ import {
   resolvePaneHost,
   resolveSettings,
   resolveWorktreeRoot,
+  validateConfig,
   validateFlags,
 } from "../../orchestrator/lib/crew-config.mjs";
 import { ROLE_POLICY } from "../../orchestrator/lib/adapters/render.mjs";
@@ -150,6 +151,12 @@ test("loadConfig: every validation problem is reported at once", () => {
     assert.match(message, want);
   }
   rmSync(root, { recursive: true, force: true });
+});
+
+test("validateConfig: a solveFeature section is accepted (solve-feature reads it, crew-afk does not); an unknown one is not", () => {
+  const repo = JSON.parse(readFileSync(new URL("../../.coding-crew/config.json", import.meta.url), "utf8"));
+  assert.doesNotThrow(() => validateConfig({ ...repo, solveFeature: { models: { coder: "sonnet" } } }));
+  assert.throws(() => validateConfig({ ...repo, solveFeatur: {} }), /unknown section "solveFeatur"/);
 });
 
 // ─── user level (~/.coding-crew/config.json) under the repo's ─────────────────
