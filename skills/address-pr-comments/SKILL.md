@@ -252,8 +252,7 @@ solve-feature draft. Instead end the summary with one line naming the next step:
 next: /review-pr <n>
 ```
 
-(or `bash .coding-crew/review-pr/scripts/review-pr.sh <n>`), which re-reviews the pushed branch
-against the spec and runs `gh pr ready` itself when it holds.
+which re-reviews the pushed branch against the spec and runs `gh pr ready` itself when it holds.
 
 On either kind the skill never runs `gh pr ready` and never waits on CI: on a crew-afk PR marking
 it ready is the developer's call once CI passes, on a solve-feature PR it is review-pr's.

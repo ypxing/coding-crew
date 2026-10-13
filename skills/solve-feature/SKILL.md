@@ -1,45 +1,52 @@
 ---
 name: solve-feature
 description: >
-  Run one feature's ready-for-agent issues unattended on one branch, each gated by the project's
-  checks, in a draft PR that review-pr reviews at the end. Local or GitHub tracker. Trigger with
-  /solve-feature <slug>. Optional: --branch <name>, --budget <usd>, --agent claude|copilot|pi|codex.
-argument-hint: "<feature-slug> [--branch <name>] [--budget <usd>] [--agent claude|copilot|pi|codex]"
-allowed-tools: Bash, shell
+  Run one feature's ready-for-agent issues unattended on one branch, each by a fresh coder subagent and
+  gated by the project's checks, in a draft PR that review-pr reviews at the end. Local or GitHub
+  tracker. Trigger with /solve-feature <slug>. Optional: --branch <name>.
+argument-hint: "<feature-slug> [--branch <name>]"
 ---
 
 # solve-feature
 
-The loop is a script, not a prompt: launch it, let it run, report what it printed. **You do not
-implement, check, review or close anything yourself.**
+You drive the loop; a script guards every step. **You do not implement, check, review, commit or
+close anything yourself** — each issue's coder is a fresh subagent, and the script decides whether
+its work lands.
+
+Find the script once, then run each step as `bash <path> …` with the absolute path it printed:
 
 ```bash
 LOOP="$(git rev-parse --show-toplevel)/.coding-crew/solve-feature/scripts/solve-feature.sh"
 # a linked worktree may lack .coding-crew/: the main checkout's copy
 [ -f "$LOOP" ] || LOOP="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.coding-crew/solve-feature/scripts/solve-feature.sh"
 [ -f "$LOOP" ] || LOOP="$HOME/.coding-crew/solve-feature/scripts/solve-feature.sh"
-bash "$LOOP" "$@"
+echo "$LOOP"
 ```
 
-A run takes up to an hour per issue, so start it where it can outlive your turn: in the
-background, or tell the user to run it in a terminal. A bare word the user gave is the slug: pass it
-as is; the script exits 1 naming a slug the tracker has no feature for.
+A bare word the user gave is the slug: pass it as is.
 
-The coder runs with every permission granted, so suggest a worktree or container over the checkout
-the user works in. The script takes no lock: never start a second run on a slug whose run is still
-going.
+1. **Start.** `bash <path> start <slug> [--branch <name>]`. It prints `branch=`, `coder-model=`,
+   `reviewer-model=` and `pr=`; keep them.
+2. **Per issue**, until step 2a exits 3:
+   1. `bash <path> next <slug>` — prints the issue's ref. Exit 3: no ready issue is left, go to step 3.
+   2. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working
+     directory — with exactly this prompt: `Use the solve-issue skill on <ref>`. When `coder-model=`
+     is non-empty and your host accepts that model name for a subagent, run it on that model;
+     otherwise on your own. Wait for it to finish.
+   3. `bash <path> land <slug> <ref> <branch>`, with `start`'s `branch=` — always, whatever the
+     subagent reported: `land` is what checks and records its result. It prints `pr=<n>`.
+3. **Review.** Use the review-pr skill on the last `pr=` printed (by `land`, else `start`). With none,
+   report `nothing landed: no open PR to review` and end.
 
-Every stop exits 1 with one line naming the cause and, for a failed step, its log. Relay it; once
-the cause is fixed, a re-run skips the issues already done and reuses the PR. A finished run prints
-review-pr's `REVIEW:` line and the PR URL last.
+**Any other non-zero exit stops the run.** Relay the script's message as it printed it (a stop names
+the step, the reason and, for the checks, its log) and end; do not retry, fix or close anything.
+Once the cause is fixed, a re-run skips the issues already done and reuses the branch and the PR.
 
-| Flag / env            | Effect                                                                   |
-| --------------------- | ------------------------------------------------------------------------ |
-| `--branch <name>`     | The branch to use when started on the default branch (default: one named after the slug) |
-| `--budget <usd>`      | The coder's budget per issue (default 10; claude only)                   |
-| `--agent <agent>`     | `claude`, `copilot`, `pi` or `codex` (default `SOLVE_FEATURE_AGENT`, then `claude`) |
-| `SOLVE_FEATURE_AGENT` | The `--agent` default                                                    |
-| `SOLVE_FEATURE_HOST`  | The host name the PR's progress comment shows (default: `hostname`)      |
+Run it where an unattended agent may change the checkout — a worktree or a container, not the one
+the user works in. Nothing takes a lock: never start a second run on a slug whose run is still going.
 
-The coder's model is `.coding-crew/config.json` `afk.models.<agent>.coder` (claude defaults to
-`sonnet`; the others use their CLI's default).
+| Setting                                         | Effect                                                         |
+| ----------------------------------------------- | -------------------------------------------------------------- |
+| `--branch <name>`                               | The branch to use when started on the default branch (default: one named after the slug) |
+| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder / reviewer subagent's model, when your host accepts the name (default: your own) |
+| `SOLVE_FEATURE_HOST`                            | The host name the PR's progress comment shows (default: `hostname`) |

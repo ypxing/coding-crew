@@ -86,7 +86,6 @@ HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
 HOME/.coding-crew/manifest.json c87e9e1e1cfe72a06b0a62c40d907150d61386be
 HOME/.coding-crew/review-pr/ /
 HOME/.coding-crew/review-pr/scripts/ /
-HOME/.coding-crew/review-pr/scripts/agent.sh exec=1
 HOME/.coding-crew/review-pr/scripts/review-pr.sh exec=1
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
@@ -204,7 +203,6 @@ CONFIG/skills/domain-modeling/references/context-format.md exec=0
 CONFIG/skills/review-pr/ /
 CONFIG/skills/review-pr/SKILL.md exec=0 unrendered=0
 CONFIG/skills/review-pr/scripts/ /
-CONFIG/skills/review-pr/scripts/agent.sh exec=1
 CONFIG/skills/review-pr/scripts/review-pr.sh exec=1
 CONFIG/skills/solve-feature/ /
 CONFIG/skills/solve-feature/SKILL.md exec=0 unrendered=0

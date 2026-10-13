@@ -81,7 +81,6 @@ HOME/.claude/skills/domain-modeling/references/context-format.md exec=0
 HOME/.claude/skills/review-pr/ /
 HOME/.claude/skills/review-pr/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/review-pr/scripts/ /
-HOME/.claude/skills/review-pr/scripts/agent.sh exec=1
 HOME/.claude/skills/review-pr/scripts/review-pr.sh exec=1
 HOME/.claude/skills/solve-feature/ /
 HOME/.claude/skills/solve-feature/SKILL.md exec=0 unrendered=0
@@ -207,7 +206,6 @@ HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
 HOME/.coding-crew/manifest.json c87e9e1e1cfe72a06b0a62c40d907150d61386be
 HOME/.coding-crew/review-pr/ /
 HOME/.coding-crew/review-pr/scripts/ /
-HOME/.coding-crew/review-pr/scripts/agent.sh exec=1
 HOME/.coding-crew/review-pr/scripts/review-pr.sh exec=1
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
