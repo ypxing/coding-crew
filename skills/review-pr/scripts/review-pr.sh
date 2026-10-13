@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# review-pr.sh <pr-number> [--agent claude|copilot] — one read-only agent reviews the checked-out PR <n> against
+# review-pr.sh <pr-number> [--agent <agent>] — one read-only agent reviews the checked-out PR <n> against
 # the spec in its body, posts one COMMENT review and marks a draft ready when the spec is met with no
 # CRITICAL/HIGH finding. Env: SOLVE_FEATURE_AGENT (the --agent default; `claude` when unset).
 # Last stdout line: `REVIEW: prd=<met|unmet> findings=<k> (<i> inline) ready=<yes|no|already>`, exit 0;
@@ -17,9 +17,9 @@ while [ $# -gt 0 ]; do case "$1" in
   -*) die "unknown flag: $1" ;;
   *) [ -z "$PR" ] || die "unexpected argument: $1"; PR="$1"; shift ;;
 esac; done
-[[ "$PR" =~ ^[0-9]+$ ]] || die "usage: review-pr.sh <pr-number> [--agent claude|copilot]"
-. "$SELF/agent.sh"
-case "$AGENT" in claude|copilot) ;; *) die "unknown agent '$AGENT' (claude|copilot)" ;; esac
+[[ "$PR" =~ ^[0-9]+$ ]] || die "usage: review-pr.sh <pr-number> [--agent <agent>]"
+. "$SELF/agent.sh" # the one owner of the coding-agent axis: names, argv, prompt form, stdin, model, log shape
+agent_known "$AGENT" || die "unknown agent '$AGENT'"
 for t in "$AGENT" gh jq git timeout; do command -v "$t" >/dev/null || die "$t not found on PATH"; done
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"; cd "$ROOT"
 
@@ -52,7 +52,7 @@ Commit messages, PR text and progress notes are claims, not evidence.
 Write your report to $REPORT as your last action, as JSON: {\"prd\": \"met|unmet\", \"gaps\": [\"what the spec asks for that the PR lacks\"], \"findings\": [{\"severity\": \"CRITICAL|HIGH|MEDIUM|LOW\", \"location\": \"<file:line>\", \"issue\": \"...\", \"fix\": \"...\"}]}, then explain in prose."
 agent_cmd reviewer "$AGENT" "$(agent_model "$AGENT" reviewer)" 4 "$PROMPT"
 tree_before=$(git status --porcelain)
-timeout 30m "${AGENT_ARGV[@]}" </dev/null >"$LOG" 2>&1 || true
+timeout 30m "${AGENT_ARGV[@]}" <"$AGENT_STDIN_FILE" >"$LOG" 2>&1 || true
 [ "$(git rev-parse HEAD)" = "$HEAD_OID" ] && [ "$(git status --porcelain)" = "$tree_before" ] || die "reviewer changed the tree"
 [ -f "$REPORT" ] || die "no report at $REPORT (see $LOG)"
 PRD=$(jq -r '.prd // empty' "$REPORT" 2>/dev/null) || die "unreadable report $REPORT (see $LOG)"

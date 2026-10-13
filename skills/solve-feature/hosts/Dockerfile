@@ -1,16 +1,19 @@
 # syntax=docker/dockerfile:1
-# A sandbox that runs solve-feature on a clone with claude or copilot, coding-crew installed
-# user-level for every platform. Build and run from the project's clone:
+# A sandbox that runs solve-feature on a clone with claude, copilot, pi or codex, coding-crew
+# installed user-level for every platform. Build and run from the project's clone:
 #
 #   docker build -t solve-feature -f .coding-crew/solve-feature/hosts/Dockerfile .
 #   docker run --rm -v "$PWD":/work -w /work \
-#     -e ANTHROPIC_API_KEY \                      # --agent claude
+#     -e ANTHROPIC_API_KEY \                      # --agent claude; --agent pi on its Anthropic provider
+#     -e OPENAI_API_KEY \                         # --agent codex; --agent pi on its OpenAI provider
 #     -e GH_TOKEN \                               # the tracker and the PR; the coder for --agent copilot
 #     -v /var/run/docker.sock:/var/run/docker.sock --group-add "$(stat -c %g /var/run/docker.sock)" \
 #     solve-feature bash "$HOME/.coding-crew/solve-feature/scripts/solve-feature.sh" <slug> --agent claude
 #
 # The docker socket line is for a project whose checks run in compose (dep-install's docker mode
-# nests nothing: a command that runs docker itself is run as is); drop it otherwise.
+# nests nothing: a command that runs docker itself is run as is); drop it otherwise. pi takes any
+# provider's key its README lists (https://github.com/badlogic/pi-mono): pass the one for the model
+# set in afk.models.pi.
 # The branch is pushed and the PR opened from inside the container, so the clone's `origin` has
 # to be reachable with GH_TOKEN (an https remote), and the clone needs a committed
 # .coding-crew/dev-commands.json.
@@ -29,7 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
   && apt-get update && apt-get install -y --no-install-recommends gh docker-ce-cli docker-compose-plugin \
   && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @anthropic-ai/claude-code @github/copilot
+RUN npm install -g @anthropic-ai/claude-code @github/copilot @openai/codex @earendil-works/pi-coding-agent
 
 # Not root: claude refuses bypassPermissions as root, and the coder runs with every permission.
 RUN useradd -m -s /bin/bash crew

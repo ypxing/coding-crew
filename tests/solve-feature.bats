@@ -5,8 +5,8 @@
 # review-pr on it at the end.
 #
 # A temp clone with a bare `origin`, and the skill installed user-level under a temp $HOME as
-# install.sh lays it out. `claude`, `copilot`, `gh`, `node` (only for the tracker CLI's path;
-# everything else reaches the real node), `timeout`, solve-issue's run-checks.sh, dep-install's
+# install.sh lays it out. `claude`, `copilot`, `pi`, `codex`, `gh`, `node` (only for the tracker CLI's
+# path; everything else reaches the real node), `timeout`, solve-issue's run-checks.sh, dep-install's
 # install scripts and review-pr.sh are stubs that log their argv: the coder stub commits a file and
 # swaps the issue's ready-for-agent label for awaiting-merge, as solve-issue's mark-done does; the
 # node stub answers `next` from $STATE/issues.json by the tracker's dispatch rule.
@@ -102,32 +102,41 @@ shift
 exec "$@"
 EOF
 
-  # The coder, as claude or copilot: each call's argv, one arg per line, in <agent>.<k>.
+  # The coder, as any of the four agents: each call's argv, one arg per line, in <agent>.<k>; its stdin
+  # in <agent>.<k>.stdin (`/dev/null`, or what it carried). The prompt is `-p`'s value (claude, copilot),
+  # the last argument (pi) or stdin (codex).
   cat > "$STUB/claude" <<'EOF'
 #!/usr/bin/env bash
 me=$(basename "$0")
 k=$(( $(ls "$STATE" | grep -c "^$me\.[0-9]*$") + 1 ))
 printf '%s\n' "$@" > "$STATE/$me.$k"
+if [ /dev/stdin -ef /dev/null ]; then echo /dev/null > "$STATE/$me.$k.stdin"; else cat > "$STATE/$me.$k.stdin"; fi
 env | grep -c '^CREW_ORCHESTRATED=' > "$STATE/$me.$k.env" || true
 git branch --show-current > "$STATE/$me.$k.branch"
 git ls-remote --heads origin "$(git branch --show-current)" | grep -c . > "$STATE/$me.$k.pushed" || true
 git rev-parse --abbrev-ref '@{upstream}' > "$STATE/$me.$k.upstream" 2>/dev/null || true
 [ ! -f "$STATE/pr-body" ] || cp "$STATE/pr-body" "$STATE/pr-body.before-$me.$k"
-ref=$(sed -e 's|^/solve-issue ||' -e 's|^Use the solve-issue skill on \(.*\)\.$|\1|' <<<"$2")
+case "$me" in codex) prompt=$(cat "$STATE/$me.$k.stdin") ;; pi) prompt="${@: -1}" ;; *) prompt="$2" ;; esac
+ref=$(sed -e 's|^/solve-issue ||' -e 's|^Use the solve-issue skill on \(.*\)\.$|\1|' <<<"$prompt")
 echo "coder log for $ref"
 [ -z "${CODER_EXIT:-}" ] || { for i in $(seq 1 30); do echo "coder line $i"; done; exit "$CODER_EXIT"; }
 [ -z "${CODER_SWITCH:-}" ] || git checkout -q -b elsewhere
 echo "$ref" > "work-${ref//\//_}.txt"
 [ -n "${CODER_DIRTY:-}" ] || { git add "work-${ref//\//_}.txt"; git commit -q -m "[$ref] work"; }
 if [ -n "${CODER_NO_CLOSE:-}" ]; then
-  [ "$me" = copilot ] && echo '{"type":"assistant.message","data":{"content":"BLOCKED: Bash denied\nnothing was started"}}' \
-    || echo '{"type":"result","result":"BLOCKED: Bash denied\nnothing was started"}'
+  case "$me" in
+    copilot) echo '{"type":"assistant.message","data":{"content":"BLOCKED: Bash denied\nnothing was started"}}' ;;
+    pi) echo '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"BLOCKED: Bash denied\nnothing was started"}]}}' ;;
+    codex) echo '{"type":"item.completed","item":{"type":"agent_message","text":"BLOCKED: Bash denied\nnothing was started"}}' ;;
+    *) echo '{"type":"result","result":"BLOCKED: Bash denied\nnothing was started"}' ;;
+  esac
   exit 0
 fi
 jq --arg r "$ref" 'map(if (.ref // (.number | tostring)) == $r then .labels = [{"name":"awaiting-merge"}] else . end)' "$STATE/issues.json" > "$STATE/i.tmp"
 mv "$STATE/i.tmp" "$STATE/issues.json"
 EOF
-  cp "$STUB/claude" "$STUB/copilot"
+  local a
+  for a in copilot pi codex; do cp "$STUB/claude" "$STUB/$a"; done
 
   # `pr view` answers from the PR this run created ($STATE/pr-body) or PR_EXISTS (#9, body from
   # $STATE/pr-body when present, else a hand-written one); `pr create`/`pr edit` keep the body there.
@@ -212,10 +221,14 @@ agent_call() { cat "$STATE/$1.$2"; }
 agent_calls() { ls "$STATE" | grep -c "^$1\.[0-9]*$" || true; }
 # The value after flag $3 in call $2 of agent $1.
 agent_flag() { agent_call "$1" "$2" | grep -A1 -x -- "$3" | tail -1; }
+# coder_prompt <agent> <k> — the prompt call k of that agent got: -p's value, pi's last argument, codex's stdin.
+coder_prompt() {
+  case "$1" in codex) cat "$STATE/$1.$2.stdin" ;; pi) agent_call "$1" "$2" | tail -1 ;; *) agent_flag "$1" "$2" -p ;; esac
+}
 # coder_issues [agent] — the refs the coder was run on, in order.
 coder_issues() {
   local a="${1:-claude}" k
-  for k in $(seq 1 "$(agent_calls "$a")"); do agent_flag "$a" "$k" -p | sed -e 's|^/solve-issue ||' -e 's|^Use the solve-issue skill on \(.*\)\.$|\1|'; done | paste -sd' ' -
+  for k in $(seq 1 "$(agent_calls "$a")"); do coder_prompt "$a" "$k" | sed -e 's|^/solve-issue ||' -e 's|^Use the solve-issue skill on \(.*\)\.$|\1|'; done | paste -sd' ' -
 }
 # progress_body — the one solve-feature-progress comment's body; fails unless exactly one exists.
 progress_body() {
@@ -264,8 +277,7 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
   [[ "$output" == *"clean"* ]]
 
   [ "$(git branch --show-current)" = main ]
-  [ "$(agent_calls claude)" -eq 0 ]
-  [ "$(agent_calls copilot)" -eq 0 ]
+  local a; for a in claude copilot pi codex; do [ "$(agent_calls "$a")" -eq 0 ]; done
   [ ! -f "$STATE/gh.log" ]
   [ ! -f "$STATE/prepare.log" ]
 }
@@ -318,6 +330,7 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
   [ "$(agent_call claude 1 | paste -sd' ' -)" = "-p /solve-issue 2 --output-format json --max-budget-usd 10 --model sonnet --permission-mode bypassPermissions" ]
   [ "$(agent_call claude 2 | paste -sd' ' -)" = "-p /solve-issue 3 --output-format json --max-budget-usd 10 --model sonnet --permission-mode bypassPermissions" ]
   [ "$(sort -u "$STATE/timeout.log")" = 60m ]
+  [ "$(cat "$STATE/claude.1.stdin")" = /dev/null ]
   [ "$(cat "$STATE/claude.1.env")" = 0 ]
   [ "$(head -1 "$STATE/checks.log")" = "--project-root $WORK --main-root $WORK --dep-scripts $HOME/.coding-crew/dep-install/scripts" ]
   [ "$(wc -l < "$STATE/checks.log")" -eq 2 ]
@@ -358,6 +371,53 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
   run bash "$SCRIPT" feat --agent copilot
   [ "$status" -eq 1 ]
   [[ "$output" == *"copilot not found"* ]]
+}
+
+@test "--agent pi: the pi coder argv with the prompt last under timeout 60m, stdin /dev/null, --model only from afk.models.pi.coder, pi on PATH required" {
+  run bash "$SCRIPT" feat --agent pi
+  [ "$status" -eq 0 ]
+  [ "$(agent_calls claude)" -eq 0 ]
+  [ "$(coder_issues pi)" = "2 3" ]
+  [ "$(agent_call pi 1 | paste -sd' ' -)" = "-p --mode json --tools read,bash,edit,write Use the solve-issue skill on 2." ]
+  [ "$(cat "$STATE/pi.1.stdin")" = /dev/null ]
+  [ "$(sort -u "$STATE/timeout.log")" = 60m ]
+  grep -qx -- '10 --agent pi' "$STATE/review.log"
+
+  jq 'map(.labels = (if .root then [] else [{"name":"ready-for-agent"}] end))' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  echo '{"tracker":{"kind":"github"},"afk":{"models":{"pi":{"coder":"claude-sonnet-4"}}}}' > .coding-crew/config.json
+  git commit -q -am "models"
+  run bash "$SCRIPT" feat --agent pi
+  [ "$status" -eq 0 ]
+  [ "$(agent_call pi 3 | paste -sd' ' -)" = "-p --mode json --model claude-sonnet-4 --tools read,bash,edit,write Use the solve-issue skill on 2." ]
+
+  rm "$STUB/pi"
+  run bash "$SCRIPT" feat --agent pi
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"pi not found"* ]]
+}
+
+@test "--agent codex: the codex coder argv with the prompt file on stdin, --model only from afk.models.codex.coder; a linked worktree adds the common git dir as a writable root" {
+  run bash "$SCRIPT" feat --agent codex
+  [ "$status" -eq 0 ]
+  [ "$(agent_calls claude)" -eq 0 ]
+  [ "$(coder_issues codex)" = "2 3" ]
+  [ "$(agent_call codex 1 | paste -sd' ' -)" = "exec --cd $WORK --sandbox workspace-write -c sandbox_workspace_write.network_access=true --json -" ]
+  [ "$(cat "$STATE/codex.1.stdin")" = "Use the solve-issue skill on 2." ]
+  [ "$(cat "$WORK/.solve-feature/coder.codex-prompt.md")" = "Use the solve-issue skill on 3." ]
+  [ "$(sort -u "$STATE/timeout.log")" = 60m ]
+  grep -qx -- '10 --agent codex' "$STATE/review.log"
+  [ -z "$(git status --porcelain)" ]
+
+  jq 'map(.labels = (if .root then [] else [{"name":"ready-for-agent"}] end))' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  echo '{"tracker":{"kind":"github"},"afk":{"models":{"codex":{"coder":"gpt-5"}}}}' > .coding-crew/config.json
+  git commit -q -am "models"
+  git worktree add -q "$TEMP_DIR/wt" -b wt >/dev/null
+  cd "$TEMP_DIR/wt"
+  run bash "$SCRIPT" feat --agent codex
+  [ "$status" -eq 0 ]
+  [ "$(agent_call codex 3 | paste -sd' ' -)" = "exec --cd $TEMP_DIR/wt --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c sandbox_workspace_write.writable_roots=[\"$WORK/.git\"] --json --model gpt-5 -" ]
+  [ "$(cat "$STATE/codex.3.stdin")" = "Use the solve-issue skill on 2." ]
+  [ "$(cat "$STATE/codex.3.branch")" = wt ]
 }
 
 @test "issues run lowest number first, skipping closed and blocked-labelled issues and any whose blocker is neither CLOSED nor awaiting-merge" {
@@ -675,7 +735,7 @@ EOF
   grep -qx '```' <<<"$body"
 }
 
-@test "a stop on a claude or copilot JSON log puts its result text, not the raw JSON, in the comment" {
+@test "a stop on a claude, copilot, pi or codex JSON log puts the agent's final text, not the raw JSON, in the comment" {
   export PR_EXISTS=1
   CODER_NO_CLOSE=1 run bash "$SCRIPT" feat
   [ "$status" -eq 1 ]
@@ -691,6 +751,17 @@ EOF
   body=$(progress_body)
   grep -qx 'BLOCKED: Bash denied' <<<"$body"
   ! grep -q 'assistant.message' <<<"$body"
+
+  local a
+  for a in pi codex; do
+    echo '[]' > "$STATE/comments.json"
+    CODER_NO_CLOSE=1 run bash "$SCRIPT" feat --agent "$a"
+    [ "$status" -eq 1 ] || { echo "$a: $status"; return 1; }
+    body=$(progress_body)
+    grep -qx 'BLOCKED: Bash denied' <<<"$body" || { echo "$a: $body"; return 1; }
+    grep -qx 'nothing was started' <<<"$body"
+    ! grep -qE 'message_end|agent_message' <<<"$body"
+  done
 }
 
 @test "a failing gh api call on the comment warns and leaves the exit code alone" {
