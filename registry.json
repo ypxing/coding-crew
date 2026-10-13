@@ -58,7 +58,7 @@
       ]
     },
     "solve-feature": {
-      "version": "0.5.2",
+      "version": "0.5.3",
       "source-dir": "solve-feature",
       "description": "Run one feature's ready-for-agent issues in order on one branch, each gated by the project's checks, in a draft PR carrying the spec that review-pr reviews at the end.",
       "assets": {

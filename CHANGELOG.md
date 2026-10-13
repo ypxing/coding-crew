@@ -10,6 +10,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   longer reads `config` or tests for github: it adds `closing-refs`' lines to the PR body on any tracker. A ref `next`
   prints is checked only by `fetch` (the backend's own ref rule), and progress rows and stop messages show it as
   `next` printed it (`12`, not `#12`) (#470).
+- **solve-feature**: leaner loop. No up-front dependency install (solve-issue already installs on demand) and no
+  PR-body truncation (an over-limit body now fails `gh` loudly) (#471).
 - **solve-feature**: the `Dockerfile` host recipe is gone (bring your own sandbox), and so is SKILL.md's "Where to run
   it" section; the pointer to `hosts/github-actions.yml` moved to the user guide's "solve-feature on GitHub Actions".
   SKILL.md keeps only what the agent acts on (launch, slug, where to run, how to relay a stop, flags); the loop's
