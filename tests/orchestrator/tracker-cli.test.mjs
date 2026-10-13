@@ -532,6 +532,12 @@ test("next exits 2 without --feature-slug, on an invalid slug or an unknown flag
   assert.match(dup.stderr, /#3, #5/);
 });
 
+test("cli.mjs with no op lists next among the ops", async () => {
+  const r = await cli(root(), []);
+  assert.equal(r.code, 2);
+  assert.ok(r.stderr.replace(/^.*ops: /s, "").split(/,\s*/).map((s) => s.trim()).includes("next"), r.stderr);
+});
+
 // --- features ----------------------------------------------------------------------
 
 function writeFeatureIssue(dir, slug, state, name, status) {
