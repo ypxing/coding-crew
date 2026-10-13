@@ -38,6 +38,7 @@ node "$TRACKER" rewrite <ref> --body-file <file> --status <status> --feature-slu
 node "$TRACKER" tick <ref>                                # check every criterion off
 node "$TRACKER" write-section <ref> --heading <h> --body-file <file>   # write `## <h>` into the issue file
 node "$TRACKER" mark-done <ref> [--force]
+node "$TRACKER" closing-refs --feature-slug <slug>       # prints nothing: a local merge closes no issue
 ```
 
 Exit codes, every op: `0` ok, `1` the op failed (stderr says why), `2` a usage error or a ref

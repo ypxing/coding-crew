@@ -31,7 +31,6 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git rep
 COMMON="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" CLI=""
 for c in "$ROOT" "$COMMON" "$HOME"; do [ -f "$c/.coding-crew/tracker/cli.mjs" ] && { CLI="$c/.coding-crew/tracker/cli.mjs"; break; }; done
 [ -n "$CLI" ] || die "tracker CLI not found (.coding-crew/tracker/cli.mjs): run install.sh"
-KIND="$(node "$CLI" config | sed -n 's/^tracker=//p')"
 [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
 # DISCOVER needs an agent and a human once; run-checks.sh's own exit 3 guards a file that names no usable command.
 [ -f "$ROOT/.coding-crew/dev-commands.json" ] || die "no .coding-crew/dev-commands.json: run /solve-issue or dep-install once by hand and commit it"
@@ -54,16 +53,6 @@ LOGS="$ROOT/.solve-feature" PRD_TEXT="" rc=0
 mkdir -p "$LOGS" && echo '*' >"$LOGS/.gitignore" # ignored in any repo, so the tree stays clean
 node "$CLI" prd --feature-slug "$SLUG" >"$LOGS/prd.md" || rc=$?
 case $rc in 0) PRD_TEXT=$(cat "$LOGS/prd.md") ;; 3) rm -f "$LOGS/prd.md" ;; *) die "reading the feature's PRD failed (exit $rc)" ;; esac
-
-# Prepare: the coder's own solve-issue retries a missing dependency with dep-install's recovery prose,
-# so a failed install here is a warning, not a stop.
-PLOG="$LOGS/prepare.log" rc=0
-bash "$DEP_DIR/resolve-mode.sh" --project-root "$ROOT" --main-root "$ROOT" >"$PLOG" 2>&1 || true
-MODE=$(sed -n 's/^INSTALL_MODE=//p' "$PLOG" | tail -n 1) SVC=$(sed -n 's/^DOCKER_SERVICE=//p' "$PLOG" | tail -n 1)
-if [ "$MODE" = docker ]; then
-  bash "$DEP_DIR/docker-install.sh" --project-root "$ROOT" --main-root "$ROOT" ${SVC:+--service "$SVC"} >>"$PLOG" 2>&1 || rc=$?
-else bash "$DEP_DIR/host-install.sh" --project-root "$ROOT" --main-root "$ROOT" >>"$PLOG" 2>&1 || rc=$?; fi
-case $rc in 0|2) ;; *) echo "solve-feature: warning: prepare failed (exit $rc) — see $PLOG" >&2 ;; esac
 
 PR_N="" URL="" VIEW="" CID="" ROWS="" ROW="" NOTE="" REF="" TAG=""
 row() { ROW="$TAG  solve $1  checks $2"; if [ -n "$PR_N" ]; then progress; else echo "$ROW"; fi; }
@@ -92,7 +81,6 @@ assert_tree() { # <step> <log> — the branch and a clean tree
 
 # The PR body: address-pr-comments finds a solve-feature PR by the begin line and reads its slug from the
 # slug line; review-pr reads the <details> block as the spec. Text outside the block is a human's and kept.
-LIMIT=65536 CUT_LINE="(spec truncated at GitHub's 65,536-character body limit)"
 BEGIN='<!-- solve-feature:begin -->' END='<!-- solve-feature:end -->'
 pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the prd output, else the issue's own
   local t; t=$(head -n 1 <<<"$PRD_TEXT" | sed -nE 's/^<!-- PRD issue #[0-9]+: (.*) -->$/\1/p' | sed 's/^PRD: //')
@@ -100,11 +88,11 @@ pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the prd 
   printf '%s' "$t"
 }
 pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block rebuilt with this issue appended
-  local old="$3" before after old_sections="" title crit sections head tail inner avail
+  local old="$3" before after old_sections="" title crit sections head tail
   if [[ "$old" == *"$BEGIN"* && "$old" == *"$END"* ]]; then
     before=$(awk -v b="$BEGIN" '$0 == b {exit} {print}' <<<"$old")
     after=$(awk -v e="$END" 'f {print} $0 == e {f = 1}' <<<"$old")
-    old_sections=$(awk -v b="$BEGIN" '$0 == b {blk = 1} blk && /^### / {s = 1} blk && /^<\/details>$/ {s = 0; blk = 0} s' <<<"$old" | grep -vxF "$CUT_LINE" || true)
+    old_sections=$(awk -v b="$BEGIN" '$0 == b {blk = 1} blk && /^### / {s = 1} blk && /^<\/details>$/ {s = 0; blk = 0} s' <<<"$old")
   else before="$old" after=""; fi
   title=$(grep -m1 '^# ' "$LOGS/$2.issue.md" | sed 's/^# //')
   crit=$(awk '/^## /{f = tolower($0) ~ /^## acceptance criteria/} f' "$LOGS/$2.issue.md")
@@ -112,15 +100,9 @@ pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block reb
   [[ "$old_sections" == *"### $1 — "* ]] || sections="${old_sections:+$old_sections$'\n\n'}### $1 — $title"$'\n'"$crit"
   head="$BEGIN"$'\n'"Implemented by solve-feature (\`$SLUG\`)."$'\n\n'"<details><summary>Spec</summary>"$'\n\n'
   tail=$'\n</details>\n\n'
-  [ "$KIND" != github ] || tail+="$(node "$CLI" closing-refs --feature-slug "$SLUG")"$'\n'
+  tail+="$(node "$CLI" closing-refs --feature-slug "$SLUG")"$'\n'
   tail+="<!-- solve-feature:slug $SLUG -->"$'\n'"$END"
-  inner="${PRD_TEXT:+$PRD_TEXT$'\n\n'}$sections"$'\n'
-  avail=$(( LIMIT - ${#head} - ${#tail} - ${#before} - ${#after} - 4 ))
-  if [ "${#inner}" -gt "$avail" ]; then
-    avail=$(( avail - ${#CUT_LINE} - 1 )); [ "$avail" -gt 0 ] || avail=0
-    inner="${inner:0:$avail}"$'\n'"$CUT_LINE"
-  fi
-  printf '%s' "${before:+$before$'\n'}$head$inner$tail${after:+$'\n'$after}"
+  printf '%s' "${before:+$before$'\n'}$head${PRD_TEXT:+$PRD_TEXT$'\n\n'}$sections"$'\n'"$tail${after:+$'\n'$after}"
 }
 pr_view() { # sets PR_N and URL (and VIEW) when the branch has an OPEN PR, else clears them
   VIEW=$(gh pr view "$BRANCH" --json number,state,url,isDraft,body 2>/dev/null) || VIEW=""

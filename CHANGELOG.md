@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature, tracker**: leaner loop. No up-front dependency install (solve-issue already installs on
+  demand), no PR-body truncation (an over-limit body now fails `gh` loudly), and no tracker-kind branch:
+  `closing-refs` is a core tracker CLI op that prints nothing on the local tracker.
 - **solve-feature**: the `Dockerfile` host recipe is gone (bring your own sandbox), and so is SKILL.md's "Where to run
   it" section; the pointer to `hosts/github-actions.yml` moved to the user guide's "solve-feature on GitHub Actions".
   SKILL.md keeps only what the agent acts on (launch, slug, where to run, how to relay a stop, flags); the loop's

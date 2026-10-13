@@ -439,6 +439,12 @@ test("closing-refs (github) prints closingRefs' Closes lines, one per line, and 
   }
 });
 
+test("closing-refs (local) prints nothing: a local merge closes no issue", async () => {
+  const r = await cli(root(), ["closing-refs", "--feature-slug", "feat"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "");
+});
+
 // --- next ------------------------------------------------------------------------------
 
 /** A `gh` argv that reads: `issue list`, `issue view`, or a `gh api` GET (no method or field flag). */

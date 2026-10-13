@@ -6,8 +6,8 @@
 #
 # A temp clone with a bare `origin`, and the skill installed user-level under a temp $HOME as
 # install.sh lays it out. `claude`, `copilot`, `pi`, `codex`, `gh`, `node` (only for the tracker CLI's
-# path; everything else reaches the real node), `timeout`, solve-issue's run-checks.sh, dep-install's
-# install scripts and review-pr.sh are stubs that log their argv: the coder stub commits a file and
+# path; everything else reaches the real node), `timeout`, solve-issue's run-checks.sh and review-pr.sh
+# are stubs that log their argv: the coder stub commits a file and
 # swaps the issue's ready-for-agent label for awaiting-merge, as solve-issue's mark-done does; the
 # node stub answers `next` from $STATE/issues.json by the tracker's dispatch rule.
 
@@ -90,7 +90,7 @@ case "\$2" in
     done; exit 3 ;;
   fetch) cat "\$STATE/\${3//\//_}.md" ;;
   prd) [ -f "\$STATE/prd.md" ] || exit 3; cat "\$STATE/prd.md" ;;
-  closing-refs) jq -r 'sort_by(.number) | .[] | select(.state == "OPEN" and any(.labels[]; .name == "awaiting-merge")) | "Closes #\(.number)"' "\$STATE/issues.json" ;;
+  closing-refs) [ "\${TRACKER_KIND:-github}" = local ] || jq -r 'sort_by(.number) | .[] | select(.state == "OPEN" and any(.labels[]; .name == "awaiting-merge")) | "Closes #\(.number)"' "\$STATE/issues.json" ;;
   *) exit 2 ;;
 esac
 EOF
@@ -193,20 +193,6 @@ echo "lint: NOT RUN: no command found"
 exit "${CHECKS_RC:-0}"
 EOF
 
-  cat > "$HOME/.coding-crew/dep-install/scripts/resolve-mode.sh" <<'EOF'
-#!/usr/bin/env bash
-printf 'resolve-mode.sh %s\n' "$*" >> "$STATE/prepare.log"
-echo "INSTALL_MODE=${STUB_INSTALL_MODE:-host}"; echo "DOCKER_SERVICE=${STUB_DOCKER_SERVICE:-}"; echo "ACTION=on-failure"
-EOF
-  local s
-  for s in host-install docker-install; do
-    cat > "$HOME/.coding-crew/dep-install/scripts/$s.sh" <<EOF
-#!/usr/bin/env bash
-printf '$s.sh %s\n' "\$*" >> "\$STATE/prepare.log"
-echo "install output"; exit "\${INSTALL_RC:-0}"
-EOF
-  done
-
   cat > "$HOME/.coding-crew/review-pr/scripts/review-pr.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$STATE/review.log"
@@ -279,7 +265,6 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
   [ "$(git branch --show-current)" = main ]
   local a; for a in claude copilot pi codex; do [ "$(agent_calls "$a")" -eq 0 ]; done
   [ ! -f "$STATE/gh.log" ]
-  [ ! -f "$STATE/prepare.log" ]
 }
 
 # --- branch ------------------------------------------------------------------------
@@ -463,7 +448,6 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
   [ -f "$WORK/.solve-feature/.scratch_feat_issues_open_01-a.md.checks.log" ]
   [ "$(cat "$STATE/pr-title")" = "Local A" ]
   ! grep -q '^Closes' "$STATE/pr-body"
-  ! grep -q 'closing-refs' "$STATE/node.log"
   grep -q '^### .scratch/feat/issues/open/02-b.md — Local B$' "$STATE/pr-body"
 }
 
@@ -479,31 +463,6 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
   [ "$status" -eq 1 ]
   [[ "$output" == *"ref"* ]]
   [ "$(agent_calls claude)" -eq 0 ]
-}
-
-# --- prepare -------------------------------------------------------------------------
-
-@test "before the first coder resolve-mode.sh runs, then host-install.sh or docker-install.sh --service; exit 3 warns and the coders still run, exit 2 says nothing" {
-  run bash "$SCRIPT" feat
-  [ "$status" -eq 0 ]
-  [ "$(sed -n 1p "$STATE/prepare.log")" = "resolve-mode.sh --project-root $WORK --main-root $WORK" ]
-  [ "$(sed -n 2p "$STATE/prepare.log")" = "host-install.sh --project-root $WORK --main-root $WORK" ]
-  [ "$(wc -l < "$STATE/prepare.log")" -eq 2 ]
-  [[ "$output" != *"warning"* ]]
-  grep -q 'install output' "$WORK/.solve-feature/prepare.log"
-
-  jq 'map(.labels = (if .root then [] else [{"name":"ready-for-agent"}] end))' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
-  rm -f "$STATE/prepare.log" "$STATE"/claude.*
-  STUB_INSTALL_MODE=docker STUB_DOCKER_SERVICE=web INSTALL_RC=3 run bash "$SCRIPT" feat
-  [ "$status" -eq 0 ]
-  [ "$(sed -n 2p "$STATE/prepare.log")" = "docker-install.sh --project-root $WORK --main-root $WORK --service web" ]
-  [[ "$output" == *"warning: prepare failed (exit 3)"*"prepare.log"* ]]
-  [ "$(coder_issues)" = "2 3" ]
-
-  jq 'map(.labels = (if .root then [] else [{"name":"ready-for-agent"}] end))' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
-  INSTALL_RC=2 run bash "$SCRIPT" feat
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"warning"* ]]
 }
 
 # --- stops ---------------------------------------------------------------------------
@@ -651,22 +610,6 @@ EOF
   [ "$(grep -c 'solve-feature:begin' <<<"$body")" -eq 1 ]
   [ "$(grep -c '^Closes #' <<<"$body")" -eq 2 ]
   [[ "${lines[${#lines[@]}-1]}" = "https://github.com/o/r/pull/9" ]]
-}
-
-@test "a spec over GitHub's body limit is cut inside <details> with a note, markers and Closes lines intact" {
-  { echo '<!-- PRD issue #1: PRD: Feat -->'; head -c 70000 /dev/zero | tr '\0' x; echo; } > "$STATE/prd.md"
-  run bash "$SCRIPT" feat
-  [ "$status" -eq 0 ]
-  [ -f "$STATE/pr-create.1" ]
-  local body; body=$(cat "$STATE/pr-body")
-  [ "${#body}" -le 65536 ]
-  [ "${#body}" -gt 65000 ]
-  [ "$(head -1 <<<"$body")" = '<!-- solve-feature:begin -->' ]
-  [ "$(tail -1 <<<"$body")" = '<!-- solve-feature:end -->' ]
-  grep -qx '<!-- solve-feature:slug feat -->' <<<"$body"
-  grep -qx 'Closes #2' <<<"$body"
-  grep -qx 'Closes #3' <<<"$body"
-  [ "$(grep -B1 -x '</details>' <<<"$body" | head -1)" = "(spec truncated at GitHub's 65,536-character body limit)" ]
 }
 
 # --- finish --------------------------------------------------------------------------
