@@ -58,22 +58,17 @@
       ]
     },
     "solve-feature": {
-      "version": "0.1.2",
+      "version": "0.3.0",
       "source-dir": "solve-feature",
-      "description": "Run one feature's ready-for-agent issues in order on one branch, each gated by the project's checks and a fresh read-only verifier.",
+      "description": "Run one feature's ready-for-agent issues in order on one branch, each gated by the project's checks, in a draft PR carrying the spec that review-pr reviews at the end.",
       "assets": {
         "source": "skills/solve-feature/scripts",
         "dest": ".coding-crew/solve-feature/scripts"
       },
-      "more-assets": [
-        {
-          "source": "orchestrator/roles",
-          "dest": ".coding-crew/solve-feature/roles"
-        }
-      ],
       "deps": [
         "solve-issue",
-        "dep-install"
+        "dep-install",
+        "review-pr"
       ]
     },
     "review-pr": {

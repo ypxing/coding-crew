@@ -1,13 +1,15 @@
 #!/usr/bin/env bats
 
-# solve-feature.sh — one feature's ready issues, in order, on one branch, each gated by checks and a
-# verifier the coder cannot influence.
+# solve-feature.sh — one feature's ready issues, in order, on one branch: per issue the coder, the
+# checks and the tracker's own close; a draft PR carrying the spec after the first landed issue;
+# review-pr on it at the end.
 #
 # A temp clone with a bare `origin`, and the skill installed user-level under a temp $HOME as
-# install.sh lays it out. `claude`, `gh`, `node` (only for the tracker CLI's path; everything else
-# reaches the real node), `timeout` and solve-issue's run-checks.sh are stubs that log their argv:
-# the coder stub commits a file and swaps the issue's ready-for-agent label for awaiting-merge,
-# as solve-issue's mark-done does; the verifier stub writes the report its prompt names.
+# install.sh lays it out. `claude`, `copilot`, `gh`, `node` (only for the tracker CLI's path;
+# everything else reaches the real node), `timeout`, solve-issue's run-checks.sh, dep-install's
+# install scripts and review-pr.sh are stubs that log their argv: the coder stub commits a file and
+# swaps the issue's ready-for-agent label for awaiting-merge, as solve-issue's mark-done does; the
+# node stub answers `next` from $STATE/issues.json by the tracker's dispatch rule.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 
@@ -17,14 +19,12 @@ setup() {
   TEMP_DIR=$(cd "$(mktemp -d)" && pwd -P)
   export STATE="$TEMP_DIR/state" HOME="$TEMP_DIR/home" SOLVE_FEATURE_HOST=test-host
   mkdir -p "$STATE" "$HOME"
-  unset CREW_ORCHESTRATED
+  unset CREW_ORCHESTRATED SOLVE_FEATURE_AGENT PR_EXISTS PR_DRAFT TRACKER_KIND
 
   INSTALL="$HOME/.coding-crew"
-  mkdir -p "$INSTALL/solve-feature" "$INSTALL/solve-issue/scripts" "$INSTALL/dep-install/scripts" "$INSTALL/tracker"
+  mkdir -p "$INSTALL/solve-feature" "$INSTALL/solve-issue/scripts" "$INSTALL/dep-install/scripts" "$INSTALL/review-pr" "$INSTALL/tracker"
   cp -R "$REPO_ROOT/skills/solve-feature/scripts" "$INSTALL/solve-feature/scripts"
-  mkdir -p "$INSTALL/solve-feature/roles"
-  cp "$REPO_ROOT/orchestrator/roles/reviewer.md" "$INSTALL/solve-feature/roles/reviewer.md"
-  cp -R "$REPO_ROOT/orchestrator/roles/reviewer" "$INSTALL/solve-feature/roles/reviewer"
+  cp -R "$REPO_ROOT/skills/review-pr/scripts" "$INSTALL/review-pr/scripts"
   : > "$INSTALL/tracker/cli.mjs"
   SCRIPT="$INSTALL/solve-feature/scripts/solve-feature.sh"
 
@@ -34,6 +34,7 @@ setup() {
   git -C "$WORK" config user.name test
   mkdir -p "$WORK/.coding-crew"
   echo '{"tracker":{"kind":"github"}}' > "$WORK/.coding-crew/config.json"
+  echo '{"test":"make test"}' > "$WORK/.coding-crew/dev-commands.json"
   git -C "$WORK" add -A && git -C "$WORK" commit -q -m init
   git clone -q --bare "$WORK" "$TEMP_DIR/origin.git"
   git -C "$WORK" remote add origin "$TEMP_DIR/origin.git"
@@ -51,9 +52,9 @@ setup() {
   issues '[{"number":1,"title":"PRD: Feat","state":"OPEN","labels":[],"root":true},
            {"number":3,"title":"Three","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
            {"number":2,"title":"Two","state":"OPEN","labels":[{"name":"ready-for-agent"}]}]'
-  issue_body 2 "None - can start immediately"
-  issue_body 3 "None - can start immediately"
-  echo "# PRD: Feat" > "$STATE/prd.md"
+  issue_body 2 Two "None - can start immediately"
+  issue_body 3 Three "None - can start immediately"
+  printf '<!-- PRD issue #1: PRD: Feat -->\n# PRD: Feat\n\nthe prd\n' > "$STATE/prd.md"
   echo '[]' > "$STATE/comments.json"
   cd "$WORK"
 }
@@ -65,20 +66,29 @@ teardown() {
 
 issues() { printf '%s\n' "$1" > "$STATE/issues.json"; }
 
-# issue_body <n> <Blocked by text>
+# issue_body <ref> <title> <Blocked by text> — what `fetch <ref>` prints, under the ref with / → _
 issue_body() {
-  printf '# Issue %s\n\n## What to build\n\nx\n\n## Acceptance criteria\n\n- [ ] works for `<before>` & co\n\n## Blocked by\n\n%s\n' "$1" "$2" > "$STATE/$1.md"
+  printf '# %s\n\n## What to build\n\nx\n\n## Acceptance criteria\n\n- [ ] works for `<before>` & co\n- [ ] %s done\n\n## Blocked by\n\n%s\n' "$2" "$2" "$3" > "$STATE/${1//\//_}.md"
 }
 
 write_stubs() {
+  # `next`: the lowest open ready-for-agent issue not labelled blocked whose every `## Blocked by`
+  # number is CLOSED or awaiting-merge (the tracker's `done`), the root included; exit 3 when none.
   cat > "$STUB/node" <<EOF
 #!/usr/bin/env bash
 case "\$1" in */.coding-crew/tracker/cli.mjs) ;; *) exec "$REAL_NODE" "\$@" ;; esac
 printf '%s\n' "\${*:2}" >> "\$STATE/node.log"
 case "\$2" in
   config) echo "tracker=\${TRACKER_KIND:-github}"; echo configured=yes ;;
-  feature-issues) [ "\$4" = feat ] && cat "\$STATE/issues.json" || echo '[]' ;;
-  fetch) cat "\$STATE/\$3.md" ;;
+  next) [ "\$4" = feat ] || exit 3
+    [ -z "\${NEXT_PRINTS:-}" ] || { echo "\$NEXT_PRINTS"; exit 0; }
+    done=" \$(jq -r '[.[] | select(.state == "CLOSED" or any(.labels[]; .name == "awaiting-merge")) | .number] | join(" ")' "\$STATE/issues.json") "
+    for c in \$(jq -r '[.[] | select(.state == "OPEN" and any(.labels[]; .name == "ready-for-agent") and (any(.labels[]; .name == "blocked") | not))] | sort_by(.number) | .[] | .ref // (.number | tostring)' "\$STATE/issues.json"); do
+      ok=1; for b in \$(awk '/^## Blocked by/{f=1;next} /^## /{f=0} f' "\$STATE/\${c//\//_}.md" | grep -oE '#[0-9]+' | tr -d '#'); do
+        [[ "\$done" == *" \$b "* ]] || ok=0; done
+      [ "\$ok" = 1 ] && { echo "\$c"; exit 0; }
+    done; exit 3 ;;
+  fetch) cat "\$STATE/\${3//\//_}.md" ;;
   prd) [ -f "\$STATE/prd.md" ] || exit 3; cat "\$STATE/prd.md" ;;
   closing-refs) jq -r 'sort_by(.number) | .[] | select(.state == "OPEN" and any(.labels[]; .name == "awaiting-merge")) | "Closes #\(.number)"' "\$STATE/issues.json" ;;
   *) exit 2 ;;
@@ -87,54 +97,65 @@ EOF
 
   cat > "$STUB/timeout" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "$1" >> "$STATE/timeout.log"
 shift
 exec "$@"
 EOF
 
-  # Each call's argv, one arg per line, in claude.<k>; the verifier is the call with a system prompt file.
+  # The coder, as claude or copilot: each call's argv, one arg per line, in <agent>.<k>.
   cat > "$STUB/claude" <<'EOF'
 #!/usr/bin/env bash
-k=$(( $(ls "$STATE" | grep -c '^claude\.[0-9]*$') + 1 ))
-printf '%s\n' "$@" > "$STATE/claude.$k"
-env | grep -c '^CREW_ORCHESTRATED=' > "$STATE/claude.$k.env" || true
-git branch --show-current > "$STATE/claude.$k.branch"
-git ls-remote --heads origin "$(git branch --show-current)" | grep -c . > "$STATE/claude.$k.pushed" || true
-git rev-parse --abbrev-ref '@{upstream}' > "$STATE/claude.$k.upstream" 2>/dev/null || true
-prompt="$2"
-if printf '%s\n' "$@" | grep -qx -- --append-system-prompt-file; then
-  report=$(printf '%s\n' "$prompt" | sed -n 's/^Write your structured verdict to \(.*\) as your last action\..*/\1/p')
-  [ -n "${VERIFIER_NO_REPORT:-}" ] || printf '{"verdict":"%s","detail":"criterion 1 unmet"}\n' "${VERDICT:-all-met}" > "$report"
-  [ -z "${VERIFIER_DIRTY:-}" ] || echo dirt > verifier-dirt.txt
-  [ -z "${VERIFIER_COMMIT:-}" ] || git commit -q --allow-empty -m "verifier wrote"
-  exit 0
-fi
-n="${prompt#/solve-issue }"
-echo "coder log for #$n"
+me=$(basename "$0")
+k=$(( $(ls "$STATE" | grep -c "^$me\.[0-9]*$") + 1 ))
+printf '%s\n' "$@" > "$STATE/$me.$k"
+env | grep -c '^CREW_ORCHESTRATED=' > "$STATE/$me.$k.env" || true
+git branch --show-current > "$STATE/$me.$k.branch"
+git ls-remote --heads origin "$(git branch --show-current)" | grep -c . > "$STATE/$me.$k.pushed" || true
+git rev-parse --abbrev-ref '@{upstream}' > "$STATE/$me.$k.upstream" 2>/dev/null || true
+[ ! -f "$STATE/pr-body" ] || cp "$STATE/pr-body" "$STATE/pr-body.before-$me.$k"
+ref=$(sed -e 's|^/solve-issue ||' -e 's|^Use the solve-issue skill on \(.*\)\.$|\1|' <<<"$2")
+echo "coder log for $ref"
 [ -z "${CODER_EXIT:-}" ] || { for i in $(seq 1 30); do echo "coder line $i"; done; exit "$CODER_EXIT"; }
 [ -z "${CODER_SWITCH:-}" ] || git checkout -q -b elsewhere
-echo "$n" > "work-$n.txt"
-[ -n "${CODER_DIRTY:-}" ] || { git add "work-$n.txt"; git commit -q -m "[$n] work"; }
-[ -n "${CODER_NO_CLOSE:-}" ] && { echo '{"type":"result","result":"BLOCKED: Bash denied\nnothing was started"}'; exit 0; }
-jq --argjson n "$n" 'map(if .number == $n then .labels = [{"name":"awaiting-merge"}] else . end)' "$STATE/issues.json" > "$STATE/i.tmp"
+echo "$ref" > "work-${ref//\//_}.txt"
+[ -n "${CODER_DIRTY:-}" ] || { git add "work-${ref//\//_}.txt"; git commit -q -m "[$ref] work"; }
+if [ -n "${CODER_NO_CLOSE:-}" ]; then
+  [ "$me" = copilot ] && echo '{"type":"assistant.message","data":{"content":"BLOCKED: Bash denied\nnothing was started"}}' \
+    || echo '{"type":"result","result":"BLOCKED: Bash denied\nnothing was started"}'
+  exit 0
+fi
+jq --arg r "$ref" 'map(if (.ref // (.number | tostring)) == $r then .labels = [{"name":"awaiting-merge"}] else . end)' "$STATE/issues.json" > "$STATE/i.tmp"
 mv "$STATE/i.tmp" "$STATE/issues.json"
 EOF
+  cp "$STUB/claude" "$STUB/copilot"
 
+  # `pr view` answers from the PR this run created ($STATE/pr-body) or PR_EXISTS (#9, body from
+  # $STATE/pr-body when present, else a hand-written one); `pr create`/`pr edit` keep the body there.
   cat > "$STUB/gh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$STATE/gh.log"
 [ -z "${GH_API_FAIL:-}" ] || [ "$1" != api ] || exit 1
-body=""; patch=""; path=""
+body=""; patch=""; path=""; file=""
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do
   case "${args[$i]}" in
     -f) body="${args[$((i + 1))]#body=}" ;;
     -X) patch="${args[$((i + 1))]}" ;;
+    --body-file) file="${args[$((i + 1))]}" ;;
+    --title) printf '%s' "${args[$((i + 1))]}" > "$STATE/pr-title" ;;
     repos/*) path="${args[$i]}" ;;
   esac
 done
 case "$1 $2" in
-  "pr view") [ -n "${PR_EXISTS:-}" ] || exit 1; [[ "$*" == *url* ]] && echo "https://github.com/o/r/pull/9" || echo '{"number":9}' ;;
-  "pr create") printf '%s' "${args[$((${#args[@]} - 1))]}" > "$STATE/pr-body"; printf '%s' "${args[$((${#args[@]} - 3))]}" > "$STATE/pr-title"; echo "https://github.com/o/r/pull/10" ;;
+  "pr view")
+    if [ -f "$STATE/pr-created" ]; then n=10; elif [ -n "${PR_EXISTS:-}" ]; then n=9; else exit 1; fi
+    [ -f "$STATE/pr-body" ] || printf 'hand intro\n' > "$STATE/pr-body"
+    jq -n --argjson n "$n" --argjson d "${PR_DRAFT:-true}" --rawfile b "$STATE/pr-body" \
+      '{number: $n, state: "OPEN", url: "https://github.com/o/r/pull/\($n)", isDraft: $d, body: $b}' ;;
+  "pr create") k=$(( $(ls "$STATE" | grep -c '^pr-create\.[0-9]*$') + 1 )); printf '%s\n' "$@" > "$STATE/pr-create.$k"
+    cp "$file" "$STATE/pr-body"; touch "$STATE/pr-created"; echo "https://github.com/o/r/pull/10" ;;
+  "pr edit") k=$(( $(ls "$STATE" | grep -c '^pr-edit\.[0-9]*$') + 1 )); printf '%s\n' "$@" > "$STATE/pr-edit.$k"; cp "$file" "$STATE/pr-body" ;;
+  "pr ready") ;;
   api*)
     if [ "$patch" = PATCH ]; then
       id="${path##*/}"
@@ -162,23 +183,56 @@ echo "lint: NOT RUN: no command found"
 [ "${CHECKS_RC:-0}" = 0 ] && echo "CHECKS: pass" || echo "CHECKS: fail"
 exit "${CHECKS_RC:-0}"
 EOF
-  chmod +x "$STUB"/* "$HOME/.coding-crew/solve-issue/scripts/run-checks.sh"
+
+  cat > "$HOME/.coding-crew/dep-install/scripts/resolve-mode.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'resolve-mode.sh %s\n' "$*" >> "$STATE/prepare.log"
+echo "INSTALL_MODE=${STUB_INSTALL_MODE:-host}"; echo "DOCKER_SERVICE=${STUB_DOCKER_SERVICE:-}"; echo "ACTION=on-failure"
+EOF
+  local s
+  for s in host-install docker-install; do
+    cat > "$HOME/.coding-crew/dep-install/scripts/$s.sh" <<EOF
+#!/usr/bin/env bash
+printf '$s.sh %s\n' "\$*" >> "\$STATE/prepare.log"
+echo "install output"; exit "\${INSTALL_RC:-0}"
+EOF
+  done
+
+  cat > "$HOME/.coding-crew/review-pr/scripts/review-pr.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$STATE/review.log"
+echo "REVIEW: ${REVIEW_LINE:-prd=met findings=0 (0 inline) ready=yes}"
+exit "${REVIEW_RC:-0}"
+EOF
+  chmod +x "$STUB"/* "$HOME"/.coding-crew/*/scripts/*.sh
 }
 
-# claude_call <k> — the k-th claude argv, one arg per line.
-claude_call() { cat "$STATE/claude.$1"; }
-claude_calls() { ls "$STATE" | grep -c '^claude\.[0-9]*$' || true; }
-# The value after flag $2 in claude call $1.
-claude_flag() { claude_call "$1" | grep -A1 -x -- "$2" | tail -1; }
+# agent_call <agent> <k> — the k-th argv of that agent, one arg per line.
+agent_call() { cat "$STATE/$1.$2"; }
+agent_calls() { ls "$STATE" | grep -c "^$1\.[0-9]*$" || true; }
+# The value after flag $3 in call $2 of agent $1.
+agent_flag() { agent_call "$1" "$2" | grep -A1 -x -- "$3" | tail -1; }
+# coder_issues [agent] — the refs the coder was run on, in order.
+coder_issues() {
+  local a="${1:-claude}" k
+  for k in $(seq 1 "$(agent_calls "$a")"); do agent_flag "$a" "$k" -p | sed -e 's|^/solve-issue ||' -e 's|^Use the solve-issue skill on \(.*\)\.$|\1|'; done | paste -sd' ' -
+}
+# progress_body — the one solve-feature-progress comment's body; fails unless exactly one exists.
+progress_body() {
+  [ "$(jq '[.[] | select(.body | contains("<!-- solve-feature-progress -->"))] | length' "$STATE/comments.json")" = 1 ] || return 1
+  jq -r '.[] | select(.body | contains("<!-- solve-feature-progress -->")) | .body' "$STATE/comments.json"
+}
+# body_of <pr-create.k|pr-edit.k> — the body file that call was given.
+body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
 
 # --- preconditions -------------------------------------------------------------------
 
-@test "a missing tool, a non-github tracker, an invalid or unknown slug or a dirty tree exits 1 before any checkout, claude or gh" {
+@test "a missing tool, an unknown agent, --open-pr, an invalid slug, a dirty tree or no dev-commands.json exits 1 before any checkout, agent, install or gh call" {
   local tool
   for tool in claude gh jq timeout; do
     local bin="$TEMP_DIR/bin-$tool"
     mkdir -p "$bin"
-    for t in bash env git node jq gh claude timeout dirname cat grep sed awk mkdir hostname date head tail tr printf rm; do
+    for t in bash env git node jq gh claude copilot timeout dirname cat grep sed awk mkdir hostname date head tail tr printf rm; do
       [ "$t" = "$tool" ] && continue
       p=$(PATH="$STUB:$PATH" command -v "$t") && ln -sf "$p" "$bin/$t"
     done
@@ -187,17 +241,22 @@ claude_flag() { claude_call "$1" | grep -A1 -x -- "$2" | tail -1; }
     [[ "$output" == *"$tool"* ]] || { echo "$tool: $output"; return 1; }
   done
 
-  TRACKER_KIND=local run bash "$SCRIPT" feat
+  run bash "$SCRIPT" feat --agent other
   [ "$status" -eq 1 ]
-  [[ "$output" == *"tracker=local"* ]]
+  [[ "$output" == *"other"* ]]
+  run bash "$SCRIPT" feat --open-pr
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"--open-pr"* ]]
 
   run bash "$SCRIPT" '../x'
   [ "$status" -eq 1 ]
   [[ "$output" == *"slug"* ]]
 
-  run bash "$SCRIPT" nosuch
+  git rm -q .coding-crew/dev-commands.json && git commit -q -m "no commands"
+  run bash "$SCRIPT" feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"nosuch"* ]]
+  [[ "$output" == *".coding-crew/dev-commands.json"* ]]
+  git revert -q --no-edit HEAD
 
   echo dirt > dirt.txt
   run bash "$SCRIPT" feat
@@ -205,13 +264,15 @@ claude_flag() { claude_call "$1" | grep -A1 -x -- "$2" | tail -1; }
   [[ "$output" == *"clean"* ]]
 
   [ "$(git branch --show-current)" = main ]
-  [ "$(claude_calls)" -eq 0 ]
+  [ "$(agent_calls claude)" -eq 0 ]
+  [ "$(agent_calls copilot)" -eq 0 ]
   [ ! -f "$STATE/gh.log" ]
+  [ ! -f "$STATE/prepare.log" ]
 }
 
 # --- branch ------------------------------------------------------------------------
 
-@test "on the default branch it creates feature/<slug> from origin/main and pushes it with upstream before the first claude call" {
+@test "on the default branch it creates feature/<slug> from origin/main and pushes it with upstream before the first coder" {
   git commit -q --allow-empty -m "local only, not on origin"
   run bash "$SCRIPT" feat
   [ "$(cat "$STATE/claude.1.branch")" = feature/feat ]
@@ -247,14 +308,56 @@ claude_flag() { claude_call "$1" | grep -A1 -x -- "$2" | tail -1; }
   ! git show-ref --verify -q refs/heads/feature/feat
 }
 
-# --- selection -----------------------------------------------------------------------
+# --- the loop ------------------------------------------------------------------------
 
-# coder_issues — the issue numbers the coder was run on, in order.
-coder_issues() {
-  local k
-  for k in $(seq 1 "$(claude_calls)"); do
-    claude_call "$k" | grep -qx -- --append-system-prompt-file || claude_flag "$k" -p | sed 's|^/solve-issue ||'
-  done | paste -sd' ' -
+@test "two ready issues: one claude coder call each under timeout 60m, run-checks.sh once each, no CREW_ORCHESTRATED" {
+  CREW_ORCHESTRATED=1 run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ "$(agent_calls claude)" -eq 2 ]
+  [ "$(coder_issues)" = "2 3" ]
+  [ "$(agent_call claude 1 | paste -sd' ' -)" = "-p /solve-issue 2 --output-format json --max-budget-usd 5 --model sonnet --permission-mode bypassPermissions" ]
+  [ "$(agent_call claude 2 | paste -sd' ' -)" = "-p /solve-issue 3 --output-format json --max-budget-usd 5 --model sonnet --permission-mode bypassPermissions" ]
+  [ "$(sort -u "$STATE/timeout.log")" = 60m ]
+  [ "$(cat "$STATE/claude.1.env")" = 0 ]
+  [ "$(head -1 "$STATE/checks.log")" = "--project-root $WORK --main-root $WORK --dep-scripts $HOME/.coding-crew/dep-install/scripts" ]
+  [ "$(wc -l < "$STATE/checks.log")" -eq 2 ]
+  [ -z "$(git status --porcelain)" ]
+}
+
+@test "--budget and afk.models.claude.coder reach the coder" {
+  git checkout -q -b topic
+  echo '{"tracker":{"kind":"github"},"afk":{"models":{"claude":{"coder":"haiku"}}}}' > .coding-crew/config.json
+  git commit -q -am "models"
+  run bash "$SCRIPT" feat --budget 7
+  [ "$status" -eq 0 ]
+  [ "$(agent_flag claude 1 --model)" = haiku ]
+  [ "$(agent_flag claude 1 --max-budget-usd)" = 7 ]
+}
+
+@test "--agent copilot, or SOLVE_FEATURE_AGENT=copilot with the flag winning, makes the coder copilot and requires copilot on PATH" {
+  run bash "$SCRIPT" feat --agent copilot
+  [ "$status" -eq 0 ]
+  [ "$(agent_calls claude)" -eq 0 ]
+  [ "$(coder_issues copilot)" = "2 3" ]
+  [ "$(agent_call copilot 1 | paste -sd' ' -)" = "-p Use the solve-issue skill on 2. --allow-all-tools --no-color --output-format json" ]
+  grep -qx -- '9 --agent copilot' "$STATE/review.log" || grep -qx -- '10 --agent copilot' "$STATE/review.log"
+
+  jq 'map(.labels = (if .root then [] else [{"name":"ready-for-agent"}] end))' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  echo '{"tracker":{"kind":"github"},"afk":{"models":{"copilot":{"coder":"gpt-5"}}}}' > .coding-crew/config.json
+  git commit -q -am "models"
+  SOLVE_FEATURE_AGENT=copilot run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ "$(agent_calls copilot)" -eq 4 ]
+  [ "$(agent_flag copilot 3 --model)" = gpt-5 ]
+
+  SOLVE_FEATURE_AGENT=copilot run bash "$SCRIPT" feat --agent claude
+  [ "$status" -eq 0 ]
+  [ "$(agent_calls copilot)" -eq 4 ]
+
+  rm "$STUB/copilot"
+  run bash "$SCRIPT" feat --agent copilot
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"copilot not found"* ]]
 }
 
 @test "issues run lowest number first, skipping closed and blocked-labelled issues and any whose blocker is neither CLOSED nor awaiting-merge" {
@@ -266,77 +369,80 @@ coder_issues() {
            {"number":5,"title":"Five","state":"OPEN","labels":[{"name":"ready-for-human"}]},
            {"number":6,"title":"Six","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
            {"number":8,"title":"Eight","state":"OPEN","labels":[{"name":"ready-for-agent"},{"name":"blocked"}]}]'
-  issue_body 3 "- Issue #2"
-  issue_body 4 "- Issue #5"
-  issue_body 6 "- Issue #99"
-  issue_body 7 "- Issue #3"
+  issue_body 3 Three "- Issue #2"
+  issue_body 4 Four "- Issue #5"
+  issue_body 6 Six "- Issue #99"
+  issue_body 7 Seven "- Issue #3"
   run bash "$SCRIPT" feat
   [ "$status" -eq 0 ]
   [ "$(coder_issues)" = "3 7" ]
 }
 
-@test "a one-slice feature's root is its work issue: it runs, and the PR is titled after it" {
+@test "a one-slice feature's root is its work issue: it runs, and the PR is titled after the PRD" {
   issues '[{"number":1,"title":"Feat alone","state":"OPEN","labels":[{"name":"ready-for-agent"}],"root":true}]'
-  issue_body 1 "None"
+  issue_body 1 "Feat alone" "None"
   run bash "$SCRIPT" feat
   [ "$status" -eq 0 ]
   [ "$(coder_issues)" = "1" ]
-  [[ "${lines[${#lines[@]}-1]}" == "gh pr create --title Feat\\ alone --body "* ]]
-  grep -q '^#1  solve ✓  checks ✓  verify ✓' <<<"$(progress_body)"
+  [ "$(cat "$STATE/pr-title")" = Feat ]
+  grep -qx '#1  solve ✓  checks ✓' <<<"$(progress_body)"
 }
 
-@test "a coder that exits 0 but leaves its issue ready stops at solve, before the checks and the verifier" {
-  CODER_NO_CLOSE=1 run bash "$SCRIPT" feat
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"#2 solve failed: coder ran but did not close #2"*"$WORK/.solve-feature/2.log"* ]]
-  [ "$(claude_calls)" -eq 1 ]
-  [ ! -f "$STATE/checks.log" ]
-}
-
-# --- the gate ------------------------------------------------------------------------
-
-@test "after the coder the script runs run-checks.sh, then a read-only verifier whose prompt names the issue file, the diff and the report" {
-  local base; base=$(git rev-parse origin/main)
+@test "a local tracker: path refs reach the coder and the logs, no Closes line, the title is the first landed issue's" {
+  export TRACKER_KIND=local
+  issues '[{"number":1,"ref":".scratch/feat/issues/open/01-a.md","title":"A","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
+           {"number":2,"ref":".scratch/feat/issues/open/02-b.md","title":"B","state":"OPEN","labels":[{"name":"ready-for-agent"}]}]'
+  issue_body .scratch/feat/issues/open/01-a.md "Local A" None
+  issue_body .scratch/feat/issues/open/02-b.md "Local B" None
+  printf '# PRD\n\nlocal prd without a title note\n' > "$STATE/prd.md"
   run bash "$SCRIPT" feat
   [ "$status" -eq 0 ]
-  [ "$(claude_calls)" -eq 4 ]
-  [ "$(head -1 "$STATE/checks.log")" = "--project-root $WORK --main-root $WORK --dep-scripts $HOME/.coding-crew/dep-install/scripts" ]
-  [ "$(wc -l < "$STATE/checks.log")" -eq 2 ]
-
-  claude_call 2 | grep -qx -- --append-system-prompt-file
-  [[ "$(claude_flag 2 --append-system-prompt-file)" == */roles/reviewer.md ]]
-  [ -f "$(claude_flag 2 --append-system-prompt-file)" ]
-  [ "$(claude_call 2 | grep -A3 -x -- --tools | tail -3 | paste -sd' ' -)" = "Bash Read ToolSearch" ]
-  [ "$(claude_flag 2 --max-budget-usd)" = 2 ]
-  [ "$(claude_flag 2 --settings)" = '{"disableClaudeAiConnectors":true,"disableBundledSkills":true}' ]
-  local prompt; prompt=$(sed -n '/^-p$/,/^--append-system-prompt-file$/p' "$STATE/claude.2")
-  [[ "$prompt" == *"Issue file: $WORK/.solve-feature/2.issue.md"* ]]
-  [[ "$prompt" == *"Gather the diff: git diff $base..HEAD"* ]]
-  [[ "$prompt" == *"Write your structured verdict to $WORK/.solve-feature/2.verify.json as your last action."* ]]
-  [[ "$prompt" == *"Branch: feature/feat"* ]]
-  [[ "$prompt" == *"Slug: feat"* ]]
-  [[ "$prompt" == *'- [ ] works for `<before>` & co'* ]]
-  [[ "$prompt" == *"Review assets: $HOME/.coding-crew/solve-feature/roles/reviewer"* ]]
-  [[ "$prompt" == *"Checks already run by the pipeline in this branch's worktree: test=pass, lint=not_run."* ]]
-  [[ "$prompt" == *"PRD: $WORK/.solve-feature/prd.md"* ]]
-  [ "$(cat "$WORK/.solve-feature/prd.md")" = "# PRD: Feat" ]
-  [ -z "$(git status --porcelain)" ]
+  [ "$(coder_issues)" = ".scratch/feat/issues/open/01-a.md .scratch/feat/issues/open/02-b.md" ]
+  [ -f "$WORK/.solve-feature/.scratch_feat_issues_open_01-a.md.log" ]
+  [ -f "$WORK/.solve-feature/.scratch_feat_issues_open_01-a.md.checks.log" ]
+  [ "$(cat "$STATE/pr-title")" = "Local A" ]
+  ! grep -q '^Closes' "$STATE/pr-body"
+  ! grep -q 'closing-refs' "$STATE/node.log"
+  grep -q '^### .scratch/feat/issues/open/02-b.md — Local B$' "$STATE/pr-body"
 }
 
-@test "the verifier prompt omits PRD: when the tracker has no PRD (exit 3)" {
+@test "a github feature whose prd exits 3 titles the PR after the first landed issue; an unusable ref stops before the coder" {
   rm "$STATE/prd.md"
   run bash "$SCRIPT" feat
   [ "$status" -eq 0 ]
-  grep -q '^Issue file: ' "$STATE/claude.2"
-  ! grep -q '^PRD:' "$STATE/claude.2"
+  [ "$(cat "$STATE/pr-title")" = Two ]
+  ! grep -q 'PRD' "$STATE/pr-body"
+
+  rm -f "$STATE"/claude.*
+  NEXT_PRINTS='2; rm -rf /' run bash "$SCRIPT" feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"ref"* ]]
+  [ "$(agent_calls claude)" -eq 0 ]
 }
 
-@test "the loop continues only on an all-met verdict" {
-  VERDICT=unmet run bash "$SCRIPT" feat
-  [ "$status" -ne 0 ]
-  [ "$(claude_calls)" -eq 2 ]
-  [[ "$output" == *"criterion 1 unmet"* ]]
-  [[ "$output" == *"$WORK/.solve-feature/2.verify.log"* ]]
+# --- prepare -------------------------------------------------------------------------
+
+@test "before the first coder resolve-mode.sh runs, then host-install.sh or docker-install.sh --service; exit 3 warns and the coders still run, exit 2 says nothing" {
+  run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p "$STATE/prepare.log")" = "resolve-mode.sh --project-root $WORK --main-root $WORK" ]
+  [ "$(sed -n 2p "$STATE/prepare.log")" = "host-install.sh --project-root $WORK --main-root $WORK" ]
+  [ "$(wc -l < "$STATE/prepare.log")" -eq 2 ]
+  [[ "$output" != *"warning"* ]]
+  grep -q 'install output' "$WORK/.solve-feature/prepare.log"
+
+  jq 'map(.labels = (if .root then [] else [{"name":"ready-for-agent"}] end))' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  rm -f "$STATE/prepare.log" "$STATE"/claude.*
+  STUB_INSTALL_MODE=docker STUB_DOCKER_SERVICE=web INSTALL_RC=3 run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 2p "$STATE/prepare.log")" = "docker-install.sh --project-root $WORK --main-root $WORK --service web" ]
+  [[ "$output" == *"warning: prepare failed (exit 3)"*"prepare.log"* ]]
+  [ "$(coder_issues)" = "2 3" ]
+
+  jq 'map(.labels = (if .root then [] else [{"name":"ready-for-agent"}] end))' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  INSTALL_RC=2 run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"warning"* ]]
 }
 
 # --- stops ---------------------------------------------------------------------------
@@ -344,17 +450,18 @@ coder_issues() {
 # fails_with <log> <env…> — the run stops non-zero after issue #2's coder, naming <log> on stdout.
 fails_with() {
   local log="$1"; shift
-  # Each scenario starts as setup left it: #2 ready, no claude calls, a clean tree.
+  # Each scenario starts as setup left it: #2 ready, no coder calls, a clean tree.
   [ -f "$STATE/issues.orig" ] || cp "$STATE/issues.json" "$STATE/issues.orig"
   cp "$STATE/issues.orig" "$STATE/issues.json"
-  rm -f "$STATE"/claude.*
+  rm -f "$STATE"/claude.* "$STATE"/review.log
   git checkout -q -f "$(git show-ref --verify -q refs/heads/feature/feat && echo feature/feat || echo main)"
   git clean -qfd
   run env "$@" bash "$SCRIPT" feat
-  [ "$status" -ne 0 ] || { echo "$*: exit 0"; return 1; }
+  [ "$status" -eq 1 ] || { echo "$*: exit $status"; return 1; }
   [[ "$output" == *"$WORK/.solve-feature/$log"* ]] || { echo "$*: $output"; return 1; }
   [ "$(coder_issues)" = 2 ] || { echo "$*: coder ran on $(coder_issues)"; return 1; }
   [ -f "$WORK/.solve-feature/$log" ] || { echo "$*: no $log"; return 1; }
+  [ ! -f "$STATE/review.log" ] || { echo "$*: review-pr ran"; return 1; }
 }
 
 @test "a coder non-zero exit, a branch change or a dirty tree after the coder stops with the coder log's path" {
@@ -363,24 +470,24 @@ fails_with() {
   fails_with 2.log CODER_DIRTY=1
 }
 
-@test "run-checks.sh exit 1 or 3 stops with the checks log's path; 3 says to discover the checks by hand" {
-  fails_with 2.checks.log CHECKS_RC=1
-  [ "$(claude_calls)" -eq 1 ]
-  fails_with 2.checks.log CHECKS_RC=3
-  [[ "$output" == *"run /solve-issue or dep-install once by hand first"* ]]
+@test "a coder that exits 0 but leaves its issue first in next stops at solve, before the checks" {
+  fails_with 2.log CODER_NO_CLOSE=1
+  [[ "$output" == *"#2 solve failed: coder ran but did not close #2"* ]]
+  [ ! -f "$STATE/checks.log" ]
+  [ ! -f "$STATE/pr-created" ]
 }
 
-@test "a missing report, a dirty tree or a moved HEAD after the verifier, or a verdict other than all-met stops with the verifier log's path" {
-  fails_with 2.verify.log VERIFIER_NO_REPORT=1
-  fails_with 2.verify.log VERIFIER_DIRTY=1
-  fails_with 2.verify.log VERIFIER_COMMIT=1
-  [[ "$output" == *"HEAD moved"* ]]
-  fails_with 2.verify.log VERDICT=unmet
+@test "run-checks.sh exit 1 or 3 stops with the checks log's path; 3 says to discover the checks by hand" {
+  fails_with 2.checks.log CHECKS_RC=1
+  [ "$(agent_calls claude)" -eq 1 ]
+  [ ! -f "$STATE/pr-created" ]
+  fails_with 2.checks.log CHECKS_RC=3
+  [[ "$output" == *"DISCOVER"*"run /solve-issue or dep-install once by hand"* ]]
 }
 
 @test "a re-run with the failed issue closed proceeds to the next issue on the same branch" {
-  VERDICT=unmet run bash "$SCRIPT" feat
-  [ "$status" -ne 0 ]
+  CHECKS_RC=1 run bash "$SCRIPT" feat
+  [ "$status" -eq 1 ]
   local tip; tip=$(git rev-parse HEAD)
   jq 'map(if .number == 2 then .state = "CLOSED" else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
   rm -f "$STATE"/claude.*
@@ -391,67 +498,176 @@ fails_with() {
   [ "$(git branch --show-current)" = feature/feat ]
 }
 
-# --- permissions and models ----------------------------------------------------------
+# --- push and PR ---------------------------------------------------------------------
 
-@test "every claude call runs with bypassPermissions and no allow-list or prompt flags" {
+@test "after #2 lands the branch is pushed and a draft PR is created with the spec block; #3 appends to it by pr edit" {
   run bash "$SCRIPT" feat
   [ "$status" -eq 0 ]
-  local k
-  [ "$(claude_calls)" -eq 4 ]
-  for k in 1 2 3 4; do
-    [ "$(claude_flag "$k" --permission-mode)" = bypassPermissions ] || { echo "call $k"; return 1; }
-    ! grep -qE '^--allowedTools$|^--permission-prompts$|--dangerously-skip-permissions' "$STATE/claude.$k"
-  done
+  [ "$(git rev-parse origin/feature/feat)" = "$(git rev-parse feature/feat)" ]
+  [ -f "$STATE/pr-create.1" ] && [ ! -f "$STATE/pr-create.2" ]
+  grep -qx -- --draft "$STATE/pr-create.1"
+  [ "$(cat "$STATE/pr-title")" = Feat ]
+  # Created before #3's coder ran: the body #3's coder saw holds #2 only.
+  [ -f "$STATE/pr-body.before-claude.2" ]
+  grep -q '^### 2 — Two$' "$STATE/pr-body.before-claude.2"
+  ! grep -q '^### 3' "$STATE/pr-body.before-claude.2"
+  [ "$(body_of pr-create.1)" = "$(cat <<'EOF'
+<!-- solve-feature:begin -->
+Implemented by solve-feature (`feat`).
+
+<details><summary>Spec</summary>
+
+<!-- PRD issue #1: PRD: Feat -->
+# PRD: Feat
+
+the prd
+
+### 2 — Two
+## Acceptance criteria
+
+- [ ] works for `<before>` & co
+- [ ] Two done
+
+</details>
+
+Closes #2
+<!-- solve-feature:slug feat -->
+<!-- solve-feature:end -->
+EOF
+)" ]
+  [ -f "$STATE/pr-edit.1" ] && [ ! -f "$STATE/pr-edit.2" ]
+  [ "$(sed -n 3p "$STATE/pr-edit.1")" = 10 ]
+  [ "$(body_of pr-edit.1)" = "$(cat <<'EOF'
+<!-- solve-feature:begin -->
+Implemented by solve-feature (`feat`).
+
+<details><summary>Spec</summary>
+
+<!-- PRD issue #1: PRD: Feat -->
+# PRD: Feat
+
+the prd
+
+### 2 — Two
+## Acceptance criteria
+
+- [ ] works for `<before>` & co
+- [ ] Two done
+
+### 3 — Three
+## Acceptance criteria
+
+- [ ] works for `<before>` & co
+- [ ] Three done
+
+</details>
+
+Closes #2
+Closes #3
+<!-- solve-feature:slug feat -->
+<!-- solve-feature:end -->
+EOF
+)" ]
+  ! grep -q '^pr ready' "$STATE/gh.log"
 }
 
-@test "models default to sonnet and opus, and the coder never sees CREW_ORCHESTRATED" {
-  CREW_ORCHESTRATED=1 run bash "$SCRIPT" feat
-  [ "$status" -eq 0 ]
-  [ "$(claude_flag 1 --model)" = sonnet ]
-  [ "$(claude_flag 2 --model)" = opus ]
-  [ "$(cat "$STATE/claude.1.env")" = 0 ]
-}
-
-@test "models come from afk.models.claude.coder and .reviewer" {
-  git checkout -q -b topic
-  echo '{"tracker":{"kind":"github"},"afk":{"models":{"claude":{"coder":"haiku","reviewer":"sonnet"}}}}' > .coding-crew/config.json
-  git commit -q -am "models"
+@test "an existing open PR is reused: its block replaced, text outside kept, a present issue not duplicated, draft state untouched" {
+  export PR_EXISTS=1 PR_DRAFT=false
+  printf 'hand intro\n<!-- solve-feature:begin -->\nold\n<details><summary>Spec</summary>\n\n### 2 — Two\nold criteria\n</details>\n<!-- solve-feature:end -->\nhand outro\n' > "$STATE/pr-body"
   run bash "$SCRIPT" feat
   [ "$status" -eq 0 ]
-  [ "$(claude_flag 1 --model)" = haiku ]
-  [ "$(claude_flag 2 --model)" = sonnet ]
+  [ ! -f "$STATE/pr-created" ]
+  ! grep -q '^pr create' "$STATE/gh.log"
+  ! grep -q '^pr ready' "$STATE/gh.log"
+  [ -f "$STATE/pr-edit.2" ]
+  local body; body=$(cat "$STATE/pr-body")
+  [ "$(head -1 <<<"$body")" = "hand intro" ]
+  [ "$(tail -1 <<<"$body")" = "hand outro" ]
+  [ "$(grep -c '^### 2 — Two$' <<<"$body")" -eq 1 ]
+  [ "$(grep -c '^### 3 — Three$' <<<"$body")" -eq 1 ]
+  grep -q '^old criteria$' <<<"$body"
+  ! grep -qx old <<<"$body"
+  [ "$(grep -c 'solve-feature:begin' <<<"$body")" -eq 1 ]
+  [ "$(grep -c '^Closes #' <<<"$body")" -eq 2 ]
+  [[ "${lines[${#lines[@]}-1]}" = "https://github.com/o/r/pull/9" ]]
+}
+
+@test "a spec over GitHub's body limit is cut inside <details> with a note, markers and Closes lines intact" {
+  { echo '<!-- PRD issue #1: PRD: Feat -->'; head -c 70000 /dev/zero | tr '\0' x; echo; } > "$STATE/prd.md"
+  run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ -f "$STATE/pr-create.1" ]
+  local body; body=$(cat "$STATE/pr-body")
+  [ "${#body}" -le 65536 ]
+  [ "${#body}" -gt 65000 ]
+  [ "$(head -1 <<<"$body")" = '<!-- solve-feature:begin -->' ]
+  [ "$(tail -1 <<<"$body")" = '<!-- solve-feature:end -->' ]
+  grep -qx '<!-- solve-feature:slug feat -->' <<<"$body"
+  grep -qx 'Closes #2' <<<"$body"
+  grep -qx 'Closes #3' <<<"$body"
+  [ "$(grep -B1 -x '</details>' <<<"$body" | head -1)" = "(spec truncated at GitHub's 65,536-character body limit)" ]
+}
+
+# --- finish --------------------------------------------------------------------------
+
+@test "with no ready issue left review-pr.sh runs once on the PR with --agent, its REVIEW line is echoed, the URL is last and its exit code is the run's" {
+  REVIEW_LINE='prd=unmet findings=2 (1 inline) ready=no' REVIEW_RC=4 run bash "$SCRIPT" feat
+  [ "$status" -eq 4 ]
+  [ "$(cat "$STATE/review.log")" = "10 --agent claude" ]
+  [[ "$output" == *"REVIEW: prd=unmet findings=2 (1 inline) ready=no"* ]]
+  [ "${lines[${#lines[@]}-1]}" = "https://github.com/o/r/pull/10" ]
+  local body; body=$(progress_body)
+  grep -q 'REVIEW: prd=unmet' <<<"$body"
+  grep -q 'pull/10' <<<"$body"
+}
+
+@test "a re-run with nothing to land reviews the branch's open PR it did not create; with no open PR it exits 0 without a review or URL" {
+  jq 'map(.state = "CLOSED")' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  PR_EXISTS=1 run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ "$(agent_calls claude)" -eq 0 ]
+  [ "$(cat "$STATE/review.log")" = "9 --agent claude" ]
+  [ "${lines[${#lines[@]}-1]}" = "https://github.com/o/r/pull/9" ]
+
+  rm -f "$STATE/review.log"
+  run bash "$SCRIPT" feat
+  [ "$status" -eq 0 ]
+  [ ! -f "$STATE/review.log" ]
+  [[ "${lines[${#lines[@]}-1]}" != *"pull/"* ]]
+  [[ "$output" == *"no open PR"* ]]
 }
 
 # --- progress comment ----------------------------------------------------------------
 
-# progress_body — the one solve-feature-progress comment's body; fails unless exactly one exists.
-progress_body() {
-  [ "$(jq '[.[] | select(.body | contains("<!-- solve-feature-progress -->"))] | length' "$STATE/comments.json")" = 1 ] || return 1
-  jq -r '.[] | select(.body | contains("<!-- solve-feature-progress -->")) | .body' "$STATE/comments.json"
-}
-
-@test "one progress comment on the root issue, created once then edited in place, with a line per issue and the PR command" {
+@test "one progress comment on the PR, created once then edited in place, rows on stdout before it exists" {
   run bash "$SCRIPT" feat
   [ "$status" -eq 0 ]
   local body; body=$(progress_body)
   grep -qE '^solve-feature — feat — host test-host — [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$' <<<"$body"
-  grep -qx '#2  solve ✓  checks ✓  verify ✓' <<<"$body"
-  grep -qx '#3  solve ✓  checks ✓  verify ✓' <<<"$body"
-  grep -q 'gh pr create' <<<"$body"
-  [ "$(grep -c '^api repos/{owner}/{repo}/issues/1/comments -f body=' "$STATE/gh.log")" -eq 1 ]
-  [ "$(grep -c '^api -X PATCH repos/{owner}/{repo}/issues/comments/100 -f body=' "$STATE/gh.log")" -ge 8 ]
+  grep -qx '#2  solve ✓  checks ✓' <<<"$body"
+  grep -qx '#3  solve ✓  checks ✓' <<<"$body"
+  ! grep -q verify <<<"$body"
+  [ "$(grep -c '^api repos/{owner}/{repo}/issues/10/comments -f body=' "$STATE/gh.log")" -eq 1 ]
+  [ "$(grep -c '^api -X PATCH repos/{owner}/{repo}/issues/comments/100 -f body=' "$STATE/gh.log")" -ge 3 ]
+  ! grep -q 'issues/1/comments' "$STATE/gh.log"
+  # Before the PR existed, #2's rows went to stdout and no comment call was made before `pr create`.
+  grep -qx '#2  solve · checks ·' <<<"$output" || grep -qx '#2  solve ·  checks ·' <<<"$output"
+  [ "$(grep -n -m1 'comments' "$STATE/gh.log" | cut -d: -f1)" -gt "$(grep -n -m1 '^pr create' "$STATE/gh.log" | cut -d: -f1)" ]
 
   # A re-run finds the comment by its marker and edits it: still one, never a second create.
+  jq 'map(.labels = (if .root then [] else [{"name":"ready-for-agent"}] end))' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
   run bash "$SCRIPT" feat
   progress_body >/dev/null
-  [ "$(grep -c '^api repos/{owner}/{repo}/issues/1/comments -f body=' "$STATE/gh.log")" -eq 1 ]
+  [ "$(grep -c '^api repos/{owner}/{repo}/issues/10/comments -f body=' "$STATE/gh.log")" -eq 1 ]
 }
 
 @test "a stop puts the failing step and the last 20 lines of its log in the comment" {
+  export PR_EXISTS=1
   CODER_EXIT=1 run bash "$SCRIPT" feat
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
+  [ ! -f "$STATE/review.log" ]
   local body; body=$(progress_body)
-  grep -qx '#2  solve ✗  checks ·  verify ·' <<<"$body"
+  grep -qx '#2  solve ✗  checks ·' <<<"$body"
   grep -q 'solve' <<<"$(grep -i 'stopped' <<<"$body")"
   grep -qx 'coder line 30' <<<"$body"
   grep -qx 'coder line 11' <<<"$body"
@@ -459,14 +675,22 @@ progress_body() {
   grep -qx '```' <<<"$body"
 }
 
-@test "a stop on a claude JSON log puts its result text, not the raw JSON, in the comment" {
+@test "a stop on a claude or copilot JSON log puts its result text, not the raw JSON, in the comment" {
+  export PR_EXISTS=1
   CODER_NO_CLOSE=1 run bash "$SCRIPT" feat
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
   local body; body=$(progress_body)
-  grep -qx '#2  solve ✗  checks ·  verify ·' <<<"$body"
+  grep -qx '#2  solve ✗  checks ·' <<<"$body"
   grep -qx 'BLOCKED: Bash denied' <<<"$body"
   grep -qx 'nothing was started' <<<"$body"
   ! grep -q '"type":"result"' <<<"$body"
+
+  echo '[]' > "$STATE/comments.json"
+  CODER_NO_CLOSE=1 run bash "$SCRIPT" feat --agent copilot
+  [ "$status" -eq 1 ]
+  body=$(progress_body)
+  grep -qx 'BLOCKED: Bash denied' <<<"$body"
+  ! grep -q 'assistant.message' <<<"$body"
 }
 
 @test "a failing gh api call on the comment warns and leaves the exit code alone" {
@@ -476,61 +700,29 @@ progress_body() {
   [ "$(coder_issues)" = "2 3" ]
   jq 'map(.labels = (if .root then [] else [{"name":"ready-for-agent"}] end))' "$STATE/issues.json" > "$STATE/i.tmp"
   mv "$STATE/i.tmp" "$STATE/issues.json"
-  GH_API_FAIL=1 VERDICT=unmet run bash "$SCRIPT" feat
+  GH_API_FAIL=1 CHECKS_RC=1 run bash "$SCRIPT" feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"#2 verify failed"* ]]
+  [[ "$output" == *"#2 checks failed"* ]]
 }
 
-# --- finish --------------------------------------------------------------------------
-
-@test "with no ready issue left it pushes the branch and prints a gh pr create command whose body is the closing-refs output" {
-  run bash "$SCRIPT" feat
-  [ "$status" -eq 0 ]
-  [ "$(git rev-parse origin/feature/feat)" = "$(git rev-parse feature/feat)" ]
-  [ "$(git ls-remote origin refs/heads/feature/feat | cut -f1)" = "$(git rev-parse feature/feat)" ]
-  local last="${lines[${#lines[@]}-1]}"
-  [[ "$last" == "gh pr create --title Feat --body "* ]]
-  ! grep -q '^pr create' "$STATE/gh.log"
-  eval "$last"
-  [ "$(cat "$STATE/pr-title")" = "Feat" ]
-  [ "$(cat "$STATE/pr-body")" = "$(printf 'Closes #2\nCloses #3')" ]
-  [ "$(cat "$STATE/pr-body")" = "$(node "$HOME/.coding-crew/tracker/cli.mjs" closing-refs --feature-slug feat)" ]
-}
-
-@test "--open-pr creates the PR only when gh pr view finds none, and prints its URL" {
-  run bash "$SCRIPT" feat --open-pr
-  [ "$status" -eq 0 ]
-  [ "${lines[${#lines[@]}-1]}" = "https://github.com/o/r/pull/10" ]
-  [ "$(cat "$STATE/pr-title")" = "Feat" ]
-  [ "$(cat "$STATE/pr-body")" = "$(printf 'Closes #2\nCloses #3')" ]
-  grep -q 'pull/10' <<<"$(progress_body)"
-
-  rm -f "$STATE/pr-body"
-  PR_EXISTS=1 run bash "$SCRIPT" feat --open-pr
-  [ "$status" -eq 0 ]
-  [ "${lines[${#lines[@]}-1]}" = "https://github.com/o/r/pull/9" ]
-  [ ! -f "$STATE/pr-body" ]
-}
-
-@test "solve-feature.sh stays under 150 lines and .solve-feature/ is gitignored here" {
-  [ "$(wc -l < "$REPO_ROOT/skills/solve-feature/scripts/solve-feature.sh")" -lt 150 ]
+@test ".solve-feature/ is gitignored here" {
   git -C "$REPO_ROOT" check-ignore -q .solve-feature/x.log
 }
 
 # --- packaging -----------------------------------------------------------------------
 
-@test "install.sh claude --skill solve-feature ships the script, the prompt template and the reviewer role with its scripts and references" {
+@test "install.sh claude --skill solve-feature ships the script and review-pr's scripts, no verify prompt and no roles tree" {
   local target="$TEMP_DIR/target"
   mkdir -p "$target" && git -C "$target" init -q -b main
   TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" claude --skill solve-feature
   [ "$status" -eq 0 ]
   [ -x "$target/.coding-crew/solve-feature/scripts/solve-feature.sh" ]
-  [ -f "$target/.coding-crew/solve-feature/scripts/verify-prompt.md" ]
-  [ -f "$target/.coding-crew/solve-feature/roles/reviewer.md" ]
-  [ -n "$(ls "$target/.coding-crew/solve-feature/roles/reviewer/scripts")" ]
-  [ -n "$(ls "$target/.coding-crew/solve-feature/roles/reviewer/references")" ]
+  [ -x "$target/.coding-crew/review-pr/scripts/review-pr.sh" ]
+  [ -f "$target/.coding-crew/review-pr/scripts/agent.sh" ]
+  [ ! -e "$target/.coding-crew/solve-feature/scripts/verify-prompt.md" ]
+  [ ! -e "$target/.coding-crew/solve-feature/roles" ]
   [ -f "$target/.claude/skills/solve-feature/SKILL.md" ]
   [ -f "$target/.coding-crew/solve-issue/scripts/run-checks.sh" ]
   [ -f "$target/.coding-crew/dep-install/scripts/run.sh" ]
-  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install"]' ]
+  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install","review-pr"]' ]
 }
