@@ -288,6 +288,12 @@ export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlu
   return dispatchable(listFeatureIssues(mainRoot, { featureSlug, exec }), { status, includeBlocked });
 }
 
+/** The sub-issue list is link order, not number order: `next` takes the lowest number. */
+export const sortDispatchable = (issues) => [...issues].sort((a, b) => a.number - b.number);
+
+/** The CLI ref for `issue`: its number. */
+export const issueRef = (mainRoot, issue) => String(issue.number);
+
 /** `selectDispatchable`'s rule over one feature's parsed issues, so `listFeatures` counts the same set. */
 function dispatchable(issues, { status = READY_STATUS, includeBlocked = false } = {}) {
   const statusByNumber = new Map(issues.map((i) => [i.number, i.status]));

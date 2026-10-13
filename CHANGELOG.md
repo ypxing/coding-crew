@@ -6,6 +6,26 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature**: hosts ship as recipe files under `.coding-crew/solve-feature/hosts/` — `github-actions.yml` (a
+  workflow on the Copilot CLI, billed to GitHub Copilot: label the root issue `solve-feature` or dispatch it with the
+  slug; copy it to `.github/workflows/`) and `Dockerfile` (claude and copilot CLIs, `gh`, docker CLI, coding-crew
+  user-level) — and SKILL.md's "Where to run it" covers terminal, worktree pane, cloud Claude Code session (launch,
+  don't host), GitHub Actions and docker (#464).
+- **solve-feature**: each issue is coder → checks → the tracker's own close (no verifier; `verify-prompt.md` and the
+  `roles/` tree are gone); `--agent claude|copilot` (`SOLVE_FEATURE_AGENT`) picks the coder; `next` selects issues on
+  either tracker; dependencies are prepared headlessly before the first coder; the first landed issue pushes and opens
+  a draft PR whose body carries the spec (PRD + each issue's criteria, cut at GitHub's body limit), progress is one
+  comment on that PR, and the run ends by running `review-pr` on it. `--open-pr` is gone; a committed
+  `.coding-crew/dev-commands.json` is required. `deps` now `solve-issue`, `dep-install`, `review-pr` (#463).
+- **review-pr**: new skill — `/review-pr <n>` (`review-pr.sh <n> [--agent claude|copilot]`) runs one read-only agent
+  over a checked-out PR's spec and diff, posts one review (inline where the finding is on the diff, the rest by
+  severity, each marked `crew-finding:`), and runs `gh pr ready` when the spec is met with no CRITICAL/HIGH finding.
+  `scripts/agent.sh` beside it owns the agent argv, coder prompt and model lookup for claude and copilot (#462).
+- **address-pr-comments**: recognises a solve-feature PR (its `<!-- solve-feature:begin -->` block) for the push,
+  escaped-record and summary steps; it never marks a PR ready and, on a solve-feature PR, ends with
+  `next: /review-pr <n>` (#462).
+- **tracker**: new `next --feature-slug <slug>` prints the ref of the next dispatchable issue — `ready-for-agent`, not
+  `blocked`, every blocker done, lowest first — on both backends, or exits 3 with no output (#461).
 - **tracker**: `features`' third column counts the issues dispatch would start now — `ready-for-agent`, not
   labelled `blocked`, every blocker done — instead of every open `ready-for-agent` issue, on both backends (#447).
 - **solve-feature**: runs a one-slice feature, whose root issue is its only work issue, instead of finding nothing

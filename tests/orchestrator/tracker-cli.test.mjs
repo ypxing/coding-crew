@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -437,6 +437,105 @@ test("closing-refs (github) prints closingRefs' Closes lines, one per line, and 
   for (const argv of [[], ["--feature-slug", "../x"], ["--feature-slug", "feat", "--bogus"]]) {
     assert.equal((await cli(dir, ["closing-refs", ...argv])).code, 2, argv.join(" "));
   }
+});
+
+// --- next ------------------------------------------------------------------------------
+
+/** A `gh` argv that reads: `issue list`, `issue view`, or a `gh api` GET (no method or field flag). */
+const isRead = (call) => /^(issue list|issue view|api)/.test(call.slice(1, 3).join(" ")) && !call.some((a) => /^(-X|--method|-f|-F|--input)$/.test(a));
+
+const blockedBy = (...ns) => `## Blocked by\n\n${ns.map((n) => `- #${n}`).join("\n")}\n`;
+
+test("next (github) prints the lowest ready, unblocked issue: not labelled blocked, every blocker closed or awaiting-merge", async () => {
+  const dir = root({ github: true });
+  const ready = ["ready-for-agent"];
+  const feature = (two = {}) =>
+    fakeGithub([
+      ...ghFeature(
+        "feat",
+        ghIssue(1),
+        ghIssue(2, { labels: ready, ...two }),
+        ghIssue(3, { labels: ready, body: blockedBy(2) }),
+        ghIssue(4, { labels: [...ready, "blocked"] }),
+        ghIssue(5, { labels: ready, body: blockedBy(9) }),
+        ghIssue(6, { labels: ready, body: blockedBy(30) }),
+        ghIssue(9, { labels: ["awaiting-merge"] }),
+      ),
+      ghIssue(30, { labels: ready }),
+    ]);
+  const first = feature();
+  const r = await cli(dir, ["next", "--feature-slug", "feat"], first);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "2\n");
+  for (const call of first.calls) assert.ok(isRead(call), call.join(" "));
+  const then = await cli(dir, ["next", "--feature-slug", "feat"], feature({ state: "CLOSED" }));
+  assert.equal(then.code, 0, then.stderr);
+  assert.equal(then.stdout, "3\n");
+});
+
+test("next (local) prints the first ready file whose blockers are all in done/, as a path fetch accepts; issues-deps.json wins over prose", async () => {
+  const dir = root();
+  const write = (state, name, status, blockedBy = "None") =>
+    writeIssue(dir, state, name, `# ${name}\n\nStatus: ${status}\n\n## Acceptance criteria\n\n- [ ] x\n\n## Blocked by\n\n${blockedBy}\n`);
+  write("open", "01-a.md", "ready-for-agent");
+  write("open", "02-b.md", "ready-for-agent", "- 01-a.md");
+  write("open", "03-c.md", "ready-for-human");
+  write("open", "04-d.md", "ready-for-agent", "- 00-done.md");
+  write("done", "00-done.md", "done");
+  const snapshot = () => readdirSync(join(dir, ".scratch/feat/issues"), { recursive: true }).sort();
+  const before = snapshot();
+  const r = await cli(dir, ["next", "--feature-slug", "feat"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, ".scratch/feat/issues/open/01-a.md\n");
+  assert.deepEqual(snapshot(), before);
+  const fetched = await cli(dir, ["fetch", r.stdout.trim()]);
+  assert.equal(fetched.code, 0, fetched.stderr);
+  assert.match(fetched.stdout, /^# 01-a\.md\n/);
+
+  renameSync(join(dir, ".scratch/feat/issues/open/01-a.md"), join(dir, ".scratch/feat/issues/done/01-a.md"));
+  assert.equal((await cli(dir, ["next", "--feature-slug", "feat"])).stdout, ".scratch/feat/issues/open/02-b.md\n");
+
+  writeFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), JSON.stringify({ "02-b.md": ["03-c.md"], "04-d.md": [] }));
+  assert.equal((await cli(dir, ["next", "--feature-slug", "feat"])).stdout, ".scratch/feat/issues/open/04-d.md\n");
+});
+
+test("next (github) prints a one-slice feature's ready root; exits 3 with empty stdout when nothing is dispatchable or no root exists", async () => {
+  const dir = root({ github: true });
+  const ready = ["ready-for-agent"];
+  const solo = await cli(dir, ["next", "--feature-slug", "feat"], fakeGithub(ghFeature("feat", ghIssue(7, { labels: ready }))));
+  assert.equal(solo.code, 0, solo.stderr);
+  assert.equal(solo.stdout, "7\n");
+  const waiting = fakeGithub(ghFeature("feat", ghIssue(1), ghIssue(2, { labels: ready, body: blockedBy(3) }), ghIssue(3, { labels: ["in-progress"] })));
+  assert.deepEqual(await cli(dir, ["next", "--feature-slug", "feat"], waiting), { code: 3, stdout: "", stderr: "" });
+  assert.deepEqual(await cli(dir, ["next", "--feature-slug", "feat"], fakeGithub([ghIssue(1)])), { code: 3, stdout: "", stderr: "" });
+});
+
+test("next (local) exits 3 with empty stdout when every ready issue is blocked or the feature has no issues", async () => {
+  const dir = root();
+  writeIssue(dir, "open", "01-a.md", "# a\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 02-b.md\n");
+  writeIssue(dir, "open", "02-b.md", "# b\n\nStatus: ready-for-human\n");
+  assert.deepEqual(await cli(dir, ["next", "--feature-slug", "feat"]), { code: 3, stdout: "", stderr: "" });
+  assert.deepEqual(await cli(dir, ["next", "--feature-slug", "nope"]), { code: 3, stdout: "", stderr: "" });
+});
+
+test("next exits 2 without --feature-slug, on an invalid slug or an unknown flag; 1 naming both roots when github has two", async () => {
+  for (const dir of [root(), root({ github: true })]) {
+    for (const argv of [[], ["--feature-slug", "../x"], ["--feature-slug", "feat", "--bogus"]]) {
+      const r = await cli(dir, ["next", ...argv]);
+      assert.equal(r.code, 2, argv.join(" "));
+      assert.equal(r.stdout, "");
+    }
+  }
+  const dup = await cli(root({ github: true }), ["next", "--feature-slug", "feat"], fakeGithub([...ghFeature("feat", ghIssue(3)), ...ghFeature("feat", ghIssue(5))]));
+  assert.equal(dup.code, 1);
+  assert.equal(dup.stdout, "");
+  assert.match(dup.stderr, /#3, #5/);
+});
+
+test("cli.mjs with no op lists next among the ops", async () => {
+  const r = await cli(root(), []);
+  assert.equal(r.code, 2);
+  assert.ok(r.stderr.replace(/^.*ops: /s, "").split(/,\s*/).map((s) => s.trim()).includes("next"), r.stderr);
 });
 
 // --- features ----------------------------------------------------------------------

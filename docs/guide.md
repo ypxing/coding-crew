@@ -493,7 +493,7 @@ branch forks from the local default branch, wherever the main checkout is.
 
 ### PR rework with GitHub Actions (optional)
 
-Not installed by default. Without it, run `/address-pr-comments` yourself on the PR. On a crew-afk PR it pushes its fix commit itself once `solve-issue`'s checks pass (a plain `git push`, never forced; a failing check stops it with the output, unpushed), and when the PR's `<!-- crew-afk:draft … -->` marker names only `findings` and every posted finding was handled, it ends with `once CI is green: gh pr ready <n>` — it never marks the PR ready or waits on CI itself. On any other PR it does not push.
+Not installed by default. Without it, run `/address-pr-comments` yourself on the PR. On a crew-afk PR it pushes its fix commit itself once `solve-issue`'s checks pass (a plain `git push`, never forced; a failing check stops it with the output, unpushed), and when the PR's `<!-- crew-afk:draft … -->` marker names only `findings` and every posted finding was handled, it ends with `once CI is green: gh pr ready <n>` — it never marks the PR ready or waits on CI itself. On a solve-feature PR it pushes the same way and ends with `next: /review-pr <n>`, since `review-pr` is what re-reviews the branch and marks the draft ready. On any other PR it does not push.
 
 With it, reviewers comment on a PR labelled `crew-rework` as usual; the `crew-rework` GitHub
 Action runs `/address-pr-comments --auto`, which fixes what is sensible, pushes, and replies on

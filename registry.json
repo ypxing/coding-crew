@@ -58,23 +58,33 @@
       ]
     },
     "solve-feature": {
-      "version": "0.1.2",
+      "version": "0.4.0",
       "source-dir": "solve-feature",
-      "description": "Run one feature's ready-for-agent issues in order on one branch, each gated by the project's checks and a fresh read-only verifier.",
+      "description": "Run one feature's ready-for-agent issues in order on one branch, each gated by the project's checks, in a draft PR carrying the spec that review-pr reviews at the end.",
       "assets": {
         "source": "skills/solve-feature/scripts",
         "dest": ".coding-crew/solve-feature/scripts"
       },
       "more-assets": [
         {
-          "source": "orchestrator/roles",
-          "dest": ".coding-crew/solve-feature/roles"
+          "source": "skills/solve-feature/hosts",
+          "dest": ".coding-crew/solve-feature/hosts"
         }
       ],
       "deps": [
         "solve-issue",
-        "dep-install"
+        "dep-install",
+        "review-pr"
       ]
+    },
+    "review-pr": {
+      "version": "0.1.0",
+      "source-dir": "review-pr",
+      "description": "One read-only agent reviews a checked-out PR against its spec, posts one review and marks a draft ready when the spec is met.",
+      "assets": {
+        "source": "skills/review-pr/scripts",
+        "dest": ".coding-crew/review-pr/scripts"
+      }
     },
     "tdd": {
       "version": "1.2.4",
@@ -122,7 +132,7 @@
       ]
     },
     "address-pr-comments": {
-      "version": "1.5.4",
+      "version": "1.6.0",
       "source-dir": "address-pr-comments",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "scripts": [
