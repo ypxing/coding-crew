@@ -6,7 +6,7 @@
 #                solveFeature.models.reviewer, empty when unset)
 #   post <n>     HEAD and the tree are unchanged and the reviewer's report is valid: posts one COMMENT review,
 #                marks a draft ready when the spec is met with no CRITICAL/HIGH finding, and writes
-#                .solve-feature/reviewed (an Actions job's last step fails without it)
+#                .solve-feature/reviewed. solve-feature runs only prepare: its own fix step writes reviewed.
 # post's last stdout line: `REVIEW: prd=<met|unmet> findings=<k> (<i> inline) ready=<yes|no|already>`.
 # Exit: 0 ok; 1 with nothing posted on a precondition miss, a changed HEAD or tree, a missing/unreadable report
 # or a failed POST, its reason also in .solve-feature/stopped (an Actions job's last step fails on it); 2 usage.

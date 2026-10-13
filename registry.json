@@ -79,7 +79,7 @@
       ]
     },
     "review-pr": {
-      "version": "0.3.0",
+      "version": "0.3.1",
       "source-dir": "review-pr",
       "description": "One read-only subagent reviews a checked-out PR against its spec; a script posts one review and marks a draft ready when the spec is met.",
       "assets": {
