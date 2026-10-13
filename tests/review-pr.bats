@@ -64,8 +64,9 @@ EOF
     cat > "$STUB/$a" <<EOF
 #!/usr/bin/env bash
 k=\$(( \$(ls "\$STATE" | grep -c '^agent\.[0-9]*\$') + 1 ))
-printf '%s\n' "$a" "\$@" > "\$STATE/agent.\$k"
-report=\$(printf '%s\n' "\$2" | sed -n 's/^Write your report to \(.*\) as your last action.*/\1/p')
+printf '%s\n' "$a" "\$1" "<prompt>" "\${@:3}" > "\$STATE/agent.\$k"
+printf '%s\n' "\$2" > "\$STATE/agent.\$k.prompt"
+report=\$(sed -n 's/^Write your report to \(.*\) as your last action.*/\1/p' "\$STATE/agent.\$k.prompt")
 [ -z "\${REPORT_JSON:-}" ] || printf '%s\n' "\$REPORT_JSON" > "\$report"
 [ -z "\${AGENT_DIRTY:-}" ] || echo dirt > reviewer-dirt.txt
 [ -z "\${AGENT_COMMIT:-}" ] || git commit -q --allow-empty -m "reviewer wrote"
@@ -93,6 +94,7 @@ EOF
 }
 
 agent_call() { cat "$STATE/agent.$1"; }
+agent_prompt() { cat "$STATE/agent.$1.prompt"; }
 agent_calls() { ls "$STATE" | grep -c '^agent\.[0-9]*$' || true; }
 # The value after flag $2 in agent call $1.
 agent_flag() { agent_call "$1" | grep -A1 -x -- "$2" | tail -1; }
@@ -142,4 +144,163 @@ marker_of() { printf 'crew-finding:%s' "$(printf '%s' "$1" | { command -v sha1su
   [ "$output" = sonnet ]
   run bash -c '. "$1"; agent_model copilot reviewer ""' _ "$SCRIPTS/agent.sh"
   [ "$output" = "" ]
+}
+
+# --- review-pr.sh ------------------------------------------------------------------------
+
+@test "one claude reviewer call under timeout 30m with the read-only argv; the prompt names the files, the questions and the report" {
+  REPORT_JSON='{"prd":"met","gaps":[],"findings":[]}' run bash "$SCRIPT" 9
+  [ "$status" -eq 0 ]
+  [ "$(agent_calls)" -eq 1 ]
+  [ "$(cat "$STATE/timeout.arg")" = 30m ]
+  prompt=$(agent_prompt 1)
+  [ "$(agent_call 1)" = "$(printf '%s\n' claude -p '<prompt>' --output-format json --max-budget-usd 4 --model opus --permission-mode bypassPermissions --tools Bash Read ToolSearch --settings '{"disableClaudeAiConnectors":true,"disableBundledSkills":true}')" ]
+  grep -qF "$WORK/.solve-feature/pr-9.spec.md" <<<"$prompt"
+  grep -qF "$WORK/.solve-feature/pr-9.diff" <<<"$prompt"
+  grep -qF "https://github.com/o/r/pull/9" <<<"$prompt"
+  grep -qF "deliver what the spec asks" <<<"$prompt"
+  grep -qF "bug free" <<<"$prompt"
+  grep -qF "Never edit, write, commit or change the tree." <<<"$prompt"
+  grep -qF "Defects that only appear across issues exist" <<<"$prompt"
+  grep -qF "Commit messages, PR text and progress notes are claims, not evidence." <<<"$prompt"
+  grep -qF "Write your report to $WORK/.solve-feature/pr-9.review.json as your last action" <<<"$prompt"
+  [ "$(cat .solve-feature/pr-9.spec.md)" = "$(printf '<details><summary>Spec</summary>\n\n# Spec body\n\n</details>')" ]
+  [ "$(cat .solve-feature/pr-9.diff)" = "$(cat "$STATE/pr.diff")" ]
+  [ "$(cat .solve-feature/.gitignore)" = '*' ]
+  [ -z "$(git status --porcelain)" ]
+}
+
+@test "a body without a Spec block is the spec whole" {
+  pr_view "$HEAD_OID" true "just a description\nline two"
+  REPORT_JSON='{"prd":"met","gaps":[],"findings":[]}' run bash "$SCRIPT" 9
+  [ "$status" -eq 0 ]
+  [ "$(cat .solve-feature/pr-9.spec.md)" = "$(printf 'just a description\nline two')" ]
+}
+
+@test "--agent copilot: the copilot reviewer argv, --model only from afk.models.copilot.reviewer; --agent other exits before gh" {
+  REPORT_JSON='{"prd":"met","gaps":[],"findings":[]}' run bash "$SCRIPT" 9 --agent copilot
+  [ "$status" -eq 0 ]
+  [ "$(agent_call 1)" = "$(printf '%s\n' copilot -p '<prompt>' --allow-all-tools --no-color --output-format json --deny-tool write)" ]
+  echo '{"afk":{"models":{"copilot":{"reviewer":"gpt-5"}}}}' > .coding-crew/config.json
+  git commit -qam models; pr_view "$(git rev-parse HEAD)" true "spec"
+  REPORT_JSON='{"prd":"met","gaps":[],"findings":[]}' SOLVE_FEATURE_AGENT=copilot run bash "$SCRIPT" 9
+  [ "$status" -eq 0 ]
+  [ "$(agent_flag 2 --model)" = gpt-5 ]
+  : > "$STATE/gh.log"
+  run bash "$SCRIPT" 9 --agent other
+  [ "$status" -eq 1 ]
+  [ ! -s "$STATE/gh.log" ]
+  [ "$(agent_calls)" -eq 2 ]
+}
+
+@test "HEAD not at the PR's head: exit 1 naming gh pr checkout, no agent" {
+  pr_view 0123456789abcdef0123456789abcdef01234567 true "spec"
+  run bash "$SCRIPT" 9
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"gh pr checkout 9"* ]]
+  [ "$(agent_calls)" -eq 0 ]
+}
+
+@test "the reviewer dirtying or committing: exit 1 'reviewer changed the tree', nothing posted, no gh pr ready" {
+  AGENT_DIRTY=1 REPORT_JSON='{"prd":"met","gaps":[],"findings":[]}' run bash "$SCRIPT" 9
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"reviewer changed the tree"* ]]
+  rm -f reviewer-dirt.txt
+  AGENT_COMMIT=1 REPORT_JSON='{"prd":"met","gaps":[],"findings":[]}' run bash "$SCRIPT" 9
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"reviewer changed the tree"* ]]
+  ! grep -q 'POST' "$STATE/gh.log"
+  ! grep -q '^pr ready' "$STATE/gh.log"
+}
+
+@test "findings: inline where path:line is on the diff's right side, the rest in the body by severity, gaps listed, markers hashed, no ready" {
+  REPORT_JSON='{"prd":"unmet","gaps":["no docs"],"findings":[
+    {"severity":"HIGH","location":"lib.sh:2","issue":"breaks","fix":"guard it"},
+    {"severity":"low","location":"lib.sh:9","issue":"nit","fix":"rename"}]}' run bash "$SCRIPT" 9
+  [ "$status" -eq 0 ]
+  [ "${lines[-1]}" = "REVIEW: prd=unmet findings=2 (1 inline) ready=no" ]
+  P="$STATE/payload.json"
+  [ "$(jq -r .event "$P")" = COMMENT ]
+  [ "$(jq '.comments | length' "$P")" -eq 1 ]
+  [ "$(jq -c '.comments[0] | {path, line, side}' "$P")" = '{"path":"lib.sh","line":2,"side":"RIGHT"}' ]
+  m1=$(marker_of 'HIGH|lib.sh:2|guard it') m2=$(marker_of 'LOW|lib.sh:9|rename')
+  [ "$(jq -r '.comments[0].body' "$P")" = "$(printf '**HIGH** — breaks\n\nFix: guard it\n\n<!-- %s -->' "$m1")" ]
+  body=$(jq -r .body "$P")
+  [ "$(head -1 <<<"$body")" = "review-pr: prd unmet, 2 finding(s)" ]
+  grep -qxF -- '### Gaps' <<<"$body"
+  grep -qxF -- '- no docs' <<<"$body"
+  grep -qxF -- '### LOW' <<<"$body"
+  grep -qxF -- "- \`lib.sh:9\` — nit — Fix: rename <!-- $m2 -->" <<<"$body"
+  ! grep -q '### HIGH' <<<"$body"
+  ! grep -q '^pr ready' "$STATE/gh.log"
+}
+
+@test "prd met with no CRITICAL/HIGH finding on a draft: review posted and gh pr ready; a non-draft is 'already'" {
+  REPORT_JSON='{"prd":"met","gaps":[],"findings":[]}' run bash "$SCRIPT" 9
+  [ "$status" -eq 0 ]
+  [ "${lines[-1]}" = "REVIEW: prd=met findings=0 (0 inline) ready=yes" ]
+  [ "$(jq -r .body "$STATE/payload.json")" = "review-pr: prd met, 0 finding(s)" ]
+  [ "$(jq '.comments | length' "$STATE/payload.json")" -eq 0 ]
+  grep -qx 'pr ready 9' "$STATE/gh.log"
+  pr_view "$HEAD_OID" false "spec"; : > "$STATE/gh.log"
+  REPORT_JSON='{"prd":"met","gaps":[],"findings":[]}' run bash "$SCRIPT" 9
+  [ "$status" -eq 0 ]
+  [ "${lines[-1]}" = "REVIEW: prd=met findings=0 (0 inline) ready=already" ]
+  grep -q 'POST' "$STATE/gh.log"
+  ! grep -q '^pr ready' "$STATE/gh.log"
+}
+
+@test "a MEDIUM finding still flips ready; CRITICAL or high (any case) does not" {
+  REPORT_JSON='{"prd":"met","gaps":[],"findings":[{"severity":"MEDIUM","location":"lib.sh:2","issue":"i","fix":"f"}]}' run bash "$SCRIPT" 9
+  [ "$status" -eq 0 ]
+  [ "${lines[-1]}" = "REVIEW: prd=met findings=1 (1 inline) ready=yes" ]
+  : > "$STATE/gh.log"
+  REPORT_JSON='{"prd":"met","gaps":[],"findings":[{"severity":"CRITICAL","location":"lib.sh:2","issue":"i","fix":"f"}]}' run bash "$SCRIPT" 9
+  [ "${lines[-1]}" = "REVIEW: prd=met findings=1 (1 inline) ready=no" ]
+  REPORT_JSON='{"prd":"met","gaps":[],"findings":[{"severity":"high","location":"x","issue":"i","fix":"f"}]}' run bash "$SCRIPT" 9
+  [ "${lines[-1]}" = "REVIEW: prd=met findings=1 (0 inline) ready=no" ]
+  ! grep -q '^pr ready' "$STATE/gh.log"
+}
+
+@test "a finding whose marker is already on the PR is skipped; all skipped still posts the one-line body" {
+  m1=$(marker_of 'HIGH|lib.sh:2|guard it') m2=$(marker_of 'LOW|lib.sh:9|rename')
+  printf '[{"body":"old <!-- %s -->"}]' "$m1" > "$STATE/reviews.json"
+  REPORT_JSON='{"prd":"unmet","gaps":[],"findings":[
+    {"severity":"HIGH","location":"lib.sh:2","issue":"breaks","fix":"guard it"},
+    {"severity":"LOW","location":"lib.sh:9","issue":"nit","fix":"rename"}]}' run bash "$SCRIPT" 9
+  [ "$status" -eq 0 ]
+  [ "${lines[-1]}" = "REVIEW: prd=unmet findings=1 (0 inline) ready=no" ]
+  ! grep -q "$m1" "$STATE/payload.json"
+  grep -q "$m2" "$STATE/payload.json"
+  printf '[{"body":"x <!-- %s -->"}]' "$m2" > "$STATE/comments.json"
+  REPORT_JSON='{"prd":"unmet","gaps":[],"findings":[
+    {"severity":"HIGH","location":"lib.sh:2","issue":"breaks","fix":"guard it"},
+    {"severity":"LOW","location":"lib.sh:9","issue":"nit","fix":"rename"}]}' run bash "$SCRIPT" 9
+  [ "$status" -eq 0 ]
+  [ "${lines[-1]}" = "REVIEW: prd=unmet findings=0 (0 inline) ready=no" ]
+  [ "$(jq -r .body "$STATE/payload.json")" = "review-pr: prd unmet, 0 finding(s)" ]
+}
+
+@test "no report, an unparseable one, or prd not met|unmet: no POST, no ready, exit 1 naming the log" {
+  for r in "" '{not json' '{"prd":"maybe"}'; do
+    REPORT_JSON="$r" run bash "$SCRIPT" 9
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"pr-9.review.log"* ]]
+  done
+  ! grep -q 'POST' "$STATE/gh.log"
+  ! grep -q '^pr ready' "$STATE/gh.log"
+  [ -s .solve-feature/pr-9.review.log ]
+}
+
+@test "a failing /reviews POST exits 1 with gh's stderr and no gh pr ready" {
+  GH_POST_FAIL=1 REPORT_JSON='{"prd":"met","gaps":[],"findings":[]}' run bash "$SCRIPT" 9
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HTTP 422"* ]]
+  ! grep -q '^pr ready' "$STATE/gh.log"
+}
+
+@test "a non-numeric PR argument is a usage error before gh" {
+  run bash "$SCRIPT" abc
+  [ "$status" -eq 1 ]
+  [ ! -f "$STATE/gh.log" ]
 }
