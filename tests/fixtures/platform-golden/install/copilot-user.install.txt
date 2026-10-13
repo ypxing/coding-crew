@@ -83,7 +83,11 @@ HOME/.coding-crew/dep-install/scripts/run.sh exec=1
 HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-HOME/.coding-crew/manifest.json f782090c1c3cf541b705e90f9318cea0b7b69f7d
+HOME/.coding-crew/manifest.json ff347b5dc299b811a823c5c79846e655114c4168
+HOME/.coding-crew/review-pr/ /
+HOME/.coding-crew/review-pr/scripts/ /
+HOME/.coding-crew/review-pr/scripts/agent.sh exec=1
+HOME/.coding-crew/review-pr/scripts/review-pr.sh exec=1
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
 HOME/.coding-crew/skills/_shared/fragments/ /
@@ -211,6 +215,11 @@ HOME/.copilot/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 HOME/.copilot/skills/domain-modeling/references/ /
 HOME/.copilot/skills/domain-modeling/references/adr-format.md exec=0
 HOME/.copilot/skills/domain-modeling/references/context-format.md exec=0
+HOME/.copilot/skills/review-pr/ /
+HOME/.copilot/skills/review-pr/SKILL.md exec=0 unrendered=0
+HOME/.copilot/skills/review-pr/scripts/ /
+HOME/.copilot/skills/review-pr/scripts/agent.sh exec=1
+HOME/.copilot/skills/review-pr/scripts/review-pr.sh exec=1
 HOME/.copilot/skills/solve-feature/ /
 HOME/.copilot/skills/solve-feature/SKILL.md exec=0 unrendered=0
 HOME/.copilot/skills/solve-feature/scripts/ /

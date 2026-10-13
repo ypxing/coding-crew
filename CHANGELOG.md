@@ -6,6 +6,13 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **review-pr**: new skill — `/review-pr <n>` (`review-pr.sh <n> [--agent claude|copilot]`) runs one read-only agent
+  over a checked-out PR's spec and diff, posts one review (inline where the finding is on the diff, the rest by
+  severity, each marked `crew-finding:`), and runs `gh pr ready` when the spec is met with no CRITICAL/HIGH finding.
+  `scripts/agent.sh` beside it owns the agent argv, coder prompt and model lookup for claude and copilot (#462).
+- **address-pr-comments**: recognises a solve-feature PR (its `<!-- solve-feature:begin -->` block) for the push,
+  escaped-record and summary steps; it never marks a PR ready and, on a solve-feature PR, ends with
+  `next: /review-pr <n>` (#462).
 - **tracker**: new `next --feature-slug <slug>` prints the ref of the next dispatchable issue — `ready-for-agent`, not
   `blocked`, every blocker done, lowest first — on both backends, or exits 3 with no output (#461).
 - **tracker**: `features`' third column counts the issues dispatch would start now — `ready-for-agent`, not

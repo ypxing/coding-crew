@@ -83,7 +83,11 @@ REPO/.coding-crew/dep-install/scripts/run.sh exec=1
 REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-REPO/.coding-crew/manifest.json f782090c1c3cf541b705e90f9318cea0b7b69f7d
+REPO/.coding-crew/manifest.json ff347b5dc299b811a823c5c79846e655114c4168
+REPO/.coding-crew/review-pr/ /
+REPO/.coding-crew/review-pr/scripts/ /
+REPO/.coding-crew/review-pr/scripts/agent.sh exec=1
+REPO/.coding-crew/review-pr/scripts/review-pr.sh exec=1
 REPO/.coding-crew/skills/ /
 REPO/.coding-crew/skills/_shared/ /
 REPO/.coding-crew/skills/_shared/fragments/ /
@@ -211,6 +215,11 @@ REPO/.github/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/domain-modeling/references/ /
 REPO/.github/skills/domain-modeling/references/adr-format.md exec=0
 REPO/.github/skills/domain-modeling/references/context-format.md exec=0
+REPO/.github/skills/review-pr/ /
+REPO/.github/skills/review-pr/SKILL.md exec=0 unrendered=0
+REPO/.github/skills/review-pr/scripts/ /
+REPO/.github/skills/review-pr/scripts/agent.sh exec=1
+REPO/.github/skills/review-pr/scripts/review-pr.sh exec=1
 REPO/.github/skills/solve-feature/ /
 REPO/.github/skills/solve-feature/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/solve-feature/scripts/ /

@@ -78,6 +78,11 @@ REPO/.claude/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/domain-modeling/references/ /
 REPO/.claude/skills/domain-modeling/references/adr-format.md exec=0
 REPO/.claude/skills/domain-modeling/references/context-format.md exec=0
+REPO/.claude/skills/review-pr/ /
+REPO/.claude/skills/review-pr/SKILL.md exec=0 unrendered=0
+REPO/.claude/skills/review-pr/scripts/ /
+REPO/.claude/skills/review-pr/scripts/agent.sh exec=1
+REPO/.claude/skills/review-pr/scripts/review-pr.sh exec=1
 REPO/.claude/skills/solve-feature/ /
 REPO/.claude/skills/solve-feature/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/solve-feature/scripts/ /
@@ -198,7 +203,11 @@ REPO/.coding-crew/dep-install/scripts/run.sh exec=1
 REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-REPO/.coding-crew/manifest.json ce98a269e689379e00951c6850bc5b2c08fd6064
+REPO/.coding-crew/manifest.json 86211aa345e7b5c76c6cb671e7e44bb3101e55c2
+REPO/.coding-crew/review-pr/ /
+REPO/.coding-crew/review-pr/scripts/ /
+REPO/.coding-crew/review-pr/scripts/agent.sh exec=1
+REPO/.coding-crew/review-pr/scripts/review-pr.sh exec=1
 REPO/.coding-crew/skills/ /
 REPO/.coding-crew/skills/_shared/ /
 REPO/.coding-crew/skills/_shared/fragments/ /

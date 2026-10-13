@@ -76,6 +76,15 @@
         "dep-install"
       ]
     },
+    "review-pr": {
+      "version": "0.1.0",
+      "source-dir": "review-pr",
+      "description": "One read-only agent reviews a checked-out PR against its spec, posts one review and marks a draft ready when the spec is met.",
+      "assets": {
+        "source": "skills/review-pr/scripts",
+        "dest": ".coding-crew/review-pr/scripts"
+      }
+    },
     "tdd": {
       "version": "1.2.4",
       "source-dir": "tdd",
@@ -122,7 +131,7 @@
       ]
     },
     "address-pr-comments": {
-      "version": "1.5.4",
+      "version": "1.6.0",
       "source-dir": "address-pr-comments",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "scripts": [
