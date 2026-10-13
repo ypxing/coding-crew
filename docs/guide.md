@@ -538,6 +538,12 @@ instead, on the Copilot CLI and billed to GitHub Copilot (no API key), copy
 label a feature's root issue `solve-feature` or run the workflow by hand with the slug. The file's
 header is the setup.
 
+The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all-tools
+--no-color`; the Copilot CLI runs each coder and the reviewer as its own subagents. A stop exits the
+session without failing it, so the job's last step fails it unless `review-pr.sh post` wrote
+`.solve-feature/reviewed` at the end of the run: on any stop a script recorded (the reason is in
+`.solve-feature/stopped`), and on a session that ended before the review for any other reason.
+
 ---
 
 ### Reviewing Code Review Findings

@@ -31,7 +31,7 @@
   ],
   "skills": {
     "crew-afk": {
-      "version": "2.42.2",
+      "version": "2.42.3",
       "source-dir": "crew-afk",
       "description": "Run an unattended sprint: implement, review and merge every ready-for-agent issue into one feature branch.",
       "assets": {
@@ -58,9 +58,9 @@
       ]
     },
     "solve-feature": {
-      "version": "0.5.3",
+      "version": "0.6.0",
       "source-dir": "solve-feature",
-      "description": "Run one feature's ready-for-agent issues in order on one branch, each gated by the project's checks, in a draft PR carrying the spec that review-pr reviews at the end.",
+      "description": "Run one feature's ready-for-agent issues in order on one branch, each by a fresh coder subagent gated by the project's checks, in a draft PR carrying the spec that review-pr reviews at the end.",
       "assets": {
         "source": "skills/solve-feature/scripts",
         "dest": ".coding-crew/solve-feature/scripts"
@@ -78,9 +78,9 @@
       ]
     },
     "review-pr": {
-      "version": "0.2.0",
+      "version": "0.3.0",
       "source-dir": "review-pr",
-      "description": "One read-only agent reviews a checked-out PR against its spec, posts one review and marks a draft ready when the spec is met.",
+      "description": "One read-only subagent reviews a checked-out PR against its spec; a script posts one review and marks a draft ready when the spec is met.",
       "assets": {
         "source": "skills/review-pr/scripts",
         "dest": ".coding-crew/review-pr/scripts"
@@ -102,7 +102,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.15.0",
+      "version": "1.15.1",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "assets": {
@@ -132,7 +132,7 @@
       ]
     },
     "address-pr-comments": {
-      "version": "1.6.0",
+      "version": "1.6.1",
       "source-dir": "address-pr-comments",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "scripts": [

@@ -284,6 +284,6 @@ Orchestrated (Step 7): report status `partial` with the unmet criteria, and stop
 Otherwise record a `## Unmet criteria` section saying what is missing and why (descoped, blocked,
 split out): write it to a file and run `node "$TRACKER" write-section <issue-ref> --heading
 "Unmet criteria" --body-file <file>` (into the issue file on a local tracker, as a comment on a
-GitHub issue). On a **non-interactive run** (a headless/`-p` invocation; `CREW_ORCHESTRATED` took the
-branch above), report `partial` listing them and stop — nobody can answer a question. Only on an
-interactive run, ask the user how to proceed.
+GitHub issue). On a **non-interactive run** (a headless/`-p` invocation or a subagent;
+`CREW_ORCHESTRATED` took the branch above), report `partial` listing them and stop — nobody can
+answer a question. Only on an interactive run, ask the user how to proceed.

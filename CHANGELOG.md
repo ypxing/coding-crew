@@ -6,6 +6,17 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-issue**: a subagent run counts as non-interactive, so unmet criteria end it `partial` instead of a question
+  nobody answers — what a solve-feature coder subagent now gets (#473).
+- **solve-feature, review-pr**: no agent CLI is launched any more. Both skills run inside whichever host agent invoked
+  them: each issue's coder and the reviewer are fresh subagents SKILL.md asks for, and the scripts keep only the guards
+  as subcommands — `solve-feature.sh start|next|land` and `review-pr.sh prepare|post` (the old one-shot forms exit 2).
+  `--agent`, `SOLVE_FEATURE_AGENT`, `--budget`, the 60/30-minute timeouts and `review-pr/scripts/agent.sh` are gone; put
+  caps on your own launch line. Models come from `.coding-crew/config.json` `solveFeature.models.{coder,reviewer}`
+  (crew-afk accepts the section and ignores it), no longer `afk.models`. The progress comment drops the final
+  `REVIEW:` note (the review is on the PR). **A copied `hosts/github-actions.yml` must be copied again**: it now runs
+  `copilot -p "Use the solve-feature skill on $SLUG"` and fails the job unless `review-pr.sh post` wrote
+  `.solve-feature/reviewed`, so a stop or a session that ends early is red (#473).
 - **solve-feature, tracker**: `closing-refs` is an op every tracker answers (local prints nothing), so the loop no
   longer reads `config` or tests for github: it adds `closing-refs`' lines to the PR body on any tracker. A ref `next`
   prints is checked only by `fetch` (the backend's own ref rule), and progress rows and stop messages show it as
