@@ -4,9 +4,10 @@
 # COMMENT review and flips a draft to ready when the spec is met with no CRITICAL/HIGH finding; agent.sh
 # beside it owns the coding-agent axis (argv, coder prompt, model) for review-pr and solve-feature.
 #
-# A temp repo whose HEAD is the stubbed PR's head; `gh`, `claude`, `copilot` and `timeout` are stubs on
-# PATH logging their argv into $STATE. The agent stub writes the report its prompt names from
-# $REPORT_JSON, or none; it can also dirty or commit the tree.
+# A temp repo whose HEAD is the stubbed PR's head; `gh`, `claude`, `copilot`, `pi`, `codex` and `timeout`
+# are stubs on PATH logging their argv into $STATE (the prompt — `-p`'s value, pi's last argument, codex's
+# stdin — as `<prompt>` in the argv and whole in agent.<k>.prompt). The agent stub writes the report its
+# prompt names from $REPORT_JSON, or none; it can also dirty or commit the tree.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 SCRIPTS="$REPO_ROOT/skills/review-pr/scripts"
@@ -59,15 +60,22 @@ printf '%s\n' "$1" > "$STATE/timeout.arg"
 shift
 exec "$@"
 EOF
-  # Both agents: argv one per line in agent.<k>; the report path is the prompt's `Write your report to <path>`.
-  for a in claude copilot; do
+  # Every agent: argv one per line in agent.<k>, the prompt replaced by `<prompt>`; the report path is the
+  # prompt's `Write your report to <path>`. The prompt is `-p`'s value (claude, copilot), the last argument
+  # (pi) or stdin (codex); agent.<k>.stdin is `/dev/null` or what stdin carried.
+  for a in claude copilot pi codex; do
     cat > "$STUB/$a" <<EOF
 #!/usr/bin/env bash
 k=\$(( \$(ls "\$STATE" | grep -c '^agent\.[0-9]*\$') + 1 ))
-printf '%s\n' "$a" "\$1" "<prompt>" "\${@:3}" > "\$STATE/agent.\$k"
-printf '%s\n' "\$2" > "\$STATE/agent.\$k.prompt"
-report=\$(sed -n 's/^Write your report to \(.*\) as your last action.*/\1/p' "\$STATE/agent.\$k.prompt")
-[ -z "\${REPORT_JSON:-}" ] || printf '%s\n' "\$REPORT_JSON" > "\$report"
+if [ /dev/stdin -ef /dev/null ]; then echo /dev/null > "\$STATE/agent.\$k.stdin"; else cat > "\$STATE/agent.\$k.stdin"; fi
+case "$a" in
+  codex) prompt=\$(cat "\$STATE/agent.\$k.stdin"); printf '%s\\n' "$a" "\$@" > "\$STATE/agent.\$k" ;;
+  pi) prompt="\${@: -1}"; printf '%s\\n' "$a" "\${@:1:\$#-1}" "<prompt>" > "\$STATE/agent.\$k" ;;
+  *) prompt="\$2"; printf '%s\\n' "$a" "\$1" "<prompt>" "\${@:3}" > "\$STATE/agent.\$k" ;;
+esac
+printf '%s\\n' "\$prompt" > "\$STATE/agent.\$k.prompt"
+report=\$(sed -n 's/^Write your report to \\(.*\\) as your last action.*/\\1/p' "\$STATE/agent.\$k.prompt")
+[ -z "\${REPORT_JSON:-}" ] || printf '%s\\n' "\$REPORT_JSON" > "\$report"
 [ -z "\${AGENT_DIRTY:-}" ] || echo dirt > reviewer-dirt.txt
 [ -z "\${AGENT_COMMIT:-}" ] || git commit -q --allow-empty -m "reviewer wrote"
 echo '{"type":"result","result":"reviewed"}'
@@ -146,6 +154,123 @@ marker_of() { printf 'crew-finding:%s' "$(printf '%s' "$1" | { command -v sha1su
   [ "$output" = "" ]
 }
 
+@test "agent_known: 0 for claude, copilot, pi and codex, 1 for anything else" {
+  local a
+  for a in claude copilot pi codex; do
+    run bash -c '. "$1"; agent_known "$2"' _ "$SCRIPTS/agent.sh" "$a"
+    [ "$status" -eq 0 ] || { echo "$a: $status"; return 1; }
+  done
+  run bash -c '. "$1"; agent_known other' _ "$SCRIPTS/agent.sh"
+  [ "$status" -eq 1 ]
+  run bash -c '. "$1"; agent_known ""' _ "$SCRIPTS/agent.sh"
+  [ "$status" -eq 1 ]
+}
+
+@test "agent_cmd: pi coder and reviewer argv, --model only when given, stdin /dev/null, the budget ignored" {
+  run bash -c '. "$1"; agent_cmd coder pi "" 5 "Use the solve-issue skill on 2." && printf "%s\n" "${AGENT_ARGV[@]}" "$AGENT_STDIN_FILE"' _ "$SCRIPTS/agent.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '%s\n' pi -p --mode json --tools read,bash,edit,write "Use the solve-issue skill on 2." /dev/null)" ]
+  run bash -c '. "$1"; agent_cmd reviewer pi m1 4 p && printf "%s\n" "${AGENT_ARGV[@]}" "$AGENT_STDIN_FILE"' _ "$SCRIPTS/agent.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '%s\n' pi -p --mode json --model m1 --tools read,bash p /dev/null)" ]
+  run bash -c '. "$1"; agent_cmd coder claude sonnet 5 x && printf "%s\n" "$AGENT_STDIN_FILE"' _ "$SCRIPTS/agent.sh"
+  [ "$output" = /dev/null ]
+  run bash -c '. "$1"; agent_cmd coder copilot "" 5 x && printf "%s\n" "$AGENT_STDIN_FILE"' _ "$SCRIPTS/agent.sh"
+  [ "$output" = /dev/null ]
+}
+
+@test "agent_cmd: codex coder argv with the git dir as a writable root (the main repo's in a linked worktree, plus the main checkout for the local tracker's close) and the prompt in .solve-feature/[<tag>.]coder.codex-prompt.md on stdin" {
+  mkdir .solve-feature && echo '*' >.solve-feature/.gitignore
+  run bash -c '. "$1"; agent_cmd coder codex "" 5 "Use the solve-issue skill on 2." && printf "%s\n" "${AGENT_ARGV[@]}" "$AGENT_STDIN_FILE"' _ "$SCRIPTS/agent.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '%s\n' codex exec --cd "$WORK" --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c "sandbox_workspace_write.writable_roots=[\"$WORK/.git\"]" --json - "$WORK/.solve-feature/coder.codex-prompt.md")" ]
+  [ "$(cat "$WORK/.solve-feature/coder.codex-prompt.md")" = "Use the solve-issue skill on 2." ]
+  run bash -c '. "$1"; agent_cmd coder codex gpt-5 5 x 2 && printf "%s\n" "${AGENT_ARGV[@]}" "$AGENT_STDIN_FILE"' _ "$SCRIPTS/agent.sh"
+  [ "$output" = "$(printf '%s\n' codex exec --cd "$WORK" --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c "sandbox_workspace_write.writable_roots=[\"$WORK/.git\"]" --json --model gpt-5 - "$WORK/.solve-feature/2.coder.codex-prompt.md")" ]
+  [ "$(cat "$WORK/.solve-feature/2.coder.codex-prompt.md")" = x ]
+
+  git worktree add -q "$TEMP_DIR/wt" -b wt >/dev/null
+  cd "$TEMP_DIR/wt"
+  mkdir .solve-feature
+  run bash -c '. "$1"; agent_cmd coder codex "" 5 x && printf "%s\n" "${AGENT_ARGV[@]}" "$AGENT_STDIN_FILE"' _ "$SCRIPTS/agent.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '%s\n' codex exec --cd "$TEMP_DIR/wt" --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c "sandbox_workspace_write.writable_roots=[\"$WORK/.git\"]" --add-dir "$WORK" --json - "$TEMP_DIR/wt/.solve-feature/coder.codex-prompt.md")" ]
+  [ "$(cat "$TEMP_DIR/wt/.solve-feature/coder.codex-prompt.md")" = x ]
+
+  # A worktree of a bare repo: the bare dir is the root, and its parent is no checkout to add.
+  git clone -q --bare "$WORK" "$TEMP_DIR/b.git"
+  git -C "$TEMP_DIR/b.git" worktree add -q "$TEMP_DIR/bwt" >/dev/null 2>&1
+  cd "$TEMP_DIR/bwt"
+  mkdir .solve-feature
+  run bash -c '. "$1"; agent_cmd coder codex "" 5 x && printf "%s\n" "${AGENT_ARGV[@]}"' _ "$SCRIPTS/agent.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '%s\n' codex exec --cd "$TEMP_DIR/bwt" --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c "sandbox_workspace_write.writable_roots=[\"$TEMP_DIR/b.git\"]" --json -)" ]
+
+  # The root is a TOML string: a quote or backslash in the path is escaped.
+  mkdir "$TEMP_DIR/q\"b\\s" && cd "$TEMP_DIR/q\"b\\s" && git init -q && mkdir .solve-feature
+  run bash -c '. "$1"; agent_cmd coder codex "" 5 x && printf "%s\n" "${AGENT_ARGV[@]}"' _ "$SCRIPTS/agent.sh"
+  [[ "$output" == *"writable_roots=[\"$TEMP_DIR/q\\\"b\\\\s/.git\"]"* ]]
+}
+
+@test "agent_cmd: the codex reviewer runs in .solve-feature as its one writable root, the prompt file opening with the writable-directory paragraph" {
+  mkdir .solve-feature
+  run bash -c '. "$1"; agent_cmd reviewer codex "" 4 "Review PR #9." && printf "%s\n" "${AGENT_ARGV[@]}" "$AGENT_STDIN_FILE"' _ "$SCRIPTS/agent.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '%s\n' codex exec --cd "$WORK/.solve-feature" --sandbox workspace-write -c sandbox_workspace_write.exclude_slash_tmp=true -c sandbox_workspace_write.exclude_tmpdir_env_var=true --json - "$WORK/.solve-feature/reviewer.codex-prompt.md")" ]
+  [ "$(cat "$WORK/.solve-feature/reviewer.codex-prompt.md")" = "$(printf 'Your shell starts in %s/.solve-feature, the only writable directory, where your report goes. The repository is %s: run your commands there (cd %s && ...).\n\nReview PR #9.' "$WORK" "$WORK" "$WORK")" ]
+  run bash -c '. "$1"; agent_cmd reviewer codex o3 4 p && printf "%s\n" "${AGENT_ARGV[@]}"' _ "$SCRIPTS/agent.sh"
+  [ "$output" = "$(printf '%s\n' codex exec --cd "$WORK/.solve-feature" --sandbox workspace-write -c sandbox_workspace_write.exclude_slash_tmp=true -c sandbox_workspace_write.exclude_tmpdir_env_var=true --json --model o3 -)" ]
+}
+
+@test "agent_coder_prompt: pi and codex get copilot's sentence naming the skill" {
+  run bash -c '. "$1"; agent_coder_prompt pi 2' _ "$SCRIPTS/agent.sh"
+  [ "$output" = "Use the solve-issue skill on 2." ]
+  run bash -c '. "$1"; agent_coder_prompt codex .scratch/f/issues/open/01-a.md' _ "$SCRIPTS/agent.sh"
+  [ "$output" = "Use the solve-issue skill on .scratch/f/issues/open/01-a.md." ]
+}
+
+@test "agent_model: pi and codex have no built-in default; afk.models.pi/codex.<role> when set; claude's defaults unchanged" {
+  run bash -c '. "$1"; agent_model pi coder' _ "$SCRIPTS/agent.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "" ]
+  run bash -c '. "$1"; agent_model codex reviewer' _ "$SCRIPTS/agent.sh"
+  [ "$output" = "" ]
+  echo '{"afk":{"models":{"pi":{"coder":"claude-sonnet-4"},"codex":{"reviewer":"o3"}}}}' > .coding-crew/config.json
+  run bash -c '. "$1"; agent_model pi coder' _ "$SCRIPTS/agent.sh"
+  [ "$output" = claude-sonnet-4 ]
+  run bash -c '. "$1"; agent_model codex reviewer' _ "$SCRIPTS/agent.sh"
+  [ "$output" = o3 ]
+  run bash -c '. "$1"; agent_model claude coder' _ "$SCRIPTS/agent.sh"
+  [ "$output" = sonnet ]
+  run bash -c '. "$1"; agent_model claude reviewer' _ "$SCRIPTS/agent.sh"
+  [ "$output" = opus ]
+}
+
+@test "agent_log_tail: each agent's final text from its JSON log, the raw last 20 lines otherwise" {
+  local L="$TEMP_DIR/log"
+  printf 'noise\n{"type":"system"}\n{"type":"result","result":"BLOCKED: x\\nline two"}\n' > "$L"
+  run bash -c '. "$1"; agent_log_tail claude "$2"' _ "$SCRIPTS/agent.sh" "$L"
+  [ "$output" = "$(printf 'BLOCKED: x\nline two')" ]
+  printf '{"type":"assistant.message","data":{"content":"first"}}\n{"type":"tool"}\n{"type":"assistant.message","data":{"content":"last\\nmsg"}}\n' > "$L"
+  run bash -c '. "$1"; agent_log_tail copilot "$2"' _ "$SCRIPTS/agent.sh" "$L"
+  [ "$output" = "$(printf 'last\nmsg')" ]
+  printf '{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"ask"}]}}\n{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"early"}]}}\n{"type":"tool_execution_start"}\n{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hm"},{"type":"text","text":"done\\n"},{"type":"text","text":"twice"}]}}\n' > "$L"
+  run bash -c '. "$1"; agent_log_tail pi "$2"' _ "$SCRIPTS/agent.sh" "$L"
+  [ "$output" = "$(printf 'done\ntwice')" ]
+  # A run that ends on a provider error ends on an assistant message with no text: the raw tail, not an earlier message.
+  printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"early"}]}}\n{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"429"}}\n' > "$L"
+  run bash -c '. "$1"; agent_log_tail pi "$2"' _ "$SCRIPTS/agent.sh" "$L"
+  [[ "$output" == *'"errorMessage":"429"'* ]]
+  printf '{"type":"item.completed","item":{"type":"agent_message","text":"early"}}\n{"type":"item.completed","item":{"type":"command_execution","text":"not me"}}\n{"type":"item.completed","item":{"type":"agent_message","text":"final\\nword"}}\n{"type":"turn.completed"}\n' > "$L"
+  run bash -c '. "$1"; agent_log_tail codex "$2"' _ "$SCRIPTS/agent.sh" "$L"
+  [ "$output" = "$(printf 'final\nword')" ]
+  seq 1 30 > "$L"
+  for a in claude copilot pi codex; do
+    run bash -c '. "$1"; agent_log_tail "$2" "$3"' _ "$SCRIPTS/agent.sh" "$a" "$L"
+    [ "$output" = "$(seq 11 30)" ] || { echo "$a: $output"; return 1; }
+  done
+}
+
 # --- review-pr.sh ------------------------------------------------------------------------
 
 @test "one claude reviewer call under timeout 30m with the read-only argv; the prompt names the files, the questions and the report" {
@@ -189,8 +314,46 @@ marker_of() { printf 'crew-finding:%s' "$(printf '%s' "$1" | { command -v sha1su
   : > "$STATE/gh.log"
   run bash "$SCRIPT" 9 --agent other
   [ "$status" -eq 1 ]
+  [[ "$output" == *"other"*"codex"* ]]
   [ ! -s "$STATE/gh.log" ]
   [ "$(agent_calls)" -eq 2 ]
+  # agent.sh's agent_known is the one list of agents.
+  ! grep -qE 'case .*claude\|copilot' "$SCRIPT" "$REPO_ROOT/skills/solve-feature/scripts/solve-feature.sh"
+}
+
+@test "--agent pi: the read-only pi argv under timeout 30m with the prompt last and stdin /dev/null; --model from afk.models.pi.reviewer" {
+  REPORT_JSON='{"prd":"met","gaps":[],"findings":[]}' run bash "$SCRIPT" 9 --agent pi
+  [ "$status" -eq 0 ]
+  [ "$(agent_call 1)" = "$(printf '%s\n' pi -p --mode json --tools read,bash '<prompt>')" ]
+  [ "$(cat "$STATE/agent.1.stdin")" = /dev/null ]
+  [ "$(cat "$STATE/timeout.arg")" = 30m ]
+  grep -qF "Write your report to $WORK/.solve-feature/pr-9.review.json as your last action" <<<"$(agent_prompt 1)"
+  echo '{"afk":{"models":{"pi":{"reviewer":"m1"}}}}' > .coding-crew/config.json
+  git commit -qam models; pr_view "$(git rev-parse HEAD)" true "spec"
+  REPORT_JSON='{"prd":"met","gaps":[],"findings":[]}' SOLVE_FEATURE_AGENT=pi run bash "$SCRIPT" 9
+  [ "$status" -eq 0 ]
+  [ "$(agent_flag 2 --model)" = m1 ]
+  [ "$(cat .solve-feature/.gitignore)" = '*' ]
+  [ -z "$(git status --porcelain)" ]
+}
+
+@test "--agent codex: the sandboxed codex argv in .solve-feature, the prompt file on stdin opening with the writable-directory paragraph then the unchanged review prompt" {
+  REPORT_JSON='{"prd":"met","gaps":[],"findings":[]}' run bash "$SCRIPT" 9 --agent codex
+  [ "$status" -eq 0 ]
+  [ "$(agent_call 1)" = "$(printf '%s\n' codex exec --cd "$WORK/.solve-feature" --sandbox workspace-write -c sandbox_workspace_write.exclude_slash_tmp=true -c sandbox_workspace_write.exclude_tmpdir_env_var=true --json -)" ]
+  [ "$(cat "$STATE/timeout.arg")" = 30m ]
+  prompt=$(agent_prompt 1)
+  [ "$(head -1 <<<"$prompt")" = "Your shell starts in $WORK/.solve-feature, the only writable directory, where your report goes. The repository is $WORK: run your commands there (cd $WORK && ...)." ]
+  [ "$(sed -n 2p <<<"$prompt")" = "" ]
+  [ "$(sed -n 3p <<<"$prompt")" = "Review PR #9 (https://github.com/o/r/pull/9), checked out at HEAD, against its spec." ]
+  grep -qF "Write your report to $WORK/.solve-feature/pr-9.review.json as your last action" <<<"$prompt"
+  [ "$(cat .solve-feature/pr-9.reviewer.codex-prompt.md)" = "$prompt" ]
+  [ -z "$(git status --porcelain)" ]
+  echo '{"afk":{"models":{"codex":{"reviewer":"o3"}}}}' > .coding-crew/config.json
+  git commit -qam models; pr_view "$(git rev-parse HEAD)" true "spec"
+  REPORT_JSON='{"prd":"met","gaps":[],"findings":[]}' run bash "$SCRIPT" 9 --agent codex
+  [ "$status" -eq 0 ]
+  [ "$(agent_flag 2 --model)" = o3 ]
 }
 
 @test "HEAD not at the PR's head: exit 1 naming gh pr checkout, no agent" {

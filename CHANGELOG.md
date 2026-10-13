@@ -6,6 +6,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature, review-pr**: `--agent pi` and `--agent codex` join `claude` and `copilot`. `review-pr/scripts/agent.sh`
+  is now the one owner of every agent-specific decision — `agent_known` (the agent list), `agent_cmd` (argv and
+  `AGENT_STDIN_FILE`: codex reads its prompt from `<run>.<role>.codex-prompt.md` in `.solve-feature/`; the codex coder
+  gets the git dir as a writable root, so it can commit in a plain clone too, and in a linked worktree the main
+  checkout, so the local tracker can close the issue), `agent_coder_prompt`, `agent_model`
+  (`afk.models.pi|codex.<role>`, no built-in default) and `agent_log_tail` (each agent's final text for the stop
+  note) — so neither script spells an agent name. The codex reviewer runs sandboxed with `.solve-feature` as
+  its one writable root; the Dockerfile installs all four CLIs (#466).
 - **solve-feature**: hosts ship as recipe files under `.coding-crew/solve-feature/hosts/` — `github-actions.yml` (a
   workflow on the Copilot CLI, billed to GitHub Copilot: label the root issue `solve-feature` or dispatch it with the
   slug; copy it to `.github/workflows/`) and `Dockerfile` (claude and copilot CLIs, `gh`, docker CLI, coding-crew

@@ -4,8 +4,8 @@ description: >
   One read-only agent reviews a checked-out pull request against the spec in its body, posts one
   review on it and marks a draft ready when the spec is met with no CRITICAL or HIGH finding. Runnable
   by hand, by solve-feature and by a workflow. Trigger with /review-pr <pr-number>. Optional: --agent
-  claude|copilot.
-argument-hint: "<pr-number> [--agent claude|copilot]"
+  claude|copilot|pi|codex.
+argument-hint: "<pr-number> [--agent claude|copilot|pi|codex]"
 allowed-tools: Bash, shell
 ---
 
@@ -37,11 +37,16 @@ unchanged. Tell the user to run `gh pr checkout <n>` first. It also needs the ag
 1. Saves the PR's spec and diff under `.solve-feature/` (`pr-<n>.spec.md`, `pr-<n>.diff`; the
    directory ignores itself). The spec is the body's `<details><summary>Spec</summary>` block when
    the body has one (solve-feature writes it), else the whole body.
-2. Runs one fresh read-only agent — `claude` by default, `--agent copilot` or
-   `SOLVE_FEATURE_AGENT=copilot` for the Copilot CLI — with a 30-minute timeout (4 USD on claude),
-   asking two questions: does the PR deliver what the spec asks for, and is it bug free in the new
-   code and its integration. Its log is `pr-<n>.review.log`, its report `pr-<n>.review.json`. The
-   model is `.coding-crew/config.json` `afk.models.<agent>.reviewer` (claude default `opus`).
+2. Runs one fresh read-only agent — `claude` by default; `--agent` or `SOLVE_FEATURE_AGENT` picks
+   `copilot`, `pi` or `codex` — with a 30-minute timeout (4 USD on claude), asking two questions:
+   does the PR deliver what the spec asks for, and is it bug free in the new code and its
+   integration. Its log is `pr-<n>.review.log`, its report `pr-<n>.review.json`. The model is
+   `.coding-crew/config.json` `afk.models.<agent>.reviewer` (claude default `opus`; the others pass
+   `--model` only when set). Read-only how: `claude` by `--tools Bash Read ToolSearch`, `copilot` by
+   `--deny-tool write`, `pi` by `--tools read,bash`, `codex` by its sandbox — it runs in
+   `.solve-feature/` as the one writable directory (its prompt, saying so, is
+   `pr-<n>.reviewer.codex-prompt.md` there, read on stdin) and the script's HEAD/tree assertion is the
+   second check.
 3. Posts **one review** (`COMMENT`): the body opens `review-pr: prd <met|unmet>, <k> finding(s)`,
    lists the gaps, and holds the findings not on the diff's right-hand side under a heading per
    severity; a finding at a `path:line` the diff shows is an inline comment. Each finding carries a
@@ -55,7 +60,9 @@ Last stdout line: `REVIEW: prd=<met|unmet> findings=<k> (<i> inline) ready=<yes|
 reviewer that changed HEAD or the tree, a missing or unreadable report (the line names
 `pr-<n>.review.log`), or a failed post.
 
-`scripts/agent.sh` beside the script owns the agent argv, the coder prompt and the model lookup for
-both this skill and solve-feature. The copilot coder prompt (`Use the solve-issue skill on <ref>.`)
-is to be verified at the first real copilot run; if the CLI does not invoke the skill that way, the
-copilot arm of `agent_coder_prompt` is the one line to change.
+`scripts/agent.sh` beside the script owns the coding-agent axis for both this skill and
+solve-feature: the agent list (`agent_known`), the argv and stdin (`agent_cmd`), the coder prompt
+(`agent_coder_prompt`), the model lookup (`agent_model`) and the log's final text (`agent_log_tail`).
+Neither script spells an agent name. The copilot, pi and codex coder prompt (`Use the solve-issue
+skill on <ref>.`) is to be verified at the first real run of each; if a CLI does not invoke the skill
+that way, its arm of `agent_coder_prompt` is the one line to change.

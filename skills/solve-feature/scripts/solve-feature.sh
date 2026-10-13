@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# solve-feature.sh <slug> [--branch <name>] [--budget <usd>] [--agent claude|copilot] — run one feature's
+# solve-feature.sh <slug> [--branch <name>] [--budget <usd>] [--agent <agent>] — run one feature's
 # ready-for-agent issues in order on one branch: per issue the coder, the project's checks and the tracker's
 # own close; after the first landed issue a draft PR whose body carries the spec; review-pr on it at the end.
 # Env: SOLVE_FEATURE_AGENT (the --agent default), SOLVE_FEATURE_HOST (the progress comment's host name).
@@ -17,7 +17,12 @@ while [ $# -gt 0 ]; do case "$1" in
     -*) die "unknown flag: $1" ;;
     *) [ -z "$SLUG" ] || die "unexpected argument: $1"; SLUG="$1"; shift ;;
 esac; done
-case "$AGENT" in claude|copilot) ;; *) die "unknown agent '$AGENT' (claude|copilot)" ;; esac
+# Installed beside this skill (.coding-crew/<skill>/scripts), else user-level, as solve-issue finds dep-install.
+scripts_of() { local d; for d in "$SELF/../../$1/scripts" "$HOME/.coding-crew/$1/scripts"; do [ -d "$d" ] && { (cd "$d" && pwd); return; }; done
+  die "$1 scripts not found: run install.sh --skill solve-feature"; }
+CHECKS_DIR=$(scripts_of solve-issue) DEP_DIR=$(scripts_of dep-install) REVIEW_DIR=$(scripts_of review-pr)
+. "$REVIEW_DIR/agent.sh" # the one owner of the coding-agent axis: names, argv, prompt form, stdin, model, log shape
+agent_known "$AGENT" || die "unknown agent '$AGENT' (one of: ${AGENT_NAMES[*]})"
 for t in "$AGENT" gh jq node git timeout; do command -v "$t" >/dev/null || die "$t not found on PATH"; done
 # The tracker's own SLUG rule: the slug reaches argv, so nothing else gets through.
 [[ "$SLUG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid feature slug: '$SLUG'"
@@ -29,11 +34,6 @@ KIND="$(node "$CLI" config | sed -n 's/^tracker=//p')"
 [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
 # DISCOVER needs an agent and a human once; run-checks.sh's own exit 3 guards a file that names no usable command.
 [ -f "$ROOT/.coding-crew/dev-commands.json" ] || die "no .coding-crew/dev-commands.json: run /solve-issue or dep-install once by hand and commit it"
-# Installed beside this skill (.coding-crew/<skill>/scripts), else user-level, as solve-issue finds dep-install.
-scripts_of() { local d; for d in "$SELF/../../$1/scripts" "$HOME/.coding-crew/$1/scripts"; do [ -d "$d" ] && { (cd "$d" && pwd); return; }; done
-  die "$1 scripts not found: run install.sh --skill solve-feature"; }
-CHECKS_DIR=$(scripts_of solve-issue) DEP_DIR=$(scripts_of dep-install) REVIEW_DIR=$(scripts_of review-pr)
-. "$REVIEW_DIR/agent.sh"
 CODER_MODEL=$(agent_model "$AGENT" coder)
 unset CREW_ORCHESTRATED # solve-issue's Step 7 closes the issue itself: the loop sees `next` move on
 
@@ -79,14 +79,8 @@ progress() { # the PR's one solve-feature-progress comment, rewritten whole; a f
   else CID=$(gh api "repos/{owner}/{repo}/issues/$PR_N/comments" -f body="$body" 2>/dev/null | jq -r '.id // empty'); [ -n "$CID" ]
   fi || echo "solve-feature: warning: progress comment on PR #$PR_N not written" >&2
 }
-log_tail() { # <log> — a claude JSON log's result text, a copilot JSON log's last assistant message, else the raw tail
-  local t
-  t=$(jq -rR 'fromjson? | objects | .result // empty' "$1" 2>/dev/null | tail -n 20 || true)
-  [ -n "$t" ] || t=$(jq -cR 'fromjson? | objects | select(.type == "assistant.message") | .data.content // empty' "$1" 2>/dev/null | tail -n 1 | jq -r '.' 2>/dev/null | tail -n 20 || true)
-  printf '%s' "${t:-$(tail -n 20 "$1" 2>/dev/null)}"
-}
 stop() { # <step> <reason> <log>
-  NOTE="Stopped at $1: $2"$'\n```\n'"$(log_tail "$3")"$'\n```'
+  NOTE="Stopped at $1: $2"$'\n```\n'"$(agent_log_tail "$AGENT" "$3")"$'\n```'
   case $1 in solve) row ✗ · ;; checks) row ✓ ✗ ;; esac
   echo "solve-feature: $TAG $1 failed: $2 — log: $3"; exit 1
 }
@@ -159,8 +153,8 @@ while :; do
   LOG="$LOGS/$RS.log" CLOG="$LOGS/$RS.checks.log"
   node "$CLI" fetch "$REF" >"$LOGS/$RS.issue.md" || die "fetch $REF failed (see above)"
   row · ·
-  agent_cmd coder "$AGENT" "$CODER_MODEL" "$BUDGET" "$(agent_coder_prompt "$AGENT" "$REF")"
-  timeout 60m "${AGENT_ARGV[@]}" </dev/null >"$LOG" 2>&1 || stop solve "coder exited non-zero" "$LOG"
+  agent_cmd coder "$AGENT" "$CODER_MODEL" "$BUDGET" "$(agent_coder_prompt "$AGENT" "$REF")" "$RS"
+  timeout 60m "${AGENT_ARGV[@]}" <"$AGENT_STDIN_FILE" >"$LOG" 2>&1 || stop solve "coder exited non-zero" "$LOG"
   assert_tree solve "$LOG"
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).
   rc=0; again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
