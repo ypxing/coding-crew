@@ -31,6 +31,7 @@ TRACKER="$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs"
 node "$TRACKER" fetch <number> [--comments]               # print one issue (title, body; + comments)
 node "$TRACKER" features                                  # list the features: <slug>, open|closed, count of issues that can start now
 node "$TRACKER" prd --feature-slug <slug>                 # print the feature's PRD: issue
+node "$TRACKER" next --feature-slug <slug>                # the number of the next issue to run, or exit 3
 node "$TRACKER" known --feature-slug <slug> --out <dir>   # write the feature's issues, open and closed, into <dir>
 node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace]
 node "$TRACKER" publish-prd --feature-slug <slug> --title "<feature title>" --body-file <file>
@@ -44,6 +45,10 @@ node "$TRACKER" closing-refs --feature-slug <slug>       # the feature PR's `Clo
 
 Exit codes, every op: `0` ok, `1` the op failed (stderr carries `gh`'s own error, verbatim), `2` a
 usage error or a ref that is not an issue number, `3` not found.
+
+`next` prints the lowest-numbered open issue of the feature (the root included) labelled
+`ready-for-agent`, not labelled `blocked`, whose every `## Blocked by` issue is closed or
+`awaiting-merge`; it prints nothing and exits `3` when there is none.
 
 A `gh` call that fails on the network or GitHub's side — `EOF`, a connection reset or refused, a
 DNS failure, a timeout, an `HTTP 5xx`, a secondary rate limit — is retried up to 3 times, after

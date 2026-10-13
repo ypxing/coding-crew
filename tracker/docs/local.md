@@ -30,6 +30,7 @@ TRACKER="$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs"
 node "$TRACKER" fetch <ref> [--comments]                  # print one issue; <ref> is its path under .scratch/
 node "$TRACKER" features                                  # list the features: <slug>, open|closed, count of issues that can start now
 node "$TRACKER" prd --feature-slug <slug>                 # print the feature's PRD.md
+node "$TRACKER" next --feature-slug <slug>                # the path of the next issue to run, or exit 3
 node "$TRACKER" known --feature-slug <slug> --out <dir>   # copy the feature's issues, open and done, into <dir>
 node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace]
 node "$TRACKER" publish-prd --feature-slug <slug> --title "<feature title>" --body-file <file>
@@ -41,6 +42,10 @@ node "$TRACKER" mark-done <ref> [--force]
 
 Exit codes, every op: `0` ok, `1` the op failed (stderr says why), `2` a usage error or a ref
 outside `.scratch/`, `3` not found.
+
+`next` prints the path of the first open file, in filename order, whose `Status:` is
+`ready-for-agent` and whose every `## Blocked by` file (or `issues-deps.json` entry) sits in the
+feature's `done/`; it prints nothing and exits `3` when there is none.
 
 `features` prints one tab-separated line per `.scratch/<slug>/` directory that has an `issues/`
 subdirectory, sorted by slug: `<slug>`, `open` (`issues/open/` holds an `.md` file) or `closed`, and
