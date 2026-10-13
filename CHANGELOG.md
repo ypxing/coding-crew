@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature**: each issue is coder → checks → the tracker's own close (no verifier; `verify-prompt.md` and the
+  `roles/` tree are gone); `--agent claude|copilot` (`SOLVE_FEATURE_AGENT`) picks the coder; `next` selects issues on
+  either tracker; dependencies are prepared headlessly before the first coder; the first landed issue pushes and opens
+  a draft PR whose body carries the spec (PRD + each issue's criteria, cut at GitHub's body limit), progress is one
+  comment on that PR, and the run ends by running `review-pr` on it. `--open-pr` is gone; a committed
+  `.coding-crew/dev-commands.json` is required. `deps` now `solve-issue`, `dep-install`, `review-pr` (#463).
 - **review-pr**: new skill — `/review-pr <n>` (`review-pr.sh <n> [--agent claude|copilot]`) runs one read-only agent
   over a checked-out PR's spec and diff, posts one review (inline where the finding is on the diff, the rest by
   severity, each marked `crew-finding:`), and runs `gh pr ready` when the spec is met with no CRITICAL/HIGH finding.
