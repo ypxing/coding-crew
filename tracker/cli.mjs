@@ -51,6 +51,7 @@ const USAGE = {
   features: "features",
   prd: "prd --feature-slug S",
   next: "next --feature-slug S",
+  "closing-refs": "closing-refs --feature-slug S",
   known: "known --feature-slug S --out DIR",
   "publish-issues": "publish-issues --feature-slug S --drafts DIR [--replace]",
   "publish-prd": "publish-prd --feature-slug S --title T --body-file F",
@@ -224,6 +225,13 @@ const OPS = {
     const first = tracker.sortDispatchable ? tracker.sortDispatchable(issues)[0] : issues[0];
     if (!first) return EXIT.NOT_FOUND;
     out(`${tracker.issueRef(mainRoot, first)}\n`);
+    return EXIT.OK;
+  },
+
+  /** The feature PR's `Closes #n` lines, one per line; a backend without `closingRefs` (local) prints none. */
+  async "closing-refs"(argv, { tracker, mainRoot, exec, out }) {
+    const args = parseArgs("closing-refs", argv, { values: ["feature-slug"] });
+    for (const line of tracker.closingRefs?.(mainRoot, { featureSlug: args["feature-slug"], exec }) ?? []) out(`${line}\n`);
     return EXIT.OK;
   },
 

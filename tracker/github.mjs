@@ -732,29 +732,6 @@ function cliFeatureIssues(argv, { exec = gh, out }) {
   out(`${JSON.stringify(issues)}\n`);
 }
 
-/**
- * `closing-refs --feature-slug S [--main-root DIR]` — closingRefs' `Closes #n` lines, one per line,
- * nothing when the feature ships nothing: the PR body solve-feature.sh writes.
- */
-function cliClosingRefs(argv, { exec = gh, out }) {
-  let featureSlug;
-  let mainRoot;
-  for (let i = 0; i < argv.length; i++) {
-    switch (argv[i]) {
-      case "--feature-slug":
-        featureSlug = argv[++i];
-        break;
-      case "--main-root":
-        mainRoot = argv[++i];
-        break;
-      default:
-        throw usage(`closing-refs: unknown argument: ${argv[i]}`);
-    }
-  }
-  if (!SLUG.test(featureSlug ?? "")) throw usage("closing-refs requires a valid --feature-slug");
-  for (const line of closingRefs(mainRoot, { featureSlug, exec })) out(`${line}\n`);
-}
-
 /** `link-blockers --issue <n> [--main-root <dir>]` — always exits 0; failures warn on stderr. */
 function cliLinkBlockers(argv, { exec, err }) {
   const opts = {};
@@ -776,7 +753,6 @@ function cliLinkBlockers(argv, { exec, err }) {
 
 /** This backend's own `tracker/cli.mjs` ops, beyond the ones every backend has. */
 export const cliOps = {
-  "closing-refs": cliClosingRefs,
   "create-issue": cliCreateIssue,
   "feature-issues": cliFeatureIssues,
   "link-blockers": cliLinkBlockers,

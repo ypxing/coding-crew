@@ -437,6 +437,20 @@ test("closing-refs (github) prints closingRefs' Closes lines, one per line, and 
   for (const argv of [[], ["--feature-slug", "../x"], ["--feature-slug", "feat", "--bogus"]]) {
     assert.equal((await cli(dir, ["closing-refs", ...argv])).code, 2, argv.join(" "));
   }
+  const failed = await cli(dir, ["closing-refs", "--feature-slug", "feat"], fakeGh({ api: { code: 1, stderr: "boom\n" }, issue: { code: 1, stderr: "boom\n" } }));
+  assert.equal(failed.code, 1);
+  assert.match(failed.stderr, /boom/);
+});
+
+test("closing-refs (local) prints nothing and exits 0; bad arguments exit 2", async () => {
+  const dir = root();
+  writeIssue(dir, "open", "01-a.md", "# A\n\nStatus: ready-for-agent\n");
+  const r = await cli(dir, ["closing-refs", "--feature-slug", "feat"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "");
+  for (const argv of [[], ["--feature-slug", "../x"], ["--feature-slug", "feat", "--bogus"]]) {
+    assert.equal((await cli(dir, ["closing-refs", ...argv])).code, 2, argv.join(" "));
+  }
 });
 
 // --- next ------------------------------------------------------------------------------
