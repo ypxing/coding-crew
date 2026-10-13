@@ -575,6 +575,25 @@ EOF
   grep -q 'closing-refs failed' .solve-feature/stopped
 }
 
+@test "a rejected push, or any other unexpected failure, exits 1 with its reason in .solve-feature/stopped" {
+  land_ready
+  printf '#!/bin/sh\nexit 1\n' > "$TEMP_DIR/origin.git/hooks/pre-receive" && chmod +x "$TEMP_DIR/origin.git/hooks/pre-receive"
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
+  [ ! -f "$STATE/pr-created" ]
+  grep -q 'land failed' .solve-feature/stopped
+}
+
+@test "land with solve-issue's scripts missing exits 1 naming them, before the checks" {
+  land_ready
+  rm -rf "$INSTALL/solve-issue/scripts"
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
+  [[ "$output" == *"solve-issue scripts not found"* ]]
+  [ ! -f "$STATE/checks.log" ]
+  grep -q 'solve-issue scripts not found' .solve-feature/stopped
+}
+
 # --- progress comment ------------------------------------------------------------------
 
 @test "one progress comment, created by the first land then edited in place, each land's row appended after the earlier ones" {

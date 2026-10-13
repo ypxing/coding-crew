@@ -14,6 +14,8 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGS=""
 mark_stopped() { [ -n "$LOGS" ] || return 0; { mkdir -p "$LOGS" && echo '*' >"$LOGS/.gitignore" && printf '%s\n' "$*" >"$LOGS/stopped"; } 2>/dev/null || true; }
 die() { echo "solve-feature: $*" >&2; mark_stopped "$*"; exit 1; }
+# Any other failure (set -e: a rejected push, a failed gh call) also exits 1 with a reason, so an Actions job sees it.
+trap 'rc=$?; case $rc in 0|2|3) ;; *) [ -f "$LOGS/stopped" ] || mark_stopped "solve-feature.sh $CMD failed (exit $rc)"; exit 1 ;; esac' EXIT
 usage() {
   [ -z "${1:-}" ] || echo "solve-feature: $1" >&2
   echo "usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch>" >&2; exit 2
@@ -145,7 +147,8 @@ land() {
   local rs="${REF//\//_}" rc=0 again checks_dir dep_dir clog f
   [ -f "$LOGS/$rs.issue.md" ] || die "no saved issue for $REF: run next first"
   [ ! -f "$LOGS/prd.md" ] || PRD_TEXT=$(cat "$LOGS/prd.md")
-  checks_dir=$(scripts_of solve-issue) dep_dir=$(scripts_of dep-install) clog="$LOGS/$rs.checks.log"
+  checks_dir=$(scripts_of solve-issue)
+  dep_dir=$(scripts_of dep-install) clog="$LOGS/$rs.checks.log"
   pr_view # a stop reports on the PR an earlier land (or a human) opened; before one exists, on stdout
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop "$REF  solve ✗  checks ·" solve "branch changed to '$(git branch --show-current)'"
   [ -z "$(git status --porcelain)" ] || stop "$REF  solve ✗  checks ·" solve "working tree left dirty"

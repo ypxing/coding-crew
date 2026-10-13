@@ -16,6 +16,9 @@ set -euo pipefail
 LOGS=""
 mark_stopped() { [ -n "$LOGS" ] || return 0; { mkdir -p "$LOGS" && echo '*' >"$LOGS/.gitignore" && printf '%s\n' "$*" >"$LOGS/stopped"; } 2>/dev/null || true; }
 die() { echo "review-pr: $*" >&2; mark_stopped "review-pr: $*"; exit 1; }
+# Any other failure (set -e) also exits 1 with a reason, so an Actions job sees it; post's temp dir goes either way.
+TMP=""
+trap 'rc=$?; [ -z "$TMP" ] || rm -rf "$TMP"; case $rc in 0|2) ;; *) [ -f "$LOGS/stopped" ] || mark_stopped "review-pr: $CMD failed (exit $rc)"; exit 1 ;; esac' EXIT
 
 CMD="${1:-}" PR="${2:-}"
 case "$CMD" in prepare|post) ;; *) CMD="" ;; esac
@@ -68,9 +71,10 @@ post() {
   local prd
   prd=$(jq -r '.prd // empty' "$REPORT" 2>/dev/null) || die "unreadable report $REPORT"
   case "$prd" in met|unmet) ;; *) die "report prd '${prd:-missing}' in $REPORT is not met|unmet" ;; esac
+  jq -e '(.findings // [] | type == "array" and all(type == "object")) and (.gaps // [] | type == "array")' "$REPORT" >/dev/null ||
+    die "report $REPORT: findings must be an array of objects and gaps an array"
 
   TMP=$(mktemp -d "$LOGS/pr-$PR.post.XXXXXX")
-  trap 'rm -rf "$TMP"' EXIT
   hash_of() {
     if command -v sha1sum >/dev/null 2>&1; then sha1sum; else shasum -a 1; fi | cut -c1-12
   }

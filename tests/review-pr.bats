@@ -252,6 +252,25 @@ review() {
   grep -q 'is not met|unmet' .solve-feature/stopped
 }
 
+@test "findings not an array of objects, or gaps not an array: no POST, no ready, exit 1 naming the report" {
+  for r in '{"prd":"met","findings":"none"}' '{"prd":"met","findings":["x"]}' '{"prd":"met","gaps":"none","findings":[]}'; do
+    review "$r"
+    [ "$status" -eq 1 ] || { echo "'$r': $status $output"; return 1; }
+    [[ "$output" == *"$WORK/.solve-feature/pr-9.review.json"* ]] || { echo "'$r': $output"; return 1; }
+  done
+  ! grep -q 'POST' "$STATE/gh.log"
+  ! grep -q '^pr ready' "$STATE/gh.log"
+  grep -q 'pr-9.review.json' .solve-feature/stopped
+}
+
+@test "an unexpected command failure in post exits 1 with its reason in .solve-feature/stopped" {
+  printf '#!/bin/sh\nexit 7\n' > "$STUB/sha1sum" && chmod +x "$STUB/sha1sum"
+  review '{"prd":"met","gaps":[],"findings":[{"severity":"LOW","location":"lib.sh:1","issue":"i","fix":"f"}]}'
+  [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
+  ! grep -q 'POST' "$STATE/gh.log"
+  grep -q 'post failed' .solve-feature/stopped
+}
+
 @test "a failing /reviews POST exits 1 with gh's stderr and no gh pr ready" {
   export GH_POST_FAIL=1
   review '{"prd":"met","gaps":[],"findings":[]}'
