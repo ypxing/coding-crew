@@ -196,6 +196,20 @@ marker_of() { printf 'crew-finding:%s' "$(printf '%s' "$1" | { command -v sha1su
   [ "$status" -eq 0 ]
   [ "$output" = "$(printf '%s\n' codex exec --cd "$TEMP_DIR/wt" --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c "sandbox_workspace_write.writable_roots=[\"$WORK/.git\"]" --add-dir "$WORK" --json - "$TEMP_DIR/wt/.solve-feature/coder.codex-prompt.md")" ]
   [ "$(cat "$TEMP_DIR/wt/.solve-feature/coder.codex-prompt.md")" = x ]
+
+  # A worktree of a bare repo: the bare dir is the root, and its parent is no checkout to add.
+  git clone -q --bare "$WORK" "$TEMP_DIR/b.git"
+  git -C "$TEMP_DIR/b.git" worktree add -q "$TEMP_DIR/bwt" >/dev/null 2>&1
+  cd "$TEMP_DIR/bwt"
+  mkdir .solve-feature
+  run bash -c '. "$1"; agent_cmd coder codex "" 5 x && printf "%s\n" "${AGENT_ARGV[@]}"' _ "$SCRIPTS/agent.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '%s\n' codex exec --cd "$TEMP_DIR/bwt" --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c "sandbox_workspace_write.writable_roots=[\"$TEMP_DIR/b.git\"]" --json -)" ]
+
+  # The root is a TOML string: a quote or backslash in the path is escaped.
+  mkdir "$TEMP_DIR/q\"b\\s" && cd "$TEMP_DIR/q\"b\\s" && git init -q && mkdir .solve-feature
+  run bash -c '. "$1"; agent_cmd coder codex "" 5 x && printf "%s\n" "${AGENT_ARGV[@]}"' _ "$SCRIPTS/agent.sh"
+  [[ "$output" == *"writable_roots=[\"$TEMP_DIR/q\\\"b\\\\s/.git\"]"* ]]
 }
 
 @test "agent_cmd: the codex reviewer runs in .solve-feature as its one writable root, the prompt file opening with the writable-directory paragraph" {
@@ -243,6 +257,10 @@ marker_of() { printf 'crew-finding:%s' "$(printf '%s' "$1" | { command -v sha1su
   printf '{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"ask"}]}}\n{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"early"}]}}\n{"type":"tool_execution_start"}\n{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hm"},{"type":"text","text":"done\\n"},{"type":"text","text":"twice"}]}}\n' > "$L"
   run bash -c '. "$1"; agent_log_tail pi "$2"' _ "$SCRIPTS/agent.sh" "$L"
   [ "$output" = "$(printf 'done\ntwice')" ]
+  # A run that ends on a provider error ends on an assistant message with no text: the raw tail, not an earlier message.
+  printf '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"early"}]}}\n{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"429"}}\n' > "$L"
+  run bash -c '. "$1"; agent_log_tail pi "$2"' _ "$SCRIPTS/agent.sh" "$L"
+  [[ "$output" == *'"errorMessage":"429"'* ]]
   printf '{"type":"item.completed","item":{"type":"agent_message","text":"early"}}\n{"type":"item.completed","item":{"type":"command_execution","text":"not me"}}\n{"type":"item.completed","item":{"type":"agent_message","text":"final\\nword"}}\n{"type":"turn.completed"}\n' > "$L"
   run bash -c '. "$1"; agent_log_tail codex "$2"' _ "$SCRIPTS/agent.sh" "$L"
   [ "$output" = "$(printf 'final\nword')" ]
@@ -296,7 +314,7 @@ marker_of() { printf 'crew-finding:%s' "$(printf '%s' "$1" | { command -v sha1su
   : > "$STATE/gh.log"
   run bash "$SCRIPT" 9 --agent other
   [ "$status" -eq 1 ]
-  [[ "$output" == *"other"* ]]
+  [[ "$output" == *"other"*"codex"* ]]
   [ ! -s "$STATE/gh.log" ]
   [ "$(agent_calls)" -eq 2 ]
   # agent.sh's agent_known is the one list of agents.

@@ -22,7 +22,7 @@ scripts_of() { local d; for d in "$SELF/../../$1/scripts" "$HOME/.coding-crew/$1
   die "$1 scripts not found: run install.sh --skill solve-feature"; }
 CHECKS_DIR=$(scripts_of solve-issue) DEP_DIR=$(scripts_of dep-install) REVIEW_DIR=$(scripts_of review-pr)
 . "$REVIEW_DIR/agent.sh" # the one owner of the coding-agent axis: names, argv, prompt form, stdin, model, log shape
-agent_known "$AGENT" || die "unknown agent '$AGENT'"
+agent_known "$AGENT" || die "unknown agent '$AGENT' (one of: ${AGENT_NAMES[*]})"
 for t in "$AGENT" gh jq node git timeout; do command -v "$t" >/dev/null || die "$t not found on PATH"; done
 # The tracker's own SLUG rule: the slug reaches argv, so nothing else gets through.
 [[ "$SLUG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid feature slug: '$SLUG'"

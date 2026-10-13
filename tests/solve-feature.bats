@@ -256,7 +256,7 @@ body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
 
   run bash "$SCRIPT" feat --agent other
   [ "$status" -eq 1 ]
-  [[ "$output" == *"other"* ]]
+  [[ "$output" == *"other"*"codex"* ]]
   run bash "$SCRIPT" feat --open-pr
   [ "$status" -eq 1 ]
   [[ "$output" == *"--open-pr"* ]]

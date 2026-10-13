@@ -19,7 +19,7 @@ while [ $# -gt 0 ]; do case "$1" in
 esac; done
 [[ "$PR" =~ ^[0-9]+$ ]] || die "usage: review-pr.sh <pr-number> [--agent <agent>]"
 . "$SELF/agent.sh" # the one owner of the coding-agent axis: names, argv, prompt form, stdin, model, log shape
-agent_known "$AGENT" || die "unknown agent '$AGENT'"
+agent_known "$AGENT" || die "unknown agent '$AGENT' (one of: ${AGENT_NAMES[*]})"
 for t in "$AGENT" gh jq git timeout; do command -v "$t" >/dev/null || die "$t not found on PATH"; done
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"; cd "$ROOT"
 

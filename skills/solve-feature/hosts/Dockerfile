@@ -12,7 +12,7 @@
 #
 # The docker socket line is for a project whose checks run in compose (dep-install's docker mode
 # nests nothing: a command that runs docker itself is run as is); drop it otherwise. pi takes any
-# provider's key its README lists (https://github.com/badlogic/pi-mono): pass the one for the model
+# provider's key its README lists (https://github.com/earendil-works/pi): pass the one for the model
 # set in afk.models.pi.
 # The branch is pushed and the PR opened from inside the container, so the clone's `origin` has
 # to be reachable with GH_TOKEN (an https remote), and the clone needs a committed

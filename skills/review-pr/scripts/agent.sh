@@ -3,7 +3,7 @@
 # for review-pr and solve-feature. Every decision that varies by agent — its name, argv, prompt form,
 # stdin, model default and log shape — lives in a `case "$agent"` here; the callers hold no agent name
 # but the one they pass through.
-#   agent_known <agent>                                    exit 0 for a known agent, else 1
+#   agent_known <agent>                                    exit 0 for an agent in AGENT_NAMES, else 1
 #   agent_cmd <role:coder|reviewer> <agent> <model> <budget> <prompt> [<tag>]
 #                                                          sets the array AGENT_ARGV and AGENT_STDIN_FILE;
 #                                                          <tag> is the run's artifact prefix under
@@ -23,8 +23,10 @@
 AGENT_ARGV=()
 AGENT_STDIN_FILE=/dev/null
 
+AGENT_NAMES=(claude copilot pi codex)
+
 agent_known() {
-  case "$1" in claude|copilot|pi|codex) return 0 ;; *) return 1 ;; esac
+  local a; for a in "${AGENT_NAMES[@]}"; do [ "$a" = "$1" ] && return 0; done; return 1
 }
 
 # The built-in defaults; a caller passing none to agent_model gets these. pi and codex have none: the
@@ -88,10 +90,11 @@ agent_cmd() {
         AGENT_ARGV=(codex exec --cd "$repo" --sandbox workspace-write -c sandbox_workspace_write.network_access=true)
         # The sandbox keeps the top-level .git of every writable root read-only, so the git dir is a root of
         # its own or the coder cannot commit; in a linked worktree that is the main repo's git dir, which
-        # holds the worktree's index too, and the main checkout is added for the local tracker's close.
+        # holds the worktree's index too. The main checkout is added where the local tracker's close writes,
+        # by the tracker's own rule (tracker/cli.mjs defaultMainRoot): a common dir named .git, outside the repo.
         common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-        [ -z "$common" ] || AGENT_ARGV+=(-c "sandbox_workspace_write.writable_roots=[\"$common\"]")
-        [ -z "$common" ] || [ "$(dirname "$common")" = "$repo" ] || AGENT_ARGV+=(--add-dir "$(dirname "$common")")
+        [ -z "$common" ] || AGENT_ARGV+=(-c "sandbox_workspace_write.writable_roots=$(jq -cn --arg p "$common" '[$p]')")
+        [ "$(basename "$common")" != .git ] || [ "$(dirname "$common")" = "$repo" ] || AGENT_ARGV+=(--add-dir "$(dirname "$common")")
         AGENT_ARGV+=(--json)
       fi
       [ -z "$model" ] || AGENT_ARGV+=(--model "$model")
@@ -107,7 +110,7 @@ agent_log_tail() {
   case "$agent" in
     claude) t=$(jq -rR 'fromjson? | objects | .result // empty' "$log" 2>/dev/null | tail -n 20 || true) ;;
     copilot) t=$(jq -cR 'fromjson? | objects | select(.type == "assistant.message") | .data.content // empty' "$log" 2>/dev/null | tail -n 1 | jq -r '.' 2>/dev/null | tail -n 20 || true) ;;
-    pi) t=$(jq -cR 'fromjson? | objects | select(.type == "message_end" and .message.role == "assistant") | [.message.content[]? | select(.type == "text") | .text // empty] | join("") | select(. != "")' "$log" 2>/dev/null | tail -n 1 | jq -r '.' 2>/dev/null | tail -n 20 || true) ;;
+    pi) t=$(jq -cR 'fromjson? | objects | select(.type == "message_end" and .message.role == "assistant") | [.message.content[]? | select(.type == "text") | .text // empty] | join("")' "$log" 2>/dev/null | tail -n 1 | jq -r '.' 2>/dev/null | tail -n 20 || true) ;;
     codex) t=$(jq -cR 'fromjson? | objects | select(.type == "item.completed" and .item.type == "agent_message") | .item.text // empty' "$log" 2>/dev/null | tail -n 1 | jq -r '.' 2>/dev/null | tail -n 20 || true) ;;
   esac
   printf '%s' "${t:-$(tail -n 20 "$log" 2>/dev/null)}"
