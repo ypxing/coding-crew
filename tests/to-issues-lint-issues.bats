@@ -303,14 +303,14 @@ J
   done
 }
 
-@test "install ships lint-issues.sh as a to-issues asset and inside the skill dir, executable" {
+@test "install ships lint-issues.sh inside the skill dir, executable, and no copy elsewhere" {
   local target="$BATS_TEST_TMPDIR/target"
   mkdir -p "$target"
   git -C "$target" init -q -b main
   TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" claude --skill to-issues
   [ "$status" -eq 0 ]
-  [ -x "$target/.coding-crew/to-issues/scripts/lint-issues.sh" ]
   [ -x "$target/.claude/skills/to-issues/scripts/lint-issues.sh" ]
+  [ ! -e "$target/.coding-crew/to-issues" ]
 }
 
 # --- ready-for-human issues ---

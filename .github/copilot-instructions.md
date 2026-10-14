@@ -7,7 +7,7 @@ This repo is a **distributable collection** of AI skills. Nothing runs here dire
 ## Installation
 
 ```bash
-# Install everything into current repo
+# Install everything at user level ($HOME)
 ./install.sh
 
 # Install everything for one platform
@@ -19,10 +19,11 @@ This repo is a **distributable collection** of AI skills. Nothing runs here dire
 # Install several skills
 ./install.sh claude --skills tdd,to-issues
 
-# Install into a different repo
-TARGET_REPO=/path/to/other/repo ./install.sh
+# Install into the current repo, or another one
+./install.sh claude --project
+./install.sh claude --project /path/to/other/repo
 
-# Update skills that changed since last install
+# Reinstall everything the manifest lists (add --project for a project install)
 ./install.sh --update
 ```
 
@@ -39,20 +40,19 @@ There are no installable agents: `./install.sh <platform> <name>` with anything 
 ### Key Components
 
 - **`skills/`** — Reusable skill files (tdd, solve-issue, domain-modeling, crew-grill, etc.); `skills/_shared/fragments/` holds shared fragments
-- **`registry.json`** — Source of truth for install paths, dependencies, skill bundles, and the shared trees and scripts under `.coding-crew/`
+- **`registry.json`** — Source of truth for the skills, their dependencies and the libraries each uses (`libs`)
 - **`install.sh`** — Single installer that reads `registry.json` and copies files into target repos
 - **`platforms.json`** — Every platform's skill dirs and config-dir override, read by `install.sh` and `uninstall.sh`
-- **`tracker/`** — The tracker CLI and backends, with their docs in `tracker/docs/{local,github}.md`, installed to `.coding-crew/tracker/`; the tracker choice is `.coding-crew/config.json`'s `tracker` section
+- **`lib/`** — Libraries the skills share: `tracker/` (the tracker CLI, backends and `docs/{local,github}.md`), `checks/` (run-checks.sh and dep-install's scripts), `git-workflow/`; each installed once to `.coding-crew/lib/<name>/` and linked as `<skill-dir>/scripts/<name>`. The tracker choice is `.coding-crew/config.json`'s `tracker` section
 - **`docs/templates/`** — Optional workflows
 
 ### How Install Works
 
 1. Reads `registry.json` to determine what to install
 2. Resolves skill `deps` recursively
-3. Renders each skill to its platform dir (e.g. `.claude/skills/<name>/`, `.agents/skills/<name>/` for Codex), expanding `{{FRAGMENT:<key>}}` / `{{PLATFORM}}`
-4. Copies each skill's `assets` (dep-install: `skills/dep-install/scripts` → `.coding-crew/dep-install/scripts`)
-5. Copies doc templates (skips if already exist) and tracker scripts (always overwritten)
-6. Removes agent files older installs wrote (`retired-agents` in `registry.json`) and `.coding-crew/agents/`, `.coding-crew/code-review/`
+3. Renders each skill to its platform dir (e.g. `.claude/skills/<name>/`, `.agents/skills/<name>/` for Codex), expanding `{{FRAGMENT:<key>}}`
+4. Links `<skill-dir>/scripts/<lib>` for each library in the skill's `libs` (relative at project level), and writes each library once to `.coding-crew/lib/<lib>/` (always overwritten)
+5. Writes `.coding-crew/manifest.json`: the platform, skills and libraries, no versions
 
 No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`, `.codex/agents/`) is ever written.
 
@@ -60,16 +60,15 @@ No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`,
 
 ## Registry Schema
 
-`registry.json` defines all skills and docs, plus `retired-agents` (old agent files to remove). Each skill entry includes:
+`registry.json` defines all skills. Each skill entry includes:
 
 ### Skill Entry
 ```jsonc
 "<skill-name>": {
-  "version": "1.0.0",
   "description": "...",
   // installs to <projectSkills|userSkills>/<name> from platforms.json
   "deps": ["tdd", "dep-install"],      // other skills, installed recursively
-  "assets": { "source": "...", "dest": ".coding-crew/<name>" },  // runtime files (optional)
+  "libs": ["tracker", "checks"],       // lib/<name>, linked as <skill-dir>/scripts/<name> (optional)
   "source": "mattpocock/skills"                  // attribution (optional)
 }
 ```
@@ -92,7 +91,7 @@ Issues live in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
 ### Adding a New Skill
 
 1. Create `skills/<name>/SKILL.md`
-2. Add skill entry to `registry.json` with version, description, install path 
+2. Add skill entry to `registry.json` with its description, and `libs` for any library it runs
 3. If the skill needs other skills, list them in `deps`
 4. Test: `./install.sh claude --skill <name>`
 
@@ -135,4 +134,4 @@ When modifying `install.sh` or registry handling:
 - Always validate paths before writing files
 - Use `set -euo pipefail` in all shell scripts
 - Sanitize user input from command-line arguments
-- Don't follow symlinks during installation
+- Don't follow symlinks during installation (a library link is written, never read through)

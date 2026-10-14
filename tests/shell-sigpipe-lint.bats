@@ -9,7 +9,7 @@ REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 
 @test "no shipped shell script pipes printf/echo into grep -q" {
   run grep -rnE "(printf|echo)[^|]*\|[[:space:]]*grep -[a-zA-Z]*q" --include='*.sh' \
-    "$REPO_ROOT/skills" "$REPO_ROOT/tracker" "$REPO_ROOT/scripts" \
+    "$REPO_ROOT/skills" "$REPO_ROOT/lib" "$REPO_ROOT/scripts" \
     "$REPO_ROOT/install.sh" "$REPO_ROOT/uninstall.sh"
   [ "$status" -eq 1 ] || { echo "$output"; false; }
 }
