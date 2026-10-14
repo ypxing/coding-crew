@@ -29,7 +29,7 @@ if [[ "${1:-}" == "--update" ]]; then
   PLATFORM="all"
   AGENT="all"
 else
-  PLATFORM="${1:-all}"    # all | a platform in orchestrator/platforms.json
+  PLATFORM="${1:-all}"    # all | a platform in platforms.json
   AGENT="${2:-all}"       # all | --skill <name> | --skills a,b
 fi
 
@@ -51,7 +51,7 @@ usage() {
   echo "       ./install.sh [platform] --skills <a,b,c>"
   echo "       ./install.sh --update"
   echo ""
-  local known="a platform in orchestrator/platforms.json"
+  local known="a platform in platforms.json"
   [[ ${#PLATFORMS[@]} -gt 0 ]] && known=$(platforms_joined ", ")
   echo "  platform:  all (default), $known"
   echo "  --skill:   install a single skill (e.g. to-issues)"
@@ -64,7 +64,7 @@ usage() {
   echo "  ./install.sh                                      # install everything into project"
   echo "  ./install.sh claude --skill tdd                   # one skill into project"
   echo "  ./install.sh claude --skills tdd,to-issues          # multiple skills at once"
-  echo "  ./install.sh claude --skill crew-afk              # crew-afk and the skills its roles follow"
+  echo "  ./install.sh claude --skill solve-feature         # solve-feature and the skills it uses"
   echo "  ./install.sh --update                             # update all installed skills"
   echo ""
   echo "Available skills:"
@@ -74,7 +74,7 @@ usage() {
   echo "A user-level install (TARGET_REPO=\$HOME) honors each platform's own config-dir override:"
   local i overrides=""
   for i in "${!PLATFORMS[@]}"; do overrides="${overrides:+$overrides, }${_PF_ENV[$i]} (${PLATFORMS[$i]})"; done
-  echo "  ${overrides:-the configDirEnv of each entry in orchestrator/platforms.json}."
+  echo "  ${overrides:-the configDirEnv of each entry in platforms.json}."
   exit 1
 }
 
@@ -117,7 +117,7 @@ if [[ "$UPDATE_MODE" == "false" ]]; then
   fi
 
   if [[ "$PLATFORM" != "all" ]] && ! platform_known "$PLATFORM"; then
-    echo "Error: invalid platform '$PLATFORM' — must be: all, $(platforms_joined ", ") (from orchestrator/platforms.json)" >&2
+    echo "Error: invalid platform '$PLATFORM' — must be: all, $(platforms_joined ", ") (from platforms.json)" >&2
     usage
   fi
 fi
@@ -176,7 +176,7 @@ prune_retired_agents() {
     assert_safe_path "$dir" "retired agent dir"
     if [[ -d "$REPO_ROOT/$dir" ]]; then
       rm -rf "$REPO_ROOT/$dir"
-      echo "  removed $dir/ (now under .coding-crew/crew-afk/roles/)"
+      echo "  removed $dir/ (agent files are no longer installed)"
     fi
   done < <(jq -r '."retired-agents".dirs // [] | .[]' "$SCRIPT_DIR/registry.json")
 }
@@ -319,8 +319,7 @@ install_skill_assets() {
   assert_safe_path "$src_rel" "skill assets source"
   assert_safe_path "$dest_rel" "skill assets dest"
   install_assets_tree "$SCRIPT_DIR/$src_rel" "$dest_rel" "skill"
-  # `more-assets`: further trees the same way (crew-afk's role protocols render with the shared
-  # fragments, which orchestrator/lib/adapters/render.mjs reads from .coding-crew/skills/_shared/).
+  # `more-assets`: further trees the same way.
   _skill_list "$skill_name" more_assets '.skills[$s]["more-assets"] // [] | .[] | "\(.source)\t\(.dest)"'
   local more="$_SKILL_LIST" line
   while IFS= read -r line; do
@@ -428,7 +427,7 @@ install_single_skill() {
   skill_version="$_SKILL_SCALAR"
   MANIFEST_SKILL_ENTRIES+=("$skill_name $skill_version")
 
-  # Runtime files the skill launches rather than reads (the crew-afk orchestrator).
+  # Runtime files the skill runs rather than reads (dep-install's scripts, say).
   install_skill_assets "$skill_name"
 
   local deps
@@ -521,8 +520,7 @@ warn_shadowing_user_installs() {
   while IFS= read -r d; do
     [[ -d "$d" ]] || continue
     local name
-    # The retired agent names too: nothing cleans a stale user-level copy on a project install.
-    for name in crew-afk solve-issue $(jq -r '."retired-agents".names // [] | .[]' "$SCRIPT_DIR/registry.json"); do
+    for name in solve-feature solve-issue; do
       if [[ -e "$d/$name" || -e "$d/$name.md" || -e "$d/$name.toml" || -e "$d/$name.agent.md" ]]; then
         found+=("$d/$name")
       fi
@@ -620,13 +618,6 @@ run_update() {
 
   local updated=0
 
-  # An install from before crew-afk owned its roles lists them as agents; crew-afk now prunes them.
-  if [[ -n "$(jq -r '.agents // {} | keys[]' "$manifest")" ]]; then
-    echo "  agents (crew-coder, crew-reviewer, crew-triage): now part of crew-afk — installing crew-afk"
-    install_single_skill crew-afk
-    updated=$((updated + 1))
-  fi
-
   while IFS= read -r name; do
     local installed_version current_version
     installed_version=$(jq -r --arg n "$name" '.skills[$n].version // "unknown"' "$manifest")
@@ -698,10 +689,6 @@ elif [[ "$AGENT" == "all" ]]; then
   for skill_name in "${skill_names[@]}"; do
     install_single_skill "$skill_name"
   done
-elif jq -e --arg n "$AGENT" '."retired-agents".names | index($n)' "$SCRIPT_DIR/registry.json" >/dev/null; then
-  echo "Note: $AGENT is now a role inside crew-afk — installing crew-afk"
-  echo "---"
-  install_single_skill crew-afk
 else
   echo "Error: unknown argument '$AGENT' (expected all, --skill <name> or --skills <a,b>)" >&2
   usage

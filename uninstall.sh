@@ -91,7 +91,7 @@ prune_empty_dirs() {
   done
 }
 
-# Retired role agent files and their .coding-crew/ dirs: removed with crew-afk, or on a full uninstall.
+# Retired role agent files and their .coding-crew/ dirs: removed with any skill, or on a full uninstall.
 REMOVED_RETIRED=0
 remove_retired_agents() {
   [[ "$REMOVED_RETIRED" -eq 0 ]] || return 0
@@ -168,8 +168,8 @@ remove_skill() {
   done
   if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
 
-  # Assets install once to a platform-neutral path, so uninstall owns them: a stale orchestrator
-  # left behind is an executable no installed skill body matches.
+  # Assets install once to a platform-neutral path, so uninstall owns them: a stale copy left
+  # behind is a script no installed skill body matches.
   local assets_dest
   while IFS= read -r assets_dest; do
     assets_dest="${assets_dest%$'\r'}"
@@ -202,11 +202,6 @@ elif [[ "$MODE" == "--skills" ]]; then
     _s="${_s// /}"
     [[ -n "$_s" ]] && remove_skill "$_s"
   done
-
-elif [[ "$MODE" == "--agent" ]]; then
-  # crew-coder / crew-reviewer / crew-triage are roles inside crew-afk now: nothing to remove alone.
-  echo "Error: agents are no longer installed separately; they are crew-afk's roles — use --skill crew-afk" >&2
-  exit 1
 
 elif [[ "$MODE" != "all" ]]; then
   echo "Error: unknown argument '$MODE'" >&2

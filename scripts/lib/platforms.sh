@@ -1,10 +1,10 @@
-# platforms.sh — every per-platform fact install.sh and uninstall.sh need, read from
-# orchestrator/platforms.json. Sourced, never run; bash 3.2-compatible (uninstall.sh does not re-exec).
+# platforms.sh — every per-platform fact install.sh and uninstall.sh need, read from the repo
+# root's platforms.json. Sourced, never run; bash 3.2-compatible (uninstall.sh does not re-exec).
 # The sourcing script sets SCRIPT_DIR and REPO_ROOT ($HOME means user scope) and has jq on PATH.
 # At user scope a path under <configDir>/ moves to $<configDirEnv> when set: the platform's CLI reads it there.
 
 # CODING_CREW_PLATFORMS_JSON points at another copy of the file (tests add a platform with it).
-PLATFORMS_JSON="${CODING_CREW_PLATFORMS_JSON:-$SCRIPT_DIR/orchestrator/platforms.json}"
+PLATFORMS_JSON="${CODING_CREW_PLATFORMS_JSON:-$SCRIPT_DIR/platforms.json}"
 
 PLATFORMS=()
 _PF_PROJECT=(); _PF_USER=(); _PF_CONFIG=(); _PF_ENV=()

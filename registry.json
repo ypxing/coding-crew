@@ -30,33 +30,6 @@
     ".coding-crew/scripts/mark-issue-done.sh"
   ],
   "skills": {
-    "crew-afk": {
-      "version": "2.42.4",
-      "source-dir": "crew-afk",
-      "description": "Run an unattended sprint: implement, review and merge every ready-for-agent issue into one feature branch.",
-      "assets": {
-        "source": "orchestrator",
-        "dest": ".coding-crew/crew-afk"
-      },
-      "more-assets": [
-        {
-          "source": "skills/_shared/fragments",
-          "dest": ".coding-crew/skills/_shared/fragments"
-        }
-      ],
-      "scripts": [
-        "discover-commands.sh",
-        "write-commands-cache.sh"
-      ],
-      "deps": [
-        "tdd",
-        "dep-install",
-        "solve-issue",
-        "to-issues",
-        "crew-address-findings",
-        "write-pr"
-      ]
-    },
     "solve-feature": {
       "version": "0.9.0",
       "source-dir": "solve-feature",
@@ -100,19 +73,6 @@
       "scripts": [
         "commit-changes.sh",
         "write-commands-cache.sh"
-      ],
-      "deps": [
-        "dep-install",
-        "tdd"
-      ]
-    },
-    "crew-address-findings": {
-      "version": "1.6.1",
-      "source-dir": "crew-address-findings",
-      "description": "Triage and fix findings from a crew-afk code review report using TDD.",
-      "scripts": [
-        "branch-safety-check.sh",
-        "commit-changes.sh"
       ],
       "deps": [
         "dep-install",
