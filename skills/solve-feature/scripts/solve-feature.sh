@@ -61,6 +61,23 @@ pr_view() { # sets PR_N and URL (and VIEW) when the branch has an OPEN PR, else 
   else PR_N="" URL=""; fi
 }
 
+# .solve-feature/spec.md, which the reviewer and the PR body read: the PRD, then every issue of the feature, open
+# or closed, with its acceptance criteria. All of them: an issue another run landed is met in the code, and one
+# still open is a gap a person must see.
+write_spec() {
+  local spec="$LOGS/spec.md" dir="$LOGS/issues" rc=0 f title
+  node "$CLI" prd --feature-slug "$SLUG" >"$spec" || rc=$?
+  case $rc in 0) echo >>"$spec" ;; 3) ;; *) die "reading the feature's PRD failed (exit $rc)" ;; esac
+  rm -rf "$dir"
+  node "$CLI" known --feature-slug "$SLUG" --out "$dir" || die "known failed for '$SLUG' (see above)"
+  ls "$dir" | sort -n | while IFS= read -r f; do
+    title=$(grep -m1 '^# ' "$dir/$f" | sed 's/^# //' || true)
+    printf '### %s — %s\n' "${f%.md}" "${title:-${f%.md}}"
+    # Plain bullets, not task boxes: GitHub counts a PR's boxes as its open tasks.
+    awk '/^## /{f = tolower($0) ~ /^## acceptance criteria/} f' "$dir/$f" | sed -E 's/^([[:space:]]*)[-*] \[[ xX]\] /\1- /'
+  done >>"$spec"
+}
+
 start() {
   [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
   # DISCOVER needs an agent and a human once; run-checks.sh's own exit 3 guards a file that names no usable command.
@@ -72,7 +89,7 @@ start() {
   # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase
   # an existing one: a re-run lands on it as the last run left it.
   git fetch -q origin
-  local default rc=0 cfg="$ROOT/.coding-crew/config.json"
+  local default cfg="$ROOT/.coding-crew/config.json"
   default=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
   default=${default:-main}
   [ "$BRANCH" != "$default" ] || die "--branch '$BRANCH': '$default' is the default branch; name a feature branch"
@@ -80,8 +97,7 @@ start() {
   if git show-ref --verify -q "refs/heads/$BRANCH"; then git checkout -q "$BRANCH"
   elif git show-ref --verify -q "refs/remotes/origin/$BRANCH"; then git checkout -q -t "origin/$BRANCH"
   else git checkout -q -b "$BRANCH" "origin/$default" && git push -q -u origin "$BRANCH"; fi
-  node "$CLI" prd --feature-slug "$SLUG" >"$LOGS/prd.md" || rc=$?
-  case $rc in 0) ;; 3) rm -f "$LOGS/prd.md" ;; *) die "reading the feature's PRD failed (exit $rc)" ;; esac
+  write_spec
   pr_view
   echo "branch=$BRANCH"
   echo "coder-model=$(jq -r '.solveFeature.models.coder | strings' "$cfg" 2>/dev/null || true)"
@@ -99,33 +115,16 @@ next() {
   echo "$ref"
 }
 
-MARK='<!-- solve-feature-progress -->'
-progress() { # <row> [<note>] — the PR's one progress comment: its earlier rows, then <row>, then <note>; a failed write never stops land
-  if [ -z "$PR_N" ]; then printf '%s\n' "$1" ${2:+"$2"}; return 0; fi
-  local list cid="" rows="" body
-  list=$(gh api "repos/{owner}/{repo}/issues/$PR_N/comments" --paginate 2>/dev/null) || { echo "solve-feature: warning: progress comment not read" >&2; return 0; }
-  cid=$(jq -r --arg m "$MARK" '.[] | select(.body | contains($m)) | .id' <<<"$list" 2>/dev/null | head -1) || cid=""
-  # The rows sit between the header line and the first blank line, which opens a note.
-  [ -z "$cid" ] || rows=$(jq -r --argjson id "$cid" '.[] | select(.id == $id) | .body' <<<"$list" | awk 'NR > 2 && /^$/ {exit} NR > 2')
-  body="$MARK"$'\n'"solve-feature — $SLUG — host ${SOLVE_FEATURE_HOST:-$(hostname 2>/dev/null || uname -n)} — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  body+=$'\n'"${rows:+$rows$'\n'}$1${2:+$'\n\n'$2}"
-  if [ -n "$cid" ]; then gh api -X PATCH "repos/{owner}/{repo}/issues/comments/$cid" -f body="$body" >/dev/null 2>&1
-  else gh api "repos/{owner}/{repo}/issues/$PR_N/comments" -f body="$body" 2>/dev/null | jq -e '.id' >/dev/null
-  fi || echo "solve-feature: warning: progress comment on PR #$PR_N not written" >&2
-}
-stop() { # <row> <step> <reason> [<log>] — a Stopped-at note (with the log's last 20 lines) after the row; exit 1
-  local note="Stopped at $2: $3"
-  [ -z "${4:-}" ] || note+=$'\n```\n'"$(tail -n 20 "$4")"$'\n```'
-  progress "$1" "$note"
-  echo "solve-feature: $REF $2 failed: $3${4:+ — log: $4}"
-  outcome "stopped: $REF $2 failed: $3"; exit 1
+stop() { # <step> <reason> [<log>]; exit 1
+  echo "solve-feature: $REF $1 failed: $2${3:+ — log: $3}"
+  outcome "stopped: $REF $1 failed: $2"; exit 1
 }
 
 # The PR body: address-pr-comments finds a solve-feature PR by the begin line and reads its slug from the
 # slug line; the reviewer reads the <details> block as the spec. Text outside the block is a human's and kept.
 BEGIN='<!-- solve-feature:begin -->' END='<!-- solve-feature:end -->'
-pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the prd output, else the issue's own
-  local t; t=$(head -n 1 <<<"$PRD_TEXT" | sed -nE 's/^<!-- PRD issue #[0-9]+: (.*) -->$/\1/p' | sed 's/^PRD: //')
+pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the spec, else the issue's own
+  local t; t=$(head -n 1 "$LOGS/spec.md" | sed -nE 's/^<!-- PRD issue #[0-9]+: (.*) -->$/\1/p' | sed 's/^PRD: //')
   [ -n "$t" ] || t=$(grep -m1 '^# ' "$LOGS/$1.issue.md" | sed 's/^# //')
   printf '%s' "$t"
 }
@@ -161,31 +160,27 @@ scripts_of() { [ -d "$SELF/../../$1/scripts" ] && { (cd "$SELF/../../$1/scripts"
 land() {
   local rs="${REF//\//_}" rc=0 again checks_dir dep_dir clog f
   [ -f "$LOGS/$rs.issue.md" ] || die "no saved issue for $REF: run next first"
-  [ ! -f "$LOGS/prd.md" ] || PRD_TEXT=$(cat "$LOGS/prd.md")
   checks_dir=$(scripts_of solve-issue)
   dep_dir=$(scripts_of dep-install) clog="$LOGS/$rs.checks.log"
-  pr_view # a stop reports on the PR an earlier land (or a human) opened; before one exists, on stdout
-  [ "$(git branch --show-current)" = "$BRANCH" ] || stop "$REF  solve ✗  checks ·" solve "branch changed to '$(git branch --show-current)'"
-  [ -z "$(git status --porcelain)" ] || stop "$REF  solve ✗  checks ·" solve "working tree left dirty"
+  [ "$(git branch --show-current)" = "$BRANCH" ] || stop solve "branch changed to '$(git branch --show-current)'"
+  [ -z "$(git status --porcelain)" ] || stop solve "working tree left dirty"
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
-  [ "$again" != "$REF" ] || stop "$REF  solve ✗  checks ·" solve "coder ran but did not close $REF (its report says why)"
+  [ "$again" != "$REF" ] || stop solve "coder ran but did not close $REF (its report says why)"
   rc=0; bash "$checks_dir/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$dep_dir" >"$clog" 2>&1 || rc=$?
-  [ "$rc" != 3 ] || stop "$REF  solve ✓  checks ✗" checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand and commit .coding-crew/dev-commands.json" "$clog"
-  # $REF is closed and committed but not pushed: only a land for it pushes it with its spec in the PR body.
-  [ "$rc" = 0 ] || stop "$REF  solve ✓  checks ✗" checks "run-checks.sh exit $rc; once fixed and committed, run land $SLUG $REF $BRANCH before a re-run" "$clog"
-  # The body first: a closing-refs failure stops before anything is pushed.
-  f="$LOGS/$rs.pr-body.md"
-  pr_body "$REF" "$rs" "$( [ -z "$PR_N" ] || jq -r '.body // ""' <<<"$VIEW")" >"$f"
-  git push -q -u origin "$BRANCH" || stop "$REF  solve ✓  checks ✓" push "git push failed; once it can push, run land $SLUG $REF $BRANCH before a re-run"
-  if [ -n "$PR_N" ]; then
-    gh pr edit "$PR_N" --body-file "$f" >/dev/null || die "gh pr edit $PR_N failed"
-  else
+  [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand and commit .coding-crew/dev-commands.json" "$clog"
+  # $REF is closed and committed but not pushed, so a plain re-run would skip it.
+  [ "$rc" = 0 ] || stop checks "run-checks.sh exit $rc; once fixed and committed, run land $SLUG $REF $BRANCH before a re-run" "$clog"
+  git push -q -u origin "$BRANCH" || stop push "git push failed; once it can push, run land $SLUG $REF $BRANCH before a re-run"
+  pr_view
+  if [ -z "$PR_N" ]; then
+    # describe writes the whole body at the end; until then it only carries the markers address-pr-comments reads.
+    f="$LOGS/pr-body.md"
+    printf '%s\n' "$BEGIN" "Implemented by solve-feature (\`$SLUG\`) — in progress." "<!-- solve-feature:slug $SLUG -->" "$END" >"$f"
     URL=$(gh pr create --draft --title "$(pr_title "$rs")" --body-file "$f") || die "gh pr create failed"
     PR_N="${URL##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $URL"
   fi
-  progress "$REF  solve ✓  checks ✓"
   echo "pr=$PR_N"
 }
 
