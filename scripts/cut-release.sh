@@ -32,7 +32,7 @@ elif [[ "$NO_DEMO_SET" -eq 1 && -z "${NO_DEMO// }" ]]; then
 fi
 
 [[ -z "$(git status --porcelain)" ]] || {
-  echo "Error: working tree not clean — commit (including the CHANGELOG.md/registry.json bumps) before releasing." >&2
+  echo "Error: working tree not clean — commit (including the CHANGELOG.md entry) before releasing." >&2
   exit 1
 }
 
@@ -92,14 +92,6 @@ if [[ -n "$DEMO_LOG" ]]; then
   echo "Demo smoke: PASS at ${LOG_COMMIT:0:12} ($DEMO_LOG)"
 else
   echo "Demo smoke: skipped — $NO_DEMO"
-fi
-
-if command -v bats >/dev/null 2>&1; then
-  echo "Checking registry.json version bumps against ${PREV_TAG:-<none>} ..."
-  bats tests/registry-version-bump.bats
-else
-  echo "Warning: bats not found on PATH — skipping the registry.json version-bump check." \
-       "Run 'bats tests/registry-version-bump.bats' yourself before trusting this release." >&2
 fi
 
 SUBJECT=$(git log -1 --format=%s)

@@ -7,7 +7,7 @@
 # of whether an install command is found.
 
 SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-SCRIPT="$SCRIPT_DIR/skills/dep-install/scripts/host-install.sh"
+SCRIPT="$SCRIPT_DIR/lib/checks/host-install.sh"
 
 setup() {
   # Isolation from whatever the ambient shell happens to export — a caller may
@@ -145,7 +145,7 @@ MK
   run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
   [ -f "$PROJECT/.scratch/host-install.done" ]
-  expected="$(bash "$SCRIPT_DIR/skills/dep-install/scripts/manifest-fingerprint.sh" compute --project-root "$PROJECT")"
+  expected="$(bash "$SCRIPT_DIR/lib/checks/manifest-fingerprint.sh" compute --project-root "$PROJECT")"
   [ "$(cat "$PROJECT/.scratch/host-install.done")" = "$expected" ]
 }
 

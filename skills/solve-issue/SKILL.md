@@ -70,7 +70,7 @@ shell, so carry them as literals for the rest of the run:
 
 - `ISSUE_SLUG` — the commit prefix (Steps 4 and 6)
 - `PRD` — the PRD path, or empty (Step 1.5)
-- `DEP_SCRIPTS` — dep-install's scripts (Steps 2, 4 and 5)
+- `DEP_SCRIPTS` — the checks library, `<skill-dir>/scripts/checks` (Steps 2, 4 and 5)
 
 ### 1. Understand the issue
 
@@ -85,7 +85,7 @@ decisions and constraints the issue assumes. No PRD is normal.
 
 ### 2. Dependencies — only when something is missing
 
-If `DEP_SCRIPTS` is empty, stop and report `BLOCKED: dep-install skill not installed`. Otherwise
+If `DEP_SCRIPTS` is empty, stop and report `BLOCKED: checks library not linked — re-run install.sh`. Otherwise
 run this — even when your prompt already states `INSTALL_MODE=` or `DEPS=`; it is what turns them
 into an action:
 
@@ -175,7 +175,7 @@ branch with a commit on it is resumable; uncommitted work looks like a run that 
 Message quality doesn't matter — checkpoints are squashed before merge:
 
 ```bash
-bash "<skill-dir>/scripts/commit-changes.sh" \
+bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
   --prefix "[$ISSUE_SLUG][WIP]" \
   --message "<behavior just made green>" \
   --files "<files touched this cycle>"
@@ -194,7 +194,7 @@ or touch unrelated doc sections.
 This is the one full-suite run:
 
 ```bash
-bash "<skill-dir>/scripts/run-checks.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
+bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
   --dep-scripts "$DEP_SCRIPTS"
 ```
 
@@ -214,7 +214,7 @@ command found` means no local command exists: report it, do not re-check CLAUDE.
   cat > "$PROJECT_ROOT/.discovered-commands.json" <<'JSON'
   {"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>"}
   JSON
-  bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file "$PROJECT_ROOT/.discovered-commands.json"
+  bash "<skill-dir>/scripts/git-workflow/write-commands-cache.sh" --response-file "$PROJECT_ROOT/.discovered-commands.json"
   rm -f "$PROJECT_ROOT/.discovered-commands.json"
   ```
 
@@ -231,7 +231,7 @@ Run `commit-changes.sh` from the same directory you read this skill file from:
 ```bash
 DETAILS="- <key decision or tradeoff line 1>
 - <key decision or tradeoff line 2>"
-bash "<skill-dir>/scripts/commit-changes.sh" \
+bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
   --prefix "[$ISSUE_SLUG]" \
   --message "<issue title>${DETAILS:+
 

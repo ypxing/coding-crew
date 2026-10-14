@@ -13,7 +13,7 @@ The tracker this repo uses is the `tracker` section of `.coding-crew/config.json
 `kind` is `local` or `github`; other sections of the file (`solveFeature`) are kept beside it. No
 `tracker` section means `local`, so this tracker needs no config at all. `configure-tracker`
 writes the section, and `node "$TRACKER" config` prints what is in effect (`tracker=<kind>`,
-`configured=yes|no`). This doc ships with the tracker CLI in `.coding-crew/tracker/docs/` and is
+`configured=yes|no`). This doc ships with the tracker CLI in `.coding-crew/lib/tracker/docs/` and is
 refreshed by every install — edit `config.json`, not this file.
 
 ## Tracker CLI
@@ -22,8 +22,7 @@ Skills read and write this tracker only through the tracker CLI. To run an op by
 hand, from the repo root (needs Node):
 
 ```bash
-TRACKER="$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs"
-[ -f "$TRACKER" ] || TRACKER="$HOME/.coding-crew/tracker/cli.mjs"   # user-level install
+TRACKER="$HOME/.coding-crew/lib/tracker/cli.mjs"   # a project-level install: .coding-crew/lib/tracker/cli.mjs
 ```
 
 ```bash

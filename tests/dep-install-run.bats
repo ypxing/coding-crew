@@ -5,7 +5,7 @@
 # own, as a worker calls it. `docker` is stubbed on PATH and never reaches a daemon; run.sh puts
 # the crew shim in front of the stub, so the stub logs what the shim finally passed on.
 
-SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/run.sh"
+SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks/run.sh"
 
 setup() {
   TEMP_DIR=$(mktemp -d)

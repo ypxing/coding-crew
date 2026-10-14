@@ -4,7 +4,7 @@
 # recipes use, so ensure-deps.sh can cache it as "docker_service" ahead of gen-override.sh's
 # own file-order guess among several declared services.
 
-SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts"
+SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/detect-service.sh"
 
 setup() {

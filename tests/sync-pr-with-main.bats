@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# scripts/sync-pr-with-main.sh — merge origin/main into a PR branch, repair registry versions.
+# scripts/sync-pr-with-main.sh — merge origin/main into a PR branch, resolving CHANGELOG.md append conflicts.
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
@@ -12,7 +12,7 @@ setup() {
   git checkout -q -b main
   mkdir -p scripts skills/a
   cp "$REPO_ROOT/scripts/sync-pr-with-main.sh" "$REPO_ROOT/scripts/resolve-merge-conflicts.sh" scripts/
-  reg 2.6.0 > registry.json
+  reg d > registry.json
   printf '# Changelog\n\n' > CHANGELOG.md
   echo one > skills/a/f.txt
   git add -A; git commit -q -m base
@@ -20,46 +20,31 @@ setup() {
   git checkout -q -b feat
 }
 
-reg() { printf '{\n  "skills": {\n    "a": {\n      "version": "%s",\n      "source-dir": "a",\n      "description": "d"\n    }\n  }\n}\n' "$1"; }
+reg() { printf '{\n  "skills": {\n    "a": {\n      "source-dir": "a",\n      "description": "%s"\n    }\n  }\n}\n' "$1"; }
 commit_main() { git checkout -q main; "$@"; git add -A; git commit -q -m m; git push -q origin main 2>/dev/null; git checkout -q feat; }
-ver() { jq -r .skills.a.version registry.json; }
 refs() { git -C "$W/origin.git" for-each-ref; }
 
-@test "registry version + changelog append conflicts: 2.7.2, both parents, branch entry first, repair printed" {
-  echo '- branch entry' >> CHANGELOG.md; reg 2.6.2 > registry.json; git commit -qam b
-  commit_main bash -c "echo '- main entry' >> CHANGELOG.md; $(declare -f reg); reg 2.7.1 > registry.json"
+@test "a changelog append conflict: both entries kept, branch entry first, both parents, nothing pushed" {
+  echo '- branch entry' >> CHANGELOG.md; echo b > skills/a/g.txt; git add -A; git commit -qm b
+  commit_main bash -c "echo '- main entry' >> CHANGELOG.md"
   before=$(refs)
   run bash scripts/sync-pr-with-main.sh feat
   [ "$status" -eq 0 ]
-  [[ "$output" == *"2.7.2"* ]]
+  [[ "$output" == *"CHANGELOG.md: kept 1 entry from the branch and 1 from main"* ]]
   [ "$(git rev-list --parents -1 HEAD | wc -w)" -eq 3 ]
-  [ "$(ver)" = "2.7.2" ]
   [ "$(grep -n 'branch entry' CHANGELOG.md | cut -d: -f1)" -lt "$(grep -n 'main entry' CHANGELOG.md | cut -d: -f1)" ]
+  [ -f skills/a/g.txt ]
   [ "$before" = "$(refs)" ]
 }
 
-@test "both sides bumped 2.6.0 -> 2.6.1 (clean merge): 2.6.2" {
-  reg 2.6.1 > registry.json; echo x > skills/a/g.txt; git add -A; git commit -qm b
-  commit_main bash -c "echo y > other.txt; $(declare -f reg); reg 2.6.1 > registry.json"
-  run bash scripts/sync-pr-with-main.sh feat
-  [ "$status" -eq 0 ]
-  [ "$(ver)" = "2.6.2" ]
-}
-
-@test "shipped file changed without bump while main bumped: 2.6.2" {
+@test "registry.json is merged as it is: no version is repaired or added" {
   echo changed > skills/a/f.txt; git commit -qam b
-  commit_main bash -c "$(declare -f reg); reg 2.6.1 > registry.json"
+  commit_main bash -c "$(declare -f reg); reg main > registry.json"
   run bash scripts/sync-pr-with-main.sh feat
   [ "$status" -eq 0 ]
-  [ "$(ver)" = "2.6.2" ]
-}
-
-@test "branch bumped minor to 2.7.0 while main is at 2.7.0: 2.8.0" {
-  reg 2.7.0 > registry.json; git commit -qam b
-  commit_main bash -c "$(declare -f reg); reg 2.7.0 > registry.json"
-  run bash scripts/sync-pr-with-main.sh feat
-  [ "$status" -eq 0 ]
-  [ "$(ver)" = "2.8.0" ]
+  [ "$(git show HEAD:registry.json)" = "$(git show origin/main:registry.json)" ]
+  ! grep -q '"version"' registry.json
+  ! grep -qi 'version' "$REPO_ROOT/scripts/sync-pr-with-main.sh" "$REPO_ROOT/scripts/resolve-merge-conflicts.sh"
 }
 
 @test "conflict in another file: non-zero, names file, no commit, merge in progress" {
@@ -72,7 +57,7 @@ refs() { git -C "$W/origin.git" for-each-ref; }
   git rev-parse -q --verify MERGE_HEAD
 }
 
-@test "conflict in non-version registry field: non-zero, merge in progress" {
+@test "a registry.json conflict needs a human: non-zero, merge in progress" {
   sed -i.bak 's/"d"/"branch"/' registry.json; git commit -qam b
   commit_main bash -c "sed -i.bak 's/\"d\"/\"main\"/' registry.json"
   run bash scripts/sync-pr-with-main.sh feat

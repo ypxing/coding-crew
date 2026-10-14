@@ -5,7 +5,7 @@
 # Make itself, not re-implemented as text-pattern matching. Same pattern as
 # host-install.sh's own install/deps scan and ensure-env.sh's _makefile_env_command.
 
-SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/detect-mode.sh"
+SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks/detect-mode.sh"
 
 setup() {
   TEMP_DIR=$(mktemp -d)

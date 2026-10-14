@@ -13,7 +13,7 @@
 # A plain (non-worktree) checkout's `.git` is already a real, writable directory reachable
 # through the project's normal bind mount, so no GIT_* entries apply there.
 
-SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts"
+SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/gen-override.sh"
 
 setup() {

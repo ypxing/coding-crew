@@ -6,7 +6,7 @@
 # symlink either refuse ("not writing through dangling symlink") or resurrect whatever the
 # broken link used to point at, so the script must clear it before creating .env fresh.
 
-SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/ensure-env.sh"
+SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks/ensure-env.sh"
 
 # assert_linked_or_copied <project-env> <main-root-env> — the MAIN_ROOT-into-PROJECT_ROOT
 # case: a real symlink where the platform allows it, or (no symlink privilege — the default

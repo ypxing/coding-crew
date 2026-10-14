@@ -1,8 +1,8 @@
 # Git Workflow Scripts
 
-**Infrastructure scripts for skill build-time copying**
+**A library: shared scripts, linked into the skills that use them**
 
-This directory contains reusable bash scripts that are copied into skills during `install.sh` execution. These scripts are **not skills themselves** — they are infrastructure utilities that skills use for git/branch/commit operations.
+These scripts are **not skills themselves** — they are infrastructure utilities that skills use for git/branch/commit operations.
 
 ## Purpose
 
@@ -12,18 +12,19 @@ These scripts provide consistent git workflow operations across multiple skills:
 
 ## How It Works
 
-During installation (`install.sh`), skills that declare a `scripts` field in `registry.json` will have these scripts copied into their local `scripts/` directory:
+`install.sh` writes this directory once to `<root>/.coding-crew/lib/git-workflow/` and links it as
+`<skill-dir>/scripts/git-workflow` into every skill whose `libs` in `registry.json` names it:
 
 ```json
 "solve-issue": {
-  "scripts": ["commit-changes.sh"],
+  "libs": ["checks", "git-workflow", "tracker"],
   ...
 }
 ```
 
-After installation, skills reference them locally:
+Skills run them through the link:
 ```bash
-bash scripts/commit-changes.sh --message "..." --files "..."
+bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" --message "..." --files "..."
 ```
 
 ## Scripts
@@ -34,7 +35,7 @@ bash scripts/commit-changes.sh --message "..." --files "..."
 
 **Usage**:
 ```bash
-bash scripts/branch-safety-check.sh [--allow-default]
+bash scripts/git-workflow/branch-safety-check.sh [--allow-default]
 ```
 
 **Arguments**:
@@ -50,10 +51,10 @@ bash scripts/branch-safety-check.sh [--allow-default]
 **Example**:
 ```bash
 # Enforce non-default branch
-bash scripts/branch-safety-check.sh
+bash scripts/git-workflow/branch-safety-check.sh
 
 # Allow default branch with warning
-bash scripts/branch-safety-check.sh --allow-default
+bash scripts/git-workflow/branch-safety-check.sh --allow-default
 ```
 
 ---
@@ -64,7 +65,7 @@ bash scripts/branch-safety-check.sh --allow-default
 
 **Usage**:
 ```bash
-bash scripts/commit-changes.sh \
+bash scripts/git-workflow/commit-changes.sh \
   --message "msg" \
   --files "file1 file2 file3" \
   [--coauthor "Name <email>"] \
@@ -92,12 +93,12 @@ bash scripts/commit-changes.sh \
 **Example**:
 ```bash
 # Simple commit
-bash scripts/commit-changes.sh \
+bash scripts/git-workflow/commit-changes.sh \
   --message "Fix authentication bug" \
   --files "src/auth.ts test/auth.test.ts"
 
 # With issue prefix and co-author
-bash scripts/commit-changes.sh \
+bash scripts/git-workflow/commit-changes.sh \
   --prefix "[01-auth]" \
   --message "Add logout endpoint" \
   --files "src/api/auth.ts test/api/auth.test.ts" \
@@ -112,7 +113,7 @@ bash scripts/commit-changes.sh \
 
 **Usage**:
 ```bash
-bash scripts/discover-commands.sh [--refresh]
+bash scripts/git-workflow/discover-commands.sh [--refresh]
 ```
 
 **Behavior**: Prints either a skip message (nothing to read, or `.coding-crew/dev-commands.json` already exists) or the full discovery prompt, ready to hand to a model as-is. Bootstrap-only: once the cache file exists it is trusted as-is, indefinitely, until a human clears it or passes `--refresh` (or `CREW_COMMANDS_REFRESH=1`) — there is no staleness re-check against source-doc content. The prompt asks for five fields, not three: `test`/`lint`/`typecheck`, plus `install` — a documented install command, reported only when the source explicitly states one, so dep-install can use it in place of its own mechanical Makefile-target/lockfile guess — and `env` — a documented `.env`-bootstrap command, reported the same way, so `ensure-env.sh` can use it in place of its own mechanical `.env.example`-or-empty convention.
@@ -132,7 +133,7 @@ directly and reads `.coding-crew/dev-commands.json` itself when it is usable.
 
 **Usage**:
 ```bash
-bash scripts/write-commands-cache.sh --response-file <path>
+bash scripts/git-workflow/write-commands-cache.sh --response-file <path>
 ```
 
 **Behavior**: Extracts `test`/`lint`/`typecheck`/`install`/`env` from the response (tolerant of surrounding prose or a markdown code fence). A response with none of the five fields recognisable fails without touching any existing cache.
@@ -148,17 +149,17 @@ bash scripts/write-commands-cache.sh --response-file <path>
 - **Testability**: Scripts can be tested independently
 - **Clarity**: Skills focus on workflow, not git implementation details
 - **Reusability**: New skills can leverage existing scripts
-- **Independence**: Each skill gets its own copy - no runtime dependencies
+- **One copy**: installed once, linked as `<skill-dir>/scripts/git-workflow` into each skill that uses it
 
 ## Maintenance
 
 To update scripts:
-1. Edit scripts in `scripts/skill-utils/git-workflow/`
+1. Edit scripts in `lib/git-workflow/`
 2. Run `install.sh` in consuming repos to get updates
-3. Each skill maintains its own installed copy
+3. One installed copy, linked into each skill whose registry `libs` names it
 
 ## See Also
 
-- `install.sh` - Script copying logic
-- `registry.json` - Skill script declarations
+- `install.sh` - library install and links
+- `registry.json` - each skill's `libs`
 - Individual skill SKILL.md files for usage context

@@ -13,7 +13,7 @@ Break a plan into independently-grabbable issues using vertical slices (tracer b
 
 ### 1. Gather context and determine feature slug
 
-Work from whatever is already in the conversation context. If the user passes an issue reference as an argument, it must be a ref the configured tracker accepts (how that tracker writes one is in `.coding-crew/tracker/docs/<kind>.md`, `<kind>` from `node "$TRACKER" config`) — the CLI refuses anything else with exit 2. A file the caller names as the source (`add-tests`' `.scratch/<feature-slug>/findings.md`) is the plan. Do NOT fetch from arbitrary user-supplied URLs or an unconfigured remote tracker.
+Work from whatever is already in the conversation context. If the user passes an issue reference as an argument, it must be a ref the configured tracker accepts (how that tracker writes one is in `<skill-dir>/scripts/tracker/docs/<kind>.md`, `<kind>` from `node "$TRACKER" config`) — the CLI refuses anything else with exit 2. A file the caller names as the source (`add-tests`' `.scratch/<feature-slug>/findings.md`) is the plan. Do NOT fetch from arbitrary user-supplied URLs or an unconfigured remote tracker.
 
 When the plan references an issue, read its full body and its comments, not just the title: `node "$TRACKER" fetch <ref> --comments`.
 

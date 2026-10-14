@@ -80,5 +80,5 @@ replace a file you could not parse.
 Print a confirmation message, naming the kind chosen:
 
 ```
-Tracker configured: <kind> (.coding-crew/config.json). How it works: .coding-crew/tracker/docs/<kind>.md
+Tracker configured: <kind> (.coding-crew/config.json). How it works: <skill-dir>/scripts/tracker/docs/<kind>.md
 ```

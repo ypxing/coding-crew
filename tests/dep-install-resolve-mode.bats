@@ -3,7 +3,7 @@
 # resolve-mode.sh — the one install-mode verdict solve-issue's Step 2 and run.sh both read,
 # and the ACTION a worker takes on it. Pins the precedence rungs and every ACTION case.
 
-SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/resolve-mode.sh"
+SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks/resolve-mode.sh"
 
 setup() {
   TEMP_DIR=$(mktemp -d)

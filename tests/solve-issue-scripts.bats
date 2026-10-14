@@ -4,12 +4,16 @@
 # run-checks.sh (Step 5's cached checks, each through dep-install's run.sh).
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-PREFLIGHT="$REPO_ROOT/skills/solve-issue/scripts/preflight.sh"
-RUN_CHECKS="$REPO_ROOT/skills/solve-issue/scripts/run-checks.sh"
-DEP_SCRIPTS="$REPO_ROOT/skills/dep-install/scripts"
+RUN_CHECKS="$REPO_ROOT/lib/checks/run-checks.sh"
+DEP_SCRIPTS="$REPO_ROOT/lib/checks"
 
 setup() {
   TEMP_DIR=$(mktemp -d)
+  # solve-issue's scripts/ as install.sh lays it out: its own scripts, and the checks library linked in.
+  mkdir -p "$TEMP_DIR/skill/scripts"
+  cp "$REPO_ROOT"/skills/solve-issue/scripts/*.sh "$TEMP_DIR/skill/scripts/"
+  ln -s "$REPO_ROOT/lib/checks" "$TEMP_DIR/skill/scripts/checks"
+  PREFLIGHT="$TEMP_DIR/skill/scripts/preflight.sh"
   WORK="$TEMP_DIR/work"
   mkdir -p "$WORK/.scratch/feat/issues/open" "$WORK/.scratch/feat/issues/done"
   git -C "$WORK" init -q -b main
@@ -77,11 +81,14 @@ _preflight() {
   [[ "$output" == *$'\nPRD=\n'* ]]
 }
 
-@test "preflight: finds dep-install's scripts as a sibling skill, and reports the slug" {
+@test "preflight: finds the checks library through its scripts/checks link, and reports the slug" {
   _issue "" "None"
   _preflight
   [[ "$output" == *"ISSUE_SLUG=02-second"* ]]
-  [[ "$output" == *"DEP_SCRIPTS=$DEP_SCRIPTS"* ]]
+  [ "${lines[${#lines[@]}-1]}" = "DEP_SCRIPTS=$TEMP_DIR/skill/scripts/checks" ]
+  rm "$TEMP_DIR/skill/scripts/checks"
+  _preflight
+  [ "${lines[${#lines[@]}-1]}" = "DEP_SCRIPTS=" ]
 }
 
 # ─── run-checks.sh ───────────────────────────────────────────────────────────

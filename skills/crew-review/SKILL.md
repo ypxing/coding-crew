@@ -21,8 +21,8 @@ Your caller names them; a bare number is a PR, nothing at all is the current bra
   caller names, else `git merge-base HEAD origin/<default branch>`. A **PR**: HEAD must be its head (`gh pr view <n>
   --json headRefOid`); if it is not, tell the caller to run `gh pr checkout <n>` and stop. The change is `gh pr diff
   <n>`.
-- **The spec.** A file; an issue ref, read with the tracker CLI's `fetch` (`node .coding-crew/tracker/cli.mjs fetch
-  <ref>`, the CLI in the repo, the main checkout or `$HOME`); or, given a PR and no spec, the PR body's
+- **The spec.** A file; an issue ref, read with the tracker CLI's `fetch` (`node "<skill-dir>/scripts/tracker/cli.mjs" fetch
+  <ref>`); or, given a PR and no spec, the PR body's
   `<details><summary>Spec</summary>` block when it has one, else the whole body. A branch with no spec named has none.
 - **The report's path.** Write the report there; with none, print it.
 

@@ -45,7 +45,7 @@ This applies only to GitHub issue/PR data. Fetching non-GitHub URLs (a spec or a
 This skill works on existing PR branches. Do not run on the default branch.
 
 ```bash
-bash "<skill-dir>/scripts/branch-safety-check.sh"
+bash "<skill-dir>/scripts/git-workflow/branch-safety-check.sh"
 ```
 
 If on the default branch, the script exits with an error. If on a non-default branch, continue to Step 0.1.
@@ -157,18 +157,18 @@ COMMIT_BODY="address PR review comments
 - <what changed for comment N and why>"
 
 # Commit with co-author
-bash "<skill-dir>/scripts/commit-changes.sh" \
+bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
   --message "$COMMIT_BODY" \
   --files "<space-separated file list>" \
   --coauthor "Claude Code <claude@anthropic.com>"
 ```
 
-**Push — solve-feature PRs only** (Step 1's test). On one, after the commit, run
-`solve-issue`'s checks from this skill's sibling directory:
+**Push — solve-feature PRs only** (Step 1's test). On one, after the commit, run the project's
+checks:
 
 ```bash
-bash "<skill-dir>/../solve-issue/scripts/run-checks.sh" --project-root "$(git rev-parse --show-toplevel)" \
-  --main-root "${MAIN_ROOT:-}" --dep-scripts "<skill-dir>/../dep-install/scripts"
+bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$(git rev-parse --show-toplevel)" \
+  --main-root "${MAIN_ROOT:-}" --dep-scripts "<skill-dir>/scripts/checks"
 ```
 
 - It prints `CHECKS: pass` — run a plain `git push`: never forced, no `--force` or

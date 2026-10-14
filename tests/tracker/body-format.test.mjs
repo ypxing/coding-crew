@@ -9,7 +9,7 @@ import {
   sectionBody,
   spliceSection,
   uncheckedCriteria,
-} from "../../tracker/body-format.mjs";
+} from "../../lib/tracker/body-format.mjs";
 
 // These are the backend-agnostic markdown-body helpers, extracted verbatim out of the
 // pre-split tracker.mjs — see tests/tracker/tracker.test.mjs for the equivalent

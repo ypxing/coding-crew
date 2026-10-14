@@ -5,7 +5,7 @@
 # Pinned standalone here since both callers only exercise it through their own skip/write
 # behaviour, not its own edge cases (monorepo layouts, exclusions, atomicity).
 
-SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts"
+SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/manifest-fingerprint.sh"
 
 setup() {

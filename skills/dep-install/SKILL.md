@@ -13,7 +13,7 @@ detect the mode, then install.
 
 Two steps: resolve the install mode, then follow the appropriate install guide. After install, run
 every project command — an ad-hoc one, and a one-off `docker compose` call, included — through
-`scripts/run.sh --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" -- "<command>"`: it runs it in
+`scripts/checks/run.sh --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" -- "<command>"`: it runs it in
 the mode resolved here — inside docker, with this worktree's override added by the `docker` shim, or on
 the host.
 
@@ -31,10 +31,10 @@ the host.
 
 ## Step 1 — Resolve the mode
 
-Run `scripts/resolve-mode.sh` from the same directory you read this skill file from:
+Run `scripts/checks/resolve-mode.sh` from the same directory you read this skill file from:
 
 ```bash
-bash "<skill-dir>/scripts/resolve-mode.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT"
+bash "<skill-dir>/scripts/checks/resolve-mode.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT"
 ```
 
 It prints `INSTALL_MODE=docker` or `INSTALL_MODE=host`, and `DOCKER_SERVICE`. Its order: `git config

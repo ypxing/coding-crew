@@ -5,7 +5,7 @@
 
 bats_require_minimum_version 1.5.0
 
-SHIM_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/shim"
+SHIM_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks/shim"
 
 setup() {
   TEMP_DIR=$(mktemp -d)

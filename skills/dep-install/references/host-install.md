@@ -11,7 +11,7 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 
 ## Detect and run
 
-`scripts/host-install.sh` ensures `.env` exists (from `.env.example`, or empty if there is none) before it does anything else — the same mechanical step `docker-install.sh` already does via `ensure-env.sh`, now on the host path too. It runs even when no install method is found below, since checks after this step can still need a `.env` to exist. It never reads `.env*` content.
+`scripts/checks/host-install.sh` ensures `.env` exists (from `.env.example`, or empty if there is none) before it does anything else — the same mechanical step `docker-install.sh` already does via `ensure-env.sh`, now on the host path too. It runs even when no install method is found below, since checks after this step can still need a `.env` to exist. It never reads `.env*` content.
 
 Check in order — use the first match, stop as soon as one is found.
 
@@ -44,7 +44,7 @@ persist the answer so no future session has to ask again:
 cat > /tmp/install-discovery.json <<'JSON'
 {"install": "<the command you found, or null if you checked and found none>"}
 JSON
-bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file /tmp/install-discovery.json
+bash "<skill-dir>/scripts/git-workflow/write-commands-cache.sh" --response-file /tmp/install-discovery.json
 ```
 
 Only write `null` if you actually looked and found nothing — `null` means "no documented
@@ -55,10 +55,10 @@ find (or not find) an install command by other means.
 
 If neither specified an install command, run the detection script. It checks for a Makefile `install`/`deps` target first, then falls back to signal file detection.
 
-Run `scripts/host-install.sh` from the same directory you read this skill file from:
+Run `scripts/checks/host-install.sh` from the same directory you read this skill file from:
 
 ```bash
-bash "<skill-dir>/scripts/host-install.sh" --project-root "$PROJECT_ROOT"
+bash "<skill-dir>/scripts/checks/host-install.sh" --project-root "$PROJECT_ROOT"
 ```
 
 Exit codes:

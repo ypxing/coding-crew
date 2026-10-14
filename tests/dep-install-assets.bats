@@ -22,7 +22,7 @@ fresh_target() {
 
 @test "registry declares dep-install's scripts at a platform-neutral path" {
   run jq -r '.skills["dep-install"].assets.source' "$REPO_ROOT/registry.json"
-  [ "$output" = "skills/dep-install/scripts" ]
+  [ "$output" = "lib/checks" ]
   run jq -r '.skills["dep-install"].assets.dest' "$REPO_ROOT/registry.json"
   [ "$output" = ".coding-crew/dep-install/scripts" ]
 }
@@ -85,7 +85,7 @@ fresh_target() {
 
   # "run scripts/detect-mode.sh from the same directory you read this skill file from"
   # still works: the copy next to SKILL.md is a runnable program, not a stub.
-  run bash "$target/.pi/skills/dep-install/scripts/detect-mode.sh" --project-root "$target"
+  run bash "$target/.pi/lib/checks/detect-mode.sh" --project-root "$target"
   [ "$status" -eq 0 ]
   [[ "$output" == "USE_HOST" || "$output" == "USE_DOCKER" ]]
 }
@@ -97,8 +97,8 @@ fresh_target() {
 
   [ -x "$target/.coding-crew/dep-install/scripts/shim/docker" ]
   [ -x "$target/.coding-crew/dep-install/scripts/shim/docker-compose" ]
-  [ -x "$target/.claude/skills/dep-install/scripts/shim/docker" ]
-  [ -x "$target/.claude/skills/dep-install/scripts/shim/docker-compose" ]
+  [ -x "$target/.claude/lib/checks/shim/docker" ]
+  [ -x "$target/.claude/lib/checks/shim/docker-compose" ]
 }
 
 @test "a re-install keeps the shim executable even when the previous copy was not" {

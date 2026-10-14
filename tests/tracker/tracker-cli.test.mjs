@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { run } from "../../tracker/cli.mjs";
+import { run } from "../../lib/tracker/cli.mjs";
 import { fakeGithub, ghFeature, ghIssue } from "../helpers/fake-github.mjs";
 
 // tracker/cli.mjs — the read ops (`fetch`, `prd`, `known`) on both backends, `gh` stubbed through
@@ -14,7 +14,7 @@ import { fakeGithub, ghFeature, ghIssue } from "../helpers/fake-github.mjs";
 // code and stderr a caller actually sees.
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const CLI = join(REPO, "tracker/cli.mjs");
+const CLI = join(REPO, "lib/tracker/cli.mjs");
 const LINT = join(REPO, "skills/to-issues/scripts/lint-issues.sh");
 
 function root({ github = false } = {}) {

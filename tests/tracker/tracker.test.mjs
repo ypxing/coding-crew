@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { appendToSection, sectionBody, spliceSection } from "../../tracker/body-format.mjs";
+import { appendToSection, sectionBody, spliceSection } from "../../lib/tracker/body-format.mjs";
 import {
   blockers,
   branchFor,
@@ -16,7 +16,7 @@ import {
   readIssueDeps,
   resolveBlockedBy,
   selectDispatchable,
-} from "../../tracker/local.mjs";
+} from "../../lib/tracker/local.mjs";
 
 function repo() {
   return mkdtempSync(join(tmpdir(), "crew-tracker-"));

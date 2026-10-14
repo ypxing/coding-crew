@@ -7,7 +7,7 @@
 # What is NOT pinned here: real docker behaviour. `docker` is stubbed on PATH throughout, so
 # these tests pin argument construction, exit codes, and the lock — not the daemon.
 
-SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts"
+SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/docker-install.sh"
 
 load helpers/fake-docker

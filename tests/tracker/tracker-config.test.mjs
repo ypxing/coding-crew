@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readTrackerConfig } from "../../tracker/tracker-config.mjs";
-import { run } from "../../tracker/cli.mjs";
+import { readTrackerConfig } from "../../lib/tracker/tracker-config.mjs";
+import { run } from "../../lib/tracker/cli.mjs";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "tracker-config");
 

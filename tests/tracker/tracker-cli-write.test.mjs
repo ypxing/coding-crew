@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { run } from "../../tracker/cli.mjs";
-import { featureMarker } from "../../tracker/github.mjs";
+import { run } from "../../lib/tracker/cli.mjs";
+import { featureMarker } from "../../lib/tracker/github.mjs";
 import { fakeGithub, ghFeature, ghIssue } from "../helpers/fake-github.mjs";
 
 // tracker/cli.mjs — the write ops (`publish-issues`, `publish-prd`, `rewrite`, `mark-done`) on
@@ -143,7 +143,7 @@ test("publish-issues (github) rewrites a Blocked by entry naming a known file <n
   const body = issueOf(exec, 8).body;
   assert.match(body, /## Blocked by\n\n- Issue #7\n/);
   assert.doesNotMatch(body, /7-existing-thing\.md/);
-  const { parseIssue } = await import("../../tracker/github.mjs");
+  const { parseIssue } = await import("../../lib/tracker/github.mjs");
   assert.deepEqual(parseIssue({ number: 8, title: "Add c", body, state: "OPEN", labels: [] }).blockedBy, [7]);
   const link = exec.calls.filter((c) => c.join(" ").includes("-X POST repos/{owner}/{repo}/issues/8/dependencies/blocked_by"));
   assert.equal(link.length, 1);
@@ -499,7 +499,7 @@ test("rewrite (github) rewrites a Blocked by entry naming a known file <n>-<slug
   const body = issueOf(exec, 12).body;
   assert.match(body, /## Blocked by\n\n- Issue #7\n/);
   assert.doesNotMatch(body, /7-existing-thing\.md/);
-  const { parseIssue } = await import("../../tracker/github.mjs");
+  const { parseIssue } = await import("../../lib/tracker/github.mjs");
   assert.deepEqual(parseIssue({ number: 12, title: "Fix", body, state: "OPEN", labels: [] }).blockedBy, [7]);
 });
 

@@ -9,7 +9,7 @@
 # other — e.g. a checkout named product-services got `product_services_default` alongside
 # compose's own `product-services_default`.
 
-SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts"
+SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/gen-override.sh"
 
 setup() {

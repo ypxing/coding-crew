@@ -4,9 +4,9 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { getTracker } from "../../tracker/index.mjs";
-import * as local from "../../tracker/local.mjs";
-import * as github from "../../tracker/github.mjs";
+import { getTracker } from "../../lib/tracker/index.mjs";
+import * as local from "../../lib/tracker/local.mjs";
+import * as github from "../../lib/tracker/github.mjs";
 
 function writeTrackerConfig(root, contents) {
   const dir = join(root, ".coding-crew", "docs");

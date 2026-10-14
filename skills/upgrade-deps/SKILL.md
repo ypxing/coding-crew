@@ -31,7 +31,7 @@ mechanism as `test`/`lint`/`typecheck` in `dev-commands.json`, never against the
 
 Also resolve the `typecheck` field from `.coding-crew/dev-commands.json` now, using the same
 discovery/cache mechanism `add-tests` uses for its own fields (`bash
-scripts/discover-commands.sh`, then `write-commands-cache.sh` if it prompts). Step 6 needs
+"<skill-dir>/scripts/git-workflow/discover-commands.sh"`, then `write-commands-cache.sh` beside it if it prompts). Step 6 needs
 this to get a mechanical breaking-change signal on major bumps; if it resolves to `null`, that
 step falls back to changelog review alone for every major bump — say so when it happens rather
 than silently skipping the signal.

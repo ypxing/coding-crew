@@ -6,7 +6,7 @@
 # `docker run` / `docker exec` (no compose file at all) are. docker-install.sh refuses those
 # (exit 5) before running them.
 
-SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/detect-compose-bypass.sh"
+SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks/detect-compose-bypass.sh"
 
 setup() {
   unset COMPOSE_FILE COMPOSE_PROJECT_NAME

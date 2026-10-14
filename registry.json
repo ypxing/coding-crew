@@ -1,37 +1,6 @@
 {
-  "docs": {
-    "trees": {
-      "tracker": {
-        "source": "tracker",
-        "dest": ".coding-crew/tracker"
-      }
-    }
-  },
-  "retired-agents": {
-    "names": [
-      "crew-coder",
-      "crew-reviewer",
-      "crew-triage",
-      "crew-code-reviewer"
-    ],
-    "paths": {
-      "claude": ".claude/agents/{name}.md",
-      "copilot": ".copilot/agents/{name}.agent.md",
-      "pi": ".pi/agents/{name}.md",
-      "codex": ".codex/agents/{name}.toml"
-    },
-    "dirs": [
-      ".coding-crew/agents",
-      ".coding-crew/code-review"
-    ]
-  },
-  "retired-scripts": [
-    ".coding-crew/scripts/tracker-config.sh",
-    ".coding-crew/scripts/mark-issue-done.sh"
-  ],
   "skills": {
     "solve-feature": {
-      "version": "0.10.0",
       "source-dir": "solve-feature",
       "description": "Run one feature's ready-for-agent issues in order on one branch, each by a fresh coder subagent gated by the project's checks, in a draft PR; at the end it is reviewed by crew-review, its findings fixed, its body written and marked ready when nothing needs a person.",
       "deps": [
@@ -40,134 +9,134 @@
         "crew-review",
         "tdd",
         "write-pr"
+      ],
+      "libs": [
+        "checks",
+        "tracker"
       ]
     },
     "crew-review": {
-      "version": "0.1.0",
       "source-dir": "crew-review",
-      "description": "A fresh read-only subagent reviews a branch or PR against the spec its caller names, for what breaks and for the repo's documented rules, and writes one JSON report; it posts nothing and marks nothing ready."
+      "description": "A fresh read-only subagent reviews a branch or PR against the spec its caller names, for what breaks and for the repo's documented rules, and writes one JSON report; it posts nothing and marks nothing ready.",
+      "libs": [
+        "tracker"
+      ]
     },
     "tdd": {
-      "version": "1.2.5",
       "source-dir": "tdd",
       "description": "Test-driven development with red-green-refactor loop, vertical slices.",
       "source": "mattpocock/skills"
     },
     "dep-install": {
-      "version": "1.6.2",
       "source-dir": "dep-install",
       "description": "Install the project's dependencies once, on the host or in docker.",
-      "assets": {
-        "source": "skills/dep-install/scripts",
-        "dest": ".coding-crew/dep-install/scripts"
-      }
+      "libs": [
+        "checks",
+        "git-workflow"
+      ]
     },
     "solve-issue": {
-      "version": "1.16.0",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
-      "assets": {
-        "source": "skills/solve-issue/scripts",
-        "dest": ".coding-crew/solve-issue/scripts"
-      },
-      "scripts": [
-        "commit-changes.sh",
-        "write-commands-cache.sh"
-      ],
       "deps": [
         "dep-install",
         "tdd"
+      ],
+      "libs": [
+        "checks",
+        "git-workflow",
+        "tracker"
       ]
     },
     "address-pr-comments": {
-      "version": "1.7.0",
       "source-dir": "address-pr-comments",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
-      "scripts": [
-        "branch-safety-check.sh",
-        "commit-changes.sh"
-      ],
       "deps": [
         "dep-install",
         "solve-issue",
         "tdd"
+      ],
+      "libs": [
+        "checks",
+        "git-workflow"
       ]
     },
     "to-issues": {
-      "version": "1.20.3",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
-      "assets": {
-        "source": "skills/to-issues/scripts",
-        "dest": ".coding-crew/to-issues/scripts"
-      }
+      "libs": [
+        "tracker"
+      ]
     },
     "to-prd": {
-      "version": "1.8.2",
       "source-dir": "to-prd",
       "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
-      "source": "mattpocock/skills"
+      "source": "mattpocock/skills",
+      "libs": [
+        "tracker"
+      ]
     },
     "crew-brainstorm": {
-      "version": "1.4.2",
       "source-dir": "crew-brainstorm",
       "description": "Collaborative design pipeline: explore intent, propose approaches, build a spec, then hand off to to-issues.",
       "deps": [
         "to-prd",
         "to-issues"
+      ],
+      "libs": [
+        "tracker"
       ]
     },
     "crew-grill": {
-      "version": "1.5.2",
       "source-dir": "crew-grill",
       "description": "Adversarial design pipeline: stress-test every assumption, capture decisions, then hand off to to-issues.",
       "deps": [
         "domain-modeling",
         "to-prd",
         "to-issues"
+      ],
+      "libs": [
+        "tracker"
       ]
     },
     "add-tests": {
-      "version": "1.1.12",
       "source-dir": "add-tests",
       "description": "Discover the project's coverage command, rank under-covered files by risk, resolve a mocking convention per ecosystem, and hand findings to to-issues as ready-for-agent issues.",
-      "scripts": [
-        "discover-commands.sh",
-        "write-commands-cache.sh"
-      ],
       "deps": [
         "to-issues",
         "dep-install"
+      ],
+      "libs": [
+        "git-workflow"
       ]
     },
     "upgrade-deps": {
-      "version": "1.5.3",
       "source-dir": "upgrade-deps",
       "description": "Audit outdated npm/yarn/pnpm dependencies and plan safe upgrades as issues.",
       "deps": [
         "dep-install"
+      ],
+      "libs": [
+        "git-workflow",
+        "tracker"
       ]
     },
     "configure-tracker": {
-      "version": "1.5.0",
       "source-dir": "configure-tracker",
-      "description": "Choose where the project's issues live: local markdown files or GitHub Issues."
+      "description": "Choose where the project's issues live: local markdown files or GitHub Issues.",
+      "libs": [
+        "tracker"
+      ]
     },
     "domain-modeling": {
-      "version": "1.0.1",
       "source-dir": "domain-modeling",
       "description": "Updates CONTEXT.md glossary and creates ADRs inline as design decisions crystallise."
     },
     "write-pr": {
-      "version": "1.2.2",
       "source-dir": "write-pr",
       "description": "Write a short PR body for a human reviewer: Why, What changes, Risk and Tested.",
-      "source": "mattpocock/skills",
-      "assets": {
-        "source": "skills/write-pr",
-        "dest": ".coding-crew/write-pr"
-      }
+      "source": "mattpocock/skills"
     }
   }
 }

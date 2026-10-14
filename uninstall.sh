@@ -3,49 +3,57 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-INSTALL_LEVEL="project"
-_filtered=()
-for _arg in "$@"; do
-  if [[ "$_arg" == "--user" ]]; then
-    INSTALL_LEVEL="user"
-  else
-    _filtered+=("$_arg")
-  fi
-done
-set -- "${_filtered[@]+"${_filtered[@]}"}"
-unset _filtered _arg
-
-if [[ "$INSTALL_LEVEL" == "user" ]]; then
-  REPO_ROOT="$HOME"
-else
-  REPO_ROOT="${TARGET_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-fi
-
-MANIFEST="$REPO_ROOT/.coding-crew/manifest.json"
-LEGACY_MANIFEST="$REPO_ROOT/.coding-crew.manifest.json"
-if [[ ! -f "$MANIFEST" && -f "$LEGACY_MANIFEST" ]]; then
-  MANIFEST="$LEGACY_MANIFEST"
-fi
-
 usage() {
-  echo "Usage: ./uninstall.sh [--user]"
-  echo "       ./uninstall.sh [--user] --skill <skill-name>"
-  echo "       ./uninstall.sh [--user] --skills <a,b,c>"
+  echo "Usage: ./uninstall.sh [--project [<path>]]"
+  echo "       ./uninstall.sh [--project [<path>]] --skill <skill-name>"
+  echo "       ./uninstall.sh [--project [<path>]] --skills <a,b,c>"
   echo ""
-  echo "  --user:   uninstall from \$HOME; default uninstalls from current project repo"
-  echo "  --skill:  remove a single skill"
-  echo "  --skills: remove multiple skills (comma-separated)"
-  echo "  (no args) remove everything listed in .coding-crew/manifest.json"
+  echo "  --project: uninstall from a repo (<path>, else the current repo); default \$HOME."
+  echo "             TARGET_REPO=<path> does the same"
+  echo "  --skill:   remove a single skill, and each library no skill left in the manifest uses"
+  echo "  --skills:  remove multiple skills (comma-separated), the same way"
+  echo "  (no args)  remove every skill and library, and .coding-crew/manifest.json"
   echo ""
   echo "Examples:"
-  echo "  ./uninstall.sh --user                        # remove all from \$HOME"
-  echo "  ./uninstall.sh --user --skills tdd,to-issues   # remove specific skills from \$HOME"
+  echo "  ./uninstall.sh                               # remove all from \$HOME"
+  echo "  ./uninstall.sh --skills tdd,to-issues        # remove specific skills from \$HOME"
+  echo "  ./uninstall.sh --project                     # remove all from the current repo"
   exit 1
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
+MODE="all"
+LIST=""
+PROJECT=false
+PROJECT_PATH=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage ;;
+    --skill|--skills)
+      [[ -n "${2:-}" && "${2:-}" != -* ]] || { echo "Error: $1 requires a skill name or comma-separated list" >&2; usage; }
+      MODE="skills"; LIST="$2"; shift 2 ;;
+    --project)
+      PROJECT=true; shift
+      if [[ $# -gt 0 && "$1" != -* ]]; then PROJECT_PATH="$1"; shift; fi ;;
+    *) echo "Error: unknown argument '$1'" >&2; usage ;;
+  esac
+done
+
+# The same levels as install.sh: $HOME unless --project or TARGET_REPO names a repo.
+if [[ "$PROJECT" == "true" ]]; then
+  if [[ -n "$PROJECT_PATH" ]]; then
+    [[ -d "$PROJECT_PATH" ]] || { echo "Error: --project path does not exist: $PROJECT_PATH" >&2; exit 1; }
+    REPO_ROOT="$(cd "$PROJECT_PATH" && pwd)"
+  else
+    REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  fi
+else
+  REPO_ROOT="${TARGET_REPO:-$HOME}"
 fi
+LEVEL="project"
+[[ "$REPO_ROOT" != "$HOME" ]] || LEVEL="user"
+
+MANIFEST="$REPO_ROOT/.coding-crew/manifest.json"
+LIB_DEST=".coding-crew/lib"
 
 for cmd in jq; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Error: required command '$cmd' not found" >&2; exit 1; }
@@ -91,61 +99,15 @@ prune_empty_dirs() {
   done
 }
 
-# Retired role agent files and their .coding-crew/ dirs: removed with any skill, or on a full uninstall.
-REMOVED_RETIRED=0
-remove_retired_agents() {
-  [[ "$REMOVED_RETIRED" -eq 0 ]] || return 0
-  REMOVED_RETIRED=1
-  local platform name raw candidate full dir
-  for platform in "${PLATFORMS[@]}"; do
-    raw=$(jq -r --arg p "$platform" '."retired-agents".paths[$p] // empty' "$SCRIPT_DIR/registry.json")
-    raw="${raw%$'\r'}"
-    [[ -n "$raw" ]] || continue
-    while IFS= read -r name; do
-      name="${name%$'\r'}"
-      [[ -n "$name" ]] || continue
-      while IFS= read -r candidate; do
-        [[ -n "$candidate" ]] || continue
-        resolve_dest "$platform" "$candidate"
-        full="$_DEST_ROOT/$_DEST_REL"
-        if [[ -f "$full" ]]; then
-          rm -f "$full"
-          echo "  removed $candidate"
-          prune_empty_dirs "$_DEST_ROOT" "$_DEST_REL"
-        fi
-      done < <(platform_scope_paths "$platform" "${raw//\{name\}/$name}")
-    done < <(jq -r '."retired-agents".names // [] | .[]' "$SCRIPT_DIR/registry.json")
-  done
-  while IFS= read -r dir; do
-    dir="${dir%$'\r'}"
-    [[ -n "$dir" && -d "$REPO_ROOT/$dir" ]] || continue
-    rm -rf "$REPO_ROOT/$dir"
-    echo "  removed $dir/"
-    prune_empty_dirs "$REPO_ROOT" "$dir"
-  done < <(jq -r '."retired-agents".dirs // [] | .[]' "$SCRIPT_DIR/registry.json")
-}
+# A name from the manifest or the command line becomes a path: nothing but a plain name gets through.
+plain_name() { [[ "$1" =~ ^[a-zA-Z0-9_.-]+$ && "$1" != "." && "$1" != ".." ]]; }
 
-# Retired tracker wrappers are stale on any install, so any uninstall removes them.
-REMOVED_RETIRED_SCRIPTS=0
-remove_retired_scripts() {
-  [[ "$REMOVED_RETIRED_SCRIPTS" -eq 0 ]] || return 0
-  REMOVED_RETIRED_SCRIPTS=1
-  local path
-  while IFS= read -r path; do
-    path="${path%$'\r'}"
-    [[ -n "$path" && "$path" == .coding-crew/* && "$path" != *..* ]] || continue
-    if [[ -f "$REPO_ROOT/$path" ]]; then
-      rm -f "$REPO_ROOT/$path"
-      echo "  removed $path"
-      rmdir_if_empty "$(dirname "$REPO_ROOT/$path")" || true
-    fi
-  done < <(jq -r '."retired-scripts" // [] | .[]' "$SCRIPT_DIR/registry.json")
-}
-
+# A skill is removed by name, whether or not the registry still has it: --update uninstalls the
+# skills an older install recorded.
 remove_skill() {
   local name="$1"
-  if [[ -z "$(jq -r --arg s "$name" '.skills[$s] | if . == null then empty else "yes" end' "$SCRIPT_DIR/registry.json")" ]]; then
-    echo "  $name: not found in registry — skipping"
+  if ! plain_name "$name"; then
+    echo "  '$name': not a skill name — skipping"
     return
   fi
 
@@ -167,79 +129,99 @@ remove_skill() {
     done < <(platform_scope_paths "$platform" "$_PLATFORM_SKILLS/$name")
   done
   if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
-
-  # Assets install once to a platform-neutral path, so uninstall owns them: a stale copy left
-  # behind is a script no installed skill body matches.
-  local assets_dest
-  while IFS= read -r assets_dest; do
-    assets_dest="${assets_dest%$'\r'}"
-    if [[ -n "$assets_dest" && -d "$REPO_ROOT/$assets_dest" ]]; then
-      rm -rf "$REPO_ROOT/$assets_dest"
-      echo "  removed $assets_dest/"
-      prune_empty_dirs "$REPO_ROOT" "$assets_dest"
-    fi
-  done < <(jq -r --arg s "$name" '.skills[$s] | (.assets.dest // empty), ((.["more-assets"] // [])[] | .dest)' "$SCRIPT_DIR/registry.json")
-  remove_retired_agents
-  remove_retired_scripts
 }
 
-echo "Target: $REPO_ROOT ($INSTALL_LEVEL-level)"
+remove_lib() {
+  local name="$1"
+  plain_name "$name" || return 0
+  if [[ -e "$REPO_ROOT/$LIB_DEST/$name" || -L "$REPO_ROOT/$LIB_DEST/$name" ]]; then
+    rm -rf "${REPO_ROOT:?}/$LIB_DEST/$name"
+    echo "  removed $LIB_DEST/$name/"
+  fi
+}
 
-MODE="${1:-all}"
+# manifest_list <key> — the names under the manifest's .skills or .libs, one per line. An install made
+# before libraries keyed skills by name with a version each; both forms read the same.
+manifest_list() {
+  [[ -f "$MANIFEST" ]] || return 0
+  jq -r --arg k "$1" '.[$k] // [] | if type == "object" then keys[] else .[] end' "$MANIFEST" | tr -d '\r'
+}
 
-if [[ "$MODE" == "--skill" ]]; then
-  name="${2:-}"
-  [[ -z "$name" ]] && { echo "Error: --skill requires a skill name" >&2; usage; }
-  echo "---"
-  remove_skill "$name"
+# Drop .coding-crew/lib/ and .coding-crew/ only when empty: config.json is the user's and must survive.
+prune_coding_crew_dirs() {
+  if [[ -d "$REPO_ROOT/$LIB_DEST" ]]; then
+    rmdir_if_empty "$REPO_ROOT/$LIB_DEST" && echo "  removed $LIB_DEST/" || true
+  fi
+  if [[ -d "$REPO_ROOT/.coding-crew" ]]; then
+    rmdir_if_empty "$REPO_ROOT/.coding-crew" && echo "  removed .coding-crew/" || true
+  fi
+}
 
-elif [[ "$MODE" == "--skills" ]]; then
-  list="${2:-}"
-  [[ -z "$list" ]] && { echo "Error: --skills requires a comma-separated list" >&2; usage; }
-  echo "---"
-  IFS=',' read -ra _arr <<< "$list"
+# After removing <names> (one per line): drop them from the manifest, and remove each library it lists
+# that no remaining skill's registry entry names. No skill left removes the manifest itself.
+update_manifest() {
+  local removed="$1" remaining="" needed="" keep_libs="" name lib
+  [[ -f "$MANIFEST" ]] || return 0
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    grep -qxF "$name" <<< "$removed" || remaining+="$name"$'\n'
+  done < <(manifest_list skills)
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    needed+="$(jq -r --arg s "$name" '.skills[$s].libs // [] | .[]' "$SCRIPT_DIR/registry.json" | tr -d '\r')"$'\n'
+  done <<< "$remaining"
+  while IFS= read -r lib; do
+    [[ -n "$lib" ]] || continue
+    if grep -qxF "$lib" <<< "$needed"; then keep_libs+="$lib"$'\n'; else remove_lib "$lib"; fi
+  done < <(manifest_list libs)
+  if [[ -z "$remaining" ]]; then
+    rm -f "$MANIFEST"
+    echo "  removed .coding-crew/manifest.json"
+    prune_coding_crew_dirs
+    return 0
+  fi
+  jq --arg s "$remaining" --arg l "$keep_libs" \
+    '.skills = ($s | split("\n") | map(select(. != ""))) | .libs = ($l | split("\n") | map(select(. != "")))' \
+    "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+  prune_coding_crew_dirs
+}
+
+echo "Target: $REPO_ROOT ($LEVEL-level)"
+echo "---"
+
+if [[ "$MODE" == "skills" ]]; then
+  _removed=""
+  IFS=',' read -ra _arr <<< "$LIST"
   for _s in "${_arr[@]}"; do
     _s="${_s// /}"
-    [[ -n "$_s" ]] && remove_skill "$_s"
+    [[ -n "$_s" ]] || continue
+    remove_skill "$_s"
+    _removed+="$_s"$'\n'
   done
-
-elif [[ "$MODE" != "all" ]]; then
-  echo "Error: unknown argument '$MODE'" >&2
-  usage
-
+  update_manifest "$_removed"
 else
-  echo "---"
-
-  remove_retired_agents
-  remove_retired_scripts
-
   _skill_names=()
   while IFS= read -r name; do
     name="${name%$'\r'}"
     [[ -n "$name" ]] && _skill_names+=("$name")
   done < <(
-    { if [[ -f "$MANIFEST" ]]; then jq -r '.skills | keys[]' "$MANIFEST"; fi
+    { manifest_list skills
       jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json"; } | tr -d '\r' | sort -u
   )
   for name in "${_skill_names[@]+"${_skill_names[@]}"}"; do remove_skill "$name"; done
 
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && remove_lib "$name"
+  done < <(
+    { manifest_list libs
+      jq -r '[.skills[] | (.libs // [])[]] | unique[]' "$SCRIPT_DIR/registry.json"; } | tr -d '\r' | sort -u
+  )
+
   if [[ -f "$MANIFEST" ]]; then
     rm -f "$MANIFEST"
-    echo "  removed ${MANIFEST#$REPO_ROOT/}"
+    echo "  removed .coding-crew/manifest.json"
   fi
-  # Shared trees (the tracker CLI) are mechanism too, installed with every skill: removed here only.
-  while IFS= read -r name; do
-    name="${name%$'\r'}"
-    [[ -n "$name" && "$name" == .coding-crew/* && "$name" != *..* ]] || continue
-    if [[ -d "$REPO_ROOT/$name" ]]; then
-      rm -rf "${REPO_ROOT:?}/$name"
-      echo "  removed $name/"
-    fi
-  done < <(jq -r '.docs.trees // {} | .[].dest // empty' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
-  # Drop .coding-crew/ only when empty: config.json is the user's and must survive an uninstall.
-  if [[ -d "$REPO_ROOT/.coding-crew" ]]; then
-    rmdir_if_empty "$REPO_ROOT/.coding-crew" && echo "  removed .coding-crew/" || true
-  fi
+  prune_coding_crew_dirs
 fi
 
 echo "---"

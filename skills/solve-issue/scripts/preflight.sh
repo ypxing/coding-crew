@@ -8,7 +8,7 @@
 #   OK
 #   ISSUE_SLUG=<issue file name without .md>
 #   PRD=<absolute path, or empty when there is none — normal>
-#   DEP_SCRIPTS=<dir>      dep-install's scripts (resolve-mode.sh, run.sh); empty if not installed
+#   DEP_SCRIPTS=<dir>      the checks library (resolve-mode.sh, run.sh), <skill-dir>/scripts/checks; empty if not linked
 #
 # Or one line and exit 1 — stop, report it verbatim:
 #   BLOCKED: on default branch (<name>) — create or switch to a feature branch first
@@ -96,17 +96,11 @@ if [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
   fi
 fi
 
-# The sibling skill first, then the project's and $HOME's asset copies.
+# The checks library, linked into this skill's scripts/ by install.sh.
 DEP_SCRIPTS=""
-for d in "$SELF_DIR/../../dep-install/scripts" \
-         "$MAIN_ROOT/.coding-crew/dep-install/scripts" \
-         "$PROJECT_ROOT/.coding-crew/dep-install/scripts" \
-         ${HOME:+"$HOME/.coding-crew/dep-install/scripts"}; do
-  if [ -f "$d/resolve-mode.sh" ] && [ -f "$d/run.sh" ]; then
-    DEP_SCRIPTS="$(cd "$d" && pwd)"
-    break
-  fi
-done
+if [ -f "$SELF_DIR/checks/resolve-mode.sh" ] && [ -f "$SELF_DIR/checks/run.sh" ]; then
+  DEP_SCRIPTS="$(cd "$SELF_DIR/checks" && pwd)"
+fi
 
 ISSUE_SLUG=""
 [ -n "$ISSUE" ] && ISSUE_SLUG="$(basename "$ISSUE" .md)"

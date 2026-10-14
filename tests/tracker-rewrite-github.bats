@@ -22,7 +22,7 @@ tracker: github
 
 # Issue tracker: GitHub Issues
 EOF
-  cp -R "$REPO_ROOT/tracker" "$MAIN_ROOT/.coding-crew/tracker"
+  cp -R "$REPO_ROOT/lib/tracker" "$MAIN_ROOT/.coding-crew/tracker"
 
   STUB="$TEMP_DIR/.stub"
   mkdir -p "$STUB"

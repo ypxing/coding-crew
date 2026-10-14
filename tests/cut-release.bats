@@ -12,7 +12,6 @@ setup() {
   cp "$REPO_ROOT/scripts/cut-release.sh" "$R/scripts/"
   printf '# Changelog\n\n## [Unreleased]\n\n## [1.0.0]\n\n- first\n' > "$R/CHANGELOG.md"
   echo '{"skills": {}}' > "$R/registry.json"
-  printf '#!/usr/bin/env bats\n@test ok { true; }\n' > "$R/tests/registry-version-bump.bats"
   git -C "$R" add -A
   git -C "$R" -c user.email=t@t -c user.name=t commit -qm init
   git -C "$R" remote add origin "$BATS_TEST_TMPDIR/remote.git"

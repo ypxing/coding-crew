@@ -7,7 +7,7 @@
 # volumes, and one with identical lockfiles name the same. Each is an explicit top-level `name:`,
 # so neither the compose project name nor the worktree's directory renames it.
 
-SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts"
+SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/gen-override.sh"
 
 setup() {

@@ -5,7 +5,6 @@
 # that need not have that shape. Scripts that build the branch (`.sh`, `.mjs`) are not prompt text.
 
 load helpers/render
-load helpers/platforms
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
@@ -26,13 +25,11 @@ scan_prompt_files() {
   [ -z "$hits" ] || { printf '%s\n' "$hits"; return 1; }
 }
 
-@test "no rendered skill body names the feature/<…> branch format, on any platform" {
-  local skill platform body fails=""
+@test "no rendered skill body names the feature/<…> branch format" {
+  local skill body fails=""
   for skill in $(jq -r '.skills | keys[]' "$REPO_ROOT/registry.json" | tr -d '\r'); do
-    for platform in "${PLATFORMS[@]}"; do
-      body=$(rendered_skill "$skill" "$platform")
-      grep -q -F 'feature/<' "$body" && fails+="$skill ($platform)"$'\n'
-    done
+    body=$(rendered_skill "$skill")
+    grep -q -F 'feature/<' "$body" && fails+="$skill"$'\n'
   done
   [ -z "$fails" ] || { printf 'feature/< in rendered skill:\n%s' "$fails"; return 1; }
 }

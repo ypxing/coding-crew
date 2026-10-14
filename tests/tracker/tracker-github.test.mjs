@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { closingRefs, createIssue, featureMarker, linkBlockers, listFeatureIssues, parseIssue, retryTransient, selectDispatchable, writeProgress } from "../../tracker/github.mjs";
+import { closingRefs, createIssue, featureMarker, linkBlockers, listFeatureIssues, parseIssue, retryTransient, selectDispatchable, writeProgress } from "../../lib/tracker/github.mjs";
 import { fakeGithub, ghFeature, ghIssue } from "../helpers/fake-github.mjs";
 
 // github.mjs's read path: listFeatureIssues/parseIssue/selectDispatchable, all `gh` calls stubbed

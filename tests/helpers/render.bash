@@ -2,7 +2,7 @@
 #
 # Rendering is what a consuming repo actually receives, so body assertions run against the
 # rendered result rather than the source file: `render-skill.sh` inlines any
-# `{{FRAGMENT:...}}` and substitutes `{{PLATFORM}}`.
+# `{{FRAGMENT:...}}`. Every platform receives the same body.
 #
 # Caching: keyed by a content hash of everything that can change a rendered result
 # (skills/, scripts/ and the renderer, registry.json, install.sh), stored under a fixed path
@@ -36,16 +36,16 @@ _render_cache_root() {
   printf '%s\n' "$base/$key"
 }
 
-# rendered_skill <skill> <platform> — prints the path to the rendered SKILL.md
+# rendered_skill <skill> — prints the path to the rendered SKILL.md
 rendered_skill() {
-  local skill="$1" platform="$2"
+  local skill="$1"
   local cache="$(_render_cache_root)/rendered-skills"
-  local out="$cache/$skill.$platform.SKILL.md"
+  local out="$cache/$skill.SKILL.md"
   if [ ! -f "$out" ]; then
     mkdir -p "$cache"
     # Rendered beside and renamed into place: CI runs bats files concurrently, and a
     # reader must never see a half-written body.
-    bash "$RENDER_HELPER_REPO_ROOT/scripts/render-skill.sh" "$skill" "$platform" "$out.$$" || return 1
+    bash "$RENDER_HELPER_REPO_ROOT/scripts/render-skill.sh" "$skill" "$out.$$" || return 1
     mv -f "$out.$$" "$out"
   fi
   printf '%s\n' "$out"

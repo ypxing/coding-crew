@@ -15,14 +15,14 @@ directly — no special-casing needed on either downstream path.
 Use the same discovery/cache mechanism `solve-issue` already uses:
 
 ```bash
-bash scripts/discover-commands.sh
+bash "<skill-dir>/scripts/git-workflow/discover-commands.sh"
 ```
 
 This prints either a skip message (the cache already has both fields) or a discovery prompt —
 hand that prompt to a model, then persist its response:
 
 ```bash
-bash scripts/write-commands-cache.sh --response-file <path>
+bash "<skill-dir>/scripts/git-workflow/write-commands-cache.sh" --response-file <path>
 ```
 
 Then read the two fields this skill needs from `.coding-crew/dev-commands.json`:
@@ -108,7 +108,7 @@ scans manifests: `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemf
 3. **Ask the user once** — if neither of the above resolves it.
 
 Cache the resolved choice per ecosystem to `.coding-crew/docs/test-conventions.md`, a lookup
-table (not an operations doc like `.coding-crew/tracker/docs/local.md`):
+table (not an operations doc like the tracker's docs):
 
 ```markdown
 # Test Conventions

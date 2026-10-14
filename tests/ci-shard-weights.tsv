@@ -32,9 +32,7 @@
 2	layer-ownership.bats
 37	platform-golden-install.bats
 43	platform-install.bats
-5	registry-version-bump.bats
 4	render-skill-shared-fragments.bats
-47	retired-agents.bats
 1	shell-sigpipe-lint.bats
 37	solve-issue-scripts.bats
 7	sync-pr-with-main.bats
