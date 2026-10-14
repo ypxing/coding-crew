@@ -1,31 +1,28 @@
 #!/usr/bin/env bash
-# run-checks.sh — run every check .coding-crew/dev-commands.json names, each through
-# dep-install's run.sh, and report each one.
+# run-checks.sh — run every check the checkout's .coding-crew/dev-commands.json names, each through
+# run.sh beside it, and report each one.
 #
 # Usage:
-#   bash scripts/run-checks.sh --project-root <path> --main-root <path> --dep-scripts <dir>
+#   bash scripts/run-checks.sh --project-root <path>
 #
-# Order: typecheck, lint, test, then every other key with a command.
+# Order: typecheck, lint, test, then every other key with a command. In docker mode with no override
+# yet, the dependency install runs once first; if it fails, no check runs (CHECKS: fail).
 # Prints per check `<key>: pass`, `<key>: fail (exit N)` (then its output tail and log path), `<key>: NOT
 # RUN: no command found` (the cache's null), or `<key>: modified files: <list>` (the check rewrote files;
 # then a fail); last, CHECKS: pass (exit 0) | CHECKS: fail (exit 1) | DISCOVER (exit 3: no usable cache).
 
 set -uo pipefail
 
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUN_SCRIPT="$SELF_DIR/run.sh"
 PROJECT_ROOT=""
-MAIN_ROOT=""
-DEP_SCRIPTS=""
 TAIL_LINES="${CREW_CHECK_TAIL_LINES:-80}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --project-root|--main-root|--dep-scripts)
+    --project-root)
       if [ $# -lt 2 ]; then echo "Error: $1 requires a value" >&2; exit 2; fi
-      case "$1" in
-        --project-root) PROJECT_ROOT="$2" ;;
-        --main-root) MAIN_ROOT="$2" ;;
-        --dep-scripts) DEP_SCRIPTS="$2" ;;
-      esac
+      PROJECT_ROOT="$2"
       shift 2
       ;;
     --help)
@@ -40,26 +37,9 @@ if [ -z "$PROJECT_ROOT" ] || [ ! -d "$PROJECT_ROOT" ]; then
   echo "Error: --project-root <existing dir> is required" >&2
   exit 2
 fi
-RUN_SCRIPT="$DEP_SCRIPTS/run.sh"
-if [ -z "$DEP_SCRIPTS" ] || [ ! -f "$RUN_SCRIPT" ]; then
-  echo "Error: --dep-scripts must name dep-install's scripts directory (no run.sh at '$DEP_SCRIPTS')" >&2
-  exit 2
-fi
+CACHE="$PROJECT_ROOT/.coding-crew/dev-commands.json"
 
-_main_root_of() {
-  local dir="$1" common
-  common=$(cd "$dir" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
-  case "$common" in
-    /*|[A-Za-z]:*) : ;;
-    *) common="$dir/$common" ;;
-  esac
-  common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")"
-  dirname "$common"
-}
-[ -n "$MAIN_ROOT" ] || MAIN_ROOT="$(_main_root_of "$PROJECT_ROOT" 2>/dev/null || true)"
-CACHE="${MAIN_ROOT:+$MAIN_ROOT/.coding-crew/dev-commands.json}"
-
-if [ -z "$CACHE" ] || [ ! -f "$CACHE" ] || ! grep -q '"test"' "$CACHE" 2>/dev/null; then
+if [ ! -f "$CACHE" ] || ! grep -q '"test"' "$CACHE" 2>/dev/null; then
   echo "DISCOVER"
   exit 3
 fi
@@ -93,6 +73,19 @@ _changed_files() {
 }
 
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/solve-issue-checks.XXXXXX")"
+
+# One install up front: run.sh would otherwise retry a failing install once per check.
+_gitdir="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
+if grep -qx 'INSTALL_MODE=docker' <<< "$(bash "$SELF_DIR/resolve-mode.sh" --project-root "$PROJECT_ROOT")" \
+  && [ ! -f "$_gitdir/crew-compose.override.yml" ]; then
+  echo "=== install (docker)"
+  if ! bash "$RUN_SCRIPT" --project-root "$PROJECT_ROOT" -- true </dev/null; then
+    echo "install: fail — no check ran"
+    echo "CHECKS: fail"
+    exit 1
+  fi
+fi
+
 OVERALL=0
 for key in "${KEYS[@]}"; do
   cmd="$(_cached "$key")"
@@ -105,7 +98,7 @@ for key in "${KEYS[@]}"; do
   before="$(_tree_state)"
   # stdin from /dev/null: a `docker compose run` would otherwise read the rest of this loop. Logged
   # through a pipe: on overlayfs a check writing straight to a file under /tmp can hang forever.
-  bash "$RUN_SCRIPT" --project-root "$PROJECT_ROOT" ${MAIN_ROOT:+--main-root "$MAIN_ROOT"} -- "$cmd" \
+  bash "$RUN_SCRIPT" --project-root "$PROJECT_ROOT" -- "$cmd" \
     </dev/null 2>&1 | cat >"$log"
   rc=${PIPESTATUS[0]}
   after="$(_tree_state)"

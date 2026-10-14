@@ -2,35 +2,34 @@
 # preflight.sh — every fact solve-issue needs before it reads any code, resolved in one call.
 #
 # Usage:
-#   bash scripts/preflight.sh --project-root <path> --main-root <path> [--issue <path>]
+#   bash scripts/preflight.sh --project-root <path> [--issue <path>]
 #
 # Prints, exit 0:
 #   OK
 #   ISSUE_SLUG=<issue file name without .md>
 #   PRD=<absolute path, or empty when there is none — normal>
-#   DEP_SCRIPTS=<dir>      the checks library (resolve-mode.sh, run.sh), <skill-dir>/scripts/checks; empty if not linked
+#   DEP_SCRIPTS=<dir>      the checks library (run.sh, run-checks.sh), <skill-dir>/scripts/checks; empty if not linked
 #
 # Or one line and exit 1 — stop, report it verbatim:
 #   BLOCKED: on default branch (<name>) — create or switch to a feature branch first
 #   BLOCKED: depends on <file> which is not yet done
 #   BLOCKED: requires: <cmd>          then check-requires.sh's output tail
-# --issue is optional: an issue handed over inline has no Blocked by or PRD to resolve.
+# --issue is optional: an issue handed over inline has no Blocked by or PRD to resolve. A PRD path is
+# resolved against the checkout that holds the issue's .scratch/, then against --project-root.
 
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PROJECT_ROOT=""
-MAIN_ROOT=""
 ISSUE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --project-root|--main-root|--issue)
+    --project-root|--issue)
       if [ $# -lt 2 ]; then echo "Error: $1 requires a value" >&2; exit 2; fi
       case "$1" in
         --project-root) PROJECT_ROOT="$2" ;;
-        --main-root) MAIN_ROOT="$2" ;;
         --issue) ISSUE="$2" ;;
       esac
       shift 2
@@ -43,8 +42,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [ -z "$PROJECT_ROOT" ] || [ -z "$MAIN_ROOT" ]; then
-  echo "Error: --project-root and --main-root are required" >&2
+if [ -z "$PROJECT_ROOT" ]; then
+  echo "Error: --project-root is required" >&2
   exit 2
 fi
 
@@ -70,17 +69,25 @@ if [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
     | grep -oE '[A-Za-z0-9._-]+\.md' | awk '!seen[$0]++')
 fi
 
+# .scratch/ is gitignored, so it lives in the checkout that wrote the issue, not always this one.
+ISSUE_ROOT="$PROJECT_ROOT"
+case "$ISSUE" in */.scratch/*) ISSUE_ROOT="${ISSUE%%/.scratch/*}" ;; esac
+
 PRD=""
 if [ -n "$ISSUE" ]; then
   if [ -f "$ISSUE" ]; then
     PRD_REL=$(awk '/^## Context Documents/{f=1;next} /^## /{f=0} f' "$ISSUE" | sed -n 's/.*PRD: *`\([^`]*\)`.*/\1/p' | head -1)
-    [ -n "$PRD_REL" ] && [ -f "$MAIN_ROOT/$PRD_REL" ] && PRD="$MAIN_ROOT/$PRD_REL"
+    if [ -n "$PRD_REL" ]; then
+      for root in "$ISSUE_ROOT" "$PROJECT_ROOT"; do
+        if [ -f "$root/$PRD_REL" ]; then PRD="$root/$PRD_REL"; break; fi
+      done
+    fi
   fi
   if [ -z "$PRD" ]; then
     case "$ISSUE" in
-      *.scratch/*)
-        FEATURE_SLUG=$(printf '%s' "$ISSUE" | sed 's|.*\.scratch/||; s|/.*||')
-        [ -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/PRD.md" ] && PRD="$MAIN_ROOT/.scratch/$FEATURE_SLUG/PRD.md"
+      */.scratch/*)
+        FEATURE_SLUG=$(printf '%s' "$ISSUE" | sed 's|.*/\.scratch/||; s|/.*||')
+        [ -f "$ISSUE_ROOT/.scratch/$FEATURE_SLUG/PRD.md" ] && PRD="$ISSUE_ROOT/.scratch/$FEATURE_SLUG/PRD.md"
         ;;
     esac
   fi
@@ -98,7 +105,7 @@ fi
 
 # The checks library, linked into this skill's scripts/ by install.sh.
 DEP_SCRIPTS=""
-if [ -f "$SELF_DIR/checks/resolve-mode.sh" ] && [ -f "$SELF_DIR/checks/run.sh" ]; then
+if [ -f "$SELF_DIR/checks/run-checks.sh" ] && [ -f "$SELF_DIR/checks/run.sh" ]; then
   DEP_SCRIPTS="$(cd "$SELF_DIR/checks" && pwd)"
 fi
 

@@ -2,7 +2,6 @@
 # crew-shim-marker (another copy of this shim skips any file carrying this line when it looks for the real binary)
 # docker — a PATH shim that adds this worktree's crew compose override to every
 # `docker compose …` call, whatever form the call takes, then runs the real docker.
-# docker-compose (beside this file) is the same shim for the standalone binary.
 #
 # The override is $CREW_COMPOSE_OVERRIDE when set, else <git dir of the cwd>/crew-compose.override.yml
 # (written by gen-override.sh). Neither exists (host mode, or not a git repo) → the call passes
@@ -17,10 +16,9 @@
 # --project-directory (or cwd, searched upward as compose does) and the first of its override files
 # (compose.override.{yaml,yml}, docker-compose.override.{yaml,yml}) beside it.
 #
-# Put this directory first on PATH: `export PATH="<dep-install scripts>/shim:$PATH"`.
+# Put this directory first on PATH: `export PATH="<skill-dir>/scripts/checks/shim:$PATH"`.
 
-NAME="${CREW_SHIM_NAME:-docker}"
-unset CREW_SHIM_NAME
+NAME=docker
 # Pure bash, no dirname: this runs with whatever PATH the caller has, and a wrong SELF_DIR would
 # make the PATH search below find this shim again.
 _src="${BASH_SOURCE[0]}"
@@ -71,17 +69,15 @@ n=$#
 i=0
 
 # docker's own options come before `compose`; only that one subcommand is wrapped.
-if [ "$NAME" = docker ]; then
-  while [ "$i" -lt "$n" ]; do
-    case "${args[$i]}" in
-      -c | --context | -H | --host | --config | -l | --log-level | --tlscacert | --tlscert | --tlskey) i=$((i + 2)) ;;
-      -*) i=$((i + 1)) ;;
-      *) break ;;
-    esac
-  done
-  if [ "$i" -ge "$n" ] || [ "${args[$i]}" != compose ]; then _pass "$@"; fi
-  i=$((i + 1))
-fi
+while [ "$i" -lt "$n" ]; do
+  case "${args[$i]}" in
+    -c | --context | -H | --host | --config | -l | --log-level | --tlscacert | --tlscert | --tlskey) i=$((i + 2)) ;;
+    -*) i=$((i + 1)) ;;
+    *) break ;;
+  esac
+done
+if [ "$i" -ge "$n" ] || [ "${args[$i]}" != compose ]; then _pass "$@"; fi
+i=$((i + 1))
 
 # compose's own options come before its subcommand.
 have_f=0

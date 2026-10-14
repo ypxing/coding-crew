@@ -143,7 +143,7 @@ land() {
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
   [ "$again" != "$REF" ] || stop solve "coder ran but did not close $REF (its report says why)"
-  rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$CHECKS" >"$clog" 2>&1 || rc=$?
+  rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
   [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand and commit .coding-crew/dev-commands.json" "$clog"
   # $REF is closed and committed but not pushed, so a plain re-run would skip it.
   [ "$rc" = 0 ] || stop checks "run-checks.sh exit $rc; once fixed and committed, run land $SLUG $REF $BRANCH before a re-run" "$clog"
@@ -172,7 +172,7 @@ fix() {
   total=$(jq '.findings // [] | length' "$report")
   # Staged before the checks, so run-checks.sh's modified-files test also sees a check rewrite a file the fixer changed.
   git add -A
-  bash "$CHECKS/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$CHECKS" >"$clog" 2>&1 || rc=$?
+  bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
   [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand and commit .coding-crew/dev-commands.json" "$clog"
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed (not pushed), run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings on PR #$PR"

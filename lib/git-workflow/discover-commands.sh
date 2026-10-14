@@ -15,23 +15,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Must land on the shared main checkout even from a linked worktree, where
-# `git rev-parse --show-toplevel` returns the worktree's own root.
-_main_root_of() {
-  local dir="$1" common
-  common=$(cd "$dir" && git rev-parse --git-common-dir 2>/dev/null) || return 1
-  case "$common" in
-    /*) : ;;
-    *) common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")" ;;
-  esac
-  dirname "$common"
-}
-
-MAIN_ROOT="${MAIN_ROOT:-}"
-if [ -z "$MAIN_ROOT" ]; then
-  MAIN_ROOT=$(_main_root_of "$(pwd)") || MAIN_ROOT=$(git rev-parse --show-toplevel)
-fi
-CACHE_FILE="$MAIN_ROOT/.coding-crew/dev-commands.json"
+ROOT=$(git rev-parse --show-toplevel)
+CACHE_FILE="$ROOT/.coding-crew/dev-commands.json"
 
 # A key is "already discovered" once present with any value; JSON `null` means a model looked and
 # found none. Other fields (install_mode, credential_target) share the file, so the file existing proves nothing.
@@ -46,16 +31,16 @@ _cache_field_present() {
 
 # Fixed order keeps the hash stable and is the priority handed to the model: docs, build files, manifests.
 CANDIDATE_FILES=(
-  "$MAIN_ROOT/CLAUDE.md"
-  "$MAIN_ROOT/AGENTS.md"
-  "$MAIN_ROOT/Makefile"
-  "$MAIN_ROOT/README.md"
-  "$MAIN_ROOT/package.json"
-  "$MAIN_ROOT/pyproject.toml"
-  "$MAIN_ROOT/Cargo.toml"
-  "$MAIN_ROOT/go.mod"
-  "$MAIN_ROOT/Gemfile"
-  "$MAIN_ROOT/composer.json"
+  "$ROOT/CLAUDE.md"
+  "$ROOT/AGENTS.md"
+  "$ROOT/Makefile"
+  "$ROOT/README.md"
+  "$ROOT/package.json"
+  "$ROOT/pyproject.toml"
+  "$ROOT/Cargo.toml"
+  "$ROOT/go.mod"
+  "$ROOT/Gemfile"
+  "$ROOT/composer.json"
 )
 
 # _content_hash <file> — spots duplicates (a CLAUDE.md symlinked to AGENTS.md) so the prompt lists each once.
@@ -176,7 +161,7 @@ authoritative first (project docs, then build files, then package manifests):
 PROMPT
 
 for f in "${FOUND_FILES[@]}"; do
-  printf '  - %s\n' "${f#"$MAIN_ROOT"/}"
+  printf '  - %s\n' "${f#"$ROOT"/}"
 done
 
 cat <<'PROMPT'
@@ -257,12 +242,12 @@ _runner_rule() { # <manifest> <tools> <where> <runner> <example: runner + tool> 
   that already runs it that way (a Makefile target, a package-manager script).
 PROMPT
 }
-if [ -f "$MAIN_ROOT/uv.lock" ]; then
+if [ -f "$ROOT/uv.lock" ]; then
   _runner_rule uv.lock "Python tools" "a project virtualenv" "uv run" "uv run pytest" pytest
-elif [ -f "$MAIN_ROOT/poetry.lock" ]; then
+elif [ -f "$ROOT/poetry.lock" ]; then
   _runner_rule poetry.lock "Python tools" "a project virtualenv" "poetry run" "poetry run pytest" pytest
 fi
-if [ -f "$MAIN_ROOT/composer.json" ]; then
+if [ -f "$ROOT/composer.json" ]; then
   _runner_rule composer.json "PHP tools" "vendor/bin" "vendor/bin/" "vendor/bin/phpunit" phpunit
 fi
 

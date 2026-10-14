@@ -42,9 +42,8 @@ Do not attempt workarounds.
 
 The caller provides a **file path** or tracker ref to read the issue from, or the issue content inline.
 
-`PROJECT_ROOT` (where code lives and all commands run) and `MAIN_ROOT` (the main checkout, where
-`.scratch/` and gitignored files live) are **inherited from the caller** — use the values already
-established and do not re-derive them.
+`PROJECT_ROOT` (the checkout where code lives and all commands run) is **inherited from the
+caller** — use the value already established and do not re-derive it.
 
 {{FRAGMENT:tracker-configuration}}
 
@@ -58,7 +57,7 @@ the caller named — a path, or the tracker's issue number.
 Every fact the run needs before it reads code comes from one call — run it first:
 
 ```bash
-bash "<skill-dir>/scripts/preflight.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
+bash "<skill-dir>/scripts/preflight.sh" --project-root "$PROJECT_ROOT" \
   --issue "$ISSUE_PATH"   # omit --issue when the caller handed the issue over inline
 ```
 
@@ -85,27 +84,16 @@ decisions and constraints the issue assumes. No PRD is normal.
 
 ### 2. Dependencies — only when something is missing
 
-If `DEP_SCRIPTS` is empty, stop and report `BLOCKED: checks library not linked — re-run install.sh`. Otherwise
-run this — even when your prompt already states `INSTALL_MODE=` or `DEPS=`; it is what turns them
-into an action:
+If `DEP_SCRIPTS` is empty, stop and report `BLOCKED: checks library not linked — re-run install.sh`.
 
-```bash
-bash "$DEP_SCRIPTS/resolve-mode.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
-  --deps "<the DEPS= value from your prompt, or empty>"
-```
+Do not install pre-emptively. The install mode is `.coding-crew/dev-commands.json`'s
+`install_mode` (absent means host), and Step 4's `run.sh` acts on it: in docker mode its first call
+installs into this checkout's compose project, and a failed install stops with the service, the
+step and its log — report that `blocked` with its output. In host mode a worktree usually inherits
+`node_modules`/`.venv` through `.worktreeinclude`, and many repos have no dependency step.
 
-It prints `INSTALL_MODE` — the verdict every later command uses (`git config --local
-agent.install-mode` overrides it) — and an `ACTION`:
-
-- `none` — dependencies are already installed here. Continue to Step 3.
-- `install` — docker mode: invoke the `dep-install` skill now. Never optional or deferred — docker
-  mode has no host-side fallback.
-- `on-failure` — `INSTALL_MODE=host`. Do **not** install pre-emptively: a worktree usually inherits
-  `node_modules`/`.venv` through `.worktreeinclude`, and many repos have no dependency step.
-
-Under every `ACTION`, a command that later fails for a missing dependency (module-not-found, import
-error, test runner not found) means invoke `dep-install` then. Do not probe `node_modules`, `.venv`
-or `PATH` yourself: the script answered that.
+A command that later fails for a missing dependency (module-not-found, import error, test runner not
+found) means invoke `dep-install` then. Do not probe `node_modules`, `.venv` or `PATH` yourself.
 
 ### 3. Explore before coding
 
@@ -143,12 +131,12 @@ call (`grep -rn -E 'patternA|patternB'`) and read several files per turn.
 ### 4. Implement with TDD
 
 **Run every project command through `run.sh`** — test runs, type checks, linting, and any ad-hoc
-command, a one-off `docker compose` one included. It runs the command where `INSTALL_MODE` says:
-inside docker (with this worktree's compose override) or on the host. Never hand-build a `docker
+command, a one-off `docker compose` one included. It runs the command where `install_mode` says:
+inside docker (with this checkout's compose override) or on the host. Never hand-build a `docker
 compose` command.
 
 ```bash
-bash "$DEP_SCRIPTS/run.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" -- "<command>"
+bash "$DEP_SCRIPTS/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"
 ```
 
 Run commands in the foreground and wait for them — never in the background. Between edits run only
@@ -194,8 +182,7 @@ or touch unrelated doc sections.
 This is the one full-suite run:
 
 ```bash
-bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
-  --dep-scripts "$DEP_SCRIPTS"
+bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT"
 ```
 
 It runs every `.coding-crew/dev-commands.json` check — `typecheck`, `lint`, `test`, then every other
@@ -247,8 +234,8 @@ Example: `[01-auth-logout] Add user logout endpoint`. Do not push.
 Nothing here commits a `.coding-crew/dev-commands.json` that Step 5's `DISCOVER` created:
 
 ```bash
-if [ -n "$(git -C "$MAIN_ROOT" status --porcelain -- .coding-crew/dev-commands.json 2>/dev/null)" ]; then
-  echo "Reminder: .coding-crew/dev-commands.json has uncommitted changes at MAIN_ROOT — review and commit it."
+if [ -n "$(git -C "$PROJECT_ROOT" status --porcelain -- .coding-crew/dev-commands.json 2>/dev/null)" ]; then
+  echo "Reminder: .coding-crew/dev-commands.json has uncommitted changes — review and commit it."
 fi
 ```
 

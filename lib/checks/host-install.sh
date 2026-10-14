@@ -1,22 +1,16 @@
 #!/usr/bin/env bash
 # Detect and run the right host install command for PROJECT_ROOT.
 # Checks (in order): Makefile install/deps target, then signal file fallback.
-# Usage: host-install.sh --project-root <path> [--main-root <path>] [--force]
-#
-# --force skips the manifest-fingerprint fast path: dep-install's module-not-found retry needs it.
-# Exit codes: 0 installed (or manifests unchanged), 1 argument error, 2 no install method, 3 install failed
+# Usage: host-install.sh --project-root <path>
+# Exit codes: 0 installed, 1 argument error, 2 no install method, 3 install failed
 
 set -euo pipefail
 
 PROJECT_ROOT=""
-MAIN_ROOT=""
-FORCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project-root) PROJECT_ROOT="$2"; shift 2 ;;
-    --main-root)    MAIN_ROOT="$2";    shift 2 ;;
-    --force)        FORCE=1;          shift   ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -37,26 +31,8 @@ cd "$PROJECT_ROOT"
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENSURE_ENV="$SELF_DIR/ensure-env.sh"
 if [[ -f "$ENSURE_ENV" ]]; then
-  if [[ -n "$MAIN_ROOT" ]]; then
-    bash "$ENSURE_ENV" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" >/dev/null 2>&1 || true
-  else
-    bash "$ENSURE_ENV" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true
-  fi
+  bash "$ENSURE_ENV" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true
 fi
-
-# Skip when manifests are unchanged since this worktree's last install (host installs are per worktree).
-FINGERPRINT="$SELF_DIR/manifest-fingerprint.sh"
-STAMP="$PROJECT_ROOT/.scratch/host-install.done"
-if [[ "$FORCE" -ne 1 ]] && [[ -f "$FINGERPRINT" ]] &&
-   [[ "$(bash "$FINGERPRINT" check --project-root "$PROJECT_ROOT" --stamp "$STAMP" 2>/dev/null)" == "FRESH" ]]; then
-  echo "Running: (skipped — manifests unchanged since last install)"
-  exit 0
-fi
-
-# _mark_installed — best-effort: a failed write only costs the next call its fast path.
-_mark_installed() {
-  [[ -f "$FINGERPRINT" ]] && bash "$FINGERPRINT" write --project-root "$PROJECT_ROOT" --stamp "$STAMP" >/dev/null 2>&1 || true
-}
 
 if [[ -f Makefile ]]; then
   for target in install deps; do
@@ -69,7 +45,6 @@ if [[ -f Makefile ]]; then
       else
         echo "Running: make $target"
         make "$target"
-        _mark_installed
         exit 0
       fi
     fi
@@ -79,7 +54,6 @@ fi
 run() {
   echo "Running: $*"
   "$@"
-  _mark_installed
   exit 0
 }
 
@@ -96,7 +70,6 @@ python_cmd=$(bash "$SELF_DIR/python-install-cmd.sh" "$PROJECT_ROOT")
 if [[ -n "$python_cmd" ]]; then
   echo "Running: $python_cmd"
   bash -c "$python_cmd"
-  _mark_installed
   exit 0
 fi
 [[ -f Gemfile.lock       ]] && run bundle install

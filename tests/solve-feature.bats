@@ -444,7 +444,7 @@ stops_at() {
   CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
   stops_at checks "run-checks.sh exit 1; once fixed and committed, run land feat 2 feature/feat before a re-run"
   [[ "$output" == *"$WORK/.solve-feature/2.checks.log"* ]]
-  [ "$(cat "$STATE/checks.log")" = "--project-root $WORK --main-root $WORK --dep-scripts $INSTALL/checks" ]
+  [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
   CHECKS_RC=3 run bash "$SCRIPT" land feat 2 feature/feat
   stops_at checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand"
   # The recovery the stop names: land again once the checks pass, and the issue's commits are pushed.
@@ -620,7 +620,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "run-checks.sh exit 1; once fixed and committed (not pushed), run fix feat 10 feature/feat, then describe feat 10"
   [[ "$output" == *"log: $WORK/.solve-feature/pr-10.checks.log"* ]]
-  [ "$(cat "$STATE/checks.log")" = "--project-root $WORK --main-root $WORK --dep-scripts $INSTALL/checks" ]
+  [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
   [ "$(git rev-parse HEAD)" = "$TIP" ]
   [ "$(git status --porcelain)" = 'A  fixed.txt' ]
 

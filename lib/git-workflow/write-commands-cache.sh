@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# write-commands-cache.sh --response-file <path> — merges a model's discovery response into
-# .coding-crew/dev-commands.json. No recognisable field is a failed discovery: exit 1, cache untouched.
+# write-commands-cache.sh --response-file <path> — merges a model's discovery response, or dep-install's
+# confirmed install_mode/docker_service, into this checkout's .coding-crew/dev-commands.json, which is
+# committed. No recognisable field is a failed discovery: exit 1, cache untouched.
 # A field the response omits keeps its value, and one never written stays absent. Absent means
 # "nobody asked yet"; null means "a model looked and found none", which is never re-asked, so a
 # caller must not name a field it did not check.
 
-FIELDS=(test lint typecheck install env credential_target coverage integration)
+FIELDS=(test lint typecheck install env credential_target coverage integration install_mode docker_service)
 
 RESPONSE_FILE=""
 while [ $# -gt 0 ]; do
@@ -58,29 +59,14 @@ for f in "${FIELDS[@]}"; do
 done
 
 if [ "$ANY_FOUND" -eq 0 ]; then
-  echo "ERROR: could not find test, lint, typecheck, install, env, credential_target, coverage, or integration in the response — leaving any existing cache untouched" >&2
+  echo "ERROR: could not find any of ${FIELDS[*]} in the response — leaving any existing cache untouched" >&2
   echo "--- response was ---" >&2
   printf '%s\n' "$RESPONSE_TEXT" >&2
   exit 1
 fi
 
-# Must land on the shared main checkout even from a worker's worktree, where
-# `git rev-parse --show-toplevel` returns the worktree's own root and the cache would vanish with it.
-_main_root_of() {
-  local dir="$1" common
-  common=$(cd "$dir" && git rev-parse --git-common-dir 2>/dev/null) || return 1
-  case "$common" in
-    /*) : ;;
-    *) common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")" ;;
-  esac
-  dirname "$common"
-}
-
-MAIN_ROOT="${MAIN_ROOT:-}"
-if [ -z "$MAIN_ROOT" ]; then
-  MAIN_ROOT=$(_main_root_of "$(pwd)") || MAIN_ROOT=$(git rev-parse --show-toplevel)
-fi
-CACHE_FILE="$MAIN_ROOT/.coding-crew/dev-commands.json"
+ROOT=$(git rev-parse --show-toplevel) || exit 1
+CACHE_FILE="$ROOT/.coding-crew/dev-commands.json"
 
 OLD_TEXT=""
 [ -f "$CACHE_FILE" ] && OLD_TEXT=$(cat "$CACHE_FILE")
@@ -103,7 +89,7 @@ for f in "${FIELDS[@]}"; do
   fi
 done
 
-mkdir -p "$MAIN_ROOT/.coding-crew"
+mkdir -p "$ROOT/.coding-crew"
 
 JSON_BODY=""
 for f in "${FIELDS[@]}"; do
@@ -113,7 +99,7 @@ for f in "${FIELDS[@]}"; do
 done
 
 # Atomic write: a reader (discover-commands.sh, run-checks.sh) must never observe a half-written file.
-TMP_FILE=$(mktemp "$MAIN_ROOT/.coding-crew/dev-commands.json.XXXXXX")
+TMP_FILE=$(mktemp "$ROOT/.coding-crew/dev-commands.json.XXXXXX")
 printf '{%s}\n' "$JSON_BODY" > "$TMP_FILE"
 mv "$TMP_FILE" "$CACHE_FILE"
 

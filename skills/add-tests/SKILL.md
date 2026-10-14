@@ -51,9 +51,9 @@ Makefile/lockfile heuristic — it exists so a documented `make deps`-style targ
 of a guessed package-manager command. Never substitute your own guess (`npm install`,
 `pnpm install`, …) for it.
 
-Check docker mode first — `bash <dep-install skill dir>/scripts/detect-mode.sh --project-root
-<repo root>`. `USE_DOCKER` → invoke the `dep-install` skill now, unconditionally, before running
-coverage. `USE_HOST` → don't install pre-emptively; run coverage in step 3 first, and only invoke
+Check docker mode first — `.coding-crew/dev-commands.json`'s `install_mode`. `docker` → invoke
+the `dep-install` skill now, unconditionally, before running coverage. Absent or `host` → don't
+install pre-emptively; run coverage in step 3 first, and only invoke
 `dep-install` if it fails for a missing-dependency reason (module-not-found, import error, test
 runner not found), then retry.
 

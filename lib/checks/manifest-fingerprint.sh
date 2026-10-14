@@ -1,42 +1,34 @@
 #!/usr/bin/env bash
-# Fingerprint a project's manifest/lockfiles so host-install.sh and docker-install.sh can
-# skip a redundant install when nothing has changed since their own last successful run.
+# Fingerprint a project's manifest/lockfiles: gen-override.sh names the dependency volumes by it, so
+# a changed lockfile names fresh volumes, which docker-install.sh then installs into.
 #
 # Usage:
 #   manifest-fingerprint.sh compute --project-root <dir> [--max-depth N]
-#   manifest-fingerprint.sh check   --project-root <dir> --stamp <path> [--max-depth N]
-#   manifest-fingerprint.sh write   --project-root <dir> --stamp <path> [--max-depth N]
 #
 #   compute   one hash over every recognised lockfile (bounded depth; vendor, output and dot-dirs skipped)
-#   check     prints FRESH if --stamp's hash matches the current one, else STALE; always exits 0
-#   write     atomically writes the current hash to --stamp
-# FRESH means the install's inputs are unchanged, not that its output is intact: dep-install's
-# --force retry on a module-not-found error is the backstop.
 # Exit codes: 0 success, 1 argument or filesystem error
 
 set -euo pipefail
 
 MODE="${1:-}"
 case "$MODE" in
-  compute|check|write) shift ;;
+  compute) shift ;;
   --help|-h)
     grep '^#' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
   *)
-    echo "Error: first argument must be compute, check, or write (got: ${MODE:-<none>})" >&2
+    echo "Error: first argument must be compute (got: ${MODE:-<none>})" >&2
     exit 1
     ;;
 esac
 
 PROJECT_ROOT=""
-STAMP=""
 MAX_DEPTH=5
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project-root) PROJECT_ROOT="$2"; shift 2 ;;
-    --stamp)        STAMP="$2";        shift 2 ;;
     --max-depth)    MAX_DEPTH="$2";    shift 2 ;;
     --help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
@@ -52,10 +44,6 @@ if [[ -z "$PROJECT_ROOT" ]]; then
 fi
 if [[ ! -d "$PROJECT_ROOT" ]]; then
   echo "Error: --project-root does not exist: $PROJECT_ROOT" >&2
-  exit 1
-fi
-if [[ "$MODE" != "compute" && -z "$STAMP" ]]; then
-  echo "Error: --stamp is required for $MODE" >&2
   exit 1
 fi
 
@@ -115,25 +103,4 @@ _compute() {
   printf '%s\n' "${lines[@]}" | _sha256 | awk '{print $1}'
 }
 
-case "$MODE" in
-  compute)
-    _compute
-    ;;
-  check)
-    CURRENT="$(_compute)"
-    SAVED=""
-    [[ -f "$STAMP" ]] && SAVED="$(cat "$STAMP" 2>/dev/null || true)"
-    if [[ -n "$SAVED" && "$SAVED" == "$CURRENT" ]]; then
-      echo "FRESH"
-    else
-      echo "STALE"
-    fi
-    ;;
-  write)
-    CURRENT="$(_compute)"
-    mkdir -p "$(dirname "$STAMP")"
-    TMP="$(mktemp "${STAMP}.XXXXXX")"
-    printf '%s\n' "$CURRENT" > "$TMP"
-    mv "$TMP" "$STAMP"
-    ;;
-esac
+_compute

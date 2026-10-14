@@ -167,8 +167,7 @@ bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
 checks:
 
 ```bash
-bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$(git rev-parse --show-toplevel)" \
-  --main-root "${MAIN_ROOT:-}" --dep-scripts "<skill-dir>/scripts/checks"
+bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$(git rev-parse --show-toplevel)"
 ```
 
 - It prints `CHECKS: pass` — run a plain `git push`: never forced, no `--force` or

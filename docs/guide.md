@@ -470,7 +470,7 @@ repo needs, so do not add them to `.gitignore`. The installed tooling beside the
 | `/solve-feature` finds no ready issue immediately | No issue with the correct status                 | Under `local`, check `.scratch/*/issues/` — status must be exactly `ready-for-agent` |
 | The coder reports `blocked`                       | Ambiguous spec or missing dependency             | Read its `BLOCKED:` line; resolve and re-run                                        |
 | `install.sh`: "unsafe path in registry"           | `registry.json` path contains `..` or `/` prefix | Fix `registry.json`                                                                 |
-| `dep-install` picks wrong mode                    | Makefile detection read parent project           | Run `git config --local agent.install-mode host` (or `docker`) in your project root |
+| `dep-install` picks wrong mode                    | `install_mode` in `.coding-crew/dev-commands.json` | Set `"install_mode": "host"` (or `"docker"` with `"docker_service"`) there and commit it |
 | `address-pr-comments` fails with opaque error     | `gh` CLI missing or not authenticated            | Run `gh auth login` first                                                           |
 
 ---

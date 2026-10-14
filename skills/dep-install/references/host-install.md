@@ -2,11 +2,10 @@
 
 Use this when no `docker-compose.yml`, `docker-compose.yaml`, or `compose.yml` exists at `PROJECT_ROOT`.
 
-`PROJECT_ROOT` and `MAIN_ROOT` are **inherited from the caller** — do not re-derive them. Each bash tool call runs in a fresh shell and variables do not persist between calls, so at the top of every bash call assign both to the literal values you were given:
+`PROJECT_ROOT` is **inherited from the caller** — do not re-derive it. Each bash tool call runs in a fresh shell and variables do not persist between calls, so at the top of every bash call assign it to the literal value you were given:
 
 ```bash
-PROJECT_ROOT="/absolute/path/to/worktree"
-MAIN_ROOT="/absolute/path/to/main-checkout"
+PROJECT_ROOT="/absolute/path/to/checkout"
 ```
 
 ## Detect and run
@@ -17,11 +16,11 @@ Check in order — use the first match, stop as soon as one is found.
 
 ### 0. Check the command cache first
 
-`$MAIN_ROOT/.coding-crew/dev-commands.json`'s `"install"` field may already hold this repo's
+`$PROJECT_ROOT/.coding-crew/dev-commands.json`'s `"install"` field may already hold this repo's
 answer — written once by a prior dep-install session's own Step 1 below. Read it before touching `CLAUDE.md`/`AGENTS.md`:
 
 ```bash
-CACHE="$MAIN_ROOT/.coding-crew/dev-commands.json"
+CACHE="$PROJECT_ROOT/.coding-crew/dev-commands.json"
 RAW=""
 [ -f "$CACHE" ] && RAW=$(grep -o '"install"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$CACHE" | head -1)
 ```
@@ -41,10 +40,11 @@ use that. Either way — a command found, or a confident "no install command is 
 persist the answer so no future session has to ask again:
 
 ```bash
-cat > /tmp/install-discovery.json <<'JSON'
+cat > "$PROJECT_ROOT/.install-discovery.json" <<'JSON'
 {"install": "<the command you found, or null if you checked and found none>"}
 JSON
-bash "<skill-dir>/scripts/git-workflow/write-commands-cache.sh" --response-file /tmp/install-discovery.json
+(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/git-workflow/write-commands-cache.sh" --response-file .install-discovery.json)
+rm -f "$PROJECT_ROOT/.install-discovery.json"
 ```
 
 Only write `null` if you actually looked and found nothing — `null` means "no documented
