@@ -202,7 +202,7 @@ main checkout (create the directory and file if missing; never rewrite existing 
 
 `<file:line>` is where the comment pointed (the file alone for a top-level comment), `<commit sha>`
 the short sha of the commit that fixed it. A comment whose body contains `crew-finding:` is a
-finding crew-afk or review-pr posted — their review already caught it — so it is not recorded.
+finding a crew reviewer posted — its review already caught it — so it is not recorded.
 
 Writing the file is best-effort: a failed write is reported in the Summary (Step 6) with the error
 and never stops the skill.
@@ -245,11 +245,11 @@ Otherwise — no push, no marker, any other kind in it, or a `crew-finding:` com
 print nothing here.
 
 **solve-feature PR.** Print nothing under Ready, and no next step: the run already reviewed the PR
-and fixed its findings, and its fix step marks the draft ready when nothing needs a person. A draft
-it left lists what does under `Needs attention` in its progress comment.
+and fixed its findings, and its describe step marks the draft ready when nothing needs a person. A
+draft it left lists what does under `Needs attention` in the PR body.
 
 On either kind the skill never runs `gh pr ready` and never waits on CI: on a crew-afk PR marking
-it ready is the developer's call once CI passes; on a solve-feature PR it is the run's fix step's,
+it ready is the developer's call once CI passes; on a solve-feature PR it is the run's describe step's,
 and the developer's for a draft that step left.
 
 ## Unattended mode (`--auto`)

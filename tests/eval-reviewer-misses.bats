@@ -125,6 +125,25 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   ! grep -q 'PRD decisions' <<<"$dispatch"
 }
 
+@test "--reviewer crew-review builds head's prompt from skills/crew-review/SKILL.md, and a base from before the rename from review-pr's prompt" {
+  mkdir -p "$R/skills/review-pr"
+  echo "OLD-REVIEW-PR-PROMPT" > "$R/skills/review-pr/reviewer-prompt.md"
+  git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm "review-pr"
+  BASEREF=$(git -C "$R" rev-parse HEAD)
+  git -C "$R" rm -rq skills/review-pr
+  mkdir -p "$R/skills/crew-review"
+  echo "CREW-REVIEW-SKILL" > "$R/skills/crew-review/SKILL.md"
+  git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm "crew-review"
+  FAKE_FORBID=1 run run_eval --dry-run --reviewer crew-review --case branch-case
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  d=$(out_dir)
+  grep -qF 'skills/crew-review/SKILL.md' "$d/branch-case-head.crew-review.prompt.md"
+  grep -qF 'skills/review-pr/reviewer-prompt.md' "$d/branch-case-base.crew-review.prompt.md"
+  [ ! -e "$T/called" ]
+  run run_eval --dry-run --reviewer review-pr
+  [ "$status" -ne 0 ]
+}
+
 @test "a feature case is one reviewer whose prompt names the case's PRD file, read whole, with no area blocks" {
   run run_eval --dry-run
   [ "$status" -eq 0 ]

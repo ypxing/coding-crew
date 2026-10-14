@@ -69,3 +69,15 @@ the wrong file; `tests/layer-ownership.bats` checks the `solve-issue`, `tdd` / `
 | `crew-coder`               | protocol + report wire                               | the implementation loop                   |
 | `solve-issue`              | the ordered procedure and the outcome vocabulary     | who its caller is                         |
 | `tdd` / `dep-install`      | one technique each                                   | issue, report or status handling          |
+
+## solve-feature and crew-review stay boring
+
+Two levels, for `skills/solve-feature/` and `skills/crew-review/`:
+
+- **Between skills:** one skill does one job and is named for it; a skill uses another only by name ("Use the X
+  skill"), never through a path into its files; where and how it runs (CI, hosts, config) belongs to setup, not
+  to the skill.
+- **Inside a skill:** a line earns its place as a step, or as a guard without which a person is **misled** (a PR
+  marked ready or an issue counted landed when it isn't) or **stuck** (a stop that doesn't say what failed and how
+  to recover). Cut: code that parses prose an LLM wrote, a second copy of status git/GitHub already shows, two
+  writers for one artifact, a guard for a case no run has hit. A cut guard takes its test with it.

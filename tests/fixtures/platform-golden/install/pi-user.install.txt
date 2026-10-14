@@ -83,7 +83,7 @@ HOME/.coding-crew/dep-install/scripts/run.sh exec=1
 HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-HOME/.coding-crew/manifest.json 2cfd3a897381dadadb19704cbe8d44b50cd62cf3
+HOME/.coding-crew/manifest.json 6c362499975d5e54e1cd1f276d2ca0fdd13b21c0
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
 HOME/.coding-crew/skills/_shared/fragments/ /
@@ -168,6 +168,8 @@ HOME/.pi/agent/skills/crew-brainstorm/ /
 HOME/.pi/agent/skills/crew-brainstorm/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/crew-grill/ /
 HOME/.pi/agent/skills/crew-grill/SKILL.md exec=0 unrendered=0
+HOME/.pi/agent/skills/crew-review/ /
+HOME/.pi/agent/skills/crew-review/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/dep-install/ /
 HOME/.pi/agent/skills/dep-install/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/dep-install/references/ /
@@ -194,9 +196,6 @@ HOME/.pi/agent/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/domain-modeling/references/ /
 HOME/.pi/agent/skills/domain-modeling/references/adr-format.md exec=0
 HOME/.pi/agent/skills/domain-modeling/references/context-format.md exec=0
-HOME/.pi/agent/skills/review-pr/ /
-HOME/.pi/agent/skills/review-pr/SKILL.md exec=0 unrendered=0
-HOME/.pi/agent/skills/review-pr/reviewer-prompt.md exec=0
 HOME/.pi/agent/skills/solve-feature/ /
 HOME/.pi/agent/skills/solve-feature/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/solve-feature/hosts/ /

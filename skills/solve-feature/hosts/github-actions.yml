@@ -14,9 +14,9 @@ name: solve-feature
 # The Copilot CLI runs the solve-feature skill, which runs each coder, the reviewer, the fixer and the
 # PR's writer as its own subagents. The review runs inside the same job, from the skill: a PR opened or marked ready
 # with the workflow's own GITHUB_TOKEN triggers no other workflow, so a `pull_request` job would never
-# fire. The session's exit code does not carry a stop, so the last step fails the job unless the
-# run's fix step wrote .solve-feature/reviewed: on a stop the scripts recorded (.solve-feature/stopped,
-# with the reason), and on a session that ended before the fix step for any other reason.
+# fire. The session's exit code does not carry a stop, so the last step reads the run's one-line
+# .solve-feature/outcome and fails the job on anything but `ready pr=<n>`: `needs-attention pr=<n>`,
+# `stopped: <reason>`, or no file at all (the session ended before the run finished).
 #
 # Billing: with `github.token` the Copilot CLI bills under the organisation policy "Allow use of
 # Copilot CLI billed to the organization" (on by default where the CLI is enabled), see
@@ -38,7 +38,7 @@ on:
 
 env:
   # The coding-crew ref the runner installs. Pin it to the first tag cut after solve-feature's
-  # hosts shipped (no tag before that has review-pr); `main` until then.
+  # hosts shipped (no tag before that has crew-review); `main` until then.
   CODING_CREW_REF: main
 
 permissions:
@@ -102,7 +102,7 @@ jobs:
       - name: Install coding-crew (user-level, copilot)
         run: |
           git clone --depth 1 --branch "$CODING_CREW_REF" https://github.com/ypxing/coding-crew /tmp/coding-crew
-          TARGET_REPO="$HOME" bash /tmp/coding-crew/install.sh copilot --skills solve-feature,review-pr
+          TARGET_REPO="$HOME" bash /tmp/coding-crew/install.sh copilot --skills solve-feature,crew-review
 
       - name: Git identity for the runner
         run: |
@@ -114,7 +114,6 @@ jobs:
           SLUG: ${{ needs.slug.outputs.slug }}
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
-          SOLVE_FEATURE_HOST: github-actions
           # To bill a person rather than the organisation, store a fine-grained PAT with the
           # "Copilot Requests" permission as a repo secret and pass it here. Unverified: that this
           # is the variable name the CLI reads in Actions, and that a personal (non-organisation)
@@ -122,12 +121,13 @@ jobs:
           # COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
         run: copilot -p "Use the solve-feature skill on $SLUG" --allow-all-tools --no-color
 
-      # .solve-feature/reviewed is written by the run's fix step; only describe runs after it.
-      - name: Fail the job unless the run ended in its fix step
+      - name: Fail the job unless solve-feature marked the PR ready
         run: |
-          if [ -e .solve-feature/stopped ]; then
-            echo "::error::solve-feature stopped: $(cat .solve-feature/stopped)"; exit 1
+          if [ ! -f .solve-feature/outcome ]; then
+            echo "::error::solve-feature never finished: the session ended early (see the step above)"; exit 1
           fi
-          if [ ! -e .solve-feature/reviewed ]; then
-            echo "::error::solve-feature never reached its fix step: nothing landed, or the session ended early (see the step above)"; exit 1
-          fi
+          line=$(cat .solve-feature/outcome)
+          case "$line" in
+            ready*) echo "solve-feature: $line" ;;
+            *) echo "::error::solve-feature: $line"; exit 1 ;;
+          esac

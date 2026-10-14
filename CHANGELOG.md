@@ -6,6 +6,17 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **crew-review, solve-feature**: `review-pr` is renamed `crew-review` and only reports: it reviews a branch
+  (`<base>..HEAD`) or a PR against the spec its caller names (a file, an issue ref or the PR body), asks what the
+  code at HEAD lacks, writes its JSON report to the given path or prints it, and posts nothing and marks nothing
+  ready. `install.sh --update` does not remove a renamed skill: delete your old `review-pr` skill directory by hand.
+  solve-feature calls crew-review by name; `start` stops on a slug the tracker's `features` does not list, always
+  uses `--branch` (never the default branch) or `feature/<slug>`, and writes `.solve-feature/spec.md`; `land` opens
+  the draft with a one-line body and no progress comment; `describe` writes the whole body once, then marks the
+  draft ready when nothing needs a person (`fix` no longer does). Every run ends with one line in
+  `.solve-feature/outcome` (`ready pr=<n>`, `needs-attention pr=<n>` or `stopped: …`), which replaces the
+  `stopped`, `reviewed` files and which `hosts/github-actions.yml` now reads; `SOLVE_FEATURE_HOST` is gone (#479).
+
 - **crew-afk**: the feature reviewer's protocol is cut to three questions, as review-pr's: what the PRD asks for that
   is missing or different and what was built that it does not need, what a real run breaks (leftover references,
   undefined names in shared text and security classes kept as checks), and which documented rule the diff breaks.
