@@ -1,11 +1,12 @@
 ---
 name: crew-review
 description: >
-  Review a change — a branch's commits or a pull request — against the spec its caller names, for what breaks and
-  for the repo's documented rules, in a fresh read-only subagent, and write one JSON report. Report-only: it posts
-  nothing and marks nothing ready. Trigger with /crew-review [<pr-number> | branch <name>] [against <spec>].
+  Reviews a change — a branch's commits or a pull request — against the spec its caller names, for what breaks
+  and for the repo's documented rules, in a fresh read-only subagent, and writes one JSON report. Report-only:
+  it posts nothing and marks nothing ready. Use when a branch or PR needs a review against its spec before it
+  is merged or marked ready. Trigger with /crew-review [<pr-number> | branch <name>] [against <spec>].
 argument-hint: "[<pr-number> | branch <name> [base <ref>]] [against <spec file | issue ref>] [report <path>]"
-allowed-tools: Bash, shell
+allowed-tools: Bash shell
 ---
 
 # crew-review

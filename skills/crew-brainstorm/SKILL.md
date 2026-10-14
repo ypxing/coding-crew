@@ -1,6 +1,8 @@
 ---
 name: crew-brainstorm
-description: Use when starting a complex or exploratory feature and you want a thorough design pipeline before implementation — explores intent, proposes approaches, builds a full technical spec, then hands off to to-issues.
+description: >
+  Runs a thorough design pipeline before implementation: explores intent, proposes approaches, builds a full
+  technical spec, then hands off to to-issues. Use when starting a complex or exploratory feature.
 ---
 
 # Brainstorming Ideas Into Designs

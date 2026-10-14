@@ -1,9 +1,9 @@
 ---
 name: dep-install
 description: >
-  Decide a project's install mode (host or docker) once with the person, record it in the committed
-  .coding-crew/dev-commands.json, and install dependencies. Use when setting up a project, or when a
-  command failed for a missing dependency; used by solve-issue, address-pr-comments, add-tests and upgrade-deps.
+  Decides a project's install mode (host or docker) once with the person, records it in the committed
+  .coding-crew/dev-commands.json, and installs dependencies. Use when setting up a project, or when a command
+  failed for a missing dependency; used by solve-issue, address-pr-comments, add-tests and upgrade-deps.
 ---
 
 # Dep Install

@@ -1,11 +1,12 @@
 ---
 name: solve-feature
 description: >
-  Run one feature's ready-for-agent issues unattended on one branch, each by a fresh coder subagent and
-  gated by the project's checks, in a draft PR that is reviewed at the end, its findings fixed and
-  marked ready when nothing needs a person. Local or GitHub tracker. Trigger with /solve-feature <slug>. Optional: --branch <name>.
+  Runs one feature's ready-for-agent issues unattended on one branch, each by a fresh coder subagent gated by
+  the project's checks, in a draft PR that is reviewed at the end, has its findings fixed, and is marked ready
+  when nothing needs a person. Works with a local or GitHub tracker. Use when a feature's issues are ready and
+  should land as one reviewed PR. Trigger with /solve-feature <slug>. Optional: --branch <name>.
 argument-hint: "<feature-slug> [--branch <name>]"
-allowed-tools: Bash, shell
+allowed-tools: Bash shell
 ---
 
 # solve-feature

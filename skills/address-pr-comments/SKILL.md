@@ -1,6 +1,10 @@
 ---
 name: address-pr-comments
-description: Fetch all review comments on the current branch's open PR, challenge each one critically, implement sensible ones using TDD, commit touched files, and print a summary. Trigger with /address-pr-comments.
+description: >
+  Fetches every review comment on the current branch's open pull request, challenges each one critically,
+  implements the sensible ones with TDD, commits the touched files and prints a summary; on a solve-feature PR
+  it also pushes once the project's checks pass. Use when a PR has review comments to work through. Trigger
+  with /address-pr-comments.
 argument-hint: "Optional PR number or URL (defaults to current branch's open PR); --auto for unattended runs"
 ---
 

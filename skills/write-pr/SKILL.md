@@ -1,6 +1,9 @@
 ---
 name: write-pr
-description: Write a short pull request title and body a human reviewer can act on — Why (2–4 sentences), What changes (3–6 high-level bullets), Risk (one line) and Tested (one line). Use when opening or updating a PR, or when asked to write or improve a PR description. Trigger with /write-pr.
+description: >
+  Writes a short pull request title and body a human reviewer can act on — Why (2–4 sentences), What changes
+  (3–6 high-level bullets), Risk (one line) and Tested (one line). Use when opening or updating a PR, or when
+  asked to write or improve a PR description. Trigger with /write-pr.
 argument-hint: "Optional base ref or PR number (defaults to the current branch against the repo's default branch)"
 ---
 

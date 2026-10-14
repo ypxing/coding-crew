@@ -1,14 +1,13 @@
 ---
 name: upgrade-deps
 description: >
-  Audit outdated npm/yarn/pnpm dependencies across a monorepo — security-advisory
-  exploitability, transitive conflicts, real call-site usage, and targeted changelog review
-  for major bumps — then publish issues (batched for trivial in-range bumps, one per package
-  or coupled group otherwise; every major-version bump defaults to ready-for-human, minor/patch
-  range-edits stay ready-for-agent unless a conflict or advisory can't be resolved cleanly)
-  with required test additions and a safety checklist, for solve-feature or
-  solve-issue to execute. Use when the user wants to upgrade dependencies, audit outdated
-  packages, or plan a safe dependency bump. Does not perform the upgrade itself.
+  Audits outdated npm/yarn/pnpm dependencies across a monorepo — security-advisory exploitability, transitive
+  conflicts, real call-site usage, and targeted changelog review for major bumps — then publishes issues
+  (batched for trivial in-range bumps, one per package or coupled group otherwise; every major-version bump
+  defaults to ready-for-human, minor/patch range-edits stay ready-for-agent unless a conflict or advisory
+  can't be resolved cleanly) with required test additions and a safety checklist, for solve-feature or
+  solve-issue to execute. Use when the user wants to upgrade dependencies, audit outdated packages, or plan a
+  safe dependency bump. Does not perform the upgrade itself.
 ---
 
 # Upgrade Deps

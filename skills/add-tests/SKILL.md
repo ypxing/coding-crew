@@ -1,6 +1,9 @@
 ---
 name: add-tests
-description: Discover the project's coverage command, rank under-covered files by risk, resolve a mocking convention per ecosystem, and hand the findings to to-issues as ready-for-agent issues. Use when the user wants to close testing-coverage gaps or asks to find where test coverage is weakest.
+description: >
+  Discovers the project's coverage command, ranks under-covered files by risk, resolves a mocking convention
+  per ecosystem, and hands the findings to to-issues as ready-for-agent issues. Use when the user wants to
+  close testing-coverage gaps or asks where test coverage is weakest.
 ---
 
 # Add Tests

@@ -1,8 +1,10 @@
 ---
 name: solve-issue
 description: >
-  Implement a single issue end-to-end: read it, explore context, install deps, build with TDD,
-  verify checks, and commit. Platform-agnostic — works in worktrees or branches.
+  Implements a single issue end-to-end: reads it, explores the code, installs dependencies when missing,
+  builds with TDD, verifies the project's checks and commits. Works in a worktree or on a branch, on any
+  platform. Use when one issue — a tracker ref, an issue file or inline content — should be implemented and
+  committed.
 argument-hint: "Path to issue file (e.g. .scratch/auth/issues/01-add-logout.md)"
 ---
 

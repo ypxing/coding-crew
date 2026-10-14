@@ -1,9 +1,9 @@
 ---
 name: configure-tracker
 description: >
-  Choose where the project's issues live — local markdown files or GitHub Issues — and write the
-  choice to the `tracker` section of the repo's .coding-crew/config.json. Use when setting up a new
-  project's issue tracker or switching tracker backends.
+  Chooses where the project's issues live — local markdown files or GitHub Issues — and writes the choice to
+  the `tracker` section of the repo's .coding-crew/config.json. Use when setting up a new project's issue
+  tracker or switching tracker backends.
 ---
 
 # Configure Tracker
