@@ -64,11 +64,12 @@ it. Content that fits no row is in the wrong file; `tests/layer-ownership.bats` 
 
 ## solve-feature and crew-review stay boring
 
-Two levels, for `skills/solve-feature/` and `skills/crew-review/`:
+Two levels: the first holds for every skill under `skills/` (`tests/native-skills.bats` checks its paths), the
+second for `skills/solve-feature/` and `skills/crew-review/`:
 
-- **Between skills:** one skill does one job and is named for it; a skill uses another only by name ("Use the X
-  skill"), never through a path into its files; where and how it runs (CI, hosts, config) belongs to setup, not
-  to the skill.
+- **Between skills:** one skill does one job and is named for it. A skill uses another skill by name. Code shared
+  between skills is a library linked into the skill's own `scripts/` directory, called like a tool, never a path
+  into another skill's directory; where and how it runs (CI, hosts, config) belongs to setup.
 - **Inside a skill:** a line earns its place as a step, or as a guard without which a person is **misled** (a PR
   marked ready or an issue counted landed when it isn't) or **stuck** (a stop that doesn't say what failed and how
   to recover). Cut: code that parses prose an LLM wrote, a second copy of status git/GitHub already shows, two

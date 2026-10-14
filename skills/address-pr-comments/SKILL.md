@@ -160,11 +160,11 @@ COMMIT_BODY="address PR review comments
 - <what changed for comment 2 and why>
 - <what changed for comment N and why>"
 
-# Commit with co-author
+# Commit with you, the agent running this skill, as co-author: your own name and commit email
 bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
   --message "$COMMIT_BODY" \
   --files "<space-separated file list>" \
-  --coauthor "Claude Code <claude@anthropic.com>"
+  --coauthor "<your agent name> <your agent's commit email>"
 ```
 
 **Push — solve-feature PRs only** (Step 1's test). On one, after the commit, run the project's

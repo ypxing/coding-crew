@@ -102,7 +102,7 @@ bash scripts/git-workflow/commit-changes.sh \
   --prefix "[01-auth]" \
   --message "Add logout endpoint" \
   --files "src/api/auth.ts test/api/auth.test.ts" \
-  --coauthor "Claude <noreply@anthropic.com>"
+  --coauthor "<agent name> <agent commit email>"
 ```
 
 ---

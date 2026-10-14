@@ -6,6 +6,13 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **skills**: every skill follows the Agent Skills authoring practice. Each `description` says in the third
+  person what the skill does and when to use it; `allowed-tools` is space-delimited; address-pr-comments
+  credits the agent that runs it as co-author instead of a hard-coded `Claude Code`. The native rule (a skill
+  uses another by name and reaches shared code only through the library linked into its own `scripts/`) is in
+  CLAUDE.md and enforced by `tests/native-skills.bats`. solve-issue's unrun `references/test-*.sh` are gone
+  (the branch-protection one now tests the real `branch-safety-check.sh`, which no longer exits 128 when a
+  repo has no `origin/HEAD`), and install.sh no longer filters `test-*.sh` (#486).
 - **crew-afk**: a new, thin `crew-afk` skill. `/crew-afk <feature> [--to local|orca|herdr]` resolves the
   feature's slug, prepares (or reuses) one worktree per feature at `<repo>/../<repo-name>-worktrees/<slug>`
   (`.worktreeinclude` entries linked, `.env` copied), starts one `/solve-feature <slug>` run there and returns:

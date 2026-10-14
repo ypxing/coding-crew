@@ -25,9 +25,11 @@
 9	eval-design-skills.bats
 12	eval-reviewer-misses.bats
 1	git-test-env.bats
+1	git-workflow-branch-safety.bats
 1	human-issue-shared.bats
 86	install.bats
 2	layer-ownership.bats
+1	native-skills.bats
 37	platform-golden-install.bats
 43	platform-install.bats
 4	render-skill-shared-fragments.bats

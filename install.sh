@@ -374,7 +374,7 @@ install_single_skill() {
     if [[ $status -eq 0 ]]; then
       echo "  $rel_dest"
     fi
-  done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -not -name "test-*.sh" -print0)
+  done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -print0)
 
   local libs lib libs_arr=()
   _skill_list "$skill_name" libs '.skills[$s].libs // [] | .[]'

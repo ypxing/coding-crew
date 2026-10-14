@@ -12,7 +12,8 @@ if [[ "${1:-}" == "--allow-default" ]]; then
 fi
 
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)
+DEFAULT_BRANCH="${DEFAULT_BRANCH#origin/}"
 
 if [ -z "$DEFAULT_BRANCH" ]; then
   DEFAULT_BRANCH="main"
