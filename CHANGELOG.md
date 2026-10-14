@@ -11,7 +11,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   undefined names in shared text and security classes kept as checks), and which documented rule the diff breaks.
   The always-on class list, the two-pass procedure, the Pre-Report Gate and the written-list tracing step are
   replaced by a few lines; `### Dropped` stays. The always-loaded `quality.md` drops its size, style and performance
-  thresholds and keeps only defects (swallowed errors, untested paths, hollow tests, a second reader, dead code).
+  thresholds and keeps only defects (swallowed errors, untested paths, hollow tests, a second reader, dead code, comments
+  and tests that pin prose).
 - **solve-feature, address-pr-comments**: a solve-feature run fixes its review's findings itself instead of posting
   them. After the read-only reviewer (`review-pr.sh prepare` and its prompt), a fresh subagent fixes every finding with
   the tdd skill, and the new `solve-feature.sh fix <slug> <pr> <branch>` gates the fixes with the checks, commits and

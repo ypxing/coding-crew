@@ -82,8 +82,9 @@ criterion prescribes, is a fault to record, naming the decision or criterion it 
    earlier run left behind). Name what the change moves, reorders or re-scopes, find each other
    consumer of the old behaviour — prompts, docs, helpers, scripts, tests, saved state — and read
    it as it stands at the branch tip: a sentence, argument or default that still assumes the old
-   behaviour is a fault to record, even in a line the diff never touched. A change of *when*
-   something runs makes every state the old timing left a live input.
+   behaviour is a fault to record, even in a line the diff never touched. When the change moves
+   *when* something runs, for each piece of saved state the new path reads, ask what the old
+   timing or an earlier run may already have left there, and what the new path does on top of it.
    In a per-branch review this item is evidence for the criterion verdicts: a criterion the rest of
    the code contradicts is `unmet`; a fault outside the criteria is never a reason for `unmet`.
    When the dispatch marks the diff test-only, read each test and the code it exercises, and skip

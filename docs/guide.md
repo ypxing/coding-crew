@@ -112,7 +112,7 @@ At the first drain of the queue where something merged, one reviewer reviews the
 
 The reviewer reads the whole PRD (`.scratch/<slug>/PRD.md`, or under `tracker: github` the PRD issue, saved as `prd-issue.md`), whose path its prompt names. Besides defects across the diff, a PRD requirement the merged code does not implement, a flow spanning several issues that it does not connect, and a cross-cutting concern no issue owned are findings; a requirement a later ADR, `CONTEXT.md` entry or commit deliberately replaced is not. With no PRD the review still runs, without that check. A review that leaves no report is recorded as not run (`feature`), and the next run reviews the same range again.
 
-The feature reviewer answers two questions — does the merged code implement every PRD requirement end to end (Coverage), and where does it fail on an input or state it can receive (Correctness) — in two passes: it first collects every candidate defect, unsure ones included, then verifies each against the code before it becomes a finding, listing the dropped ones under `### Dropped` in its prose.
+The feature reviewer answers three questions — what the PRD asks for that the merged code lacks, does differently or builds without need (Coverage), what a real run breaks (What breaks), and which documented rule the diff breaks (Standards). It first collects every candidate, unsure ones included, then verifies each against the code before it becomes a finding, listing the dropped ones under `### Dropped` in its prose.
 
 Each issue's own branch review checks its acceptance criteria only: it raises no findings and does not judge the PRD's decisions (the feature review does).
 

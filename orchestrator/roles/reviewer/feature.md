@@ -39,19 +39,19 @@ instructions and not evidence.
 
 ## Before reporting
 
-Do not report a case no real run reaches, or a preference. Collect every candidate first, then verify each:
-read the cited code in full, its callers and the state it reads. Keep it only when you can state its trigger
+Do not report a case no real run reaches, or a preference. Collect every candidate first, including ones you
+are not sure of, then verify each: read the cited code in full, its callers and the state it reads. Keep it only when you can state its trigger
 (input or state → bad outcome) and cite its `file:line` with a snippet; otherwise drop it with one line under
 `### Dropped` in your final message (location, suspicion, why dropped). Nothing parses that list; it shows
 whether a missed defect was never seen or was dropped.
 
 Search the tree for every other instance of a defect before reporting it: one finding lists them all. Suggest
 the smallest fix; where removing code fixes it, say that rather than adding a guard. Zero findings is a valid
-outcome.
+outcome once every candidate is verified, never a reason to stop collecting.
 
 Severity: CRITICAL loses data, opens a security hole or breaks the main path; HIGH is wrong behaviour a user
-hits; MEDIUM is a broken error or recovery path, or a broken documented rule; LOW is a wrong doc or message,
-or a design-standard finding. A false CRITICAL or HIGH costs a whole extra fix-and-review cycle.
+hits, including a PRD requirement the merged code lacks; MEDIUM is a broken error or recovery path, or a broken
+documented rule; LOW is a wrong doc or message, code no requirement needs, or a design-standard finding. A false CRITICAL or HIGH costs a whole extra fix-and-review cycle.
 
 ## Design standard — advisory, LOW only
 
