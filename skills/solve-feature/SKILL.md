@@ -56,7 +56,7 @@ A bare word the user gave is the slug: pass it as is.
    4. `bash <path> fix <slug> <n> <branch>` — always, whatever the subagents reported. It gates the
      fixes with the checks, commits and pushes them, records the review on the PR's progress comment
      and marks the draft ready when nothing needs a person. Report its last line,
-     `FIX: findings=<k> fixed=<f> needs-attention=<a> ready=<yes|no|already>`.
+     `FIX: findings=<k> needs-attention=<a> ready=<yes|no|already>`.
 
 **Any other non-zero exit stops the run.** Relay the script's message as it printed it (a stop names
 the step, the reason and, for the checks, its log) — after a `solve` stop, with the subagent's own

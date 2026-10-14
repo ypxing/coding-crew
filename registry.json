@@ -58,7 +58,7 @@
       ]
     },
     "solve-feature": {
-      "version": "0.7.0",
+      "version": "0.7.1",
       "source-dir": "solve-feature",
       "description": "Run one feature's ready-for-agent issues in order on one branch, each by a fresh coder subagent gated by the project's checks, in a draft PR carrying the spec; at the end it is reviewed, its findings fixed, and marked ready when nothing needs a person.",
       "assets": {
@@ -79,7 +79,7 @@
       ]
     },
     "review-pr": {
-      "version": "0.3.1",
+      "version": "0.3.2",
       "source-dir": "review-pr",
       "description": "One read-only subagent reviews a checked-out PR against its spec; a script posts one review and marks a draft ready when the spec is met.",
       "assets": {

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # review-pr.sh prepare|post <pr-number> — the guards around review-pr's reviewer, which SKILL.md runs as a
 # read-only subagent of the host agent between the two.
-#   prepare <n>  HEAD is the PR's head and the tree is clean; writes the spec, the diff, the reviewed head
-#                (pr-<n>.reviewed-head, what solve-feature's fix counts fixes from) and the reviewer's prompt under
-#                .solve-feature/; prints prompt=<file> and reviewer-model= (.coding-crew/config.json
+#   prepare <n>  HEAD is the PR's head and the tree is clean; writes the spec, the diff and the reviewer's prompt
+#                under .solve-feature/; prints prompt=<file> and reviewer-model= (.coding-crew/config.json
 #                solveFeature.models.reviewer, empty when unset)
 #   post <n>     HEAD and the tree are unchanged and the reviewer's report is valid: posts one COMMENT review,
 #                marks a draft ready when the spec is met with no CRITICAL/HIGH finding, and writes
@@ -57,7 +56,6 @@ prepare() {
   ' >"$SPEC"
   gh pr diff "$PR" >"$DIFF" || die "gh pr diff $PR failed"
   rm -f "$REPORT" "$LOGS/reviewed"
-  printf '%s\n' "$HEAD_OID" >"$LOGS/pr-$PR.reviewed-head"
   cat >"$PROMPT" <<EOF
 Review PR #$PR ($URL), checked out at HEAD, against its spec.
 Spec: $SPEC

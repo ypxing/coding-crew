@@ -6,6 +6,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature, review-pr**: `solve-feature.sh fix` drops the guards no run has needed (PR open, head branch,
+  HEAD containing the PR head, the report's `prd` value and findings shape, a reviewer-edited tree) and the
+  `pr-<n>.reviewed-head` file `review-pr.sh prepare` wrote for them; the PR still stays a draft on a gap, an unmet spec,
+  an unfixed finding or a fixer that changed nothing. The last line is now
+  `FIX: findings=<k> needs-attention=<a> ready=<yes|no|already>` (no `fixed=`), and the progress row reads
+  `<k> finding(s), fixed in <sha>`. A rejected push in `land` now stops naming the `land` to re-run, since a plain
+  re-run would skip the already-closed issue and leave its spec out of the PR body.
+
 - **solve-feature, address-pr-comments**: a solve-feature run fixes its review's findings itself instead of posting
   them. After the read-only reviewer (`review-pr.sh prepare` and its prompt), a fresh subagent fixes every finding with
   the tdd skill, and the new `solve-feature.sh fix <slug> <pr> <branch>` gates the fixes with the checks, commits and
