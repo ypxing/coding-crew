@@ -73,6 +73,19 @@ _preflight() {
   [[ "$output" == *"PRD=$WORK/.scratch/feat/PRD.md"* ]]
 }
 
+@test "preflight: a relative issue ref in a linked worktree resolves in the main checkout, where .scratch/ lives" {
+  git -C "$WORK" worktree add -q -b wt-branch "$TEMP_DIR/wt"
+  touch "$WORK/.scratch/feat/PRD.md"
+  _issue "" '- Issue 01: `.scratch/feat/issues/open/01-first.md`'
+  run bash -c 'cd "$1" && bash "$2" --project-root "$1" --issue .scratch/feat/issues/open/02-second.md' _ "$TEMP_DIR/wt" "$PREFLIGHT"
+  [ "$status" -eq 1 ]
+  [ "$output" = "BLOCKED: depends on 01-first.md which is not yet done" ]
+  touch "$WORK/.scratch/feat/issues/done/01-first.md"
+  run bash -c 'cd "$1" && bash "$2" --project-root "$1" --issue .scratch/feat/issues/open/02-second.md' _ "$TEMP_DIR/wt" "$PREFLIGHT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PRD=$WORK/.scratch/feat/PRD.md"* ]]
+}
+
 @test "preflight: --main-root is an unknown argument" {
   _issue "" "None"
   run bash "$PREFLIGHT" --project-root "$WORK" --main-root "$WORK" --issue "$ISSUE"

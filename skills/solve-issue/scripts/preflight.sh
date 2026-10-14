@@ -55,6 +55,20 @@ if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
   exit 1
 fi
 
+# A relative ref names a path in --project-root, else in the main checkout: .scratch/ is gitignored, so in a
+# linked worktree the tracker's `.scratch/…` refs exist only there.
+case "$ISSUE" in
+  "" | /*) ;;
+  *)
+    if [ -f "$PROJECT_ROOT/$ISSUE" ]; then
+      ISSUE="$PROJECT_ROOT/$ISSUE"
+    else
+      COMMON_DIR=$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+      [ -z "$COMMON_DIR" ] || [ ! -f "$(dirname "$COMMON_DIR")/$ISSUE" ] || ISSUE="$(dirname "$COMMON_DIR")/$ISSUE"
+    fi
+    ;;
+esac
+
 # Blocked-by entries name issue files; only the file name is looked up in done/. A GitHub
 # `Issue #<n>` entry names no file: a tracker that filters blocked issues owns that case.
 if [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
