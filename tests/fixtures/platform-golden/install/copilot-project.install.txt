@@ -93,11 +93,6 @@ REPO/.coding-crew/skills/_shared/fragments/human-issue.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
-REPO/.coding-crew/solve-feature/ /
-REPO/.coding-crew/solve-feature/hosts/ /
-REPO/.coding-crew/solve-feature/hosts/github-actions.yml exec=0
-REPO/.coding-crew/solve-feature/scripts/ /
-REPO/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
 REPO/.coding-crew/solve-issue/ /
 REPO/.coding-crew/solve-issue/scripts/ /
 REPO/.coding-crew/solve-issue/scripts/check-requires.sh exec=1

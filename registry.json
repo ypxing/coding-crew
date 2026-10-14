@@ -61,16 +61,6 @@
       "version": "0.8.0",
       "source-dir": "solve-feature",
       "description": "Run one feature's ready-for-agent issues in order on one branch, each by a fresh coder subagent gated by the project's checks, in a draft PR carrying the spec; at the end it is reviewed, its findings fixed, and marked ready when nothing needs a person.",
-      "assets": {
-        "source": "skills/solve-feature/scripts",
-        "dest": ".coding-crew/solve-feature/scripts"
-      },
-      "more-assets": [
-        {
-          "source": "skills/solve-feature/hosts",
-          "dest": ".coding-crew/solve-feature/hosts"
-        }
-      ],
       "deps": [
         "solve-issue",
         "dep-install",

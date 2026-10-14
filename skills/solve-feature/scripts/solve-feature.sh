@@ -153,8 +153,8 @@ pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block reb
   printf '%s' "${before:+$before$'\n'}$head${PRD_TEXT:+$PRD_TEXT$'\n\n'}$sections"$'\n'"$tail${after:+$'\n'$after}"
 }
 
-# Installed beside this skill (.coding-crew/<skill>/scripts), else user-level, as solve-issue finds dep-install.
-scripts_of() { local d; for d in "$SELF/../../$1/scripts" "$HOME/.coding-crew/$1/scripts"; do [ -d "$d" ] && { (cd "$d" && pwd); return; }; done
+# A dependency skill is installed beside this one.
+scripts_of() { [ -d "$SELF/../../$1/scripts" ] && { (cd "$SELF/../../$1/scripts" && pwd); return; }
   die "$1 scripts not found: run install.sh --skill solve-feature"; }
 
 land() {

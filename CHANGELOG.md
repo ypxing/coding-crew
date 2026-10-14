@@ -13,7 +13,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   breaks — and is told not to report hypotheticals or preferences. `/review-pr` posts one plain review (no inline
   comments), leaves out findings earlier reviews already raised, and still marks a draft ready when the spec is met
   with no CRITICAL or HIGH finding. solve-feature runs its reviewer on the same prompt, read from review-pr's skill
-  directory, and its `start` clears an earlier run's review report.
+  directory, runs its script from its own skill directory (nothing reads `.coding-crew/solve-feature/` any more), and
+  its `start` clears an earlier run's review report.
 
 - **solve-feature**: the PR now opens with a body a person can read. After `fix`, a fresh subagent runs write-pr
   (Why / What changes / Risk / Tested) into `.solve-feature/pr-<n>.summary.md`, and the new

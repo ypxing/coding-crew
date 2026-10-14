@@ -909,11 +909,10 @@ EOF
   mkdir -p "$target" && git -C "$target" init -q -b main
   TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" claude --skill solve-feature
   [ "$status" -eq 0 ]
-  [ -x "$target/.coding-crew/solve-feature/scripts/solve-feature.sh" ]
+  [ -f "$target/.claude/skills/solve-feature/scripts/solve-feature.sh" ]
   [ -f "$target/.claude/skills/review-pr/reviewer-prompt.md" ]
-  [ ! -e "$target/.coding-crew/review-pr" ]
-  [ -f "$target/.coding-crew/solve-feature/hosts/github-actions.yml" ]
-  [ ! -x "$target/.coding-crew/solve-feature/hosts/github-actions.yml" ]
+  [ ! -e "$target/.coding-crew/review-pr" ] && [ ! -e "$target/.coding-crew/solve-feature" ]
+  [ -f "$target/.claude/skills/solve-feature/hosts/github-actions.yml" ]
   [ -f "$target/.claude/skills/solve-feature/SKILL.md" ]
   [ -f "$target/.claude/skills/review-pr/SKILL.md" ]
   [ -f "$target/.coding-crew/solve-issue/scripts/run-checks.sh" ]
