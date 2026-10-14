@@ -2,21 +2,20 @@
 # solve-feature.sh start|next|land|fix|describe — the guards of solve-feature's loop. SKILL.md drives the loop and
 # runs each issue's coder (between `next` and `land`), the review's reviewer and fixer (before `fix`) and the PR's
 # writer (before `describe`) as subagents of the host agent; every guard is an exit code here.
-#   start <slug> [--branch <name>]  preconditions, the branch, the PRD; prints branch=, coder-model=,
+#   start <slug> [--branch <name>]  preconditions, the slug among the tracker's features, the branch (--branch, else
+#                                   feature/<slug>), .solve-feature/spec.md; prints branch=, coder-model=,
 #                                   reviewer-model= (.coding-crew/config.json solveFeature.models) and pr=
 #   next <slug>                     the next ready issue, saved for land; prints its ref
-#   land <slug> <ref> <branch>      the coder left <branch> clean with <ref> closed and the checks pass: push,
-#                                   open the draft PR or rewrite its block, add a progress row; prints pr=<n>
+#   land <slug> <ref> <branch>      the coder left <branch> clean with <ref> closed and the checks pass: push, and
+#                                   open the draft PR if the branch has none; prints pr=<n>
 #   fix <slug> <pr> <branch>        the review report is there and the checks pass on the fixer's tree: commit it,
-#                                   push, add a review row naming what needs a person (else mark the draft ready),
-#                                   write .solve-feature/reviewed; last stdout line
-#                                   `FIX: findings=<k> needs-attention=<a> ready=<yes|no|already>`
-#   describe <slug> <pr>            the writer's pr-<pr>.summary.md and fix's Needs attention at the top of the PR
-#                                   body's block, its title the PR's; without a summary the PR is left as it is
-# Env: SOLVE_FEATURE_HOST (the progress comment's host name).
-# Exit: 0 ok; 1 a stop or a precondition miss, its reason also in .solve-feature/stopped (an Actions job's
-# last step fails on it, and on any run that did not end in fix); 2 a usage error; 3 from next
-# when no ready issue is left.
+#                                   push, and write what needs a person to pr-<pr>.attention.md; last stdout line
+#                                   `FIX: findings=<k> needs-attention=<a>`
+#   describe <slug> <pr>            write the PR's whole body and title, mark the draft ready when nothing needs a
+#                                   person, then write the outcome
+# .solve-feature/outcome holds the run's result in one line: `ready pr=<n>`, `needs-attention pr=<n>` or
+# `stopped: <step> failed: <reason>`.
+# Exit: 0 ok; 1 a stop; 2 a usage error; 3 from next when no ready issue is left.
 set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGS=""
@@ -53,12 +52,10 @@ COMMON="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" C
 for c in "$ROOT" "$COMMON" "$HOME"; do [ -f "$c/.coding-crew/tracker/cli.mjs" ] && { CLI="$c/.coding-crew/tracker/cli.mjs"; break; }; done
 [ -n "$CLI" ] || die "tracker CLI not found (.coding-crew/tracker/cli.mjs): run install.sh"
 
-PR_N="" URL="" VIEW="" PRD_TEXT="" SUMMARY=""
-pr_view() { # sets PR_N and URL (and VIEW) when the branch has an OPEN PR, else clears them
-  VIEW=$(gh pr view "$BRANCH" --json number,state,url,isDraft,body 2>/dev/null) || VIEW=""
-  if [ "$(jq -r '.state // empty' <<<"$VIEW" 2>/dev/null || true)" = OPEN ]; then
-    PR_N=$(jq -r '.number' <<<"$VIEW") URL=$(jq -r '.url' <<<"$VIEW")
-  else PR_N="" URL=""; fi
+PR_N=""
+pr_view() { # sets PR_N when the branch has an OPEN PR, else clears it
+  local view; view=$(gh pr view "$BRANCH" --json number,state 2>/dev/null) || view=""
+  PR_N=$(jq -r 'select(.state == "OPEN") | .number' <<<"$view" 2>/dev/null || true)
 }
 
 # .solve-feature/spec.md, which the reviewer and the PR body read: the PRD, then every issue of the feature, open
@@ -129,45 +126,19 @@ stop() { # <step> <reason> [<log>]; exit 1
   outcome "stopped: $REF $1 failed: $2"; exit 1
 }
 
-# The PR body: address-pr-comments finds a solve-feature PR by the begin line and reads its slug from the
-# slug line; the reviewer reads the <details> block as the spec. Text outside the block is a human's and kept.
+# address-pr-comments finds a solve-feature PR by the begin line and reads its slug from the slug line.
 BEGIN='<!-- solve-feature:begin -->' END='<!-- solve-feature:end -->'
 pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the spec, else the issue's own
   local t; t=$(head -n 1 "$LOGS/spec.md" | sed -nE 's/^<!-- PRD issue #[0-9]+: (.*) -->$/\1/p' | sed 's/^PRD: //')
   [ -n "$t" ] || t=$(grep -m1 '^# ' "$LOGS/$1.issue.md" | sed 's/^# //')
   printf '%s' "$t"
 }
-pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block rebuilt with $SUMMARY at its top and this
-  # issue appended (none for an empty <ref>)
-  local old="$3" before after old_sections="" title crit sections head tail refs
-  if [[ "$old" == *"$BEGIN"* && "$old" == *"$END"* ]]; then
-    before=$(awk -v b="$BEGIN" '$0 == b {exit} {print}' <<<"$old")
-    after=$(awk -v e="$END" 'f {print} $0 == e {f = 1}' <<<"$old")
-    # Only inside the spec's <details>: the summary above it is the writer's free text.
-    old_sections=$(awk -v b="$BEGIN" '$0 == b {blk = 1} blk && $0 == "<details><summary>Spec</summary>" {d = 1}
-      d && /^### / {s = 1} d && /^<\/details>$/ {s = 0; d = 0; blk = 0} s' <<<"$old")
-  else before="$old" after=""; fi
-  sections="$old_sections"
-  if [ -n "$1" ] && [[ "$old_sections" != *"### $1 — "* ]]; then
-    title=$(grep -m1 '^# ' "$LOGS/$2.issue.md" | sed 's/^# //')
-    # Plain bullets, not task boxes: GitHub counts a PR's boxes as its open tasks.
-    crit=$(awk '/^## /{f = tolower($0) ~ /^## acceptance criteria/} f' "$LOGS/$2.issue.md" | sed -E 's/^([[:space:]]*)[-*] \[[ xX]\] /\1- /')
-    sections="${old_sections:+$old_sections$'\n\n'}### $1 — $title"$'\n'"$crit"
-  fi
-  head="$BEGIN"$'\n'"${SUMMARY:+$SUMMARY$'\n\n'}Implemented by solve-feature (\`$SLUG\`)."$'\n\n'"<details><summary>Spec</summary>"$'\n\n'
-  tail=$'\n</details>\n\n'
-  refs=$(node "$CLI" closing-refs --feature-slug "$SLUG") || die "closing-refs failed for '$SLUG' (exit $?, see above)"
-  tail+="$refs"$'\n'
-  tail+="<!-- solve-feature:slug $SLUG -->"$'\n'"$END"
-  printf '%s' "${before:+$before$'\n'}$head${PRD_TEXT:+$PRD_TEXT$'\n\n'}$sections"$'\n'"$tail${after:+$'\n'$after}"
-}
-
 # A dependency skill is installed beside this one.
 scripts_of() { [ -d "$SELF/../../$1/scripts" ] && { (cd "$SELF/../../$1/scripts" && pwd); return; }
   die "$1 scripts not found: run install.sh --skill solve-feature"; }
 
 land() {
-  local rs="${REF//\//_}" rc=0 again checks_dir dep_dir clog f
+  local rs="${REF//\//_}" rc=0 again checks_dir dep_dir clog f url
   [ -f "$LOGS/$rs.issue.md" ] || die "no saved issue for $REF: run next first"
   checks_dir=$(scripts_of solve-issue)
   dep_dir=$(scripts_of dep-install) clog="$LOGS/$rs.checks.log"
@@ -187,8 +158,8 @@ land() {
     # describe writes the whole body at the end; until then it only carries the markers address-pr-comments reads.
     f="$LOGS/pr-body.md"
     printf '%s\n' "$BEGIN" "Implemented by solve-feature (\`$SLUG\`) — in progress." "<!-- solve-feature:slug $SLUG -->" "$END" >"$f"
-    URL=$(gh pr create --draft --title "$(pr_title "$rs")" --body-file "$f") || die "gh pr create failed"
-    PR_N="${URL##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $URL"
+    url=$(gh pr create --draft --title "$(pr_title "$rs")" --body-file "$f") || die "gh pr create failed"
+    PR_N="${url##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $url"
   fi
   echo "pr=$PR_N"
 }
@@ -225,18 +196,30 @@ fix() {
   echo "FIX: findings=$total needs-attention=$(grep -c . "$LOGS/pr-$PR.attention.md" || true)"
 }
 
-# The writer's summary goes inside the block, so a later land's rebuild drops it rather than leave it stale.
+# The whole body, written once at the end. Readiness and the outcome come after it, so a failed write never leaves a
+# ready PR with land's one-line body. A re-run rewrites all of it, text a person added included.
 describe() {
-  local f="$LOGS/pr-$PR.summary.md" att="$LOGS/pr-$PR.attention.md" title body
-  [ -f "$f" ] || { echo "solve-feature: warning: no summary at $f; PR #$PR's body is unchanged" >&2; return 0; }
-  title=$(head -n 1 "$f" | sed -n 's/^# //p')
-  SUMMARY=$(if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d')
-  [ ! -s "$att" ] || SUMMARY+=$'\n\n'"## Needs attention"$'\n\n'"$(sed 's/^/- /' "$att")"
-  [ ! -f "$LOGS/prd.md" ] || PRD_TEXT=$(cat "$LOGS/prd.md")
-  body=$(gh pr view "$PR" --json body | jq -r '.body // ""') || die "gh pr view $PR failed"
-  pr_body "" "" "$body" >"$LOGS/pr-$PR.body.md"
-  gh pr edit "$PR" ${title:+--title "$title"} --body-file "$LOGS/pr-$PR.body.md" >/dev/null || die "gh pr edit $PR failed"
-  echo "described PR #$PR"
+  local f="$LOGS/pr-$PR.summary.md" att="$LOGS/pr-$PR.attention.md" body="$LOGS/pr-$PR.body.md" title="" refs draft result
+  [ -f "$att" ] || die "no review result at $att: run fix $SLUG $PR <branch> first"
+  refs=$(node "$CLI" closing-refs --feature-slug "$SLUG") || die "closing-refs failed for '$SLUG' (see above)"
+  [ ! -f "$f" ] || title=$(head -n 1 "$f" | sed -n 's/^# //p')
+  {
+    echo "$BEGIN"
+    # write-pr's summary minus its title line, which titles the PR instead.
+    if [ -f "$f" ]; then if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d'; echo; fi
+    if [ -s "$att" ]; then printf '## Needs attention\n\n'; sed 's/^/- /' "$att"; echo; fi
+    printf '<details><summary>Spec</summary>\n\n%s\n\n</details>\n\n' "$(cat "$LOGS/spec.md")"
+    [ -z "$refs" ] || printf '%s\n' "$refs"
+    printf '%s\n' "<!-- solve-feature:slug $SLUG -->" "$END"
+  } >"$body"
+  gh pr edit "$PR" ${title:+--title "$title"} --body-file "$body" >/dev/null || die "gh pr edit $PR failed"
+  if [ -s "$att" ]; then result=needs-attention
+  else
+    result=ready draft=$(gh pr view "$PR" --json isDraft | jq -r '.isDraft') || die "gh pr view $PR failed"
+    [ "$draft" != true ] || gh pr ready "$PR" >/dev/null || die "gh pr ready $PR failed; the body is written, so run gh pr ready $PR by hand"
+  fi
+  outcome "$result pr=$PR"
+  echo "$result pr=$PR"
 }
 
 "$CMD"

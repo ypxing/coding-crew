@@ -1,9 +1,10 @@
 #!/usr/bin/env bats
 
-# solve-feature.sh start|next|land|fix — the guards of solve-feature's loop, which SKILL.md drives with a
-# host subagent as each issue's coder: start picks the branch, next saves the next ready issue, land
-# asserts what the coder left (branch, clean tree, issue closed, checks) and pushes it into a draft PR,
-# and fix gates, commits and pushes what the review's fixer left, then marks the PR ready.
+# solve-feature.sh start|next|land|fix|describe — the guards of solve-feature's loop, which SKILL.md drives with
+# host subagents: start checks the slug, picks the branch and writes the spec, next saves the next ready issue,
+# land asserts what the coder left (branch, clean tree, issue closed, checks) and pushes it into a draft PR, fix
+# gates, commits and pushes what the review's fixer left, and describe writes the PR body, marks it ready when
+# nothing needs a person and writes .solve-feature/outcome.
 #
 # A temp clone with a bare `origin`, and the skill installed user-level under a temp $HOME as
 # install.sh lays it out. `gh`, `node` (only for the tracker CLI's path; everything else reaches the
@@ -18,9 +19,9 @@ setup() {
   # Physical path: the script's paths come from `git rev-parse --show-toplevel`, which resolves
   # macOS's /var → /private/var symlink on the temp dir.
   TEMP_DIR=$(cd "$(mktemp -d)" && pwd -P)
-  export STATE="$TEMP_DIR/state" HOME="$TEMP_DIR/home" SOLVE_FEATURE_HOST=test-host
+  export STATE="$TEMP_DIR/state" HOME="$TEMP_DIR/home"
   mkdir -p "$STATE" "$HOME"
-  unset CREW_ORCHESTRATED PR_EXISTS PR_DRAFT PR_HEAD_OID PR_STATE PR_HEAD_REF GH_READY_FAIL TRACKER_KIND
+  unset CREW_ORCHESTRATED PR_EXISTS PR_DRAFT PR_HEAD_OID PR_STATE PR_HEAD_REF GH_READY_FAIL TRACKER_KIND SOLVE_FEATURE_HOST
 
   INSTALL="$HOME/.coding-crew"
   mkdir -p "$INSTALL/solve-feature" "$INSTALL/solve-issue/scripts" "$INSTALL/dep-install/scripts" "$INSTALL/tracker"
@@ -55,7 +56,6 @@ setup() {
   issue_body 2 Two "None - can start immediately"
   issue_body 3 Three "None - can start immediately"
   printf '<!-- PRD issue #1: PRD: Feat -->\n# PRD: Feat\n\nthe prd\n' > "$STATE/prd.md"
-  echo '[]' > "$STATE/comments.json"
   cd "$WORK"
 }
 
@@ -108,16 +108,12 @@ EOF
   cat > "$STUB/gh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$STATE/gh.log"
-[ -z "${GH_API_FAIL:-}" ] || [ "$1" != api ] || exit 1
-body=""; patch=""; path=""; file=""
+file=""
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do
   case "${args[$i]}" in
-    -f) body="${args[$((i + 1))]#body=}" ;;
-    -X) patch="${args[$((i + 1))]}" ;;
     --body-file) file="${args[$((i + 1))]}" ;;
     --title) printf '%s' "${args[$((i + 1))]}" > "$STATE/pr-title" ;;
-    repos/*) path="${args[$i]}" ;;
   esac
 done
 case "$1 $2" in
@@ -132,19 +128,6 @@ case "$1 $2" in
     cp "$file" "$STATE/pr-body"; touch "$STATE/pr-created"; echo "https://github.com/o/r/pull/10" ;;
   "pr edit") k=$(( $(ls "$STATE" | grep -c '^pr-edit\.[0-9]*$') + 1 )); printf '%s\n' "$@" > "$STATE/pr-edit.$k"; cp "$file" "$STATE/pr-body" ;;
   "pr ready") [ -z "${GH_READY_FAIL:-}" ] || exit 1 ;;
-  api*)
-    if [ "$patch" = PATCH ]; then
-      id="${path##*/}"
-      jq --argjson id "$id" --arg b "$body" 'map(if .id == $id then .body = $b else . end)' "$STATE/comments.json" > "$STATE/c.tmp"
-      mv "$STATE/c.tmp" "$STATE/comments.json"
-    elif [ -n "$body" ]; then
-      id=$(( 100 + $(jq length "$STATE/comments.json") ))
-      jq --argjson id "$id" --arg b "$body" '. + [{"id": $id, "body": $b}]' "$STATE/comments.json" > "$STATE/c.tmp"
-      mv "$STATE/c.tmp" "$STATE/comments.json"
-      echo "{\"id\": $id}"
-    else
-      cat "$STATE/comments.json"
-    fi ;;
   *) exit 1 ;;
 esac
 EOF
@@ -188,11 +171,6 @@ loop() {
     LAST_PR=$(out pr)
   done
 }
-# progress_body — the one solve-feature-progress comment's body; fails unless exactly one exists.
-progress_body() {
-  [ "$(jq '[.[] | select(.body | contains("<!-- solve-feature-progress -->"))] | length' "$STATE/comments.json")" = 1 ] || return 1
-  jq -r '.[] | select(.body | contains("<!-- solve-feature-progress -->")) | .body' "$STATE/comments.json"
-}
 # body_of <pr-create.k|pr-edit.k> — the body file that call was given.
 body_of() { cat "$(grep -A1 -x -- --body-file "$STATE/$1" | tail -1)"; }
 # land_ready — start on feature/feat, #2 saved by next and coded: land's input as the loop leaves it.
@@ -212,7 +190,7 @@ land_ready() {
     [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
   done
   [ ! -f "$STATE/gh.log" ]
-  [ ! -e "$WORK/.solve-feature/stopped" ]
+  [ ! -e "$WORK/.solve-feature/outcome" ]
 }
 
 @test "start: a missing tool, an invalid slug, no tracker CLI, a dirty tree, no dev-commands.json or CREW_ORCHESTRATED exits 1 before any checkout or gh call" {
@@ -426,6 +404,8 @@ EOF
   issue_body 4 Four "- Issue #5"
   issue_body 6 Six "- Issue #99"
   issue_body 7 Seven "- Issue #3"
+  issue_body 5 Five None
+  issue_body 8 Eight None
   loop
   [ "$CODED" = "3 7" ]
 }
@@ -748,24 +728,25 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   [ "$(grep -E '^(pr|api|issue|repo) ' "$STATE/gh.log" | cut -d' ' -f1-3 | sort -u)" = "pr view 10" ]
 }
 
-# --- describe: the writer's summary on the PR ------------------------------------------
+# --- describe: the PR body, readiness and the outcome ----------------------------------
 
 # summary — what the writer subagent leaves: write-pr's title line and body.
 summary() { printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n\n**Tested:** checks pass\n' > .solve-feature/pr-10.summary.md; }
-
-@test "describe puts the summary and fix's Needs attention atop the block, titles the PR after it, and keeps the spec, Closes lines and text outside" {
-  fix_ready '{"prd":"met","gaps":["no logout endpoint"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
+# fixed [<report json>] — fix_ready, then fix: describe's input as SKILL.md leaves it.
+fixed() {
+  fix_ready "$@"
   run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(cat .solve-feature/pr-10.attention.md)" = "no logout endpoint" ]
-  printf 'hand intro\n%s\nhand outro\n' "$(cat "$STATE/pr-body")" > "$STATE/pr-body"
+  [ "$status" -eq 0 ] || { echo "fix: $output"; return 1; }
+}
+
+@test "describe writes the whole body once in order, titles the PR from the summary, then marks the draft ready and writes ready" {
+  fixed
+  printf 'hand text\n' > "$STATE/pr-body"
   summary
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(cat "$STATE/pr-title")" = "Let users log in" ]
-  local body; body=$(cat "$STATE/pr-body")
-  [ "$(sed -n '1,13p' <<<"$body")" = "$(cat <<'EOF'
-hand intro
+  [ "$(cat "$STATE/pr-body")" = "$(cat <<EOF
 <!-- solve-feature:begin -->
 ## Why
 
@@ -773,51 +754,68 @@ Users need accounts.
 
 **Tested:** checks pass
 
-## Needs attention
+<details><summary>Spec</summary>
 
-- no logout endpoint
+$(cat .solve-feature/spec.md)
 
-Implemented by solve-feature (`feat`).
+</details>
+
+Closes #2
+Closes #3
+<!-- solve-feature:slug feat -->
+<!-- solve-feature:end -->
 EOF
 )" ]
-  [ "$(tail -1 <<<"$body")" = "hand outro" ]
-  [ "$(grep -c '^### 2 — Two$' <<<"$body")" -eq 1 ] && [ "$(grep -c '^### 3 — Three$' <<<"$body")" -eq 1 ]
-  [ "$(grep -c '^Closes #' <<<"$body")" -eq 2 ]
+  [ "$(grep -E '^pr (edit|ready)' "$STATE/gh.log" | cut -d' ' -f1-3)" = "$(printf 'pr edit 10\npr ready 10')" ]
+  [ "$(cat .solve-feature/outcome)" = "ready pr=10" ]
+  [ "${lines[${#lines[@]}-1]}" = "ready pr=10" ]
 
-  # A second describe replaces the summary rather than stacking it.
+  # A second describe rewrites the body rather than stacking the summary.
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ]
-  [ "$(grep -c '^## Why$' "$STATE/pr-body")" -eq 1 ] && [ "$(grep -c '^### 2 — Two$' "$STATE/pr-body")" -eq 1 ]
+  [ "$(grep -c '^## Why$' "$STATE/pr-body")" -eq 1 ]
+  [ "$(grep -c '^### 2-two — Two$' "$STATE/pr-body")" -eq 1 ]
 }
 
-@test "a summary with its own ### heading or </details> line survives a re-describe without eating the spec" {
-  fix_ready
-  run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 0 ]
-  printf '# Let users log in\n\n## What changes\n\n### Login\n\n</details>\n\nDone.\n' > .solve-feature/pr-10.summary.md
-  run bash "$SCRIPT" describe feat 10
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  run bash "$SCRIPT" describe feat 10
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  local body; body=$(cat "$STATE/pr-body")
-  [ "$(grep -c '^### Login$' <<<"$body")" -eq 1 ] && [ "$(grep -c '^Implemented by solve-feature' <<<"$body")" -eq 1 ]
-  [ "$(grep -c '^### 2 — Two$' <<<"$body")" -eq 1 ] && [ "$(grep -c '^### 3 — Three$' <<<"$body")" -eq 1 ]
-}
-
-@test "with nothing needing a person describe adds no Needs attention, and without a summary it leaves the PR alone" {
-  fix_ready
-  run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 0 ]
-  [ ! -e .solve-feature/pr-10.attention.md ]
-  local edits; edits=$(ls "$STATE" | grep -c '^pr-edit\.')
-  run bash "$SCRIPT" describe feat 10
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"no summary at $WORK/.solve-feature/pr-10.summary.md"* ]]
-  [ "$(ls "$STATE" | grep -c '^pr-edit\.')" -eq "$edits" ]
+@test "with anything needing a person describe lists it under Needs attention, leaves the PR a draft and writes needs-attention" {
+  fixed '{"prd":"met","gaps":["no logout endpoint"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
   summary
   run bash "$SCRIPT" describe feat 10
-  [ "$status" -eq 0 ]
-  grep -qx '## Why' "$STATE/pr-body" && ! grep -q 'Needs attention' "$STATE/pr-body"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(sed -n '/^## Needs attention$/,/^<details>/p' "$STATE/pr-body")" = "$(printf '## Needs attention\n\n- no logout endpoint\n\n<details><summary>Spec</summary>')" ]
+  [ "$(grep -n -m1 '^## Why$' "$STATE/pr-body" | cut -d: -f1)" -lt "$(grep -n -m1 '^## Needs attention$' "$STATE/pr-body" | cut -d: -f1)" ]
+  ! grep -q '^pr ready' "$STATE/gh.log"
+  [ "$(cat .solve-feature/outcome)" = "needs-attention pr=10" ]
+}
+
+@test "a PR already ready is not marked again; with no summary describe keeps land's title and still decides readiness" {
+  fixed
+  PR_DRAFT=false run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  ! grep -q '^pr ready' "$STATE/gh.log"
+  [ "$(cat "$STATE/pr-title")" = Feat ]
+  [ "$(head -2 "$STATE/pr-body")" = "$(printf '<!-- solve-feature:begin -->\n<details><summary>Spec</summary>')" ]
+  [ "$(cat .solve-feature/outcome)" = "ready pr=10" ]
+}
+
+@test "describe with no fix result, a failing closing-refs or a failing gh pr ready stops, never writing ready" {
+  fix_ready
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"run fix feat 10 <branch> first"* ]]
+  [[ "$(cat .solve-feature/outcome)" == "stopped: describe failed: "* ]]
+  ! grep -q '^pr edit' "$STATE/gh.log"
+
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  CLOSING_REFS_RC=1 run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"closing-refs failed for 'feat'"* ]]
+  [[ "$(cat .solve-feature/outcome)" == "stopped: describe failed: closing-refs failed"* ]]
+  ! grep -q '^pr edit' "$STATE/gh.log"
+
+  GH_READY_FAIL=1 run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 1 ]
+  [[ "$(cat .solve-feature/outcome)" == "stopped: describe failed: gh pr ready 10 failed"* ]]
 }
 
 # --- packaging and the skill -------------------------------------------------------------
