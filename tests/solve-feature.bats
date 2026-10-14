@@ -241,7 +241,7 @@ land_ready() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"no feature 'feta'; features: feat other"* ]]
   [ "$(git branch --show-current)" = main ]
-  ! git show-ref --verify -q refs/heads/feature/feta
+  ! git show-ref --verify -q refs/heads/feature/feta || false
   [ "$(git ls-remote --heads origin | grep -c .)" -eq 1 ]
   [ "$(cat .solve-feature/outcome)" = "stopped: start failed: no feature 'feta'; features: feat other" ]
 }
@@ -357,7 +357,7 @@ EOF
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(head -1 .solve-feature/spec.md)" = "### 2-two — Two" ]
   grep -qx '### 3-three — Three' .solve-feature/spec.md
-  ! grep -q PRD .solve-feature/spec.md
+  ! grep -q PRD .solve-feature/spec.md || false
   [ ! -e .solve-feature/outcome ]
   [ ! -e .solve-feature/pr-7.unfixed.md ]
   [ ! -e .solve-feature/pr-7.review.json ]
@@ -491,7 +491,7 @@ EOF
   [ "$status" -eq 0 ]
   [ "$output" = pr=10 ]
   [ ! -f "$STATE/pr-create.2" ]
-  ! grep -qE '^pr (edit|ready|comment)|^api' "$STATE/gh.log"
+  ! grep -qE '^pr (edit|ready|comment)|^api' "$STATE/gh.log" || false
   [ "$(git rev-parse origin/feature/feat)" = "$(git rev-parse feature/feat)" ]
 }
 
@@ -500,7 +500,7 @@ EOF
   loop
   [ "$LAST_PR" = 9 ]
   [ ! -f "$STATE/pr-created" ]
-  ! grep -qE '^pr (create|edit|ready)' "$STATE/gh.log"
+  ! grep -qE '^pr (create|edit|ready)' "$STATE/gh.log" || false
   [ "$(cat "$STATE/pr-body")" = "hand intro" ]
 }
 
@@ -535,13 +535,13 @@ EOF
   [ "$status" -eq 0 ]
   [ -f "$WORK/.solve-feature/.scratch_feat_issues_open_01-a.md.checks.log" ]
   [ "$(cat "$STATE/pr-title")" = "Local A" ]
-  ! grep -q '^config' "$STATE/node.log"
+  ! grep -q '^config' "$STATE/node.log" || false
 }
 
 @test "start, next and land reach the tracker through features, prd, known, next and fetch only, and name no tracker kind" {
   loop
   [ "$(cut -d' ' -f1 "$STATE/node.log" | sort -u | paste -sd' ' -)" = "features fetch known next prd" ]
-  ! grep -nE 'KIND|github|\.scratch|"\$CLI" config|\$REF" =~' "$SCRIPT"
+  ! grep -nE 'KIND|github|\.scratch|"\$CLI" config|\$REF" =~' "$SCRIPT" || false
 }
 
 @test "a rejected push stops land naming the land to re-run, since a plain re-run would skip the closed issue" {
@@ -584,7 +584,7 @@ fix_stops() {
   [[ "$output" == *"solve-feature: review fix failed: $1"* ]] || { echo "$output"; return 1; }
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$TIP" ] || { echo pushed; return 1; }
   [[ "$(cat .solve-feature/outcome)" == "stopped: review fix failed: $1"* ]]
-  ! grep -qE '^pr (ready|edit)' "$STATE/gh.log"
+  ! grep -qE '^pr (ready|edit)' "$STATE/gh.log" || false
 }
 # attention — what fix handed describe.
 attention() { cat .solve-feature/pr-10.attention.md; }
@@ -676,7 +676,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0" ]
   [ -f .solve-feature/pr-10.attention.md ]
   [ -z "$(attention)" ]
-  ! grep -q '^pr ready' "$STATE/gh.log"
+  ! grep -q '^pr ready' "$STATE/gh.log" || false
   [ ! -e .solve-feature/stopped ]
   [ ! -e .solve-feature/reviewed ]
   [ ! -e .solve-feature/outcome ]
@@ -784,7 +784,7 @@ EOF
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(sed -n '/^## Needs attention$/,/^<details>/p' "$STATE/pr-body")" = "$(printf '## Needs attention\n\n- no logout endpoint\n\n<details><summary>Spec</summary>')" ]
   [ "$(grep -n -m1 '^## Why$' "$STATE/pr-body" | cut -d: -f1)" -lt "$(grep -n -m1 '^## Needs attention$' "$STATE/pr-body" | cut -d: -f1)" ]
-  ! grep -q '^pr ready' "$STATE/gh.log"
+  ! grep -q '^pr ready' "$STATE/gh.log" || false
   [ "$(cat .solve-feature/outcome)" = "needs-attention pr=10" ]
 }
 
@@ -792,7 +792,7 @@ EOF
   fixed
   PR_DRAFT=false run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  ! grep -q '^pr ready' "$STATE/gh.log"
+  ! grep -q '^pr ready' "$STATE/gh.log" || false
   [ "$(cat "$STATE/pr-title")" = Feat ]
   [ "$(head -2 "$STATE/pr-body")" = "$(printf '<!-- solve-feature:begin -->\n<details><summary>Spec</summary>')" ]
   [ "$(cat .solve-feature/outcome)" = "ready pr=10" ]
@@ -804,14 +804,14 @@ EOF
   [ "$status" -eq 1 ]
   [[ "$output" == *"run fix feat 10 <branch> first"* ]]
   [[ "$(cat .solve-feature/outcome)" == "stopped: describe failed: "* ]]
-  ! grep -q '^pr edit' "$STATE/gh.log"
+  ! grep -q '^pr edit' "$STATE/gh.log" || false
 
   run bash "$SCRIPT" fix feat 10 feature/feat
   CLOSING_REFS_RC=1 run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 1 ]
   [[ "$output" == *"closing-refs failed for 'feat'"* ]]
   [[ "$(cat .solve-feature/outcome)" == "stopped: describe failed: closing-refs failed"* ]]
-  ! grep -q '^pr edit' "$STATE/gh.log"
+  ! grep -q '^pr edit' "$STATE/gh.log" || false
 
   GH_READY_FAIL=1 run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 1 ]
@@ -826,7 +826,7 @@ EOF
 
 @test "no agent CLI is launched: agent.sh is gone and neither skill mentions --agent, SOLVE_FEATURE_AGENT, --budget or afk.models" {
   [ ! -e "$REPO_ROOT/skills/review-pr/scripts/agent.sh" ]
-  ! grep -rnE -- '--agent|SOLVE_FEATURE_AGENT|--budget|afk\.models' "$REPO_ROOT/skills/solve-feature" "$REPO_ROOT/skills/review-pr"
+  ! grep -rnE -- '--agent|SOLVE_FEATURE_AGENT|--budget|afk\.models' "$REPO_ROOT/skills/solve-feature" "$REPO_ROOT/skills/review-pr" || false
 }
 
 @test "install.sh claude --skill solve-feature ships the script and the reviewer's prompt, no review-pr.sh or agent.sh, the Actions host" {
@@ -859,7 +859,7 @@ yaml_to_json() {
   fi
 }
 
-@test "hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, four write permissions, a slug concurrency group, the skill launched by copilot -p, then a step failing on a stop or a missing review" {
+@test "hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, four write permissions, a slug concurrency group, the skill launched by copilot -p, then a step reading the outcome" {
   local wf="$REPO_ROOT/skills/solve-feature/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
   run yaml_to_json "$wf" "$json"
   [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
@@ -877,6 +877,26 @@ yaml_to_json() {
   jq -e '.[0] | (.group | test("solve-feature-.*slug")) and .["cancel-in-progress"] == false' <<<"$conc" >/dev/null
   local runs; runs="$(jq -c '[.jobs.solve.steps[].run // empty]' "$json")"
   jq -e '.[-2] | contains("copilot -p \"Use the solve-feature skill on $SLUG\" --allow-all-tools --no-color")' <<<"$runs" >/dev/null
-  jq -e '.[-1] | contains("-e .solve-feature/stopped") and contains("! -e .solve-feature/reviewed")' <<<"$runs" >/dev/null
-  ! grep -q 'solve-feature\.sh' "$wf"
+  ! grep -q 'solve-feature\.sh' "$wf" || false
+  ! grep -q 'SOLVE_FEATURE_HOST' "$wf" || false
+  ! grep -q 'review-pr' "$wf" || false
+
+  # The last step, run as Actions would in the checkout: red unless the outcome line starts with `ready`.
+  jq -r '.jobs.solve.steps[-1].run' "$json" > "$TEMP_DIR/last-step.sh"
+  run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"never finished"* ]]
+  mkdir -p .solve-feature
+  echo 'needs-attention pr=10' > .solve-feature/outcome
+  run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"needs-attention pr=10"* ]]
+  echo 'stopped: 2 checks failed: run-checks.sh exit 1' > .solve-feature/outcome
+  run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"stopped: 2 checks failed: run-checks.sh exit 1"* ]]
+  echo 'ready pr=10' > .solve-feature/outcome
+  run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ready pr=10"* ]]
 }
