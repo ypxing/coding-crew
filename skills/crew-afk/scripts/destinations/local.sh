@@ -1,0 +1,23 @@
+# local — a detached git worktree beside the main checkout, and a detached headless run capped at 1h.
+# Sourced by crew-afk.sh, which sets MAIN, WORKTREES and die.
+
+prepare() { # <slug> <base-branch>
+  local wt="$WORKTREES/$1"
+  if ! git -C "$MAIN" worktree list --porcelain | grep -qxF "worktree $wt"; then
+    [ ! -e "$wt" ] || die "$wt exists but is not a worktree of $MAIN: move it away, then re-run"
+    git -C "$MAIN" fetch -q origin || die "git fetch origin failed"
+    # Detached: git refuses a branch checked out in another worktree, and solve-feature picks the branch.
+    git -C "$MAIN" worktree add -q --detach "$wt" "origin/$2" >&2 || die "git worktree add $wt failed"
+  fi
+  echo "$wt"
+}
+
+launch() { # <worktree> <argv…>
+  local wt="$1" timeout
+  shift
+  timeout=$(command -v timeout || command -v gtimeout) || die "timeout not found on PATH (macOS: brew install coreutils)"
+  # The exit line is how status tells a timed-out run (124) from a crash.
+  (cd "$wt" || exit 1
+    nohup bash -c '"$@"; echo "crew-afk: exit $?"' crew-afk "$timeout" 1h "$@" >"$wt/.solve-feature/run.log" 2>&1 </dev/null &
+    echo $! >"$wt/.solve-feature/run.pid")
+}
