@@ -11,8 +11,8 @@ name: solve-feature
 # The label is not removed afterwards: the concurrency group makes a re-label wait for the run in
 # flight rather than start a second one on the same branch.
 #
-# The Copilot CLI runs the solve-feature skill, which runs each coder, the reviewer and the fixer as
-# its own subagents. The review runs inside the same job, from the skill: a PR opened or marked ready
+# The Copilot CLI runs the solve-feature skill, which runs each coder, the reviewer, the fixer and the
+# PR's writer as its own subagents. The review runs inside the same job, from the skill: a PR opened or marked ready
 # with the workflow's own GITHUB_TOKEN triggers no other workflow, so a `pull_request` job would never
 # fire. The session's exit code does not carry a stop, so the last step fails the job unless the
 # run's fix step wrote .solve-feature/reviewed: on a stop the scripts recorded (.solve-feature/stopped,
@@ -97,8 +97,8 @@ jobs:
 
       # User-level ($HOME), never into $GITHUB_WORKSPACE: a project-level install leaves
       # .github/skills/, .coding-crew/manifest.json and the asset trees untracked, and solve-feature
-      # refuses a dirty tree. The scripts and the tracker CLI lookup fall back to $HOME/.coding-crew,
-      # and copilot reads its user skills from $HOME/.copilot/skills.
+      # refuses a dirty tree. The tracker CLI lookup falls back to $HOME/.coding-crew, and copilot
+      # reads its user skills, scripts included, from $HOME/.copilot/skills.
       - name: Install coding-crew (user-level, copilot)
         run: |
           git clone --depth 1 --branch "$CODING_CREW_REF" https://github.com/ypxing/coding-crew /tmp/coding-crew
@@ -122,7 +122,7 @@ jobs:
           # COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
         run: copilot -p "Use the solve-feature skill on $SLUG" --allow-all-tools --no-color
 
-      # .solve-feature/reviewed is written by the run's fix step, its last.
+      # .solve-feature/reviewed is written by the run's fix step; only describe runs after it.
       - name: Fail the job unless the run ended in its fix step
         run: |
           if [ -e .solve-feature/stopped ]; then

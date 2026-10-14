@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# solve-feature.sh start|next|land|fix — the guards of solve-feature's loop. SKILL.md drives the loop and runs
-# each issue's coder (between `next` and `land`) and the review's reviewer and fixer (before `fix`) as subagents
-# of the host agent; every guard is an exit code here.
+# solve-feature.sh start|next|land|fix|describe — the guards of solve-feature's loop. SKILL.md drives the loop and
+# runs each issue's coder (between `next` and `land`), the review's reviewer and fixer (before `fix`) and the PR's
+# writer (before `describe`) as subagents of the host agent; every guard is an exit code here.
 #   start <slug> [--branch <name>]  preconditions, the branch, the PRD; prints branch=, coder-model=,
 #                                   reviewer-model= (.coding-crew/config.json solveFeature.models) and pr=
 #   next <slug>                     the next ready issue, saved for land; prints its ref
 #   land <slug> <ref> <branch>      the coder left <branch> clean with <ref> closed and the checks pass: push,
 #                                   open the draft PR or rewrite its block, add a progress row; prints pr=<n>
-#   fix <slug> <pr> <branch>        the fixer left <branch> on top of the PR's head, the review report is valid
-#                                   and the checks pass: commit the tree, push, add a review row naming what needs a
-#                                   person (else mark the draft ready), write .solve-feature/reviewed; last stdout
-#                                   line `FIX: findings=<k> fixed=<f> needs-attention=<a> ready=<yes|no|already>`
+#   fix <slug> <pr> <branch>        the review report is there and the checks pass on the fixer's tree: commit it,
+#                                   push, add a review row naming what needs a person (else mark the draft ready),
+#                                   write .solve-feature/reviewed; last stdout line
+#                                   `FIX: findings=<k> needs-attention=<a> ready=<yes|no|already>`
+#   describe <slug> <pr>            the writer's pr-<pr>.summary.md and fix's Needs attention at the top of the PR
+#                                   body's block, its title the PR's; without a summary the PR is left as it is
 # Env: SOLVE_FEATURE_HOST (the progress comment's host name).
 # Exit: 0 ok; 1 a stop or a precondition miss, its reason also in .solve-feature/stopped (an Actions job's
 # last step fails on it, and on any run that did not end in fix); 2 a usage error; 3 from next
@@ -24,7 +26,7 @@ die() { echo "solve-feature: $*" >&2; mark_stopped "$*"; exit 1; }
 trap 'rc=$?; case $rc in 0|2|3) ;; *) [ -f "$LOGS/stopped" ] || mark_stopped "solve-feature.sh $CMD failed (exit $rc)"; exit 1 ;; esac' EXIT
 usage() {
   [ -z "${1:-}" ] || echo "solve-feature: $1" >&2
-  echo "usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | fix <slug> <pr> <branch>" >&2; exit 2
+  echo "usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>" >&2; exit 2
 }
 
 CMD="${1:-}"; [ $# -eq 0 ] || shift
@@ -38,6 +40,7 @@ case "$CMD" in
   next) [ $# -eq 1 ] || usage; SLUG="$1" ;;
   land) [ $# -eq 3 ] || usage; SLUG="$1" REF="$2" BRANCH="$3" ;;
   fix) [ $# -eq 3 ] && [[ "$2" =~ ^[0-9]+$ ]] || usage; SLUG="$1" PR="$2" BRANCH="$3" REF=review ;;
+  describe) [ $# -eq 2 ] && [[ "$2" =~ ^[0-9]+$ ]] || usage; SLUG="$1" PR="$2" ;;
   *) usage ;;
 esac
 for t in gh jq node git; do command -v "$t" >/dev/null || die "$t not found on PATH"; done
@@ -45,13 +48,13 @@ for t in gh jq node git; do command -v "$t" >/dev/null || die "$t not found on P
 [[ "$SLUG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid feature slug: '$SLUG'"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"; cd "$ROOT"
 LOGS="$ROOT/.solve-feature"
-[ "$CMD" != start ] || rm -f "$LOGS/stopped" "$LOGS/reviewed" "$LOGS"/pr-*.unfixed.md
+[ "$CMD" != start ] || rm -f "$LOGS/stopped" "$LOGS/reviewed" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md
 COMMON="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" CLI=""
 for c in "$ROOT" "$COMMON" "$HOME"; do [ -f "$c/.coding-crew/tracker/cli.mjs" ] && { CLI="$c/.coding-crew/tracker/cli.mjs"; break; }; done
 [ -n "$CLI" ] || die "tracker CLI not found (.coding-crew/tracker/cli.mjs): run install.sh"
 mkdir -p "$LOGS" && echo '*' >"$LOGS/.gitignore" # ignored in any repo, so the tree stays clean
 
-PR_N="" URL="" VIEW="" PRD_TEXT=""
+PR_N="" URL="" VIEW="" PRD_TEXT="" SUMMARY=""
 pr_view() { # sets PR_N and URL (and VIEW) when the branch has an OPEN PR, else clears them
   VIEW=$(gh pr view "$BRANCH" --json number,state,url,isDraft,body 2>/dev/null) || VIEW=""
   if [ "$(jq -r '.state // empty' <<<"$VIEW" 2>/dev/null || true)" = OPEN ]; then
@@ -120,25 +123,31 @@ stop() { # <row> <step> <reason> [<log>] — a Stopped-at note (with the log's l
 }
 
 # The PR body: address-pr-comments finds a solve-feature PR by the begin line and reads its slug from the
-# slug line; review-pr reads the <details> block as the spec. Text outside the block is a human's and kept.
+# slug line; the reviewer reads the <details> block as the spec. Text outside the block is a human's and kept.
 BEGIN='<!-- solve-feature:begin -->' END='<!-- solve-feature:end -->'
 pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the prd output, else the issue's own
   local t; t=$(head -n 1 <<<"$PRD_TEXT" | sed -nE 's/^<!-- PRD issue #[0-9]+: (.*) -->$/\1/p' | sed 's/^PRD: //')
   [ -n "$t" ] || t=$(grep -m1 '^# ' "$LOGS/$1.issue.md" | sed 's/^# //')
   printf '%s' "$t"
 }
-pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block rebuilt with this issue appended
+pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block rebuilt with $SUMMARY at its top and this
+  # issue appended (none for an empty <ref>)
   local old="$3" before after old_sections="" title crit sections head tail refs
   if [[ "$old" == *"$BEGIN"* && "$old" == *"$END"* ]]; then
     before=$(awk -v b="$BEGIN" '$0 == b {exit} {print}' <<<"$old")
     after=$(awk -v e="$END" 'f {print} $0 == e {f = 1}' <<<"$old")
-    old_sections=$(awk -v b="$BEGIN" '$0 == b {blk = 1} blk && /^### / {s = 1} blk && /^<\/details>$/ {s = 0; blk = 0} s' <<<"$old")
+    # Only inside the spec's <details>: the summary above it is the writer's free text.
+    old_sections=$(awk -v b="$BEGIN" '$0 == b {blk = 1} blk && $0 == "<details><summary>Spec</summary>" {d = 1}
+      d && /^### / {s = 1} d && /^<\/details>$/ {s = 0; d = 0; blk = 0} s' <<<"$old")
   else before="$old" after=""; fi
-  title=$(grep -m1 '^# ' "$LOGS/$2.issue.md" | sed 's/^# //')
-  crit=$(awk '/^## /{f = tolower($0) ~ /^## acceptance criteria/} f' "$LOGS/$2.issue.md")
   sections="$old_sections"
-  [[ "$old_sections" == *"### $1 — "* ]] || sections="${old_sections:+$old_sections$'\n\n'}### $1 — $title"$'\n'"$crit"
-  head="$BEGIN"$'\n'"Implemented by solve-feature (\`$SLUG\`)."$'\n\n'"<details><summary>Spec</summary>"$'\n\n'
+  if [ -n "$1" ] && [[ "$old_sections" != *"### $1 — "* ]]; then
+    title=$(grep -m1 '^# ' "$LOGS/$2.issue.md" | sed 's/^# //')
+    # Plain bullets, not task boxes: GitHub counts a PR's boxes as its open tasks.
+    crit=$(awk '/^## /{f = tolower($0) ~ /^## acceptance criteria/} f' "$LOGS/$2.issue.md" | sed -E 's/^([[:space:]]*)[-*] \[[ xX]\] /\1- /')
+    sections="${old_sections:+$old_sections$'\n\n'}### $1 — $title"$'\n'"$crit"
+  fi
+  head="$BEGIN"$'\n'"${SUMMARY:+$SUMMARY$'\n\n'}Implemented by solve-feature (\`$SLUG\`)."$'\n\n'"<details><summary>Spec</summary>"$'\n\n'
   tail=$'\n</details>\n\n'
   refs=$(node "$CLI" closing-refs --feature-slug "$SLUG") || die "closing-refs failed for '$SLUG' (exit $?, see above)"
   tail+="$refs"$'\n'
@@ -146,8 +155,8 @@ pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block reb
   printf '%s' "${before:+$before$'\n'}$head${PRD_TEXT:+$PRD_TEXT$'\n\n'}$sections"$'\n'"$tail${after:+$'\n'$after}"
 }
 
-# Installed beside this skill (.coding-crew/<skill>/scripts), else user-level, as solve-issue finds dep-install.
-scripts_of() { local d; for d in "$SELF/../../$1/scripts" "$HOME/.coding-crew/$1/scripts"; do [ -d "$d" ] && { (cd "$d" && pwd); return; }; done
+# A dependency skill is installed beside this one.
+scripts_of() { [ -d "$SELF/../../$1/scripts" ] && { (cd "$SELF/../../$1/scripts" && pwd); return; }
   die "$1 scripts not found: run install.sh --skill solve-feature"; }
 
 land() {
@@ -170,7 +179,7 @@ land() {
   # The body first: a closing-refs failure stops before anything is pushed.
   f="$LOGS/$rs.pr-body.md"
   pr_body "$REF" "$rs" "$( [ -z "$PR_N" ] || jq -r '.body // ""' <<<"$VIEW")" >"$f"
-  git push -q -u origin "$BRANCH"
+  git push -q -u origin "$BRANCH" || stop "$REF  solve ✓  checks ✓" push "git push failed; once it can push, run land $SLUG $REF $BRANCH before a re-run"
   if [ -n "$PR_N" ]; then
     gh pr edit "$PR_N" --body-file "$f" >/dev/null || die "gh pr edit $PR_N failed"
   else
@@ -184,64 +193,60 @@ land() {
 # The fixer's edits are staged before the checks and committed after, so the push carries exactly what was gated.
 fix() {
   local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.md" clog="$LOGS/pr-$PR.checks.log"
-  local checks_dir dep_dir head_oid reviewed draft state head_ref prd rc=0 total n_unfixed fixed=0 sha="" result
-  local attention="" ready=no note
+  local checks_dir dep_dir head_oid draft prd rc=0 total sha="" listed="" result attention="" ready=no note
   checks_dir=$(scripts_of solve-issue) dep_dir=$(scripts_of dep-install)
-  VIEW=$(gh pr view "$PR" --json state,headRefName,headRefOid,isDraft) || die "gh pr view $PR failed"
+  VIEW=$(gh pr view "$PR" --json headRefOid,isDraft) || die "gh pr view $PR failed"
   PR_N=$PR head_oid=$(jq -r '.headRefOid // empty' <<<"$VIEW") draft=$(jq -r '.isDraft' <<<"$VIEW")
-  state=$(jq -r '.state // empty' <<<"$VIEW") head_ref=$(jq -r '.headRefName // empty' <<<"$VIEW")
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop "review ✗  checks ·" fix "branch changed to '$(git branch --show-current)'"
-  [ "$state" = OPEN ] || stop "review ✗  checks ·" fix "PR #$PR is $state, not OPEN"
-  [ "$head_ref" = "$BRANCH" ] || stop "review ✗  checks ·" fix "PR #$PR's head branch is '$head_ref', not '$BRANCH'"
-  git merge-base --is-ancestor "$head_oid" HEAD 2>/dev/null || stop "review ✗  checks ·" fix "HEAD does not contain PR #$PR's head ${head_oid:0:7}"
-  # What was fixed is counted from the commit the reviewer read, which a hand push after a stop moves the PR past.
-  [ -f "$LOGS/pr-$PR.reviewed-head" ] || stop "review ✗  checks ·" fix "no reviewed head at $LOGS/pr-$PR.reviewed-head: run review-pr.sh prepare $PR first"
-  reviewed=$(head -n 1 "$LOGS/pr-$PR.reviewed-head")
-  git merge-base --is-ancestor "$reviewed" HEAD 2>/dev/null || stop "review ✗  checks ·" fix "HEAD does not contain the reviewed commit ${reviewed:0:7}"
   [ -f "$report" ] || stop "review ✗  checks ·" fix "no review report at $report"
   prd=$(jq -r '.prd // empty' "$report" 2>/dev/null) || stop "review ✗  checks ·" fix "unreadable review report $report"
-  case "$prd" in met|unmet) ;; *) stop "review ✗  checks ·" fix "review report $report: prd '${prd:-missing}' is not met|unmet" ;; esac
-  # The same predicate as review-pr.sh post's, so both accept the same reports.
-  jq -e '(.findings // [] | type == "array" and all(type == "object")) and (.gaps // [] | type == "array")' "$report" >/dev/null ||
-    stop "review ✗  checks ·" fix "review report $report: findings must be an array of objects and gaps an array"
   total=$(jq '.findings // [] | length' "$report")
-  # With no findings no fixer ran, so a change can only be the read-only reviewer's.
-  [ "$total" != 0 ] || [ -z "$(git status --porcelain)" ] ||
-    stop "review ✗  checks ·" fix "the tree changed though the review had no findings (the reviewer edited it): revert that, then run fix $SLUG $PR $BRANCH"
   # Staged before the checks, so run-checks.sh's modified-files test also sees a check rewrite a file the fixer changed.
   git add -A
   bash "$checks_dir/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$dep_dir" >"$clog" 2>&1 || rc=$?
   [ "$rc" != 3 ] || stop "review ✓  checks ✗" fix "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand and commit .coding-crew/dev-commands.json" "$clog"
-  [ "$rc" = 0 ] || stop "review ✓  checks ✗" fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH" "$clog"
+  [ "$rc" = 0 ] || stop "review ✓  checks ✗" fix "run-checks.sh exit $rc; once fixed and committed (not pushed), run fix $SLUG $PR $BRANCH" "$clog"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings on PR #$PR"
   git push -q -u origin "$BRANCH" || stop "review ✓  checks ✓" fix "git push failed; once it can push, run fix $SLUG $PR $BRANCH"
 
-  # One line per finding the fixer could not fix, markdown bullets or not; headings are not findings.
-  if [ -f "$unfixed" ]; then attention=$(sed -E 's/^[[:space:]]*[-*][[:space:]]+//' "$unfixed" | grep -v -E '^[[:space:]]*(#+[[:space:]]|$)' || true); fi
+  # Needs a person: the reviewer's gaps, an unmet spec, each line the fixer left in unfixed.md, and a fixer that
+  # changed nothing without saying why (it crashed or gave up). "Changed nothing" is HEAD still at the PR's head,
+  # which is why the stops say to commit, not push, before a re-run.
+  [ "$(git rev-parse HEAD)" = "$head_oid" ] || sha=$(git rev-parse --short HEAD)
+  # Markdown headings in unfixed.md are not findings ('#2: …' is).
+  [ ! -f "$unfixed" ] || listed=$({ grep -v -E '^[[:space:]]*#+[[:space:]]' "$unfixed" || true; } | sed -E 's/^[[:space:]]*[-*][[:space:]]+//' | grep -v '^[[:space:]]*$' || true)
+  attention=$(jq -r '.gaps // [] | if type == "array" then .[] else . end | tostring' "$report")
+  [ "$prd" = met ] || attention+=$'\n'"the reviewer found the spec unmet"
+  attention+=$'\n'"$listed"
+  [ "$total" = 0 ] || [ -n "$sha" ] || [ -n "$listed" ] || attention+=$'\n'"the fixer changed nothing"
   rm -f "$unfixed"
-  n_unfixed=$(grep -c . <<<"$attention" || true)
-  # A fixer that crashed or gave up leaves HEAD at the PR's head: nothing it was given counts as fixed.
-  if [ "$(git rev-parse HEAD)" != "$reviewed" ]; then
-    sha=$(git rev-parse --short HEAD) fixed=$(( total > n_unfixed ? total - n_unfixed : 0 ))
-  elif [ "$total" -gt "$n_unfixed" ]; then
-    attention+="${attention:+$'\n'}the fixer changed nothing for $(( total - n_unfixed )) finding(s)"
-  fi
-  if [ "$total" = 0 ]; then result="no findings"; else result="fixed $fixed${sha:+ ($sha)}"; fi
-  attention=$(jq -r '.gaps // [] | .[] | tostring' "$report")${attention:+$'
-'$attention}
-  [ "$prd" = met ] || [ -n "$attention" ] || attention="the reviewer found the spec unmet"
-  attention=$(grep -v '^$' <<<"$attention" || true)
+  attention=$(grep -v '^[[:space:]]*$' <<<"$attention" || true)
+  if [ "$total" = 0 ]; then result="no findings"; else result="$total finding(s)${sha:+, fixed in $sha}"; fi
   if [ -n "$attention" ]; then
-    note="Needs attention:"$'
-'"$(sed 's/^/- /' <<<"$attention")"
+    note="Needs attention:"$'\n'"$(sed 's/^/- /' <<<"$attention")"
   elif [ "$draft" = true ]; then
-    gh pr ready "$PR" >/dev/null || stop "review ✓  $result  checks ✓" fix "gh pr ready $PR failed; run fix $SLUG $PR $BRANCH again"
+    gh pr ready "$PR" >/dev/null || stop "review ✓  $result  checks ✓" fix "gh pr ready $PR failed; the fixes are pushed, so run gh pr ready $PR by hand"
     ready=yes note="Marked ready for review: nothing needs attention."
   else ready=already note="Nothing needs attention; the PR was already ready for review."; fi
   progress "review ✓  $result  checks ✓" "$note"
+  if [ -n "$attention" ]; then printf '%s\n' "$attention" >"$LOGS/pr-$PR.attention.md"; else rm -f "$LOGS/pr-$PR.attention.md"; fi
   rm -f "$LOGS/stopped"
   printf 'pr=%s head=%s\n' "$PR" "$(git rev-parse HEAD)" >"$LOGS/reviewed"
-  echo "FIX: findings=$total fixed=$fixed needs-attention=$(grep -c . <<<"$attention" || true) ready=$ready"
+  echo "FIX: findings=$total needs-attention=$(grep -c . <<<"$attention" || true) ready=$ready"
+}
+
+# The writer's summary goes inside the block, so a later land's rebuild drops it rather than leave it stale.
+describe() {
+  local f="$LOGS/pr-$PR.summary.md" att="$LOGS/pr-$PR.attention.md" title body
+  [ -f "$f" ] || { echo "solve-feature: warning: no summary at $f; PR #$PR's body is unchanged" >&2; return 0; }
+  title=$(head -n 1 "$f" | sed -n 's/^# //p')
+  SUMMARY=$(if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d')
+  [ ! -s "$att" ] || SUMMARY+=$'\n\n'"## Needs attention"$'\n\n'"$(sed 's/^/- /' "$att")"
+  [ ! -f "$LOGS/prd.md" ] || PRD_TEXT=$(cat "$LOGS/prd.md")
+  body=$(gh pr view "$PR" --json body | jq -r '.body // ""') || die "gh pr view $PR failed"
+  pr_body "" "" "$body" >"$LOGS/pr-$PR.body.md"
+  gh pr edit "$PR" ${title:+--title "$title"} --body-file "$LOGS/pr-$PR.body.md" >/dev/null || die "gh pr edit $PR failed"
+  echo "described PR #$PR"
 }
 
 "$CMD"

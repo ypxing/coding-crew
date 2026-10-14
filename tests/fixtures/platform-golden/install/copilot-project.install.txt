@@ -84,9 +84,6 @@ REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
 REPO/.coding-crew/manifest.json 9d87cee9f977620a576043480d6883ef2140a47c
-REPO/.coding-crew/review-pr/ /
-REPO/.coding-crew/review-pr/scripts/ /
-REPO/.coding-crew/review-pr/scripts/review-pr.sh exec=1
 REPO/.coding-crew/skills/ /
 REPO/.coding-crew/skills/_shared/ /
 REPO/.coding-crew/skills/_shared/fragments/ /
@@ -96,11 +93,6 @@ REPO/.coding-crew/skills/_shared/fragments/human-issue.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
-REPO/.coding-crew/solve-feature/ /
-REPO/.coding-crew/solve-feature/hosts/ /
-REPO/.coding-crew/solve-feature/hosts/github-actions.yml exec=0
-REPO/.coding-crew/solve-feature/scripts/ /
-REPO/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
 REPO/.coding-crew/solve-issue/ /
 REPO/.coding-crew/solve-issue/scripts/ /
 REPO/.coding-crew/solve-issue/scripts/check-requires.sh exec=1
@@ -203,8 +195,7 @@ REPO/.github/skills/domain-modeling/references/adr-format.md exec=0
 REPO/.github/skills/domain-modeling/references/context-format.md exec=0
 REPO/.github/skills/review-pr/ /
 REPO/.github/skills/review-pr/SKILL.md exec=0 unrendered=0
-REPO/.github/skills/review-pr/scripts/ /
-REPO/.github/skills/review-pr/scripts/review-pr.sh exec=1
+REPO/.github/skills/review-pr/reviewer-prompt.md exec=0
 REPO/.github/skills/solve-feature/ /
 REPO/.github/skills/solve-feature/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/solve-feature/hosts/ /

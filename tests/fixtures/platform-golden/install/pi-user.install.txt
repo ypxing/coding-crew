@@ -84,9 +84,6 @@ HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
 HOME/.coding-crew/manifest.json 2cfd3a897381dadadb19704cbe8d44b50cd62cf3
-HOME/.coding-crew/review-pr/ /
-HOME/.coding-crew/review-pr/scripts/ /
-HOME/.coding-crew/review-pr/scripts/review-pr.sh exec=1
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
 HOME/.coding-crew/skills/_shared/fragments/ /
@@ -96,11 +93,6 @@ HOME/.coding-crew/skills/_shared/fragments/human-issue.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
-HOME/.coding-crew/solve-feature/ /
-HOME/.coding-crew/solve-feature/hosts/ /
-HOME/.coding-crew/solve-feature/hosts/github-actions.yml exec=0
-HOME/.coding-crew/solve-feature/scripts/ /
-HOME/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
 HOME/.coding-crew/solve-issue/ /
 HOME/.coding-crew/solve-issue/scripts/ /
 HOME/.coding-crew/solve-issue/scripts/check-requires.sh exec=1
@@ -204,8 +196,7 @@ HOME/.pi/agent/skills/domain-modeling/references/adr-format.md exec=0
 HOME/.pi/agent/skills/domain-modeling/references/context-format.md exec=0
 HOME/.pi/agent/skills/review-pr/ /
 HOME/.pi/agent/skills/review-pr/SKILL.md exec=0 unrendered=0
-HOME/.pi/agent/skills/review-pr/scripts/ /
-HOME/.pi/agent/skills/review-pr/scripts/review-pr.sh exec=1
+HOME/.pi/agent/skills/review-pr/reviewer-prompt.md exec=0
 HOME/.pi/agent/skills/solve-feature/ /
 HOME/.pi/agent/skills/solve-feature/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/solve-feature/hosts/ /

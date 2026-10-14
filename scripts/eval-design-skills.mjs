@@ -199,7 +199,9 @@ function runClaudeOnce(args, input, cwd) {
     p.on("close", (code) => {
       try {
         const j = JSON.parse(out);
-        done({ ok: code === 0 && !j.is_error, text: j.result ?? "", cost: j.total_cost_usd ?? 0, err });
+        const ok = code === 0 && !j.is_error;
+        // a failed run's JSON may carry no result and no stderr: its subtype (error_max_turns, …) is the reason
+        done({ ok, text: j.result ?? "", cost: j.total_cost_usd ?? 0, err: ok ? err : err || j.subtype || `exit ${code}` });
       } catch {
         done({ ok: false, text: out, cost: 0, err: err || `exit ${code}` });
       }
