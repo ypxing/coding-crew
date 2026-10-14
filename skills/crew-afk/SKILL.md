@@ -30,12 +30,11 @@ review, fix or close nothing**: each run is its own top-level session in its own
    say what you inferred. Several: ask which. None: start nothing, and point the user at
    `crew-grill`, `crew-brainstorm` or `to-issues` to plan the feature first. Never guess: a wrong
    slug spends a run on the wrong work. One call starts one feature; for several, run this once each.
-2. **Name your own platform** as `--agent`: `claude` (Claude Code), `copilot` (GitHub Copilot CLI),
-   `codex` (Codex CLI) or `pi`. It is the CLI the run starts, so it must be the one you are.
-3. **Dispatch**, with `--to` only when the user named a destination (default `local`):
+2. **Dispatch**, with `--to` only when the user named a destination (default `local`). The run uses
+   the same agent CLI you are:
 
    ```bash
-   bash "<skill-dir>/scripts/crew-afk.sh" dispatch <slug> --agent <platform> [--to local|orca|herdr]
+   bash "<skill-dir>/scripts/crew-afk.sh" dispatch <slug> [--to local|orca|herdr]
    ```
 
    Relay what it prints and stop: the run goes on without you, so do not wait for it, read its log or

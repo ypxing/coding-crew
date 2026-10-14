@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # crew-afk.sh dispatch|status — start one /solve-feature run in a feature's own worktree, and say how each run ended.
-#   dispatch <slug> --agent <claude|copilot|codex|pi> [--to local|orca|herdr]
-#       prepares (or reuses) the slug's worktree, starts the run there and returns; prints worktree=, and log= and
-#       pid= for a local run, session= on claude
+#   dispatch <slug> [--to local|orca|herdr]
+#       prepares (or reuses) the slug's worktree, starts the run there with the agent CLI that ran this script, and
+#       returns; prints worktree=, and log= and pid= for a local run, session= on claude
 #   status [<slug>]
 #       one line per worktree crew-afk dispatched to: the run's outcome line, or why there is none
 # A destination is scripts/destinations/<name>.sh: MODE=headless|interactive, the agent's mode there; `prepare
@@ -13,8 +13,20 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 die() { echo "crew-afk: $*" >&2; exit 1; }
 usage() {
   [ -z "${1:-}" ] || echo "crew-afk: $1" >&2
-  echo "usage: crew-afk.sh dispatch <slug> --agent <claude|copilot|codex|pi> [--to local|orca|herdr] | status [<slug>]" >&2
+  echo "usage: crew-afk.sh dispatch <slug> [--to local|orca|herdr] | status [<slug>]" >&2
   exit 2
+}
+
+# agent — the CLI that ran this script: the nearest parent process that is claude, copilot, codex or pi, run
+# directly or by an interpreter (`node …/copilot`). CREW_AFK_AGENT names it where no agent is a parent (the smoke run).
+agent() {
+  local pid=$PPID line a0 a1 a
+  [ -z "${CREW_AFK_AGENT:-}" ] || { echo "$CREW_AFK_AGENT"; return; }
+  while [ "$pid" -gt 1 ] 2>/dev/null && line=$(ps -o ppid= -o args= -p "$pid"); do
+    read -r pid a0 a1 _ <<<"$line"
+    for a in "${a0##*/}" "${a1##*/}"; do case "$a" in claude | copilot | codex | pi) echo "$a"; return ;; esac; done
+  done
+  return 1
 }
 
 # launch_argv <agent> <headless|interactive> <slug> — sets ARGV, and SESSION for a headless claude run; returns 1
@@ -60,19 +72,19 @@ live_pid() { # <logs-dir> — prints the run's pid while it is alive
 }
 
 dispatch() {
-  local to=local agent="" slug="" base wt logs pid
+  local to=local agent slug="" base wt logs pid
   while [ $# -gt 0 ]; do case "$1" in
-    --agent | --to) [ $# -ge 2 ] || usage "$1 needs a value"; if [ "$1" = --to ]; then to="$2"; else agent="$2"; fi; shift 2 ;;
+    --to) [ $# -ge 2 ] || usage "--to needs a value"; to="$2"; shift 2 ;;
     -*) usage "unknown flag: $1" ;;
     *) [ -z "$slug" ] || usage "unexpected argument: $1"; slug="$1"; shift ;;
   esac; done
   # The tracker's own slug rule: the slug reaches a path and an argv, so nothing else gets through.
   [[ "$slug" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || usage "invalid feature slug: '$slug'"
   [[ "$to" =~ ^[a-z]+$ && -f "$SELF/destinations/$to.sh" ]] || usage "unknown --to '$to': one of $(cd "$SELF/destinations" && ls | sed 's/\.sh$//' | paste -sd' ' -)"
-  [ -n "$agent" ] || usage "--agent is required"
   # shellcheck source=/dev/null
   source "$SELF/destinations/$to.sh"
-  launch_argv "$agent" "$MODE" "$slug" || usage "unknown --agent '$agent': one of claude copilot codex pi"
+  agent=$(agent) || die "no agent CLI (claude, copilot, codex or pi) among this script's parent processes: run /crew-afk from one, or set CREW_AFK_AGENT"
+  launch_argv "$agent" "$MODE" "$slug" || die "unknown agent '$agent': one of claude copilot codex pi"
 
   # git refuses a branch checked out twice, but a detached second run would race the first on one checkout.
   pid=$(live_pid "$WORKTREES/$slug/.solve-feature") && die "a run for $slug is still going (pid $pid)"

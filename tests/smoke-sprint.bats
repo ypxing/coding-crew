@@ -30,7 +30,7 @@ setup() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"SMOKE: PASS (claude, demo)"* ]]
   [[ "$output" =~ crew-afk-commit:\ [0-9a-f]{40}(-dirty)? ]]
-  grep -qxF "dispatch dispatch report-cli --to local --agent claude (in $D)" "$BATS_TEST_TMPDIR/calls"
+  grep -qxF "dispatch dispatch report-cli --to local (in $D, agent claude)" "$BATS_TEST_TMPDIR/calls"
   grep -qx 'gh pr close 9' "$BATS_TEST_TMPDIR/calls"
   grep -qx 'gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/feature/report-cli' "$BATS_TEST_TMPDIR/calls"
   [ "$(wc -l < "$RESULTS")" -eq 3 ]

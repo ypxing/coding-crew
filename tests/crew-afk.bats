@@ -3,7 +3,8 @@
 # crew-afk.sh dispatch|status — starts one solve-feature run in a feature's worktree and reports how
 # each run ended. A temp clone with a bare `origin` stands in for the user's repo; `claude`, `timeout`,
 # `orca` and `herdr` are stubs on PATH that log their argv. The stub claude waits for $T/release, so a
-# test can see dispatch return while the run is still going.
+# test can see dispatch return while the run is still going. CREW_AFK_AGENT=claude stands in for the
+# agent that runs crew-afk; one test leaves it unset and runs crew-afk from a stub agent instead.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 
@@ -43,7 +44,7 @@ shift
 exec "$@"
 SH
   chmod +x "$STUB"/*
-  export PATH="$STUB:$PATH"
+  export PATH="$STUB:$PATH" CREW_AFK_AGENT=claude
   cd "$MAIN"
 }
 
@@ -59,7 +60,7 @@ teardown() {
 field() { sed -n "s/^$1=//p" <<<"$output"; }
 
 @test "dispatch --to local starts a capped headless claude in a fresh detached worktree and returns at once" {
-  run bash "$SCRIPT" dispatch report-cli --agent claude
+  run bash "$SCRIPT" dispatch report-cli
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(field worktree)" = "$WT" ]
   [ "$(field log)" = "$WT/.solve-feature/run.log" ]
@@ -84,7 +85,7 @@ field() { sed -n "s/^$1=//p" <<<"$output"; }
   git -C "$MAIN" commit -qam 'ignore .venv/' && git -C "$MAIN" push -q origin main
   mkdir -p "$MAIN/.venv/bin"
   echo .venv >> "$MAIN/.worktreeinclude"
-  run bash "$SCRIPT" dispatch report-cli --agent claude
+  run bash "$SCRIPT" dispatch report-cli
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ -L "$WT/.venv" ]
   [ -z "$(git -C "$WT" status --porcelain)" ]
@@ -98,11 +99,11 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
 }
 
 @test "a second dispatch for the slug reuses its worktree" {
-  bash "$SCRIPT" dispatch report-cli --agent claude >/dev/null
+  bash "$SCRIPT" dispatch report-cli >/dev/null
   wait_run "$WT"
   echo kept > "$WT/untracked.txt"
   rm -f "$T/release"
-  run bash "$SCRIPT" dispatch report-cli --agent claude
+  run bash "$SCRIPT" dispatch report-cli
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(field worktree)" = "$WT" ]
   [ -f "$WT/untracked.txt" ]
@@ -110,11 +111,11 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
 }
 
 @test "a dispatch while the slug's run is live exits 1 naming the pid and starts nothing" {
-  bash "$SCRIPT" dispatch report-cli --agent claude >/dev/null
+  bash "$SCRIPT" dispatch report-cli >/dev/null
   pid=$(cat "$WT/.solve-feature/run.pid")
   for _ in $(seq 1 50); do [ -f "$T/claude-argv" ] && break; sleep 0.1; done
   rm -f "$T/claude-argv"
-  run bash "$SCRIPT" dispatch report-cli --agent claude
+  run bash "$SCRIPT" dispatch report-cli
   [ "$status" -eq 1 ]
   [[ "$output" == *"a run for report-cli is still going (pid $pid)"* ]]
   [ "$(cat "$WT/.solve-feature/run.pid")" = "$pid" ]
@@ -122,15 +123,32 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
   [ ! -f "$T/claude-argv" ]
 }
 
-@test "an invalid slug, an unknown --agent or an unknown --to exits 2 and creates nothing" {
+@test "an invalid slug, an unknown flag or an unknown --to exits 2, an unknown agent exits 1, and neither creates anything" {
   local args
-  for args in "../x --agent claude" "report-cli --agent nope" "report-cli --agent claude --to mars" "report-cli"; do
+  for args in "../x" "report-cli --agent claude" "report-cli --to mars"; do
     run bash "$SCRIPT" dispatch $args
     [ "$status" -eq 2 ] || { echo "$args: $output"; return 1; }
     [[ "$output" == *crew-afk:* ]]
   done
+  CREW_AFK_AGENT=nope run bash "$SCRIPT" dispatch report-cli
+  [ "$status" -eq 1 ] && [[ "$output" == *"unknown agent 'nope'"* ]]
   [ ! -e "$T/app-worktrees" ]
   [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 1 ]
+}
+
+@test "dispatch starts the agent CLI that ran it, found among its parent processes" {
+  # A bash script shows as `bash …/pi`, as a node-run CLI shows as `node …/copilot`.
+  cat > "$T/stub/pi" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = dispatch ]; then bash "$SCRIPT" "\$@"; else printf '%s\n' "\$*" > "$T/pi-argv"; fi
+SH
+  chmod +x "$T/stub/pi"
+  unset CREW_AFK_AGENT
+  run pi dispatch report-cli
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -z "$(field session)" ]
+  for _ in $(seq 1 50); do [ -f "$T/pi-argv" ] && break; sleep 0.1; done
+  [ "$(cat "$T/pi-argv")" = "-p /skill:solve-feature report-cli" ]
 }
 
 # ended_run [<stub claude's last line>] [<exit>] — a finished local run on report-cli whose log ends with that line.
@@ -140,12 +158,12 @@ ended_run() {
 echo '${1:-\{"type":"result","subtype":"error_during_execution"\}}'
 exit ${2:-1}
 SH
-  bash "$SCRIPT" dispatch report-cli --agent claude >/dev/null
+  bash "$SCRIPT" dispatch report-cli >/dev/null
   wait_run "$WT"
 }
 
 @test "status prints a live run as running, then its outcome line once solve-feature wrote one" {
-  bash "$SCRIPT" dispatch report-cli --agent claude >/dev/null
+  bash "$SCRIPT" dispatch report-cli >/dev/null
   pid=$(cat "$WT/.solve-feature/run.pid")
   run bash "$SCRIPT" status
   [ "$output" = "report-cli: running (pid $pid)" ]
@@ -204,7 +222,7 @@ SH
 
 @test "--to orca creates an orca worktree and starts an interactive, uncapped claude in an orca terminal" {
   stub_orca
-  run bash "$SCRIPT" dispatch report-cli --agent claude --to orca
+  run bash "$SCRIPT" dispatch report-cli --to orca
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(field worktree)" = "$T/orca-wt/app-report-cli" ]
   [ -z "$(field pid)" ] && [ -z "$(field session)" ]
@@ -221,7 +239,7 @@ SH
 
 @test "--to herdr creates the worktree through herdr and starts an interactive, uncapped claude in a new pane" {
   stub_herdr
-  run bash "$SCRIPT" dispatch report-cli --agent claude --to herdr
+  run bash "$SCRIPT" dispatch report-cli --to herdr
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(field worktree)" = "$WT" ]
   [ -z "$(field pid)" ] && [ -z "$(field session)" ]
@@ -239,7 +257,7 @@ SH
   while IFS= read -r d; do [ -x "$d/orca" ] || [ -x "$d/herdr" ] || dirs+=("$d"); done < <(tr ':' '\n' <<<"$PATH")
   local to
   for to in orca herdr; do
-    run env PATH="$(IFS=:; echo "${dirs[*]}")" bash "$SCRIPT" dispatch report-cli --agent claude --to "$to"
+    run env PATH="$(IFS=:; echo "${dirs[*]}")" bash "$SCRIPT" dispatch report-cli --to "$to"
     [ "$status" -eq 1 ] || { echo "$output"; return 1; }
     [[ "$output" == *"$to not found"* ]]
   done
