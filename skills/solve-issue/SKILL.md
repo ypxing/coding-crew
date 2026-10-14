@@ -226,7 +226,7 @@ If any check in Step 5 failed, do NOT stage or commit — report `partial` or `b
 the working directory is already clean, check whether the issue is already implemented and
 committed; if so, go to Step 7.
 
-Run `commit-changes.sh` from the same directory you read this skill file from:
+Run `scripts/git-workflow/commit-changes.sh` from the same directory you read this skill file from:
 
 ```bash
 DETAILS="- <key decision or tradeoff line 1>
