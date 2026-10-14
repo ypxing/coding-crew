@@ -30,7 +30,7 @@ HOME/.coding-crew/lib/tracker/github.mjs exec=0
 HOME/.coding-crew/lib/tracker/index.mjs exec=0
 HOME/.coding-crew/lib/tracker/local.mjs exec=0
 HOME/.coding-crew/lib/tracker/tracker-config.mjs exec=0
-HOME/.coding-crew/manifest.json 60b1a6d37ebfc38ca8b180e04d916f984de40ed5
+HOME/.coding-crew/manifest.json 57f1944e4780ee432cc317937da5415a19fe7d1e
 CONFIG/skills/ /
 CONFIG/skills/add-tests/ /
 CONFIG/skills/add-tests/SKILL.md exec=0 unrendered=0

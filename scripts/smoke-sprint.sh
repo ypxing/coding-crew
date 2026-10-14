@@ -77,6 +77,9 @@ HEAD_SHA=$(git rev-parse "origin/$DEFAULT" 2>/dev/null)
 
 "$ROOT/install.sh" "$PLATFORM" --project "$DIR" >.git/crew-smoke/install.log 2>&1 ||
   fail "install.sh failed — see $DIR/.git/crew-smoke/install.log"
+# A host resolves a user-level skill ahead of a project one, so the run would test a stale copy, not HEAD.
+! grep -q '^WARNING: user-level copies exist' .git/crew-smoke/install.log ||
+  fail "user-level skills shadow the project install (see $DIR/.git/crew-smoke/install.log)"
 SKILLS=$(jq -r --arg p "$PLATFORM" '.[$p].projectSkills' "$ROOT/platforms.json" | tr -d '\r')
 # Installed, never committed: excluded here, and linked into every worktree through .worktreeinclude.
 printf '%s\n' .coding-crew/lib .coding-crew/manifest.json "$SKILLS" >.worktreeinclude

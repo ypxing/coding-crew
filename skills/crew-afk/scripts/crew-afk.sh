@@ -4,7 +4,7 @@
 #       prepares (or reuses) the slug's worktree, starts the run there and returns; prints worktree=, and log= and
 #       pid= for a local run, session= on claude
 #   status [<slug>]
-#       one line per slug worktree with a .solve-feature/ dir: the run's outcome line, or why there is none
+#       one line per worktree crew-afk dispatched to: the run's outcome line, or why there is none
 # A destination is scripts/destinations/<name>.sh with two functions: `prepare <slug> <base-branch>` prints the
 # worktree path; `launch <worktree> <argv…>` starts the run there. Exit: 0 ok; 1 a stop; 2 a usage error.
 set -euo pipefail
@@ -48,6 +48,9 @@ include() {
     [ ! -e "$wt/$entry" ] || continue
     mkdir -p "$(dirname "$wt/$entry")"
     if [ "$entry" = .env ]; then cp "$MAIN/.env" "$wt/.env"; else ln -s "$MAIN/$entry" "$wt/$entry"; fi
+    # An ignore pattern with a trailing slash (`node_modules/`) matches no link, and solve-feature refuses an
+    # unclean tree, so a link nothing ignores is excluded for every worktree.
+    git -C "$wt" check-ignore -q "$entry" || echo "/$entry" >>"$COMMON/info/exclude"
   done
 }
 
@@ -95,7 +98,8 @@ status() {
   [ $# -le 1 ] || usage
   while IFS= read -r wt; do
     logs="$wt/.solve-feature"
-    [ "$wt" != "$MAIN" ] && [ -d "$logs" ] || continue
+    # dispatch writes run.dest on every run: without it, the worktree's run is not crew-afk's to report.
+    [ "$wt" != "$MAIN" ] && [ -f "$logs/run.dest" ] || continue
     slug=$(basename "$wt")
     [ -z "$filter" ] || [ "$slug" = "$filter" ] || continue
     found=1

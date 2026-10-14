@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **install / crew-afk**: `.coding-crew/manifest.json` records every platform installed into a root
+  (`platforms`), and `install.sh --update` reinstalls for each, so updating a root that holds both a claude and
+  a codex install no longer leaves only the last one. `crew-afk status` reports only worktrees it dispatched
+  to; a `.worktreeinclude` directory ignored as `dir/` no longer leaves the run's worktree unclean; the release
+  smoke fails when a user-level skill would shadow its project install (#488).
 - **skills**: every skill follows the Agent Skills authoring practice. Each `description` says in the third
   person what the skill does and when to use it; `allowed-tools` is space-delimited; address-pr-comments
   credits the agent that runs it as co-author instead of a hard-coded `Claude Code`. The native rule (a skill

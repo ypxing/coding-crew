@@ -15,6 +15,10 @@ setup() {
   mkdir -p "$TMPDIR"
   D="$TMPDIR/crew-smoke-claude"
 
+  # No user-level skills but the ones a test puts there: they would shadow the project install.
+  export HOME="$BATS_TEST_TMPDIR/home"
+  mkdir -p "$HOME"
+  unset $(jq -r '.[].configDirEnv // empty' "$REPO_ROOT/platforms.json" | tr -d '\r')
   make_smoke_demo
   RESULTS="$BATS_TEST_TMPDIR/RESULTS.md"
   printf '| commit | date | platform | result | cost | findings |\n|---|---|---|---|---|---|\n' > "$RESULTS"
@@ -94,6 +98,15 @@ setup() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"not a smoke repo"* ]]
   [ -f "$D/keep.txt" ]
+}
+
+@test "a user-level copy of a skill that would shadow the project install fails before any dispatch" {
+  mkdir -p "$HOME/.claude/skills/solve-feature"
+  echo stale > "$HOME/.claude/skills/solve-feature/SKILL.md"
+  run "$SMOKE" claude
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"SMOKE: FAIL: user-level skills shadow the project install"* ]]
+  ! grep -q '^dispatch ' "$BATS_TEST_TMPDIR/calls"
 }
 
 @test "an unknown platform is a usage error" {

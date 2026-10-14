@@ -79,6 +79,17 @@ field() { sed -n "s/^$1=//p" <<<"$output"; }
   [ -z "$(git -C "$WT" status --porcelain)" ]
 }
 
+@test "a .worktreeinclude directory the repo ignores with a trailing slash leaves the worktree clean" {
+  printf '.venv/\n' >> "$MAIN/.gitignore"
+  git -C "$MAIN" commit -qam 'ignore .venv/' && git -C "$MAIN" push -q origin main
+  mkdir -p "$MAIN/.venv/bin"
+  echo .venv >> "$MAIN/.worktreeinclude"
+  run bash "$SCRIPT" dispatch report-cli --agent claude
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -L "$WT/.venv" ]
+  [ -z "$(git -C "$WT" status --porcelain)" ]
+}
+
 wait_run() { # <worktree> — release the stub, then wait for the run's pid to exit
   touch "$T/release"
   local pid; pid=$(cat "$1/.solve-feature/run.pid")
@@ -162,6 +173,13 @@ SH
   ended_run 'still working' 124
   run bash "$SCRIPT" status
   [[ "$output" == *'capped at $10/1h — re-run /crew-afk report-cli to continue'* ]]
+}
+
+@test "status leaves out a worktree crew-afk did not dispatch, such as a solve-feature run started by hand" {
+  git -C "$MAIN" worktree add -q --detach "$T/by-hand"
+  mkdir -p "$T/by-hand/.solve-feature"
+  run bash "$SCRIPT" status
+  [ "$output" = "no crew-afk run" ]
 }
 
 # The orca and herdr stubs log one line per call and answer with the JSON fields the destination reads.

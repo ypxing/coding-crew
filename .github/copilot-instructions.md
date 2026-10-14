@@ -79,7 +79,7 @@ No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`,
 
 Issues live in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
 
-- **Triage state**: `Status:` line near top (see `tracker/docs/local.md`)
+- **Triage state**: `Status:` line near top (see `lib/tracker/docs/local.md`)
 - **To close**: Move to `done/` subdirectory after verifying acceptance criteria
 - **PRDs**: `.scratch/<feature-slug>/PRD.md`
 - **Comments**: Append under `## Comments` heading

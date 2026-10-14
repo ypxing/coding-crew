@@ -22,10 +22,10 @@ teardown() {
   rm -rf "$TEMP_DIR"
 }
 
-@test "the manifest records the platform, the skills and the libraries, with no versions" {
+@test "the manifest records the platforms, the skills and the libraries, with no versions" {
   local m="$ALL/.coding-crew/manifest.json"
   [ -f "$m" ]
-  [ "$(jq -r '.platform' "$m")" = all ]
+  [ "$(jq -c '.platforms' "$m")" = '["all"]' ]
   [ "$(jq -c '.skills' "$m")" = "$(jq -c '.skills | keys' "$SCRIPT_DIR/registry.json")" ]
   [ "$(jq -c '.libs' "$m")" = '["checks","git-workflow","tracker"]' ]
   ! grep -q '"version"' "$m"
@@ -67,6 +67,17 @@ teardown() {
   [ ! -e "$TEMP_DIR/.claude/skills/gone-skill" ]
   [ "$(jq -c '.skills' "$m")" = '["to-issues"]' ]
   [ "$(jq -c '.libs' "$m")" = '["tracker"]' ]
+}
+
+@test "--update reinstalls for every platform installed into the same root, not only the last one" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null
+  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill tdd >/dev/null
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
+  [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
+  [ -f "$TEMP_DIR/$(platform_field claude projectSkills)/tdd/SKILL.md" ]
+  [ -f "$TEMP_DIR/$(platform_field codex projectSkills)/tdd/SKILL.md" ]
+  [ "$(jq -c '.platforms' "$TEMP_DIR/.coding-crew/manifest.json")" = '["claude","codex"]' ]
 }
 
 # What today's main left behind: per-skill versions in the manifest, scripts copied into each skill,

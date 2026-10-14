@@ -117,6 +117,7 @@ fi
 INSTALLED=""
 MANIFEST_SKILLS=()
 MANIFEST_LIBS=()
+MANIFEST_PLATFORMS=()
 LIB_DEST=".coding-crew/lib"
 
 _required_cmds=("jq" "git")
@@ -222,21 +223,6 @@ check_dest_status() {
   local rel_dest="${dest#$REPO_ROOT/}"
   echo "  $rel_dest (updated)"
   return 2  # changed
-}
-
-# Paths the current copy wrote into the tree being installed; prune_unwritten removes the rest.
-declare -A _WRITTEN
-
-# Make an installed tree an exact copy of what this run wrote into it. Prune after copy, never
-# wipe-then-copy: a sprint running during an install still finds every file the new version ships.
-prune_unwritten() {
-  local root="$1" f
-  while IFS= read -r -d '' f; do
-    [[ -n "${_WRITTEN[$f]+x}" ]] && continue
-    rm -f "$f"
-    echo "  ${f#"$REPO_ROOT/"} (removed)"
-  done < <(find "$root" -mindepth 1 ! -type d -print0)
-  find "$root" -mindepth 1 -depth -type d -empty -delete
 }
 
 # Paths the current copy wrote into the tree being installed; prune_unwritten removes the rest.
@@ -492,12 +478,19 @@ manifest_list() {
   jq -r --arg k "$2" '.[$k] // [] | if type == "object" then keys[] else .[] end' "$1"
 }
 
-# The manifest records the platform, the skills and the libraries installed, merged with what an
-# earlier install recorded. No versions: --update reinstalls everything it lists.
+# manifest_platforms <file> — the platforms installed into this root, one per line. An install made
+# before the list recorded only the last platform, under .platform.
+manifest_platforms() {
+  jq -r '.platforms // [.platform // empty] | .[]' "$1"
+}
+
+# The manifest records the platforms, the skills and the libraries installed, merged with what an
+# earlier install recorded: every platform installs into one root, so --update must reinstall each.
+# No versions: --update reinstalls everything it lists.
 write_manifest() {
   mkdir -p "$(dirname "$MANIFEST")"
 
-  local source_sha source_remote skills libs
+  local source_sha source_remote skills libs platforms
   source_sha=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")
   source_remote=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo "local")
 
@@ -505,19 +498,24 @@ write_manifest() {
               [[ ! -f "$MANIFEST" ]] || manifest_list "$MANIFEST" skills; } | tr -d '\r' | grep -v '^$' | LC_ALL=C sort -u || true)
   libs=$( { printf '%s\n' "${MANIFEST_LIBS[@]+"${MANIFEST_LIBS[@]}"}"
             [[ ! -f "$MANIFEST" ]] || manifest_list "$MANIFEST" libs; } | tr -d '\r' | grep -v '^$' | LC_ALL=C sort -u || true)
+  # --update sets MANIFEST_PLATFORMS: its uninstall may have removed the manifest it read them from.
+  platforms=$( { printf '%s\n' "${MANIFEST_PLATFORMS[@]:-$PLATFORM}"
+                 [[ ! -f "$MANIFEST" ]] || manifest_platforms "$MANIFEST"; } | tr -d '\r' | grep -v '^$' | LC_ALL=C sort -u || true)
+  # "all" covers every platform.
+  ! grep -qxF all <<< "$platforms" || platforms=all
 
   jq -n \
     --arg sha "$source_sha" \
     --arg remote "$source_remote" \
     --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-    --arg platform "$PLATFORM" \
+    --arg platforms "$platforms" \
     --arg skills "$skills" \
     --arg libs "$libs" \
     '{
       source: $remote,
       source_sha: $sha,
       installed_at: $ts,
-      platform: $platform,
+      platforms: ($platforms | split("\n") | map(select(. != ""))),
       skills: ($skills | split("\n") | map(select(. != ""))),
       libs: ($libs | split("\n") | map(select(. != "")))
     }' > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
@@ -549,18 +547,24 @@ prune_skills_not_in() {
 }
 
 # --update: uninstall every skill and library the manifest lists, then install the listed skills the
-# registry still has, for the manifest's platform. A skill the registry dropped stays uninstalled.
+# registry still has, for each of the manifest's platforms. A skill the registry dropped stays uninstalled.
 run_update() {
   if [[ ! -f "$MANIFEST" ]]; then
     echo "Error: no manifest found at $MANIFEST — run ./install.sh first" >&2
     exit 1
   fi
-  PLATFORM=$(jq -r '.platform // "all"' "$MANIFEST")
-  PLATFORM="${PLATFORM%$'\r'}"
-  if [[ "$PLATFORM" != "all" ]] && ! platform_known "$PLATFORM"; then
-    echo "Error: the manifest's platform '$PLATFORM' is not in platforms.json" >&2
-    exit 1
-  fi
+  local platforms=() platform
+  while IFS= read -r platform; do
+    platform="${platform%$'\r'}"
+    [[ -n "$platform" ]] || continue
+    if [[ "$platform" != "all" ]] && ! platform_known "$platform"; then
+      echo "Error: the manifest's platform '$platform' is not in platforms.json" >&2
+      exit 1
+    fi
+    platforms+=("$platform")
+  done < <(manifest_platforms "$MANIFEST")
+  [[ ${#platforms[@]} -gt 0 ]] || platforms=(all)
+  MANIFEST_PLATFORMS=("${platforms[@]}")
 
   local names=() name
   while IFS= read -r name; do
@@ -568,7 +572,7 @@ run_update() {
     [[ -n "$name" ]] && names+=("$name")
   done < <(manifest_list "$MANIFEST" skills)
 
-  echo "Platform: $PLATFORM (from manifest)"
+  echo "Platform: ${platforms[*]} (from manifest)"
   echo "---"
   uninstall_skills "$(IFS=,; echo "${names[*]+"${names[*]}"}")"
   echo "---"
@@ -579,7 +583,7 @@ run_update() {
       echo "  $name: removed from the registry — uninstalled"
       continue
     fi
-    install_single_skill "$name"
+    for PLATFORM in "${platforms[@]}"; do install_single_skill "$name"; done
   done
 }
 

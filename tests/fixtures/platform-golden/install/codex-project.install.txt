@@ -126,4 +126,4 @@ REPO/.coding-crew/lib/tracker/github.mjs exec=0
 REPO/.coding-crew/lib/tracker/index.mjs exec=0
 REPO/.coding-crew/lib/tracker/local.mjs exec=0
 REPO/.coding-crew/lib/tracker/tracker-config.mjs exec=0
-REPO/.coding-crew/manifest.json 0f7c0fb11009f206993fe237ec07a1f121b7a2f6
+REPO/.coding-crew/manifest.json df9e7c75c30f04a79d860ab9f72e07dcb8d64e3b

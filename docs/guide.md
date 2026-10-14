@@ -50,12 +50,12 @@ install.sh
     │     ├── install_lib() — lib/<lib>/ → <root>/.coding-crew/lib/<lib>/, once per run, an exact copy
     │     └── install_single_skill(dep) — recurse for each dep
     │
-    └── write_manifest() — <root>/.coding-crew/manifest.json: the platform, skills and libraries
+    └── write_manifest() — <root>/.coding-crew/manifest.json: the platforms, skills and libraries
 ```
 
 A library link is relative at project level, so a committed skills dir and `.coding-crew/` survive a
 clone; at user level it is absolute. `install.sh --update` uninstalls every skill and library the
-manifest lists, then installs the listed skills the registry still has, for the same platform.
+manifest lists, then installs the listed skills the registry still has, for every platform it lists.
 
 #### No agent files
 
@@ -220,7 +220,7 @@ or `--project <path>` (or `TARGET_REPO=<path>`) for another one:
 ```
 
 Uninstalls every skill and library `.coding-crew/manifest.json` lists, then installs those skills again
-from this checkout, for the platform the manifest names. An install made before libraries (it has
+from this checkout, for every platform the manifest names. An install made before libraries (it has
 `.coding-crew/tracker/` or `.coding-crew/dep-install/`) updates the same way; remove what it left once:
 `rm -rf <root>/.coding-crew/{tracker,crew-afk,dep-install,solve-issue,to-issues,write-pr,skills}`.
 
