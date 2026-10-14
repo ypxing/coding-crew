@@ -245,11 +245,11 @@ Otherwise — no push, no marker, any other kind in it, or a `crew-finding:` com
 print nothing here.
 
 **solve-feature PR.** Print nothing under Ready, and no next step: the run already reviewed the PR
-and fixed its findings, and its fix step marks the draft ready when nothing needs a person. A draft
-it left lists what does under `Needs attention` in its progress comment.
+and fixed its findings, and its describe step marks the draft ready when nothing needs a person. A
+draft it left lists what does under `Needs attention` in the PR body.
 
 On either kind the skill never runs `gh pr ready` and never waits on CI: on a crew-afk PR marking
-it ready is the developer's call once CI passes; on a solve-feature PR it is the run's fix step's,
+it ready is the developer's call once CI passes; on a solve-feature PR it is the run's describe step's,
 and the developer's for a draft that step left.
 
 ## Unattended mode (`--auto`)

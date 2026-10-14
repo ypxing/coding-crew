@@ -621,7 +621,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   TIP=$(git rev-parse HEAD)
   : > "$STATE/checks.log"
   CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
-  fix_stops "run-checks.sh exit 1; once fixed and committed (not pushed), run fix feat 10 feature/feat"
+  fix_stops "run-checks.sh exit 1; once fixed and committed (not pushed), run fix feat 10 feature/feat, then describe feat 10"
   [[ "$output" == *"log: $WORK/.solve-feature/pr-10.checks.log"* ]]
   [ "$(cat "$STATE/checks.log")" = "--project-root $WORK --main-root $WORK --dep-scripts $HOME/.coding-crew/dep-install/scripts" ]
   [ "$(git rev-parse HEAD)" = "$TIP" ]
@@ -647,7 +647,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   TIP=$(git rev-parse HEAD)
   printf '#!/bin/sh\nexit 1\n' > "$TEMP_DIR/origin.git/hooks/pre-receive" && chmod +x "$TEMP_DIR/origin.git/hooks/pre-receive"
   run bash "$SCRIPT" fix feat 10 feature/feat
-  fix_stops "git push failed; once it can push, run fix feat 10 feature/feat"
+  fix_stops "git push failed; once it can push, run fix feat 10 feature/feat, then describe feat 10"
 }
 
 @test "a fixer that changed nothing fixed nothing: the findings need attention" {
