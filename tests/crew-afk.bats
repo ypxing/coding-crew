@@ -121,3 +121,45 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
   [ ! -e "$T/app-worktrees" ]
   [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 1 ]
 }
+
+# ended_run [<stub claude's last line>] [<exit>] — a finished local run on report-cli whose log ends with that line.
+ended_run() {
+  cat > "$T/stub/claude" <<SH
+#!/usr/bin/env bash
+echo '${1:-\{"type":"result","subtype":"error_during_execution"\}}'
+exit ${2:-1}
+SH
+  bash "$SCRIPT" dispatch report-cli --agent claude >/dev/null
+  wait_run "$WT"
+}
+
+@test "status prints a live run as running, then its outcome line once solve-feature wrote one" {
+  bash "$SCRIPT" dispatch report-cli --agent claude >/dev/null
+  pid=$(cat "$WT/.solve-feature/run.pid")
+  run bash "$SCRIPT" status
+  [ "$output" = "report-cli: running (pid $pid)" ]
+  echo 'ready pr=7' > "$WT/.solve-feature/outcome"
+  run bash "$SCRIPT" status report-cli
+  [ "$output" = "report-cli: ready pr=7" ]
+  run bash "$SCRIPT" status other
+  [[ "$output" != *report-cli* ]]
+}
+
+@test "status on a run that ended without an outcome names the log and the claude session to resume" {
+  ended_run
+  run bash "$SCRIPT" status
+  session=$(cat "$WT/.solve-feature/run.session")
+  [[ "$output" == "report-cli: ended without an outcome (capped or crashed) — log: $WT/.solve-feature/run.log"* ]]
+  [[ "$output" == *"claude --resume $session"* ]]
+  [[ "$output" != *capped\ at* ]]
+}
+
+@test "status says a run that hit the budget or the 1h timeout was capped, and how to continue" {
+  ended_run '{"type":"result","subtype":"error_max_budget_usd","total_cost_usd":10.02}' 1
+  run bash "$SCRIPT" status
+  [[ "$output" == *'capped at $10/1h — re-run /crew-afk report-cli to continue'* ]]
+  rm -rf "$WT/.solve-feature"
+  ended_run 'still working' 124
+  run bash "$SCRIPT" status
+  [[ "$output" == *'capped at $10/1h — re-run /crew-afk report-cli to continue'* ]]
+}
