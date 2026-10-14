@@ -66,5 +66,5 @@ Every run ends with one line in `<repo>/.solve-feature/outcome` — `ready pr=<n
 
 | Setting                                         | Effect                                                         |
 | ----------------------------------------------- | -------------------------------------------------------------- |
-| `--branch <name>`                               | The branch the run uses, never the default branch (default: `feature/<slug>`) |
+| `--branch <name>`                               | The branch the run uses, never the default branch (default: one named after the slug) |
 | `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model, when your host accepts the name (default: your own) |
