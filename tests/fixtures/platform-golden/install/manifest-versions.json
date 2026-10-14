@@ -1,9 +1,7 @@
 {
-  "crew-afk": "2.25.1",
   "tdd": "1.2.1",
   "dep-install": "1.5.2",
   "solve-issue": "1.12.2",
-  "crew-address-findings": "1.4.4",
   "address-pr-comments": "1.5.0",
   "to-issues": "1.13.0",
   "to-prd": "1.4.4",

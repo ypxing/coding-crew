@@ -6,6 +6,21 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **crew-afk, crew-address-findings (removed)**: the old crew-afk program — `orchestrator/`, `skills/crew-afk/`
+  and everything only it used — is deleted, so `/solve-feature` is the one unattended path (a new, thin crew-afk
+  that starts solve-feature runs follows). Gone with it: the `crew-address-findings` skill; solve-issue's
+  `ORCHESTRATED` preflight value and orchestrated close (it always closes its issue now), `run-checks.sh
+  --targeted` and the `CREW_DEFER_FULL_CHECKS` deferral (every check always runs); the `CREW_ORCHESTRATED` env
+  var and `.scratch/<slug>/.orchestrated` marker, which `tracker/cli.mjs mark-done`, solve-issue, tdd and
+  `solve-feature.sh start` no longer read; the tracker's `in-progress` label (configure-tracker creates six
+  labels; a person still sets `blocked`, which `next` keeps skipping); `close-shipped.sh`; address-pr-comments'
+  crew-afk PR path and write-pr's crew-afk block; `eval-reviewer-misses.mjs --reviewer` (it replays crew-review
+  only); the `crew-afk-version:` check in `cut-release.sh` (it keys on `crew-afk-commit:`); `install.sh
+  <platform> crew-coder` and `uninstall.sh --agent` (now unknown arguments). The `afk` section of
+  `.coding-crew/config.json` is no longer read: delete it. `platforms.json` moves to the repo root. An existing
+  install keeps its old `crew-afk` and `crew-address-findings` skill directories, `.coding-crew/crew-afk/` and
+  `.coding-crew/skills/`: delete them by hand (#482).
+
 - **crew-review, solve-feature**: `review-pr` is renamed `crew-review` and only reports: it reviews a branch
   (`<base>..HEAD`) or a PR against the spec its caller names (a file, an issue ref or the PR body), asks what the
   code at HEAD lacks, writes its JSON report to the given path or prints it, and posts nothing and marks nothing
