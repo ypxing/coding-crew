@@ -201,10 +201,10 @@ land_ready() {
 
 @test "no subcommand, an unknown one, a wrong argument count or a removed flag exits 2 with the usage line" {
   local args
-  for args in "" "feat" "run feat" "next" "land feat 2" "fix feat 10" "fix feat 10 feature/feat x" "fix feat ten feature/feat" "start feat --agent copilot" "start feat --budget 5" "start feat --open-pr" "start feat other"; do
+  for args in "" "feat" "run feat" "next" "land feat 2" "fix feat 10" "fix feat 10 feature/feat x" "fix feat ten feature/feat" "describe feat" "describe feat ten" "start feat --agent copilot" "start feat --budget 5" "start feat --open-pr" "start feat other"; do
     run bash "$SCRIPT" $args
     [ "$status" -eq 2 ] || { echo "'$args': status $status"; return 1; }
-    [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | fix <slug> <pr> <branch>"* ]]
+    [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
   done
   [ ! -f "$STATE/gh.log" ]
   [ ! -e "$WORK/.solve-feature/stopped" ]
@@ -313,13 +313,15 @@ land_ready() {
   [ "$(out reviewer-model)" = opus ]
 }
 
-@test "start writes .solve-feature/prd.md when the feature has a PRD, none when prd exits 3, and removes stale stopped, reviewed and unfixed markers" {
+@test "start writes .solve-feature/prd.md when the feature has a PRD, none when prd exits 3, and removes stale stopped, reviewed, unfixed, summary and attention markers" {
   mkdir -p .solve-feature && echo '*' > .solve-feature/.gitignore && echo old > .solve-feature/stopped && echo old > .solve-feature/reviewed
   echo old > .solve-feature/pr-7.unfixed.md && echo kept > .solve-feature/pr-7.review.json
+  echo old > .solve-feature/pr-7.summary.md && echo old > .solve-feature/pr-7.attention.md
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ]
   [ "$(cat .solve-feature/prd.md)" = "$(cat "$STATE/prd.md")" ]
   [ ! -e .solve-feature/stopped ] && [ ! -e .solve-feature/reviewed ] && [ ! -e .solve-feature/pr-7.unfixed.md ]
+  [ ! -e .solve-feature/pr-7.summary.md ] && [ ! -e .solve-feature/pr-7.attention.md ]
   [ -e .solve-feature/pr-7.review.json ]
   rm "$STATE/prd.md"
   run bash "$SCRIPT" start feat
@@ -462,8 +464,8 @@ the prd
 ### 2 — Two
 ## Acceptance criteria
 
-- [ ] works for `<before>` & co
-- [ ] Two done
+- works for `<before>` & co
+- Two done
 
 </details>
 
@@ -493,14 +495,14 @@ the prd
 ### 2 — Two
 ## Acceptance criteria
 
-- [ ] works for `<before>` & co
-- [ ] Two done
+- works for `<before>` & co
+- Two done
 
 ### 3 — Three
 ## Acceptance criteria
 
-- [ ] works for `<before>` & co
-- [ ] Three done
+- works for `<before>` & co
+- Three done
 
 </details>
 
@@ -781,6 +783,64 @@ fix_stops() {
   grep -qx -- '- the reviewer found the spec unmet' <<<"$(progress_body)"
 }
 
+# --- describe: the writer's summary on the PR ------------------------------------------
+
+# summary — what the writer subagent leaves: write-pr's title line and body.
+summary() { printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n\n**Tested:** checks pass\n' > .solve-feature/pr-10.summary.md; }
+
+@test "describe puts the summary and fix's Needs attention atop the block, titles the PR after it, and keeps the spec, Closes lines and text outside" {
+  fix_ready '{"prd":"met","gaps":["no logout endpoint"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat .solve-feature/pr-10.attention.md)" = "no logout endpoint" ]
+  printf 'hand intro\n%s\nhand outro\n' "$(cat "$STATE/pr-body")" > "$STATE/pr-body"
+  summary
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat "$STATE/pr-title")" = "Let users log in" ]
+  local body; body=$(cat "$STATE/pr-body")
+  [ "$(sed -n '1,13p' <<<"$body")" = "$(cat <<'EOF'
+hand intro
+<!-- solve-feature:begin -->
+## Why
+
+Users need accounts.
+
+**Tested:** checks pass
+
+## Needs attention
+
+- no logout endpoint
+
+Implemented by solve-feature (`feat`).
+EOF
+)" ]
+  [ "$(tail -1 <<<"$body")" = "hand outro" ]
+  [ "$(grep -c '^### 2 — Two$' <<<"$body")" -eq 1 ] && [ "$(grep -c '^### 3 — Three$' <<<"$body")" -eq 1 ]
+  [ "$(grep -c '^Closes #' <<<"$body")" -eq 2 ]
+
+  # A second describe replaces the summary rather than stacking it.
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^## Why$' "$STATE/pr-body")" -eq 1 ] && [ "$(grep -c '^### 2 — Two$' "$STATE/pr-body")" -eq 1 ]
+}
+
+@test "with nothing needing a person describe adds no Needs attention, and without a summary it leaves the PR alone" {
+  fix_ready
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ]
+  [ ! -e .solve-feature/pr-10.attention.md ]
+  local edits; edits=$(ls "$STATE" | grep -c '^pr-edit\.')
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no summary at $WORK/.solve-feature/pr-10.summary.md"* ]]
+  [ "$(ls "$STATE" | grep -c '^pr-edit\.')" -eq "$edits" ]
+  summary
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ]
+  grep -qx '## Why' "$STATE/pr-body" && ! grep -q 'Needs attention' "$STATE/pr-body"
+}
+
 @test "fix posts no PR review and no review comment" {
   fix_ready '{"prd":"unmet","gaps":["g"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
   echo 'x' > .solve-feature/pr-10.unfixed.md
@@ -854,7 +914,7 @@ fix_stops() {
   [ -f "$target/.claude/skills/review-pr/SKILL.md" ]
   [ -f "$target/.coding-crew/solve-issue/scripts/run-checks.sh" ]
   [ -f "$target/.coding-crew/dep-install/scripts/run.sh" ]
-  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install","review-pr","tdd"]' ]
+  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install","review-pr","tdd","write-pr"]' ]
 }
 
 # --- hosts -------------------------------------------------------------------------------

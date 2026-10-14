@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# solve-feature.sh start|next|land|fix — the guards of solve-feature's loop. SKILL.md drives the loop and runs
-# each issue's coder (between `next` and `land`) and the review's reviewer and fixer (before `fix`) as subagents
-# of the host agent; every guard is an exit code here.
+# solve-feature.sh start|next|land|fix|describe — the guards of solve-feature's loop. SKILL.md drives the loop and
+# runs each issue's coder (between `next` and `land`), the review's reviewer and fixer (before `fix`) and the PR's
+# writer (before `describe`) as subagents of the host agent; every guard is an exit code here.
 #   start <slug> [--branch <name>]  preconditions, the branch, the PRD; prints branch=, coder-model=,
 #                                   reviewer-model= (.coding-crew/config.json solveFeature.models) and pr=
 #   next <slug>                     the next ready issue, saved for land; prints its ref
@@ -11,6 +11,8 @@
 #                                   push, add a review row naming what needs a person (else mark the draft ready),
 #                                   write .solve-feature/reviewed; last stdout line
 #                                   `FIX: findings=<k> needs-attention=<a> ready=<yes|no|already>`
+#   describe <slug> <pr>            the writer's pr-<pr>.summary.md and fix's Needs attention at the top of the PR
+#                                   body's block, its title the PR's; without a summary the PR is left as it is
 # Env: SOLVE_FEATURE_HOST (the progress comment's host name).
 # Exit: 0 ok; 1 a stop or a precondition miss, its reason also in .solve-feature/stopped (an Actions job's
 # last step fails on it, and on any run that did not end in fix); 2 a usage error; 3 from next
@@ -24,7 +26,7 @@ die() { echo "solve-feature: $*" >&2; mark_stopped "$*"; exit 1; }
 trap 'rc=$?; case $rc in 0|2|3) ;; *) [ -f "$LOGS/stopped" ] || mark_stopped "solve-feature.sh $CMD failed (exit $rc)"; exit 1 ;; esac' EXIT
 usage() {
   [ -z "${1:-}" ] || echo "solve-feature: $1" >&2
-  echo "usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | fix <slug> <pr> <branch>" >&2; exit 2
+  echo "usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>" >&2; exit 2
 }
 
 CMD="${1:-}"; [ $# -eq 0 ] || shift
@@ -38,6 +40,7 @@ case "$CMD" in
   next) [ $# -eq 1 ] || usage; SLUG="$1" ;;
   land) [ $# -eq 3 ] || usage; SLUG="$1" REF="$2" BRANCH="$3" ;;
   fix) [ $# -eq 3 ] && [[ "$2" =~ ^[0-9]+$ ]] || usage; SLUG="$1" PR="$2" BRANCH="$3" REF=review ;;
+  describe) [ $# -eq 2 ] && [[ "$2" =~ ^[0-9]+$ ]] || usage; SLUG="$1" PR="$2" ;;
   *) usage ;;
 esac
 for t in gh jq node git; do command -v "$t" >/dev/null || die "$t not found on PATH"; done
@@ -45,13 +48,13 @@ for t in gh jq node git; do command -v "$t" >/dev/null || die "$t not found on P
 [[ "$SLUG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid feature slug: '$SLUG'"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"; cd "$ROOT"
 LOGS="$ROOT/.solve-feature"
-[ "$CMD" != start ] || rm -f "$LOGS/stopped" "$LOGS/reviewed" "$LOGS"/pr-*.unfixed.md
+[ "$CMD" != start ] || rm -f "$LOGS/stopped" "$LOGS/reviewed" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md
 COMMON="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" CLI=""
 for c in "$ROOT" "$COMMON" "$HOME"; do [ -f "$c/.coding-crew/tracker/cli.mjs" ] && { CLI="$c/.coding-crew/tracker/cli.mjs"; break; }; done
 [ -n "$CLI" ] || die "tracker CLI not found (.coding-crew/tracker/cli.mjs): run install.sh"
 mkdir -p "$LOGS" && echo '*' >"$LOGS/.gitignore" # ignored in any repo, so the tree stays clean
 
-PR_N="" URL="" VIEW="" PRD_TEXT=""
+PR_N="" URL="" VIEW="" PRD_TEXT="" SUMMARY=""
 pr_view() { # sets PR_N and URL (and VIEW) when the branch has an OPEN PR, else clears them
   VIEW=$(gh pr view "$BRANCH" --json number,state,url,isDraft,body 2>/dev/null) || VIEW=""
   if [ "$(jq -r '.state // empty' <<<"$VIEW" 2>/dev/null || true)" = OPEN ]; then
@@ -127,18 +130,22 @@ pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the prd 
   [ -n "$t" ] || t=$(grep -m1 '^# ' "$LOGS/$1.issue.md" | sed 's/^# //')
   printf '%s' "$t"
 }
-pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block rebuilt with this issue appended
+pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block rebuilt with $SUMMARY at its top and this
+  # issue appended (none for an empty <ref>)
   local old="$3" before after old_sections="" title crit sections head tail refs
   if [[ "$old" == *"$BEGIN"* && "$old" == *"$END"* ]]; then
     before=$(awk -v b="$BEGIN" '$0 == b {exit} {print}' <<<"$old")
     after=$(awk -v e="$END" 'f {print} $0 == e {f = 1}' <<<"$old")
-    old_sections=$(awk -v b="$BEGIN" '$0 == b {blk = 1} blk && /^### / {s = 1} blk && /^<\/details>$/ {s = 0; blk = 0} s' <<<"$old")
+    old_sections=$(awk -v b="$BEGIN" '$0 == b {blk = 1} blk && /^<details><summary>Spec/ {d = 1} d && /^### / {s = 1} blk && /^<\/details>$/ {s = 0; d = 0; blk = 0} s' <<<"$old")
   else before="$old" after=""; fi
-  title=$(grep -m1 '^# ' "$LOGS/$2.issue.md" | sed 's/^# //')
-  crit=$(awk '/^## /{f = tolower($0) ~ /^## acceptance criteria/} f' "$LOGS/$2.issue.md")
   sections="$old_sections"
-  [[ "$old_sections" == *"### $1 — "* ]] || sections="${old_sections:+$old_sections$'\n\n'}### $1 — $title"$'\n'"$crit"
-  head="$BEGIN"$'\n'"Implemented by solve-feature (\`$SLUG\`)."$'\n\n'"<details><summary>Spec</summary>"$'\n\n'
+  if [ -n "$1" ] && [[ "$old_sections" != *"### $1 — "* ]]; then
+    title=$(grep -m1 '^# ' "$LOGS/$2.issue.md" | sed 's/^# //')
+    # Plain bullets, not task boxes: GitHub counts a PR's boxes as its open tasks.
+    crit=$(awk '/^## /{f = tolower($0) ~ /^## acceptance criteria/} f' "$LOGS/$2.issue.md" | sed -E 's/^([[:space:]]*)[-*] \[[ xX]\] /\1- /')
+    sections="${old_sections:+$old_sections$'\n\n'}### $1 — $title"$'\n'"$crit"
+  fi
+  head="$BEGIN"$'\n'"${SUMMARY:+$SUMMARY$'\n\n'}Implemented by solve-feature (\`$SLUG\`)."$'\n\n'"<details><summary>Spec</summary>"$'\n\n'
   tail=$'\n</details>\n\n'
   refs=$(node "$CLI" closing-refs --feature-slug "$SLUG") || die "closing-refs failed for '$SLUG' (exit $?, see above)"
   tail+="$refs"$'\n'
@@ -218,9 +225,24 @@ fix() {
     ready=yes note="Marked ready for review: nothing needs attention."
   else ready=already note="Nothing needs attention; the PR was already ready for review."; fi
   progress "review ✓  $result  checks ✓" "$note"
+  if [ -n "$attention" ]; then printf '%s\n' "$attention" >"$LOGS/pr-$PR.attention.md"; else rm -f "$LOGS/pr-$PR.attention.md"; fi
   rm -f "$LOGS/stopped"
   printf 'pr=%s head=%s\n' "$PR" "$(git rev-parse HEAD)" >"$LOGS/reviewed"
   echo "FIX: findings=$total needs-attention=$(grep -c . <<<"$attention" || true) ready=$ready"
+}
+
+# The writer's summary goes inside the block, so a later land's rebuild drops it rather than leave it stale.
+describe() {
+  local f="$LOGS/pr-$PR.summary.md" att="$LOGS/pr-$PR.attention.md" title body
+  [ -f "$f" ] || { echo "solve-feature: warning: no summary at $f; PR #$PR's body is unchanged" >&2; return 0; }
+  title=$(head -n 1 "$f" | sed -n 's/^# //p')
+  SUMMARY=$(if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d')
+  [ ! -s "$att" ] || SUMMARY+=$'\n\n'"## Needs attention"$'\n\n'"$(sed 's/^/- /' "$att")"
+  [ ! -f "$LOGS/prd.md" ] || PRD_TEXT=$(cat "$LOGS/prd.md")
+  body=$(gh pr view "$PR" --json body | jq -r '.body // ""') || die "gh pr view $PR failed"
+  pr_body "" "" "$body" >"$LOGS/pr-$PR.body.md"
+  gh pr edit "$PR" ${title:+--title "$title"} --body-file "$LOGS/pr-$PR.body.md" >/dev/null || die "gh pr edit $PR failed"
+  echo "described PR #$PR"
 }
 
 "$CMD"

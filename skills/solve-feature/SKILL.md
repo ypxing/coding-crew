@@ -38,7 +38,7 @@ A bare word the user gave is the slug: pass it as is.
      otherwise on your own. Wait for it to finish.
    3. `bash <path> land <slug> <ref> <branch>`, with `start`'s `branch=` — always, whatever the
      subagent reported: `land` is what checks and records its result. It prints `pr=<n>`.
-3. **Review and fix**, on `<n>`, the last `pr=` printed (by `land`, else `start`). With none, report
+3. **Review, fix and describe**, on `<n>`, the last `pr=` printed (by `land`, else `start`). With none, report
    `nothing landed: no open PR to review` and end.
    1. `bash <review> prepare <n>` — prints `prompt=<file>` and `reviewer-model=`.
    2. Run a **fresh, read-only subagent** — none of this conversation, the repo's working directory —
@@ -57,6 +57,12 @@ A bare word the user gave is the slug: pass it as is.
      fixes with the checks, commits and pushes them, records the review on the PR's progress comment
      and marks the draft ready when nothing needs a person. Report its last line,
      `FIX: findings=<k> needs-attention=<a> ready=<yes|no|already>`.
+   5. Run a **fresh subagent** — none of this conversation, the repo's working directory — with exactly
+     this prompt, `<repo>` the repo's absolute top level: `Use the write-pr skill on PR #<n>; its intent is
+     <repo>/.solve-feature/pr-<n>.spec.md and its checks passed (<repo>/.solve-feature/pr-<n>.checks.log).
+     Write it to <repo>/.solve-feature/pr-<n>.summary.md`. Wait for it to finish.
+   6. `bash <path> describe <slug> <n>` — puts that summary, and anything needing a person, at the top
+     of the PR body and titles the PR after it.
 
 **Any other non-zero exit stops the run.** Relay the script's message as it printed it (a stop names
 the step, the reason and, for the checks, its log) — after a `solve` stop, with the subagent's own

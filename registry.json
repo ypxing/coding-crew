@@ -75,7 +75,8 @@
         "solve-issue",
         "dep-install",
         "review-pr",
-        "tdd"
+        "tdd",
+        "write-pr"
       ]
     },
     "review-pr": {

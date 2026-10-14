@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature**: the PR now opens with a body a person can read. After `fix`, a fresh subagent runs write-pr
+  (Why / What changes / Risk / Tested) into `.solve-feature/pr-<n>.summary.md`, and the new
+  `solve-feature.sh describe <slug> <pr>` puts it, with any `Needs attention` list, at the top of the PR body and
+  titles the PR after it; the spec and `Closes` lines stay below. Acceptance criteria in the spec are plain bullets,
+  so GitHub no longer shows the PR as "0 of N tasks". write-pr is now a solve-feature dependency.
+
 - **solve-feature, review-pr**: `solve-feature.sh fix` drops the guards no run has needed (PR open, head branch,
   HEAD containing the PR head, the report's `prd` value and findings shape, a reviewer-edited tree) and the
   `pr-<n>.reviewed-head` file `review-pr.sh prepare` wrote for them; the PR still stays a draft on a gap, an unmet spec,
