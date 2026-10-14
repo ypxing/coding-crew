@@ -77,36 +77,15 @@ criterion prescribes, is a fault to record, naming the decision or criterion it 
    these logs run to hundreds of lines.
    Never run the checks yourself; the code half is still judged from the diff.
 3. **Read what the change relies on and affects** — never review a hunk in isolation. Read the
-   full file and its imports, then the callers of what changed, what it calls, and the state it
-   reads or writes (files, config, saved reports, records older versions left behind). A fault in
-   that code the change exposes or depends on is a fault to record even though no hunk touches it.
+   whole of every file, function and prompt the change touches, then its callers, what it calls,
+   and the state it reads or writes (files, config, saved reports, what an older version or an
+   earlier run left behind). Name what the change moves, reorders or re-scopes, find each other
+   consumer of the old behaviour — prompts, docs, helpers, scripts, tests, saved state — and read
+   it as it stands at the branch tip: a sentence, argument or default that still assumes the old
+   behaviour is a fault to record, even in a line the diff never touched. A change of *when*
+   something runs makes every state the old timing left a live input.
    In a per-branch review this item is evidence for the criterion verdicts: a criterion the rest of
    the code contradicts is `unmet`; a fault outside the criteria is never a reason for `unmet`.
-
-   Name what the change moves, reorders or re-scopes (a step that now runs later, a value now
-   computed elsewhere, a condition that now holds at a different time, a format or key now
-   written differently), then find each other consumer of the old behaviour: prompts, docs,
-   helpers, scripts, tests and anything already saved on disk by an earlier version or run. Read
-   each one as it stands at the branch tip and say whether it still holds. A check that passes
-   only because the diff was read and the rest was assumed is not a check.
-
-   A criterion names the line it changes; the defect is usually in the rest of that
-   function, prompt or document, in a sentence, argument or default that still assumes the old
-   behaviour. Read the whole of every function and prompt they name, and check each statement in it
-   against the new behaviour. If the PRD has a compatibility or migration section, run the new path
-   against the state it says older versions left behind: what happens when that state is already
-   there? A change of *when* something runs makes every state the old timing produced a live
-   input: for each piece of saved state the new path reads, ask what an earlier version or run may
-   already have done with it, and what the new path does on top of that. Likewise, every value,
-   command or query whose result depends on when or where it runs must be evaluated under the new
-   timing: say what it yields there, and whether that is still what its reader expects.
-
-   Make that a written list, not a glance: for the function a criterion changes, list
-   every prompt, command and range it builds or hands on, and the saved state it reads, and write
-   one line per item saying what it holds or returns once the change has run. An item whose line
-   you cannot write from the code you have read is a file you have not read yet. A line that
-   contradicts what its reader expects is a fault to record, even in a line the diff never touched.
-
    When the dispatch marks the diff test-only, read each test and the code it exercises, and skip
    caller tracing: tests have no callers.
 
