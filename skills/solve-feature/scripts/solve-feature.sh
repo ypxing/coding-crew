@@ -191,7 +191,7 @@ land() {
 # The fixer's edits are staged before the checks and committed after, so the push carries exactly what was gated.
 fix() {
   local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.md" clog="$LOGS/pr-$PR.checks.log"
-  local checks_dir dep_dir head_oid draft prd rc=0 total sha="" result attention="" ready=no note
+  local checks_dir dep_dir head_oid draft prd rc=0 total sha="" listed="" result attention="" ready=no note
   checks_dir=$(scripts_of solve-issue) dep_dir=$(scripts_of dep-install)
   VIEW=$(gh pr view "$PR" --json headRefOid,isDraft) || die "gh pr view $PR failed"
   PR_N=$PR head_oid=$(jq -r '.headRefOid // empty' <<<"$VIEW") draft=$(jq -r '.isDraft' <<<"$VIEW")
@@ -203,25 +203,27 @@ fix() {
   git add -A
   bash "$checks_dir/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$dep_dir" >"$clog" 2>&1 || rc=$?
   [ "$rc" != 3 ] || stop "review ✓  checks ✗" fix "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand and commit .coding-crew/dev-commands.json" "$clog"
-  [ "$rc" = 0 ] || stop "review ✓  checks ✗" fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH" "$clog"
+  [ "$rc" = 0 ] || stop "review ✓  checks ✗" fix "run-checks.sh exit $rc; once fixed and committed (not pushed), run fix $SLUG $PR $BRANCH" "$clog"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings on PR #$PR"
   git push -q -u origin "$BRANCH" || stop "review ✓  checks ✓" fix "git push failed; once it can push, run fix $SLUG $PR $BRANCH"
 
   # Needs a person: the reviewer's gaps, an unmet spec, each line the fixer left in unfixed.md, and a fixer that
-  # changed nothing (crashed or gave up without saying so).
+  # changed nothing without saying why (it crashed or gave up). "Changed nothing" is HEAD still at the PR's head,
+  # which is why the stops say to commit, not push, before a re-run.
   [ "$(git rev-parse HEAD)" = "$head_oid" ] || sha=$(git rev-parse --short HEAD)
+  # Markdown headings in unfixed.md are not findings ('#2: …' is).
+  [ ! -f "$unfixed" ] || listed=$({ grep -v -E '^[[:space:]]*#+[[:space:]]' "$unfixed" || true; } | sed -E 's/^[[:space:]]*[-*][[:space:]]+//' | grep -v '^[[:space:]]*$' || true)
   attention=$(jq -r '.gaps // [] | .[] | tostring' "$report")
   [ "$prd" = met ] || attention+=$'\n'"the reviewer found the spec unmet"
-  # Markdown headings in unfixed.md are not findings ('#2: …' is).
-  [ ! -f "$unfixed" ] || attention+=$'\n'"$({ grep -v -E '^[[:space:]]*#+[[:space:]]' "$unfixed" || true; } | sed -E 's/^[[:space:]]*[-*][[:space:]]+//')"
-  [ "$total" = 0 ] || [ -n "$sha" ] || attention+=$'\n'"the fixer changed nothing"
+  attention+=$'\n'"$listed"
+  [ "$total" = 0 ] || [ -n "$sha" ] || [ -n "$listed" ] || attention+=$'\n'"the fixer changed nothing"
   rm -f "$unfixed"
   attention=$(grep -v '^[[:space:]]*$' <<<"$attention" || true)
   if [ "$total" = 0 ]; then result="no findings"; else result="$total finding(s)${sha:+, fixed in $sha}"; fi
   if [ -n "$attention" ]; then
     note="Needs attention:"$'\n'"$(sed 's/^/- /' <<<"$attention")"
   elif [ "$draft" = true ]; then
-    gh pr ready "$PR" >/dev/null || stop "review ✓  $result  checks ✓" fix "gh pr ready $PR failed; run fix $SLUG $PR $BRANCH again"
+    gh pr ready "$PR" >/dev/null || stop "review ✓  $result  checks ✓" fix "gh pr ready $PR failed; the fixes are pushed, so run gh pr ready $PR by hand"
     ready=yes note="Marked ready for review: nothing needs attention."
   else ready=already note="Nothing needs attention; the PR was already ready for review."; fi
   progress "review ✓  $result  checks ✓" "$note"

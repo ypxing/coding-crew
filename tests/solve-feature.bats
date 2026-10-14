@@ -659,7 +659,7 @@ fix_stops() {
   TIP=$(git rev-parse HEAD)
   : > "$STATE/checks.log"
   CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
-  fix_stops "run-checks.sh exit 1; once fixed and committed, run fix feat 10 feature/feat"
+  fix_stops "run-checks.sh exit 1; once fixed and committed (not pushed), run fix feat 10 feature/feat"
   [ "$(cat "$STATE/checks.log")" = "--project-root $WORK --main-root $WORK --dep-scripts $HOME/.coding-crew/dep-install/scripts" ]
   local body; body=$(progress_body)
   grep -qx 'review ✓  checks ✗' <<<"$body"
@@ -695,7 +695,7 @@ fix_stops() {
   pushed
   local body; body=$(progress_body)
   grep -qx "review ✓  2 finding(s), fixed in $(git rev-parse --short HEAD)  checks ✓" <<<"$body"
-  grep -qx 'Stopped at fix: gh pr ready 10 failed; run fix feat 10 feature/feat again' <<<"$body"
+  grep -qx 'Stopped at fix: gh pr ready 10 failed; the fixes are pushed, so run gh pr ready 10 by hand' <<<"$body"
   [ ! -e .solve-feature/reviewed ]
 }
 
@@ -709,6 +709,10 @@ fix_stops() {
   grep -qx 'review ✓  2 finding(s)  checks ✓' <<<"$body"
   grep -qx -- '- the fixer changed nothing' <<<"$body"
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 ready=no" ]
+  # A fixer that said why it changed nothing is listed for what it said, not twice.
+  printf -- '- a:1 needs a design call\n- b:2 too\n' > .solve-feature/pr-10.unfixed.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$(awk '/^Needs attention:$/ {f = 1} f' <<<"$(progress_body)")" = "$(printf 'Needs attention:\n- a:1 needs a design call\n- b:2 too')" ]
 }
 
 @test "fix commits a dirty tree as one commit, pushes it, appends one review row and writes reviewed" {

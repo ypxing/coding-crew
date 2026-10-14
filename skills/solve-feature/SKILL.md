@@ -11,7 +11,7 @@ allowed-tools: Bash, shell
 # solve-feature
 
 You drive the loop; a script guards every step. **You do not implement, check, review, fix, commit
-or close anything yourself** — each issue's coder, the reviewer and the fixer are fresh subagents,
+or close anything yourself** — each issue's coder, the reviewer, the fixer and the PR's writer are fresh subagents,
 and the script decides whether their work lands.
 
 Find the scripts once, then run each step as `bash <path> …` (or `bash <review> …`) with the
@@ -68,7 +68,7 @@ A bare word the user gave is the slug: pass it as is.
 the step, the reason and, for the checks, its log) — after a `solve` stop, with the subagent's own
 report — and end; do not retry, fix or close anything.
 Once the cause is fixed, a re-run skips the issues already done and reuses the branch and the PR; a
-`fix` stop names its own recovery.
+stop after an issue closed or a review was fixed names its own recovery.
 
 Run it where an unattended agent may change the checkout — a worktree or a container, not the one
 the user works in. Nothing takes a lock: never start a second run on a slug whose run is still going.
