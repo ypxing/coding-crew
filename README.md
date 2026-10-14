@@ -34,7 +34,8 @@ Then, inside Claude Code, Copilot CLI, Codex CLI or [pi](https://github.com/badl
 
 ```bash
 /crew-grill add rate limiting to the public API   # 👤 plan it together → PRD + issues
-/solve-feature rate-limit                         # 🤖 the crew builds it while you're away
+/crew-afk rate-limit                              # 🤖 the crew builds it in its own worktree while you're away
+/crew-afk status                                  # how each run ended: ready pr=<n>, needs-attention, …
 ```
 
 That's the whole workflow.
@@ -51,7 +52,7 @@ flowchart LR
 
     plan --> issues
 
-    subgraph crew ["🤖 The crew · /solve-feature · while you're away"]
+    subgraph crew ["🤖 The crew · /crew-afk → /solve-feature · while you're away"]
         direction LR
         issues["📋 <b>PRD + issues</b><br/>testable criteria"]
         issues --> c1["🧪 <b>Coder</b><br/>TDD · one issue"]
@@ -85,8 +86,10 @@ flowchart LR
 1. **Plan.** `/crew-grill` questions your idea until the edge cases are decided, then splits the work
    into small issues with testable acceptance criteria. If you're starting from a fuzzy idea,
    `/crew-brainstorm` shapes it first.
-2. **Build.** `/solve-feature` hands each issue, in order, to a fresh coder on one branch. Each one has
-   to pass your own checks and meet its acceptance criteria before it lands in the feature's draft PR.
+2. **Build.** `/crew-afk` starts `/solve-feature` unattended in the feature's own worktree — locally
+   (capped at $10 and an hour), or in an orca or herdr terminal with `--to` — and returns at once.
+   `/solve-feature` hands each issue, in order, to a fresh coder on one branch. Each one has to pass
+   your own checks and meet its acceptance criteria before it lands in the feature's draft PR.
 3. **Review.** A reviewer reads the whole feature against the plan and catches what no single issue
    shows. The crew fixes the findings once, gated by your checks, and the run stops.
 4. **Ship.** The PR is marked ready when nothing needs a person; otherwise it lists what does. You
@@ -96,11 +99,11 @@ flowchart LR
 
 | You want to…                              | Run                                                         |
 | ----------------------------------------- | ----------------------------------------------------------- |
-| 🚀 **Ship a feature overnight**           | `/crew-grill <idea>` → `/solve-feature <slug>`              |
+| 🚀 **Ship a feature overnight**           | `/crew-grill <idea>` → `/crew-afk <slug>`                   |
 | 🐛 **Burn down a bug backlog**            | `/to-issues <ref>` for each bug, then `/solve-feature`      |
 | 🧪 **Cover risky untested code**          | `/add-tests` → `/solve-feature`                             |
 | 📦 **Upgrade dependencies safely**        | `/upgrade-deps` → `/solve-feature`                          |
-| 🔀 **Build several features in parallel** | one `/solve-feature` per feature, each in its own worktree  |
+| 🔀 **Build several features in parallel** | one `/crew-afk <slug>` per feature, each in its own worktree |
 | 💬 **Clear a PR's review comments**       | `/address-pr-comments`                                      |
 | 🎯 **Pair on a single issue yourself**    | `/solve-issue <issue>`                                      |
 
@@ -122,6 +125,7 @@ Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to t
 | `/crew-grill`            | Stress-test a plan and turn it into issues                 |
 | `/crew-brainstorm`       | Shape a fuzzy idea into a design, then issues              |
 | `/to-issues`             | Split a plan into issues, or sharpen an existing one       |
+| `/crew-afk`              | Start a feature's run in its own worktree; see how it ended |
 | `/solve-feature`         | Run one feature's issues on one branch, each one verified  |
 | `/address-pr-comments`   | Fix PR review comments, push once your checks pass         |
 | `/solve-issue`           | Build one issue end to end, yourself                       |

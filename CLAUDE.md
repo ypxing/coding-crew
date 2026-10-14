@@ -6,7 +6,7 @@ Guidance for Claude Code (or any agent) working in this repo.
 
 A distributable collection of AI skills that other projects install via `install.sh`.
 Nothing here runs on its own — this repo is the source; consuming projects are the target.
-For the end-user pipeline (crew-grill/crew-brainstorm → solve-feature), see `README.md`.
+For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → solve-feature), see `README.md`.
 
 ## Working in this repo
 
@@ -25,6 +25,9 @@ node scripts/eval-design-skills.mjs --skill crew-grill --runs 2 --dry-run   # dr
 
 # After editing skills/crew-review/SKILL.md: replay the bugs earlier reviews missed against base and head, judged blind; costs API money
 node scripts/eval-reviewer-misses.mjs --runs 2 --dry-run   # writes each ref's prompts, calls no model; drop --dry-run to run
+
+# One real crew-afk run on the pinned demo repo (scripts/smoke-sprint/demo/), in a clone rebuilt fresh each run; costs API money and opens (then closes) one demo PR
+scripts/smoke-sprint.sh claude > /tmp/smoke.log   # appends a row to scripts/smoke-sprint/RESULTS.md — commit it before cutting the release
 
 # Bring a PR branch up to date with origin/main (local only, never pushes): merge it, resolving CHANGELOG append conflicts
 scripts/sync-pr-with-main.sh <branch>
@@ -46,6 +49,7 @@ The design standard (`skills/_shared/fragments/design-standard.md`, criterion 3)
 - platforms — `platforms.json` (claude, copilot, pi, codex)
 - trackers — local, github (`lib/tracker/`, `lib/tracker/docs/`, `.coding-crew/config.json`'s `tracker` section)
 - dependency-install ecosystems — the checks library's detection and install scripts (`lib/checks/`)
+- dispatch destinations (local, orca, herdr) — `skills/crew-afk/scripts/destinations/`
 
 ## Layer ownership
 

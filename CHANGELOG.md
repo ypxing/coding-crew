@@ -6,6 +6,19 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **crew-afk**: a new, thin `crew-afk` skill. `/crew-afk <feature> [--to local|orca|herdr]` resolves the
+  feature's slug, prepares (or reuses) one worktree per feature at `<repo>/../<repo-name>-worktrees/<slug>`
+  (`.worktreeinclude` entries linked, `.env` copied), starts one `/solve-feature <slug>` run there and returns:
+  locally a detached headless agent capped at $10 and 1 hour (needs `timeout`; macOS: `brew install coreutils`),
+  or an interactive, uncapped agent in an orca terminal or a herdr pane. The host agent names its own platform
+  (`--agent claude|copilot|codex|pi`). `/crew-afk status [<feature>]` prints each run's outcome line, `running`,
+  or why there is none, with the claude session to resume and, for a capped run, how to continue; a second
+  dispatch on a feature whose local run is still going is refused. Cut from the old crew-afk, restorable if
+  missed: the `jq` live-log filter and auto-detecting orca/herdr from `ORCA_ENV`/`HERDR_ENV`. The demo smoke
+  (`scripts/smoke-sprint.sh <platform>`, always the demo, now pinned at `9b9c84c`) runs through `crew-afk.sh
+  dispatch --to local` and requires `ready pr=<n>`; its `--demo`, `--dir` and `--setup-only` flags are gone,
+  and `RESULTS.md` rows are commit / date / platform / result / cost / findings (#485).
+
 - **checks library, dep-install, solve-issue**: every checks script works on the one checkout it is given:
   `--main-root` is gone from `run-checks.sh`, `run.sh`, `gen-override.sh`, `docker-install.sh`, `ensure-env.sh`,
   `host-install.sh`, `resolve-mode.sh` and `preflight.sh` (and `--dep-scripts` from `run-checks.sh`), and a

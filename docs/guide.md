@@ -273,7 +273,7 @@ Other platforms get the same skills under their own skill dir (see the README's 
  └──────────────────────────┬────────────────────────────────────────┘
                             │ issues in the tracker
                             ▼
- /solve-feature <slug> (you trigger this)
+ /crew-afk <slug> → /solve-feature <slug> in the feature's own worktree (or run /solve-feature yourself)
        │
        ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -360,6 +360,23 @@ Only a check that rewrites files on every run needs a non-mutating command in
 **Per-issue requirements.** An issue can list what its checks need that the install doesn't
 guarantee under `## Requires`, one backticked command per bullet (exit 0 = satisfied); `/solve-issue`
 runs each before it starts, and a failing one blocks that issue with the command's output.
+
+**Unattended, in its own worktree.** `/crew-afk <feature>` starts that `/solve-feature` run for you
+and returns at once. It resolves the feature from a likely name, then prepares (or reuses) one
+worktree per feature beside your checkout, at `<repo>/../<repo-name>-worktrees/<slug>`, linking each
+`.worktreeinclude` entry and copying `.env` into it.
+
+| `--to` | Where the run goes |
+| --- | --- |
+| `local` (default) | A detached headless agent, capped at $10 (claude's `--max-budget-usd`) and 1 hour; it logs to `<worktree>/.solve-feature/run.log` (needs `timeout`, on macOS `brew install coreutils`) |
+| `orca` | An orca-managed worktree and an interactive agent in an orca terminal, uncapped: you watch and steer it |
+| `herdr` | An interactive agent in a new herdr pane on the worktree, uncapped |
+
+`/crew-afk status [<feature>]` prints each run's outcome line (`ready pr=<n>`, `needs-attention pr=<n>`
+or `stopped: …`), `running (pid <n>)`, or why there is none — with the `claude --resume` line to pick up
+a crashed session and, when the run hit its cap, `re-run /crew-afk <slug> to continue`: a re-run skips
+the issues already done. A second `/crew-afk` on a feature whose local run is still going is refused.
+Nothing removes a worktree: `git worktree remove <path>` once you are done with it.
 
 ---
 
