@@ -202,7 +202,7 @@ main checkout (create the directory and file if missing; never rewrite existing 
 
 `<file:line>` is where the comment pointed (the file alone for a top-level comment), `<commit sha>`
 the short sha of the commit that fixed it. A comment whose body contains `crew-finding:` is a
-finding crew-afk or review-pr posted — their review already caught it — so it is not recorded.
+finding a crew reviewer posted — its review already caught it — so it is not recorded.
 
 Writing the file is best-effort: a failed write is reported in the Summary (Step 6) with the error
 and never stops the skill.

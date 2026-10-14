@@ -52,6 +52,8 @@ REPO/.claude/skills/crew-brainstorm/ /
 REPO/.claude/skills/crew-brainstorm/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/crew-grill/ /
 REPO/.claude/skills/crew-grill/SKILL.md exec=0 unrendered=0
+REPO/.claude/skills/crew-review/ /
+REPO/.claude/skills/crew-review/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/dep-install/ /
 REPO/.claude/skills/dep-install/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/dep-install/references/ /
@@ -78,9 +80,6 @@ REPO/.claude/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/domain-modeling/references/ /
 REPO/.claude/skills/domain-modeling/references/adr-format.md exec=0
 REPO/.claude/skills/domain-modeling/references/context-format.md exec=0
-REPO/.claude/skills/review-pr/ /
-REPO/.claude/skills/review-pr/SKILL.md exec=0 unrendered=0
-REPO/.claude/skills/review-pr/reviewer-prompt.md exec=0
 REPO/.claude/skills/solve-feature/ /
 REPO/.claude/skills/solve-feature/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/solve-feature/hosts/ /
@@ -202,7 +201,7 @@ REPO/.coding-crew/dep-install/scripts/run.sh exec=1
 REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-REPO/.coding-crew/manifest.json c87e9e1e1cfe72a06b0a62c40d907150d61386be
+REPO/.coding-crew/manifest.json 7f03b5649246653371e0a87be78b18960f60bcf3
 REPO/.coding-crew/skills/ /
 REPO/.coding-crew/skills/_shared/ /
 REPO/.coding-crew/skills/_shared/fragments/ /

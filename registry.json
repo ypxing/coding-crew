@@ -120,7 +120,7 @@
       ]
     },
     "address-pr-comments": {
-      "version": "1.6.2",
+      "version": "1.6.3",
       "source-dir": "address-pr-comments",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "scripts": [

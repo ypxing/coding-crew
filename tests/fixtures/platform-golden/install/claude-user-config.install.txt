@@ -83,7 +83,7 @@ HOME/.coding-crew/dep-install/scripts/run.sh exec=1
 HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-HOME/.coding-crew/manifest.json c87e9e1e1cfe72a06b0a62c40d907150d61386be
+HOME/.coding-crew/manifest.json 7f03b5649246653371e0a87be78b18960f60bcf3
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
 HOME/.coding-crew/skills/_shared/fragments/ /
@@ -166,6 +166,8 @@ CONFIG/skills/crew-brainstorm/ /
 CONFIG/skills/crew-brainstorm/SKILL.md exec=0 unrendered=0
 CONFIG/skills/crew-grill/ /
 CONFIG/skills/crew-grill/SKILL.md exec=0 unrendered=0
+CONFIG/skills/crew-review/ /
+CONFIG/skills/crew-review/SKILL.md exec=0 unrendered=0
 CONFIG/skills/dep-install/ /
 CONFIG/skills/dep-install/SKILL.md exec=0 unrendered=0
 CONFIG/skills/dep-install/references/ /
@@ -192,9 +194,6 @@ CONFIG/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 CONFIG/skills/domain-modeling/references/ /
 CONFIG/skills/domain-modeling/references/adr-format.md exec=0
 CONFIG/skills/domain-modeling/references/context-format.md exec=0
-CONFIG/skills/review-pr/ /
-CONFIG/skills/review-pr/SKILL.md exec=0 unrendered=0
-CONFIG/skills/review-pr/reviewer-prompt.md exec=0
 CONFIG/skills/solve-feature/ /
 CONFIG/skills/solve-feature/SKILL.md exec=0 unrendered=0
 CONFIG/skills/solve-feature/hosts/ /
