@@ -3,6 +3,8 @@
 # scripts/cut-release.sh's demo-smoke gate (PRD D16/B8), always under --dry-run, in a throwaway
 # repo with an upstream: no tag is made, nothing is pushed.
 
+load helpers/smoke-demo
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   R="$BATS_TEST_TMPDIR/repo"
@@ -115,4 +117,25 @@ commit_file() {
   printf 'SMOKE: PASS (claude)\n' > "$LOG"
   release --demo-smoke "$LOG" --no-demo-smoke why
   [ "$status" -ne 0 ]
+}
+
+@test "the log of a stubbed demo smoke run, its RESULTS.md row committed after it, is accepted" {
+  # The smoke as cut-release meets it: run from this repo's own checkout, with install.sh stubbed to lay out
+  # what a claude project install leaves, so crew-afk-commit: is this repo's HEAD.
+  cp "$REPO_ROOT/scripts/smoke-sprint.sh" "$R/scripts/"
+  cp "$REPO_ROOT/platforms.json" "$R/"
+  printf '#!/usr/bin/env bash\nmkdir -p "$3/.claude/skills/crew-afk/scripts" "$3/.coding-crew/lib"\necho {} > "$3/.coding-crew/manifest.json"\n' > "$R/install.sh"
+  chmod +x "$R/install.sh"
+  mkdir -p "$R/scripts/smoke-sprint"
+  printf '| commit | date | platform | result | cost | findings |\n|---|---|---|---|---|---|\n' > "$R/scripts/smoke-sprint/RESULTS.md"
+  git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm smoke
+  export TMPDIR="$BATS_TEST_TMPDIR/tmp"
+  mkdir -p "$TMPDIR"
+  make_smoke_demo
+  "$R/scripts/smoke-sprint.sh" claude > "$LOG"
+  grep -qx 'SMOKE: PASS (claude, demo)' "$LOG"
+  commit_file scripts/smoke-sprint/RESULTS.md
+  release --demo-smoke "$LOG"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"would tag HEAD as v1.0.0"* ]]
 }
