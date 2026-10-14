@@ -825,24 +825,31 @@ EOF
 }
 
 @test "no agent CLI is launched: agent.sh is gone and neither skill mentions --agent, SOLVE_FEATURE_AGENT, --budget or afk.models" {
-  [ ! -e "$REPO_ROOT/skills/review-pr/scripts/agent.sh" ]
-  ! grep -rnE -- '--agent|SOLVE_FEATURE_AGENT|--budget|afk\.models' "$REPO_ROOT/skills/solve-feature" "$REPO_ROOT/skills/review-pr" || false
+  ! grep -rnE -- '--agent|SOLVE_FEATURE_AGENT|--budget|afk\.models' "$REPO_ROOT/skills/solve-feature" "$REPO_ROOT/skills/crew-review" || false
 }
 
-@test "install.sh claude --skill solve-feature ships the script and the reviewer's prompt, no review-pr.sh or agent.sh, the Actions host" {
+@test "SKILL.md runs its reviewer through the crew-review skill on the spec start wrote, names no other skill's files, and no SOLVE_FEATURE_HOST" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
+  grep -qF 'Use the crew-review skill on branch <branch> against the spec in <repo>/.solve-feature/spec.md; write the report to <repo>/.solve-feature/pr-<n>.review.json' "$skill"
+  ! grep -qF '<skill-dir>/..' "$skill" || false
+  ! grep -qF 'SOLVE_FEATURE_HOST' "$skill" || false
+  ! grep -qF 'review-pr' "$skill" || false
+}
+
+@test "install.sh claude --skill solve-feature ships the script, crew-review and the Actions host" {
   local target="$TEMP_DIR/target"
   mkdir -p "$target" && git -C "$target" init -q -b main
   TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" claude --skill solve-feature
   [ "$status" -eq 0 ]
   [ -f "$target/.claude/skills/solve-feature/scripts/solve-feature.sh" ]
-  [ -f "$target/.claude/skills/review-pr/reviewer-prompt.md" ]
-  [ ! -e "$target/.coding-crew/review-pr" ] && [ ! -e "$target/.coding-crew/solve-feature" ]
+  [ ! -e "$target/.claude/skills/review-pr" ]
+  [ ! -e "$target/.coding-crew/solve-feature" ]
   [ -f "$target/.claude/skills/solve-feature/hosts/github-actions.yml" ]
   [ -f "$target/.claude/skills/solve-feature/SKILL.md" ]
-  [ -f "$target/.claude/skills/review-pr/SKILL.md" ]
+  [ -f "$target/.claude/skills/crew-review/SKILL.md" ]
   [ -f "$target/.coding-crew/solve-issue/scripts/run-checks.sh" ]
   [ -f "$target/.coding-crew/dep-install/scripts/run.sh" ]
-  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install","review-pr","tdd","write-pr"]' ]
+  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install","crew-review","tdd","write-pr"]' ]
 }
 
 # --- hosts -------------------------------------------------------------------------------

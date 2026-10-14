@@ -58,21 +58,21 @@
       ]
     },
     "solve-feature": {
-      "version": "0.8.0",
+      "version": "0.9.0",
       "source-dir": "solve-feature",
-      "description": "Run one feature's ready-for-agent issues in order on one branch, each by a fresh coder subagent gated by the project's checks, in a draft PR carrying the spec; at the end it is reviewed, its findings fixed, and marked ready when nothing needs a person.",
+      "description": "Run one feature's ready-for-agent issues in order on one branch, each by a fresh coder subagent gated by the project's checks, in a draft PR; at the end it is reviewed by crew-review, its findings fixed, its body written and marked ready when nothing needs a person.",
       "deps": [
         "solve-issue",
         "dep-install",
-        "review-pr",
+        "crew-review",
         "tdd",
         "write-pr"
       ]
     },
-    "review-pr": {
-      "version": "0.4.0",
-      "source-dir": "review-pr",
-      "description": "One read-only subagent reviews a checked-out PR against its spec, for what breaks and for the repo's documented rules; the agent posts one review and marks a draft ready when the spec is met."
+    "crew-review": {
+      "version": "0.1.0",
+      "source-dir": "crew-review",
+      "description": "A fresh read-only subagent reviews a branch or PR against the spec its caller names, for what breaks and for the repo's documented rules, and writes one JSON report; it posts nothing and marks nothing ready."
     },
     "tdd": {
       "version": "1.2.4",
