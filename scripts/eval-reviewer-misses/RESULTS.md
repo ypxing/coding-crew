@@ -69,6 +69,40 @@ Total cost: $45.21 (judge included). Base `main`, head `worktree`, 2 run(s) each
 - tracker-agnostic-feature head #2: replace-deletes-known-blocker not caught, worktree-cli-lookup not caught; 2 finding(s), 2 distinct — It reports the github `known`-blocker rewrite drop and the criteria-heading regex, but neither expected miss; it drops the local case, reasoning that `--replace` deletes the open issues.
 
 
+## Lean feature reviewer (`afk-reviewer-lean`)
+
+`node scripts/eval-reviewer-misses.mjs --runs 2`, base `main`, head `afk-reviewer-lean` (feature.md cut to review-pr's
+three questions, reviewer.md Step 2 item 3 and quality.md trimmed). Reviewers on opus, judge on opus. About $61 over two
+sittings (a usage limit stopped the first at 15 of 36 runs; `--resume` reused them). The cost column counts only the
+second sitting.
+
+| case | version | runs ok | caught (per expected miss) | mean findings (raw) | mean findings (distinct) | cost |
+|---|---|---|---|---|---|---|
+| afk-effectiveness-feature-prd-props | base | 2/2 | signal-no-run-end 2/2; release-gate-version-only 0/2; registry-description-stale 0/2 | 6.0 | 5.0 | $0.00 |
+| afk-effectiveness-feature-prd-props | head | 2/2 | signal-no-run-end 2/2; release-gate-version-only 0/2; registry-description-stale 0/2 | 7.0 | 7.0 | $0.23 |
+| afk-effectiveness-feature | base | 2/2 | signal-no-run-end 0/2; release-gate-version-only 0/2; registry-description-stale 0/2 | 8.5 | 8.5 | $2.39 |
+| afk-effectiveness-feature | head | 2/2 | signal-no-run-end 0/2; release-gate-version-only 0/2; registry-description-stale 0/2 | 5.0 | 5.0 | $0.23 |
+| force-keeps-stamp | base | 2/2 | force-keeps-stamp 2/2 | 3.0 | 3.0 | $0.00 |
+| force-keeps-stamp | head | 2/2 | force-keeps-stamp 2/2 | 1.5 | 1.5 | $0.18 |
+| lightweight-flow-feature | base | 2/2 | tracker-undefined 2/2; eval-close-stale 1/2; eval-round1-conflict 0/2 | 7.5 | 8.5 | $0.00 |
+| lightweight-flow-feature | head | 2/2 | tracker-undefined 2/2; eval-close-stale 2/2; eval-round1-conflict 0/2 | 9.0 | 9.5 | $1.37 |
+| promote-after-merge-207 | base | 2/2 | repromote-earlier-run 2/2 | 2.0 | 2.5 | $1.69 |
+| promote-after-merge-207 | head | 2/2 | repromote-earlier-run 1/2 | 1.5 | 1.5 | $1.85 |
+| promote-after-merge-feature | base | 2/2 | triage-diff-inverted 1/2 | 2.5 | 2.5 | $3.32 |
+| promote-after-merge-feature | head | 2/2 | triage-diff-inverted 2/2 | 3.5 | 3.5 | $3.26 |
+| shim-mutual-exec | base | 2/2 | shim-mutual-exec 0/2 | 2.5 | 2.5 | $2.94 |
+| shim-mutual-exec | head | 2/2 | shim-mutual-exec 0/2 | 2.0 | 2.0 | $2.47 |
+| tracker-agnostic-drain | base | 2/2 | unknown-blocker-mapped 0/2 | 1.5 | 1.5 | $1.84 |
+| tracker-agnostic-drain | head | 2/2 | unknown-blocker-mapped 0/2 | 1.5 | 1.5 | $1.64 |
+| tracker-agnostic-feature | base | 2/2 | replace-deletes-known-blocker 1/2; worktree-cli-lookup 0/2 | 6.0 | 6.5 | $4.85 |
+| tracker-agnostic-feature | head | 2/2 | replace-deletes-known-blocker 0/2; worktree-cli-lookup 1/2 | 3.0 | 1.5 | $4.99 |
+
+**Pass rule (head no worse than base, a tie passes): PASS.** Head caught 12 of 32, base 11 of 32, with fewer findings
+(3.7 against 4.5 distinct per run). tracker-agnostic-feature head #1 returned an empty output (a failed run counted ok;
+fixed on `review-pr-one-skill`), so head's 12 is of 30 that ran. Per case the two trade single catches both ways
+(promote-after-merge-207 and replace-deletes-known-blocker one fewer, lightweight-flow-feature and
+promote-after-merge-feature one more): at 2 runs that is noise.
+
 ## From an escaped.md line to a case
 
 `/address-pr-comments` appends a line to `.scratch/<slug>/reviews/escaped.md` for each comment it
