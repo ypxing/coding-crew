@@ -1,7 +1,7 @@
 # Reference — Web Security (OWASP, HTTP-surface specific)
 
 Loaded when the repo has a web or HTTP surface (browser code, templates, or a server framework).
-These extend — not replace — the always-on CRITICAL classes in the protocol (hardcoded
+These extend — not replace — the security classes in the feature protocol (hardcoded
 credentials, injection, path traversal, auth bypass, broken access control, sensitive data
 exposure, insecure dependencies).
 

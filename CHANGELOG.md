@@ -6,6 +6,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **crew-afk**: the feature reviewer's protocol is cut to three questions, as review-pr's: what the PRD asks for that
+  is missing or different and what was built that it does not need, what a real run breaks (leftover references,
+  undefined names in shared text and security classes kept as checks), and which documented rule the diff breaks.
+  The always-on class list, the two-pass procedure, the Pre-Report Gate and the written-list tracing step are
+  replaced by a few lines; `### Dropped` stays. The always-loaded `quality.md` drops its size, style and performance
+  thresholds and keeps only defects (swallowed errors, untested paths, hollow tests, a second reader, dead code, comments
+  and tests that pin prose).
+
 - **review-pr, solve-feature**: review-pr is one skill and one prompt file; `review-pr.sh` is gone (nothing reads an
   existing `.coding-crew/review-pr/` any more; delete it). The reviewer gathers the PR's spec and diff itself and
   answers three questions — what the spec asks for that is missing or different and what was built that it did not ask
@@ -29,7 +37,6 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   `FIX: findings=<k> needs-attention=<a> ready=<yes|no|already>` (no `fixed=`), and the progress row reads
   `<k> finding(s), fixed in <sha>`. A rejected push in `land` now stops naming the `land` to re-run, since a plain
   re-run would skip the already-closed issue and leave its spec out of the PR body.
-
 - **solve-feature, address-pr-comments**: a solve-feature run fixes its review's findings itself instead of posting
   them. After the read-only reviewer (`review-pr.sh prepare` and its prompt), a fresh subagent fixes every finding with
   the tdd skill, and the new `solve-feature.sh fix <slug> <pr> <branch>` gates the fixes with the checks, commits and
