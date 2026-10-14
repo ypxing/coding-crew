@@ -152,10 +152,39 @@ YML
   [ "$output" = "/app" ]
 }
 
-@test "the override pins no platform, mounts no CA bundle and passes no proxy variables" {
-  run env IS_SANDBOX=1 CREW_DOCKER_PLATFORM=amd64 bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --dry-run
+# stub_uname_m <arch> — `uname -m` prints <arch>; any other uname call goes to the real one.
+stub_uname_m() {
+  local real
+  real=$(command -v uname)
+  printf '#!/usr/bin/env bash\n[ "$1" = -m ] && { echo %s; exit 0; }\nexec %s "$@"\n' "$1" "$real" > "$STUB/uname"
+  chmod +x "$STUB/uname"
+}
+
+# The override's later -f wins the compose merge, so its platform key overrides a project's own
+# linux/amd64 pin: an arm64 host then runs native images instead of flaky qemu emulation.
+@test "the override pins every service to the host's architecture, whatever CREW_DOCKER_PLATFORM says" {
+  stub_uname_m aarch64
+  local services
+  services=$(bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --query services | wc -l)
+  run env CREW_DOCKER_PLATFORM=amd64 bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --dry-run
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^    platform: linux/arm64$' <<<"$output")" -eq "$services" ]
+  [[ "$output" != *"linux/amd64"* ]]
+  stub_uname_m x86_64
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --dry-run
+  [[ "$output" == *"    platform: linux/amd64"* ]]
+}
+
+@test "an unrecognised host architecture pins no platform, leaving the project's own" {
+  stub_uname_m riscv64
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" != *"platform:"* ]]
+}
+
+@test "the override mounts no CA bundle and passes no proxy variables" {
+  run env IS_SANDBOX=1 bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --dry-run
+  [ "$status" -eq 0 ]
   [[ "$output" != *"ca-certificates"* ]]
   [[ "$output" != *"PROXY"* && "$output" != *"CA_CERTS"* ]]
   # a project's .npmrc ${NPM_TOKEN} still resolves from the invoking shell

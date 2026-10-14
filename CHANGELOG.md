@@ -45,7 +45,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   `detect-compose-bypass.sh`, the `docker-compose` (v1) shim, the install lock, host-run install commands and
   their volume probe (an `install` command that runs docker itself is now refused, exit 5),
   `gen-override.sh --query owner-prefix|platform|state-path`, host-install's fingerprint fast path and
-  `--force`, and `CREW_DOCKER_PLATFORM` with the override's `platform:` pin. Also cut, restorable if a
+  `--force`, and `CREW_DOCKER_PLATFORM` (the override always pins the host's architecture). Also cut, restorable if a
   corporate proxy needs it: the sandbox CA bundle mount and proxy variable passthrough (`IS_SANDBOX`,
   `--sandbox`, `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`, `SSL_CERT_FILE`) (#484).
 

@@ -272,6 +272,14 @@ for dir in "${MANIFEST_DIRS[@]}"; do
   VOL_PATHS+=("$container_path")
 done
 
+# The override's platform key wins over a project's own pin, so an arm64 host runs native images
+# instead of flaky qemu emulation. An unrecognised arch emits no key: a wrong platform is worse.
+case "$(uname -m 2>/dev/null)" in
+  x86_64|amd64)  HOST_PLATFORM="linux/amd64" ;;
+  arm64|aarch64) HOST_PLATFORM="linux/arm64" ;;
+  *)             HOST_PLATFORM="" ;;
+esac
+
 if [[ -n "$QUERY" ]]; then
   case "$QUERY" in
     services)      printf '%s\n' "${SERVICES[@]}" ;;
@@ -289,6 +297,7 @@ generate_yaml() {
   echo "services:"
   for svc in "${SERVICES[@]}"; do
     echo "  ${svc}:"
+    [[ -z "$HOST_PLATFORM" ]] || echo "    platform: ${HOST_PLATFORM}"
     if [[ ${#ECO_ENV_PASSTHROUGH[@]} -gt 0 || ${#GIT_ENV_LINES[@]} -gt 0 ]]; then
       echo "    environment:"
       for var in "${ECO_ENV_PASSTHROUGH[@]+"${ECO_ENV_PASSTHROUGH[@]}"}"; do
@@ -329,6 +338,7 @@ else
   echo "  project:   $PROJECT_NAME (this checkout's own compose project)"
   echo "  ecosystem: $ECO_NAME"
   echo "  services:  $(IFS=', '; echo "${SERVICES[*]}")"
+  echo "  platform:  ${HOST_PLATFORM:-unset, project pin unchanged}"
   if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
     echo "  git:       the shared .git mounted read-only at /git-common (hooks/ and info/ writable via wt_${PROJ_SLUG}_git_hooks and wt_${PROJ_SLUG}_git_info)${GIT_ENV_LINES[0]:+; GIT_DIR=${GIT_ENV_LINES[1]#GIT_DIR=}}"
   elif [[ "$GIT_MOUNT" == "off" ]]; then
