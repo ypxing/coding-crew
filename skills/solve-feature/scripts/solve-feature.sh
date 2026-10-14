@@ -20,10 +20,9 @@
 set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGS=""
-mark_stopped() { [ -n "$LOGS" ] || return 0; { mkdir -p "$LOGS" && echo '*' >"$LOGS/.gitignore" && printf '%s\n' "$*" >"$LOGS/stopped"; } 2>/dev/null || true; }
-die() { echo "solve-feature: $*" >&2; mark_stopped "$*"; exit 1; }
-# Any other failure (set -e: a rejected push, a failed gh call) also exits 1 with a reason, so an Actions job sees it.
-trap 'rc=$?; case $rc in 0|2|3) ;; *) [ -f "$LOGS/stopped" ] || mark_stopped "solve-feature.sh $CMD failed (exit $rc)"; exit 1 ;; esac' EXIT
+# The run's one-line result, read by a host such as the Actions job; a missing file means it never finished.
+outcome() { [ -z "$LOGS" ] || printf '%s\n' "$1" >"$LOGS/outcome"; }
+die() { echo "solve-feature: $*" >&2; outcome "stopped: $CMD failed: $*"; exit 1; }
 usage() {
   [ -z "${1:-}" ] || echo "solve-feature: $1" >&2
   echo "usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>" >&2; exit 2
@@ -47,12 +46,12 @@ for t in gh jq node git; do command -v "$t" >/dev/null || die "$t not found on P
 # The tracker's own SLUG rule: the slug reaches argv, so nothing else gets through.
 [[ "$SLUG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid feature slug: '$SLUG'"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"; cd "$ROOT"
+mkdir -p "$ROOT/.solve-feature" && echo '*' >"$ROOT/.solve-feature/.gitignore" # ignored in any repo, so the tree stays clean
 LOGS="$ROOT/.solve-feature"
-[ "$CMD" != start ] || rm -f "$LOGS/stopped" "$LOGS/reviewed" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md
+[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md
 COMMON="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" CLI=""
 for c in "$ROOT" "$COMMON" "$HOME"; do [ -f "$c/.coding-crew/tracker/cli.mjs" ] && { CLI="$c/.coding-crew/tracker/cli.mjs"; break; }; done
 [ -n "$CLI" ] || die "tracker CLI not found (.coding-crew/tracker/cli.mjs): run install.sh"
-mkdir -p "$LOGS" && echo '*' >"$LOGS/.gitignore" # ignored in any repo, so the tree stays clean
 
 PR_N="" URL="" VIEW="" PRD_TEXT="" SUMMARY=""
 pr_view() { # sets PR_N and URL (and VIEW) when the branch has an OPEN PR, else clears them
@@ -68,19 +67,19 @@ start() {
   [ -f "$ROOT/.coding-crew/dev-commands.json" ] || die "no .coding-crew/dev-commands.json: run /solve-issue or dep-install once by hand and commit it"
   # solve-issue's Step 7 must close the issue itself: land sees `next` move on.
   [ -z "${CREW_ORCHESTRATED:-}" ] || die "CREW_ORCHESTRATED is set: solve-issue would leave every close to crew-afk; unset it"
+  local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
+  grep -qxF "$SLUG" <<<"$features" || die "no feature '$SLUG'; features: $(paste -sd' ' - <<<"$features")"
   # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase
   # an existing one: a re-run lands on it as the last run left it.
   git fetch -q origin
-  local default cur rc=0 cfg="$ROOT/.coding-crew/config.json"
+  local default rc=0 cfg="$ROOT/.coding-crew/config.json"
   default=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
-  default=${default:-main} cur=$(git branch --show-current)
-  [ -n "$cur" ] || die "HEAD is detached: check out a branch first"
-  if [ "$cur" = "$default" ]; then
-    BRANCH=${BRANCH:-feature/$SLUG}
-    if git show-ref --verify -q "refs/heads/$BRANCH"; then git checkout -q "$BRANCH"
-    elif git show-ref --verify -q "refs/remotes/origin/$BRANCH"; then git checkout -q -t "origin/$BRANCH"
-    else git checkout -q -b "$BRANCH" "origin/$default" && git push -q -u origin "$BRANCH"; fi
-  else BRANCH=$cur; fi
+  default=${default:-main}
+  [ "$BRANCH" != "$default" ] || die "--branch '$BRANCH': '$default' is the default branch; name a feature branch"
+  BRANCH=${BRANCH:-feature/$SLUG}
+  if git show-ref --verify -q "refs/heads/$BRANCH"; then git checkout -q "$BRANCH"
+  elif git show-ref --verify -q "refs/remotes/origin/$BRANCH"; then git checkout -q -t "origin/$BRANCH"
+  else git checkout -q -b "$BRANCH" "origin/$default" && git push -q -u origin "$BRANCH"; fi
   node "$CLI" prd --feature-slug "$SLUG" >"$LOGS/prd.md" || rc=$?
   case $rc in 0) ;; 3) rm -f "$LOGS/prd.md" ;; *) die "reading the feature's PRD failed (exit $rc)" ;; esac
   pr_view
@@ -119,7 +118,7 @@ stop() { # <row> <step> <reason> [<log>] — a Stopped-at note (with the log's l
   [ -z "${4:-}" ] || note+=$'\n```\n'"$(tail -n 20 "$4")"$'\n```'
   progress "$1" "$note"
   echo "solve-feature: $REF $2 failed: $3${4:+ — log: $4}"
-  mark_stopped "$REF $2 failed: $3"; exit 1
+  outcome "stopped: $REF $2 failed: $3"; exit 1
 }
 
 # The PR body: address-pr-comments finds a solve-feature PR by the begin line and reads its slug from the

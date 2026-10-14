@@ -90,6 +90,11 @@ case "\$2" in
     done; exit 3 ;;
   fetch) [ -f "\$STATE/\${3//\//_}.md" ] || exit 3; cat "\$STATE/\${3//\//_}.md" ;;
   prd) [ -f "\$STATE/prd.md" ] || exit 3; cat "\$STATE/prd.md" ;;
+  features) printf 'feat\topen\t2\nother\tclosed\t0\n' ;;
+  # \`known\`: every issue but a PRD: one, named <number>-<title>.md, or by its ref's basename.
+  known) mkdir -p "\$6"
+    jq -r '.[] | select(.title | test("^PRD:") | not) | "\\(.ref // (.number | tostring))\\t\\(.ref // "\\(.number)-\\(.title | ascii_downcase).md")"' "\$STATE/issues.json" |
+      while IFS=\$'\\t' read -r r n; do cp "\$STATE/\${r//\\//_}.md" "\$6/\${n##*/}"; done ;;
   closing-refs) [ -z "\${CLOSING_REFS_RC:-}" ] || { echo "gh: boom" >&2; exit "\$CLOSING_REFS_RC"; }
     [ "\${TRACKER_KIND:-github}" = github ] || exit 0; jq -r 'sort_by(.number) | .[] | select(.state == "OPEN" and any(.labels[]; .name == "awaiting-merge")) | "Closes #\(.number)"' "\$STATE/issues.json" ;;
   *) exit 2 ;;
@@ -253,6 +258,16 @@ land_ready() {
   [ ! -f "$STATE/gh.log" ]
 }
 
+@test "start with a slug features does not list exits 1 naming it and the listed slugs, before any checkout or push" {
+  run bash "$SCRIPT" start feta
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no feature 'feta'; features: feat other"* ]]
+  [ "$(git branch --show-current)" = main ]
+  ! git show-ref --verify -q refs/heads/feature/feta
+  [ "$(git ls-remote --heads origin | grep -c .)" -eq 1 ]
+  [ "$(cat .solve-feature/outcome)" = "stopped: start failed: no feature 'feta'; features: feat other" ]
+}
+
 # --- start: the branch ---------------------------------------------------------------
 
 @test "start on the default branch creates feature/<slug> from origin/main, pushes it with upstream and prints branch=" {
@@ -284,27 +299,42 @@ land_ready() {
   [ "$(git rev-parse --abbrev-ref '@{upstream}')" = origin/remote-only ]
 }
 
-@test "start on another branch uses that branch, ignoring --branch" {
+@test "start from another branch or a detached HEAD switches to --branch, else feature/<slug>" {
   git checkout -q -b topic
   run bash "$SCRIPT" start feat --branch other
-  [ "$(out branch)" = topic ]
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out branch)" = other ]
+  [ "$(git branch --show-current)" = other ]
+  git checkout -q topic
+  run bash "$SCRIPT" start feat
+  [ "$(out branch)" = feature/feat ]
+  [ "$(git branch --show-current)" = feature/feat ]
+  git checkout -q --detach main
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out branch)" = feature/feat ]
+  [ "$(git branch --show-current)" = feature/feat ]
+}
+
+@test "start --branch naming the default branch exits 1 naming it" {
+  git checkout -q -b topic
+  run bash "$SCRIPT" start feat --branch main
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"'main' is the default branch"* ]]
   [ "$(git branch --show-current)" = topic ]
-  ! git show-ref --verify -q refs/heads/other
-  ! git show-ref --verify -q refs/heads/feature/feat
 }
 
 # --- start: what it prints and saves -------------------------------------------------
 
 @test "start prints coder-model= and reviewer-model= from solveFeature.models only (empty when unset), pr= for the branch's open PR" {
-  git checkout -q -b topic
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ]
-  [ "$output" = "$(printf 'branch=topic\ncoder-model=\nreviewer-model=\npr=')" ]
+  [ "$output" = "$(printf 'branch=feature/feat\ncoder-model=\nreviewer-model=\npr=')" ]
 
   echo '{"tracker":{"kind":"github"},"afk":{"models":{"claude":{"coder":"haiku","reviewer":"haiku"}}}}' > .coding-crew/config.json
   git commit -q -am "afk models"
   PR_EXISTS=1 run bash "$SCRIPT" start feat
-  [ "$output" = "$(printf 'branch=topic\ncoder-model=\nreviewer-model=\npr=9')" ]
+  [ "$output" = "$(printf 'branch=feature/feat\ncoder-model=\nreviewer-model=\npr=9')" ]
 
   echo '{"tracker":{"kind":"github"},"solveFeature":{"models":{"coder":"sonnet","reviewer":"opus"}}}' > .coding-crew/config.json
   git commit -q -am "solveFeature models"
