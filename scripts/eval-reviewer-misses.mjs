@@ -2,7 +2,7 @@
 // eval-reviewer-misses.mjs — replay eval: does the reviewer report bugs in unchanged code a change
 // affected? Base and head review each case; a judge checks outputs blind. Maintainer-only, costs API money.
 // Usage: node scripts/eval-reviewer-misses.mjs [--base <git ref>] [--head <git ref>|worktree]
-//   [--case <name>]... [--runs N] [--model opus] [--effort <level>] [--subagents]
+//   [--reviewer afk|review-pr] [--case <name>]... [--runs N] [--model opus] [--effort <level>] [--subagents]
 //   [--judge-model opus] [--parallel 4] [--dry-run] [--resume <out dir>]
 // Each ref builds its prompts from its own files; a reviewer or judge CLI failure is a failed run.
 
@@ -22,7 +22,7 @@ const EVAL_NOTE = (prdPath) =>
   `Modify nothing. The PRD is at ${prdPath}.`;
 
 function parseArgs(argv) {
-  const o = { base: "main", head: "worktree", cases: [], runs: 2, model: "opus", judgeModel: "opus",
+  const o = { base: "main", head: "worktree", reviewer: "afk", cases: [], runs: 2, model: "opus", judgeModel: "opus",
     effort: null, subagents: false, parallel: 4, dryRun: false, resume: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], v = () => {
@@ -32,6 +32,7 @@ function parseArgs(argv) {
     switch (a) {
       case "--base": o.base = v(); break;
       case "--head": o.head = v(); break;
+      case "--reviewer": o.reviewer = v(); break;
       case "--case": o.cases.push(v()); break;
       case "--runs": o.runs = Number(v()); break;
       case "--model": o.model = v(); break;
@@ -44,6 +45,7 @@ function parseArgs(argv) {
       default: throw new Error(`unknown argument: ${a}`);
     }
   }
+  if (!["afk", "review-pr"].includes(o.reviewer)) throw new Error("--reviewer must be afk or review-pr");
   if (!(o.runs >= 1) || !(o.parallel >= 1)) throw new Error("--runs and --parallel must be >= 1");
   if (o.effort !== null && !["low", "medium", "high", "xhigh", "max"].includes(o.effort)) throw new Error("--effort must be low, medium, high, xhigh or max");
   return o;
@@ -212,8 +214,8 @@ async function main() {
     // The case's PRD as a file: in its tree when the reviewer runs there, beside the prompts on a dry run.
     const prdFile = {};
     const input = (c) => ({ mode: c.mode, base: c.base, tip: c.tip, branch: c.tip, slug: c.slug, issue: c.issue,
-      criteria: c.criteria, notes: c.notes, prdPath: prdFile[c.name], prdText: c.prd, reportPath: "(print it in your final message)" });
-    const prompt = (c, name, body, role) => `${role}\n\n=== THIS DISPATCH ===\n\n${body}\n\n${EVAL_NOTE(prdFile[c.name])}\n`;
+      criteria: c.criteria, notes: c.notes, prdPath: prdFile[c.name], prdText: c.prd, reportPath: "(print it in your final message)", reviewer: o.reviewer });
+    const prompt = (c, name, body, role) => `${role ? `${role}\n\n=== THIS DISPATCH ===\n\n` : ""}${body}\n\n${EVAL_NOTE(prdFile[c.name])}\n`;
 
     for (const c of cases) {
       if (!o.dryRun) caseTree[c.name] = addTree(`tree-${c.name}`, c.tip);
