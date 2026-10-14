@@ -46,7 +46,6 @@ bash scripts/branch-safety-check.sh [--allow-default]
 
 **Used by**:
 - `address-pr-comments` (Step 0)
-- `crew-address-findings` (Step 0)
 
 **Example**:
 ```bash
@@ -89,7 +88,6 @@ bash scripts/commit-changes.sh \
 **Used by**:
 - `solve-issue` (Step 6)
 - `address-pr-comments` (Step 5)
-- `crew-address-findings` (Step 5)
 
 **Example**:
 ```bash
@@ -110,17 +108,17 @@ bash scripts/commit-changes.sh \
 
 ### `discover-commands.sh`
 
-**Purpose**: Mechanically decide whether a one-time command-discovery model call is needed, and if so, build its prompt. See `orchestrator/lib/commands.mjs` for the full design (why this exists: CLAUDE.md/Makefile discovery by regex breaks on real-world tables and prose; a model reads the same files instead, once per repo, cached).
+**Purpose**: Mechanically decide whether a one-time command-discovery model call is needed, and if so, build its prompt (why this exists: CLAUDE.md/Makefile discovery by regex breaks on real-world tables and prose; a model reads the same files instead, once per repo, cached).
 
 **Usage**:
 ```bash
 bash scripts/discover-commands.sh [--refresh]
 ```
 
-**Behavior**: Prints either a skip message (nothing to read, or `.coding-crew/dev-commands.json` already exists) or the full discovery prompt, ready to hand to a model as-is. Bootstrap-only: once the cache file exists it is trusted as-is, indefinitely, until a human clears it or passes `--refresh` (or `CREW_COMMANDS_REFRESH=1`) — there is no staleness re-check against source-doc content. The prompt asks for five fields, not three: `test`/`lint`/`typecheck`, plus `install` — a documented install command, reported only when the source explicitly states one, so `ensure-deps.sh` can use it in place of its own mechanical Makefile-target/lockfile guess — and `env` — a documented `.env`-bootstrap command, reported the same way, so `ensure-env.sh` can use it in place of its own mechanical `.env.example`-or-empty convention.
+**Behavior**: Prints either a skip message (nothing to read, or `.coding-crew/dev-commands.json` already exists) or the full discovery prompt, ready to hand to a model as-is. Bootstrap-only: once the cache file exists it is trusted as-is, indefinitely, until a human clears it or passes `--refresh` (or `CREW_COMMANDS_REFRESH=1`) — there is no staleness re-check against source-doc content. The prompt asks for five fields, not three: `test`/`lint`/`typecheck`, plus `install` — a documented install command, reported only when the source explicitly states one, so dep-install can use it in place of its own mechanical Makefile-target/lockfile guess — and `env` — a documented `.env`-bootstrap command, reported the same way, so `ensure-env.sh` can use it in place of its own mechanical `.env.example`-or-empty convention.
 
 **Used by**:
-- `crew-afk` (`orchestrator/lib/commands.mjs`, once per sprint via `dispatchPlain`, run **before** `ensure-deps.sh`'s own sprint-level call so a discovered `install` override is already cached by the time that call reads it)
+- `add-tests`
 
 Not used by `solve-issue`: its own agent turn already *is* the model, so there is no separate
 dispatch to build a prompt for — solve-issue's Step 5 inlines the equivalent bootstrap check

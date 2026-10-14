@@ -10,4 +10,4 @@ Read this when step 4's slicing meets a wide refactor.
 
 When migrate batches cannot each pass the checks alone, and together they fit one fresh context window, write them as one issue — a single landable slice.
 
-Otherwise write one `Status: ready-for-human` issue whose `### Why a person` says the batches cannot land green one at a time under crew-afk's per-branch verify. Never write an issue that only goes green after others merge.
+Otherwise write one `Status: ready-for-human` issue whose `### Why a person` says the batches cannot land green one at a time under solve-feature's per-issue checks. Never write an issue that only goes green after others merge.

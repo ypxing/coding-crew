@@ -10,19 +10,13 @@ For developers who maintain and extend the skill collection itself.
 
 ### What This Repo Is
 
-A distributable collection of AI skills, plus crew-afk's orchestrator and its roles. Nothing runs here directly — this repo is the **source**; consuming projects are the **target**. `install.sh` copies files into any project repo.
+A distributable collection of AI skills. Nothing runs here directly — this repo is the **source**; consuming projects are the **target**. `install.sh` copies files into any project repo.
 
 ```
 THIS REPO (source)
 ├── install.sh              ← single installer for all platforms
 ├── registry.json           ← source of truth for paths, deps, skills
-├── orchestrator/           ← crew-afk's program (ships as crew-afk's assets)
-│   ├── lib/
-│   └── roles/
-│       ├── coder.md        ← single-issue worker role
-│       ├── reviewer.md     ← per-branch reviewer role (every review dispatch)
-│       ├── reviewer/       ← feature.md (feature review only), checklists (references/) and scripts/
-│       └── triage.md       ← verify-failure / findings / integration triage role
+├── platforms.json          ← every platform's skill dirs and config-dir override
 ├── skills/                 ← reusable skill files
 │   ├── tdd/
 │   ├── solve-issue/
@@ -48,16 +42,16 @@ install.sh
     ├── read registry.json
     ├── for each requested skill (every skill when none is named):
     │     ├── install_single_skill() — render skills/<name>/ → .claude/skills/<name>/
-    │     ├── install_skill_assets() — cp assets.source → assets.dest (e.g. orchestrator/ → .coding-crew/crew-afk/)
+    │     ├── install_skill_assets() — cp assets.source → assets.dest (e.g. skills/dep-install/scripts → .coding-crew/dep-install/scripts)
     │     └── install_single_skill(dep) — recurse for each dep
     │
     ├── install_docs()  — docs.templates (skip if exists), docs.trees (always an exact copy)
     └── prune_retired_scripts() — delete retired-scripts entries, then .coding-crew/scripts/ if empty
 ```
 
-#### Roles, not agent files
+#### No agent files
 
-There are no agents. crew-afk's three roles — coder, reviewer, triage — are protocols under `orchestrator/roles/` (`coder.md`, `reviewer.md` with `reviewer/{feature.md,references,scripts}`, `triage.md`). They ship with the orchestrator as crew-afk's `assets`, so they install to `.coding-crew/crew-afk/roles/`; a crew-afk install also copies `skills/_shared/fragments/` to `.coding-crew/skills/_shared/fragments/`. The orchestrator renders a role's protocol per dispatch (`orchestrator/lib/adapters/render.mjs`, expanding `{{FRAGMENT:<key>}}` lines and `{{PLATFORM}}`; a feature review also gets `reviewer/feature.md` appended) and hands it to the platform CLI through that platform's adapter (`orchestrator/lib/adapters/<platform>.mjs`). No per-platform agent file is written under `.claude/agents`, `.github/agents`, `.pi/agents` or `.codex/agents`: a crew-afk install (and `uninstall.sh`) removes the ones an older install wrote, by exact path (`retired-agents` in `registry.json`), along with `.coding-crew/agents/` and `.coding-crew/code-review/`.
+There are no agents. No per-platform agent file is written under `.claude/agents`, `.github/agents`, `.pi/agents` or `.codex/agents`: every install (and `uninstall.sh`) removes the ones an older install wrote, by exact path (`retired-agents` in `registry.json`), along with `.coding-crew/agents/` and `.coding-crew/code-review/`.
 
 ---
 
@@ -71,13 +65,13 @@ There are no agents. crew-afk's three roles — coder, reviewer, triage — are 
     "<name>": {
       "version": "1.0.0",
       "description": "...",
-      // installs to <projectSkills|userSkills>/<name> from orchestrator/platforms.json
+      // installs to <projectSkills|userSkills>/<name> from platforms.json
       "deps": ["tdd", "dep-install"], // other skills, installed recursively
-      "assets": { "source": "orchestrator", "dest": ".coding-crew/crew-afk" }, // optional runtime files
+      "assets": { "source": "skills/dep-install/scripts", "dest": ".coding-crew/dep-install/scripts" }, // optional runtime files
     },
   },
   "retired-agents": {
-    // agent files older installs wrote; a crew-afk install and uninstall.sh remove them
+    // agent files older installs wrote; every install and uninstall.sh remove them
     "names": ["crew-coder", "crew-reviewer", "crew-triage", "crew-code-reviewer"],
     "paths": { "claude": ".claude/agents/{name}.md", "...": "..." },
     "dirs": [".coding-crew/agents", ".coding-crew/code-review"],
@@ -108,22 +102,12 @@ There are no agents. crew-afk's three roles — coder, reviewer, triage — are 
 
 ### The feature review
 
-At the first drain of the queue where something merged, one reviewer reviews the feature across its issues; a later drain in the same run (after Phase 2 merges the fix issue) does not review it again. Instead, before the squash and the PR, a **closing review** covers what merged after it — the fix issue, integration fixes — over the commits since (`reviewed_tip..tip`). It is report-only: its findings never make a second fix issue; they are posted to the PR and keep it a draft. It does not run when nothing merged since, when no review completed earlier in the run, under `--dry-run`, under a red integration check or past the wall-clock cap. The first review's range is the whole feature, from the merge-base with origin's default branch (else the local one), whichever run made each commit. A drain whose integration check is red skips it without spending the run's first review: the next drain whose check passes reviews the feature instead. It is skipped for good when the wall-clock cap stopped claims with a claimable issue left. The tip it reviewed is recorded as `feature_review.reviewed_tip` in `sprint-state.json`; on a later run an unchanged tip dispatches no reviewer ("nothing new since <sha>"), and a tip that descends from it is reviewed only for the commits added since, leaving out what merged in from origin's default branch. A rewritten history (`reviewed_tip` not an ancestor) gets the whole-feature review again. Findings are promoted into Phase 2 (by `fixFindings`) into one fix issue per feature, holding the 8 most severe (CRITICAL→LOW; the rest stay open, report-only) — counted per feature in `sprint-state.json` (`feature_review.promotions`, advanced only when a review created the fix issue), so a later run promotes nothing; later reviews are report-only (the promotion cap): no fix issue, the findings reach the review report and the summary, and each one the rule would have promoted keeps an `--open-pr` PR a draft. To keep LOW findings out of fix issues altogether, set `fixFindings: medium`. Findings an earlier run raised and later ones do not repeat stay in the `feature` block, marked as earlier.
-
-The reviewer reads the whole PRD (`.scratch/<slug>/PRD.md`, or under `tracker: github` the PRD issue, saved as `prd-issue.md`), whose path its prompt names. Besides defects across the diff, a PRD requirement the merged code does not implement, a flow spanning several issues that it does not connect, and a cross-cutting concern no issue owned are findings; a requirement a later ADR, `CONTEXT.md` entry or commit deliberately replaced is not. With no PRD the review still runs, without that check. A review that leaves no report is recorded as not run (`feature`), and the next run reviews the same range again.
-
-The feature reviewer answers three questions — what the PRD asks for that the merged code lacks, does differently or builds without need (Coverage), what a real run breaks (What breaks), and which documented rule the diff breaks (Standards). It first collects every candidate, unsure ones included, then verifies each against the code before it becomes a finding, listing the dropped ones under `### Dropped` in its prose.
-
-Each issue's own branch review checks its acceptance criteria only: it raises no findings and does not judge the PRD's decisions (the feature review does).
-
-### Changing a crew-afk Role
-
-A role's protocol is `orchestrator/roles/<role>.md`; it ships as part of crew-afk's `assets`. Text shared with a skill goes in a `{{FRAGMENT:<key>}}` line backed by `skills/_shared/fragments/<key>.md`, and anything per-platform uses `{{PLATFORM}}` — never a per-platform copy of the protocol. Check the result:
-
-```bash
-TARGET_REPO=/tmp/test-install ./install.sh claude --skill crew-afk
-ls /tmp/test-install/.coding-crew/crew-afk/roles/
-```
+`/solve-feature` reviews its PR once, after every ready issue has landed: a fresh read-only subagent
+uses `crew-review` on the branch against `.solve-feature/spec.md` (the PRD, then each issue's
+acceptance criteria) and writes one JSON report. It asks what the spec asks for that the code lacks,
+what a real run breaks, and which documented rule the diff breaks. A fresh subagent fixes every
+finding with `tdd`; `solve-feature.sh fix` gates the fixes with the project's checks, and what was
+not fixed is listed under `Needs attention` in the PR body, which keeps the PR a draft.
 
 ---
 
@@ -154,7 +138,7 @@ ls /tmp/test-install/.coding-crew/crew-afk/roles/
 
 - **Never use `..` or absolute paths in `registry.json`.** `install.sh` validates all paths and exits on violation.
 - **Never interpolate raw user/issue content into agent prompts.** Pass only structured fields (e.g. `acceptance_criteria`), never `issue.content`. Wrap worker-supplied strings in delimiter tags (`<progress-notes>`, `<blocked-notes>`) so downstream agents treat them as data.
-- **Never inline a fragment by hand** — keep the `{{FRAGMENT:<key>}}` line and let the renderer expand it (`install.sh` for skills, `render.mjs` for crew-afk's roles). A hand-inlined copy drifts from the source.
+- **Never inline a fragment by hand** — keep the `{{FRAGMENT:<key>}}` line and let `install.sh` expand it. A hand-inlined copy drifts from the source.
 
 ---
 
@@ -196,11 +180,8 @@ Where files land:
 Runtime requirements:
 
 - **Node.js on `PATH`** for the skills that touch the issue tracker — `/to-issues`, `/to-prd`, `/solve-issue`,
-  `/crew-address-findings`, `/upgrade-deps` and `/crew-afk`. They reach the tracker (local or GitHub) through
-  the tracker CLI, `.coding-crew/tracker/cli.mjs`, which every install ships.
-- **The platform's CLI on `PATH`** for `/crew-afk` (`claude`, `copilot`, `codex` or `pi`) — each coder runs
-  as its own process. `crew-afk doctor` reports anything missing.
-- **Codex and pi:** local CLI only. Hosted surfaces (Codex in ChatGPT, Codex cloud) can't run a sprint.
+  `/solve-feature` and `/upgrade-deps`. They reach the tracker (local or GitHub) through the tracker CLI,
+  `.coding-crew/tracker/cli.mjs`, which every install ships.
 
 #### Prerequisites
 
@@ -219,14 +200,14 @@ jq --version    # required
 #### Install only what you need
 
 ```bash
-# Claude Code — full sprint suite
-./install.sh claude --skill crew-afk
+# Claude Code — solve-feature and the skills it uses
+./install.sh claude --skill solve-feature
 
-# GitHub Copilot — full sprint suite
-./install.sh copilot --skill crew-afk
+# GitHub Copilot — the same
+./install.sh copilot --skill solve-feature
 
-# Codex — full sprint suite (skills → .agents/skills)
-./install.sh codex --skill crew-afk
+# Codex — the same (skills → .agents/skills)
+./install.sh codex --skill solve-feature
 
 # A standalone skill
 ./install.sh claude --skill domain-modeling
@@ -234,8 +215,6 @@ jq --version    # required
 # Several skills at once
 ./install.sh claude --skills tdd,to-issues
 ```
-
-crew-coder, crew-reviewer and crew-triage are not installable on their own — they are crew-afk's roles. `./install.sh <platform> crew-coder` (an older form) prints a note and installs crew-afk.
 
 #### Install into a different repo
 
@@ -249,7 +228,7 @@ TARGET_REPO=/path/to/your/project ./install.sh
 ./install.sh --update
 ```
 
-Re-installs only skills whose version changed since last install (an older install that listed agents gets crew-afk instead). Reads the saved platform from `.coding-crew/manifest.json`.
+Re-installs only skills whose version changed since last install. Reads the saved platform from `.coding-crew/manifest.json`.
 
 #### What lands in your project
 
@@ -257,23 +236,21 @@ Re-installs only skills whose version changed since last install (an older insta
 YOUR_PROJECT/
 ├── .claude/
 │   └── skills/
-│       ├── crew-afk/SKILL.md      ← launcher (rendered for the platform)
+│       ├── solve-feature/
+│       ├── crew-review/
 │       ├── tdd/
 │       ├── dep-install/
 │       ├── solve-issue/
-│       ├── crew-address-findings/
+│       ├── write-pr/
 │       ├── address-pr-comments/    ← installed with "all"
 │       ├── domain-modeling/   ← installed with "all"
 │       ├── to-issues/         ← installed with "all"
 │       ├── to-prd/            ← installed with "all"
 │       └── crew-grill/              ← installed with "all"
 └── .coding-crew/
-    ├── crew-afk/                   ← the orchestrator crew-afk runs
-    │   └── roles/                  ← coder, reviewer, triage protocols
-    ├── skills/_shared/fragments/   ← fragments the roles render with
+    ├── dep-install/scripts/        ← dep-install's scripts, one copy for every platform
     ├── tracker/                    ← the tracker CLI and its docs (docs/local.md, docs/github.md)
     ├── config.json                 ← your settings; `tracker` picks the issue tracker
-    ├── scripts/                    ← tracker helper scripts
     └── manifest.json
 ```
 
@@ -293,34 +270,21 @@ Other platforms get the same skills under their own skill dir (see the README's 
  │  /crew-grill             (interview → approaches → issues)        │
  │  /crew-grill with docs   (crew-grill + CONTEXT.md + ADRs)         │
  └──────────────────────────┬────────────────────────────────────────┘
-                            │ .scratch/.../issues/*.md
+                            │ issues in the tracker
                             ▼
- /crew-afk (you trigger this)
+ /solve-feature <slug> (you trigger this)
        │
        ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  crew-afk orchestrator                                      │
-│  1. List "ready-for-agent" issues from .scratch/            │
-│  2. Dispatch coder-role workers — up to 8 in parallel       │
-│  3. Validate output, merge complete branches                │
-│  4. Write progress / blocked notes, loop                    │
-│  5. Run the reviewer role on exit                           │
-└────────────────────┬────────────────────────────────────────┘
-                     │ isolated git worktrees
-          ┌──────────┴──────────┐
-          ▼                     ▼
-    ┌───────────┐         ┌───────────┐
-    │   coder   │   ...   │   coder   │
-    │ (1 issue) │         │ (1 issue) │
-    └───────────┘         └───────────┘
-          │ branches merged
-          ▼
-    ┌──────────────────────┐
-    │  reviewer role       │  advisory findings → .scratch/reviews/
-    └──────────────────────┘
-          │
-          ▼
-    /crew-address-findings (you trigger this)
+│  solve-feature, on one branch with a draft PR               │
+│  1. next ready-for-agent issue → a fresh coder subagent     │
+│     runs /solve-issue on it                                 │
+│  2. land: the project's checks pass → push; else stop       │
+│  3. repeat until no ready issue is left                     │
+│  4. crew-review reads the whole feature against the spec    │
+│  5. a fresh subagent fixes the findings, gated by checks    │
+│  6. write-pr writes the body; ready when nothing needs you  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -334,14 +298,13 @@ Other platforms get the same skills under their own skill dir (see the README's 
                                            ▼                  ▼              ▼
                                         complete           partial         blocked
                                            │                  │              │
-                                      merge + close     ## Progress     ## Blocked
-                                        done/           next round      human fixes
+                                      land + close       run stops       run stops
+                                        done/           (re-run resumes) human fixes
 ```
 
 `/to-issues <ref>` checks the issue against the design standard and rewrites it in place when it is
-one slice, or splits it into child issues with `## Parent`. Auto-promoted fix issues skip the check:
-they carry a column-0 `Source:` line — `Source: review (<branch>)` first under `github`,
-`Source: <report> (<branch>)` after the title and `Status:` lines under `local`.
+one slice, or splits it into child issues with `## Parent`. An issue carrying a column-0 `Source:`
+line skips the check.
 
 ---
 
@@ -370,130 +333,38 @@ Use `/to-prd` → `/to-issues` to generate these from a feature description auto
 
 ---
 
-### Running the Sprint
-
-**Claude Code:**
+### Running a feature
 
 ```
-/crew-afk
+/solve-feature <feature-slug>
 ```
 
-**Copilot:** run `/crew-afk` (the skill).
+It runs the feature's `ready-for-agent` issues in order on one branch (`feature/<slug>` unless you
+pass `--branch <name>`), each by a fresh coder subagent, and lands each one only when the project's
+checks pass. Then it reviews the whole feature, fixes the findings, writes the PR body and marks the
+draft PR ready when nothing needs a person. Run it where an unattended agent may change the
+checkout — a worktree or a container, not the one you work in. A stop names the step and how to
+recover; a re-run skips the issues already done and reuses the branch and the PR.
 
-**pi / Codex:** run `crew-afk` (workers are dispatched as separate `pi -p` / `codex exec` processes).
-Both require the respective **local CLI** on `PATH` — a sprint spawns background child processes
-against a local git clone. The hosted Codex surfaces (Codex in ChatGPT, Codex cloud/web) cannot run
-this sprint: no parent process to `wait` on, and no persistent working root for per-issue worktrees
-or dispatch report files.
+| Setting | Effect |
+| --- | --- |
+| `--branch <name>` | The branch the run uses, never the default branch (default: one named after the slug) |
+| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model, when your host accepts the name (default: your own) |
 
-Sprint runs until all issues are complete, or every remaining issue is blocked — either it has spent its two retry attempts, or it depends on one that has (stall). On exit it saves a code review report to `.scratch/reviews/sprint-review-<timestamp>.md`.
-
----
-
-### Configuring crew-afk
-
-**Model tier** — `/crew-afk --model opus|sonnet|haiku|inherit` (default `sonnet`). The reviewer and
-triage judge run on the same model as the coder unless you name another, so the review standard
-doesn't silently drop. Applies on every platform, including Copilot — each worker is its own
-`copilot -p` process, so the flag reaches the CLI.
-
-**Per-role runtime and model** — `.coding-crew/config.json` can put any role (`coder`, `reviewer`,
-`triage`, `commandFinder`, `prWriter`) on another installed runtime, and name models per runtime:
-
-```json
-{ "afk": { "runtime": { "reviewer": "codex" },
-           "models":  { "claude": { "triage": "opus" }, "codex": { "reviewer": "gpt-5.1-codex" } } } }
-```
-
-A model is only ever passed to its own runtime's CLI. A role moved to another runtime doesn't
-inherit the coder's model; with none named under that runtime, it takes `--model` if one was given
-and it's on the `--platform` runtime, else `sonnet` on claude, else the CLI's own default. Each
-runtime a role uses must be installed (`./install.sh codex --skill crew-afk`); `crew-afk doctor`
-checks. `config.json` holds only settings you write; an older `.coding-crew/afk-models.json` is
-moved into it on the next run.
-
-It's read at two levels: `~/.coding-crew/config.json` for this machine, under the repo's
-`.coding-crew/config.json` for the team. They merge per setting, the repo's winning, and
-`crew-afk plan` tags each value with the file it came from. Keep the repo's file to aliases, since
-it's committed. Provider-specific IDs belong at user level, or in env such as
-`ANTHROPIC_DEFAULT_SONNET_MODEL`, which every dispatch inherits.
-
-**Sprint settings** — the same `afk` section holds the rest of what stays the same run to run. A
-flag overrides each for one run. The PRD audit is gone — the feature review checks PRD coverage —
-and a config or flag still setting it loads with a notice:
-
-| Setting | Default | Flag | What it does |
-| --- | --- | --- | --- |
-| `fixFindings` | `actionable` | `--fix-findings` | What review findings are fixed automatically: `actionable` (every finding the triage role judges Actionable, whatever its severity); or the lowest severity — `critical`, `high`, `medium`; or `none` |
-| `timeouts` | coder 60, reviewer 20, triage 20, commandFinder 5, prWriter 10, merge 5 | `--coder-timeout`, `--reviewer-timeout` | Minutes, per role (at most 35791); name only the ones you change. A coder that times out after committing is retried without spending an attempt, up to 3 dispatches per issue |
-| `effort` | coder, reviewer and triage `high` | — | Reasoning effort per role, one string passed to the role's CLI as is (a value it rejects fails on the first dispatch). Only `coder`, `reviewer` and `triage` take one; the plain roles run at their CLI's default. Merged per role across user and repo, the repo winning. Example: `{"effort": {"coder": "medium"}}` |
-| `maxParallel` | the coder runtime's | `--max-parallel` | Concurrent coders — usually a machine setting, so user level |
-| `maxWallMinutes` | `120` | `--max-wall` | Soft wall-clock cap in minutes, `0` = off. Once elapsed no issue is claimed, running workers finish and merge, Phase 2 fix issues stay parked, the integration check still runs; exit 2, PR (with `--open-pr`) is a draft |
-| `installDeps` | `true` | `--no-deps` | Install dependencies in each worktree |
-| `squashCommits` | `false` | `--squash` (`--no-squash` turns it off) | Squash the sprint's commits into one at the end. Each issue is merged as its own commit either way |
-| `openPr` | `false` | `--open-pr` (`--no-open-pr` turns it off) | At the end, push the feature branch and create or update its PR. The `prWriter` role writes the title (else the PRD's; an open PR keeps a title you set) and the body by following `write-pr` (Why, What changes, Risk, and a **Tested:** line carrying the checks result on the merged branch), under which go the lines closing the issues the sprint merged (under `tracker: github`). If the writer leaves no `## Why`, the PR opens anyway with the checks line alone, and the run summary says why. A re-run rewrites only crew-afk's own block of the body |
-| `baselineCheck` | `true` | `--no-baseline` | Run the checks once on the feature branch before any dispatch; stop if they fail, since every issue's verify would too |
-| `integrationCheck` | `true` | `--no-integration-check` | Each time the queue drains (after the first pass and after the fix pass), run the checks once on the merged feature branch — two branches that pass alone can fail together. A red result gets an `## Integration check` section in the summary and keeps `openPr` from opening the PR; a pass is cached by commit. `--no-baseline` does not turn it off |
-| `resumeCoderSession` | `false` | `--resume-coder-session` | On a fix round, continue the claude coder session that wrote the branch, if that session is under 100k tokens and the branch hasn't moved |
-| `limits` | off | — | `{ "coder": { "usd": 5 } }`: a dollar cap on one dispatch of that role (claude's `--max-budget-usd`; other runtimes ignore it, with one notice per run). A dispatch that hits it blocks its issue as `limit-exceeded`, never retried |
-
-**Checks that modify files.** A check that leaves the tree modified fails, in the baseline and every
-verify alike, and in the integration check. An auto-fixing lint (`make lint` running `--write`) can stay configured: run it once
-on the feature branch, commit what it rewrote, and re-run. Only a check that rewrites files on every
-run needs a non-mutating command in `.coding-crew/dev-commands.json`.
+**Checks that modify files.** A check that leaves the tree modified fails. An auto-fixing lint
+(`make lint` running `--write`) can stay configured: run it once, commit what it rewrote, and re-run.
+Only a check that rewrites files on every run needs a non-mutating command in
+`.coding-crew/dev-commands.json`.
 
 **Per-issue requirements.** An issue can list what its checks need that the install doesn't
-guarantee under `## Requires`, one backticked command per bullet (exit 0 = satisfied); each runs
-once before that issue's first dispatch, and a failing one blocks that issue with the command's
-output instead of paying for its coder.
-
-**Your checkout.** A sprint never switches or merges into the main checkout. The feature branch lives in
-its own worktree, `crew/<feature-slug>/_feature` under the worktree root, which is removed when the run ends
-(the branch and its commits stay), so you can keep working in the main checkout — uncommitted changes
-included — and start one `crew-afk` per feature at the same time. The one thing it refuses is a main
-checkout sitting on `feature/<slug>` itself: switch it to another branch first. `--allow-dirty` is still
-accepted and does nothing. Several sprints write nothing shared, so there is no repo-wide `.scratch/sprint.env`:
-run `main.mjs status`, `state.sh`, `trace.sh`, `crew-summary.sh` or `ensure-deps.sh --slug` by hand with
-`--feature-slug <slug>`.
-
-**Gitignored files in worktrees.** Each coder runs in an isolated worktree, so `.env` and similar
-files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
-them over. `.env` is always carried over when it exists, without being listed; crew-afk never writes
-`.worktreeinclude` itself. In docker mode each worktree's compose override lives in its own git dir
-(`crew-compose.override.yml`) and is added to every `docker compose` call by a shim on `PATH`; no
-`docker-compose.override.yml` is written or linked into your repo.
-
-**Worktree location.** Worktrees live under `.scratch/worktrees/` by default. Set
-`afk.worktreeRoot` in either `config.json` (absolute, or relative to the repo root) to put them
-elsewhere, or `CREW_WORKTREE_ROOT`, which wins over both. A path outside the repo, such as
-`../<repo>-worktrees`, keeps tools that search parent directories (Node's `node_modules`
-resolution, CLAUDE.md loading) from falling back to the main checkout. A path inside the repo isn't
-covered by the default `.scratch/` gitignore entry; `crew-afk` warns until you add it.
-
-**Feature branch name.** A new sprint creates `<prefix><KEY>-<feature-slug>`:
-`afk.branchPrefix` in either `config.json` (any string, `""` for none; default `feature/`, the repo's
-winning) and `--jira <KEY>` (`PROJ-12`, matching `^[A-Z][A-Z0-9]+-[0-9]+$`; omitted, no `<KEY>-`).
-`--jira PROJ-12` gives `feature/PROJ-12-<feature-slug>`. A name git refuses (`git check-ref-format
---branch`) stops the run before any branch is made. A sprint that already has a `sprint.env` resumes
-on the branch it recorded and warns that `--jira` was ignored.
-
-**Where the branch starts.** With an `origin` remote, the run asks `origin` (`git ls-remote` /
-`git fetch`, never stale remote-tracking refs; an unreachable `origin` stops the run): a new branch
-starts, untracked, at the branch origin's `HEAD` names (`git ls-remote --symref origin HEAD`),
-whatever your local one or a stale `origin/HEAD` holds — an `origin` with branches but no such one
-stops the run; a branch only on
-`origin` is created at its tip, tracking it; a local one is used as is, fast-forwarded when behind
-origin's, and a run whose local and origin branches diverged stops naming both tips. A local branch
-whose own `origin` branch is gone (it shipped) is renamed to `<branch>-shipped-<yyyymmdd>` (`-2`,
-`-3`… if taken), printed as `[BRANCH-SHIPPED]`, and the run starts fresh — unless the main checkout
-or a worktree crew-afk did not make has it checked out, which stops the run naming that checkout. Without `origin`, a new
-branch forks from the local default branch, wherever the main checkout is.
+guarantee under `## Requires`, one backticked command per bullet (exit 0 = satisfied); `/solve-issue`
+runs each before it starts, and a failing one blocks that issue with the command's output.
 
 ---
 
 ### PR rework with GitHub Actions (optional)
 
-Not installed by default. Without it, run `/address-pr-comments` yourself on the PR. On a crew-afk PR it pushes its fix commit itself once `solve-issue`'s checks pass (a plain `git push`, never forced; a failing check stops it with the output, unpushed), and when the PR's `<!-- crew-afk:draft … -->` marker names only `findings` and every posted finding was handled, it ends with `once CI is green: gh pr ready <n>` — it never marks the PR ready or waits on CI itself. On a solve-feature PR it pushes the same way and suggests no next step: the run already reviewed the PR, fixed its findings and, in its describe step, marked the draft ready unless something needs a person (listed under `Needs attention` in the PR body). On any other PR it does not push.
+Not installed by default. Without it, run `/address-pr-comments` yourself on the PR. On a solve-feature PR it pushes its fix commit itself once `solve-issue`'s checks pass (a plain `git push`, never forced; a failing check stops it with the output, unpushed) and suggests no next step: the run already reviewed the PR, fixed its findings and, in its describe step, marked the draft ready unless something needs a person (listed under `Needs attention` in the PR body). On any other PR it does not push.
 
 With it, reviewers comment on a PR labelled `crew-rework` as usual; the `crew-rework` GitHub
 Action runs `/address-pr-comments --auto`, which fixes what is sensible, pushes, and replies on
@@ -508,7 +379,7 @@ every thread it handled. It never resolves a thread — you do.
 3. Add the repo secret `ANTHROPIC_API_KEY`.
 4. Make sure your CI workflow is `ci.yml` (or edit `--ci-workflow` in the template) and has
    `workflow_dispatch:` if you want the re-trigger below.
-5. Add the `crew-rework` label to each PR it should work on; crew-afk does not add it.
+5. Add the `crew-rework` label to each PR it should work on; nothing adds it for you.
 
 **Flow.** A review, review comment or `/crew-rework` PR comment triggers the workflow. Before any
 step that uses the API key it checks that the actor has write access, the PR's branch is in the
@@ -548,16 +419,6 @@ finished.
 
 ---
 
-### Reviewing Code Review Findings
-
-```
-/crew-address-findings
-```
-
-Opens the latest sprint review, shows a triage table (Actionable / Debatable / Dismiss), implements fixes with TDD, commits, and archives the report.
-
----
-
 ### Planning Skills
 
 | Goal                                               | Skill                            |
@@ -570,7 +431,7 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 | Address GitHub PR review comments                  | `/address-pr-comments`           |
 | Write a PR body for human reviewers                | `/write-pr`                      |
 
-**The light path.** `/crew-grill` and `/crew-brainstorm` first judge whether the source (an issue or your message) is already one complete change: the problem is stated with its cost or evidence, one slice is likely, the acceptance criteria are testable or derivable from the code, and no open fork would annoy you if decided for you. Each check is answered with a quote or `file:line`. If all hold they print one `Light path:` line and invoke `/to-issues` with no question; if any check does not hold they go straight to their questions and print nothing about the light path. `/to-issues` alone decides whether a PRD is written: one slice publishes (or rewrites the source issue in place) with its own `## Decisions` section and no PRD, its slug derived from the github issue's `Feature:` line, the `.scratch/<slug>/` directory or the title and shown in the quiz for you to override; two or more slices, or two or more origin issues, invoke `/to-prd` first. crew-afk's feature review reads a PRD-less feature's `## Decisions` issue as its intent.
+**The light path.** `/crew-grill` and `/crew-brainstorm` first judge whether the source (an issue or your message) is already one complete change: the problem is stated with its cost or evidence, one slice is likely, the acceptance criteria are testable or derivable from the code, and no open fork would annoy you if decided for you. Each check is answered with a quote or `file:line`. If all hold they print one `Light path:` line and invoke `/to-issues` with no question; if any check does not hold they go straight to their questions and print nothing about the light path. `/to-issues` alone decides whether a PRD is written: one slice publishes (or rewrites the source issue in place) with its own `## Decisions` section and no PRD, its slug derived from the github issue's `Feature:` line, the `.scratch/<slug>/` directory or the title and shown in the quiz for you to override; two or more slices, or two or more origin issues, invoke `/to-prd` first.
 
 ---
 
@@ -583,9 +444,9 @@ Edit these files after install — they override the defaults on the next run:
 | `.coding-crew/config.json` (`tracker` section) | Where issues live: `{"tracker": {"kind": "github"}}` (default `local`) |
 
 Commit `.coding-crew/config.json` and `.coding-crew/dev-commands.json`: they are team state — the
-tracker choice, the per-role models and the project's check commands — that everyone using the
+tracker choice, solve-feature's models and the project's check commands — that everyone using the
 repo needs, so do not add them to `.gitignore`. The installed tooling beside them (`tracker/`,
-`crew-afk/`, `manifest.json`) is what `install.sh` writes, not team state.
+`dep-install/`, `manifest.json`) is what `install.sh` writes, not team state.
 
 ---
 
@@ -601,55 +462,19 @@ repo needs, so do not add them to `.gitignore`. The installed tooling beside the
 
 ---
 
-### Reading `orchestrator.log`
-
-Each sprint's `.scratch/<feature-slug>/traces/orchestrator.log` has one line per event:
-
-```
-2026-09-22T04:28:54Z ERROR [DISPATCH-FAIL] agent=crew-coder slug=alpha code=1 ...
-```
-
-The level is the second column:
-
-| Level   | Meaning                                                    |
-| ------- | ---------------------------------------------------------- |
-| `DEBUG` | Mechanics: pipeline steps, every tool call a worker makes  |
-| `INFO`  | Normal progress: attempts, passes, merges, closes          |
-| `WARN`  | Degraded, but the run carries on by itself                 |
-| `ERROR` | A step failed for one issue                                |
-| `FATAL` | The run stopped                                            |
-
-`grep -E ' (WARN|ERROR|FATAL) ' orchestrator.log` lists what went wrong. A multi-line entry
-(the end-of-run `[SUMMARY]`) continues on indented lines below its header. A verify
-transcript is not in the log: each round's goes to `dispatch/<issue>/verify-r<N>.out`, and
-the log's `[VERIFY-OUTPUT]` line names the file (`ERROR` when the checks failed). Each issue
-attempt starts with `[ATTEMPT]` and ends with `[ATTEMPT-END] … status=<outcome>`.
-
-The log always keeps every level. stderr shows `INFO` and above by default; set
-`CREW_LOG_LEVEL=debug|info|warn|error|fatal` to change that. `debug` adds each worker's tool
-calls and the raw output of deps/merge/close (each script also logs its own one-line
-result), and `warn` hides the `[STEP]` progress lines. `CREW_VERBOSE=1` still means `debug`.
-
----
-
 ### Troubleshooting
 
 | Symptom                                           | Likely cause                                     | Fix                                                                                 |
 | ------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| "No unblocked ready-for-agent issues" immediately | No `.md` files with correct `Status:` line       | Check `.scratch/*/issues/` — status must be exactly `ready-for-agent`               |
-| Worker returns `blocked` every round              | Ambiguous spec or missing dependency             | Read `## Blocked` in the issue file; resolve and re-trigger                         |
+| `/solve-feature` finds no ready issue immediately | No issue with the correct status                 | Under `local`, check `.scratch/*/issues/` — status must be exactly `ready-for-agent` |
+| The coder reports `blocked`                       | Ambiguous spec or missing dependency             | Read its `BLOCKED:` line; resolve and re-run                                        |
 | `install.sh`: "unsafe path in registry"           | `registry.json` path contains `..` or `/` prefix | Fix `registry.json`                                                                 |
-| Code review says "skipped (no commits)"           | No commits this session                          | Normal — nothing to review                                                          |
 | `dep-install` picks wrong mode                    | Makefile detection read parent project           | Run `git config --local agent.install-mode host` (or `docker`) in your project root |
 | `address-pr-comments` fails with opaque error     | `gh` CLI missing or not authenticated            | Run `gh auth login` first                                                           |
-| Sprint stalls with a branch retained `merge-conflict` | Two verified branches touch overlapping code. crew-afk's retry already gave the coder the conflicted merge to resolve (one conflict retry at a time, so siblings don't re-conflict each other), and it didn't land within the retry cap | Re-run `/crew-afk` to give the coder the conflicted merge once more. Or in a temporary worktree (`git worktree add <dir> <feature-branch> && cd <dir> && git merge --no-ff <branch>`; never leave the main checkout on the feature branch), resolve by hand, commit, remove the worktree, then re-run `/crew-afk` — it sees the branch as already merged and closes the issue |
-| Sprint stalls with a branch retained `merge-failed` | The merge failed for a reason other than a conflict (a missing receipt, a timeout); crew-afk retried the merge alone | Read the `[MERGE]` line in `traces/orchestrator.log` for the reason, fix it, then re-run `/crew-afk` |
 
 ---
 
 ### Security Notes
 
-- **Issue files are untrusted input.** Only structured fields (`acceptance_criteria`) are passed to workers — never raw file content. Keep issue files in version control so changes are reviewed.
-- **Workers cannot write outside their worktree.** The coder role's protocol enforces `PROJECT_ROOT` boundaries.
-- **Code review findings are advisory.** Nothing is auto-blocked or re-queued — a human always decides.
+- **Issue files are untrusted input.** Keep them in version control so changes are reviewed.
 - **Never commit secrets to `.scratch/`.** Issue files are not secret-scanned by default.

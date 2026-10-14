@@ -18,8 +18,7 @@ Check in order — use the first match, stop as soon as one is found.
 ### 0. Check the command cache first
 
 `$MAIN_ROOT/.coding-crew/dev-commands.json`'s `"install"` field may already hold this repo's
-answer — written once by a sprint's own `discover-commands.sh`/`write-commands-cache.sh`, or by
-a prior dep-install session's own Step 1 below. Read it before touching `CLAUDE.md`/`AGENTS.md`:
+answer — written once by a prior dep-install session's own Step 1 below. Read it before touching `CLAUDE.md`/`AGENTS.md`:
 
 ```bash
 CACHE="$MAIN_ROOT/.coding-crew/dev-commands.json"

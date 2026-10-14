@@ -34,7 +34,7 @@ fi
 CACHE_FILE="$MAIN_ROOT/.coding-crew/dev-commands.json"
 
 # A key is "already discovered" once present with any value; JSON `null` means a model looked and
-# found none. ensure-deps.sh writes its own fields to the same file, so the file existing proves nothing.
+# found none. Other fields (install_mode, credential_target) share the file, so the file existing proves nothing.
 CACHE_FIELDS=(test lint typecheck install env credential_target coverage integration)
 
 # _cache_field_present <file> <key> — same regex as write-commands-cache.sh's _extract_field.

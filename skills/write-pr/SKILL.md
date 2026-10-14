@@ -77,6 +77,4 @@ consumers, installs, CI, a platform, data — or `none beyond this module`.
 - **Otherwise:** show the title and body, then offer to apply them with
   `gh pr create --title <title> --body-file <file>` (no PR for the branch yet) or
   `gh pr edit <pr> --title <title> --body-file <file>`, the body without its `# <title>` line. Keep every `Closes #n` line the
-  current body has — they close the issues on merge. A `<!-- crew-afk:begin -->` …
-  `<!-- crew-afk:end -->` block is crew-afk's and is rewritten on its next run: put your body
-  in it, between the markers, above its `Closes` lines.
+  current body has — they close the issues on merge.

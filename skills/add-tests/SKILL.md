@@ -5,14 +5,14 @@ description: Discover the project's coverage command, rank under-covered files b
 
 # Add Tests
 
-Turn a coverage gap into `ready-for-agent` issues that `crew-afk` or `/solve-issue` can pick up
+Turn a coverage gap into `ready-for-agent` issues that `/solve-feature` or `/solve-issue` can pick up
 directly — no special-casing needed on either downstream path.
 
 ## Process
 
 ### 1. Resolve the coverage and integration commands
 
-Use the same discovery/cache mechanism `crew-afk`/`solve-issue` already use:
+Use the same discovery/cache mechanism `solve-issue` already uses:
 
 ```bash
 bash scripts/discover-commands.sh
