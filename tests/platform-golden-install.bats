@@ -2,8 +2,8 @@
 # platform-golden-install.bats — today's per-platform install tree, frozen.
 #
 # For each platform in platforms.json, a full `install.sh <platform>` at project
-# scope, at user scope (TARGET_REPO=$HOME, a temp $HOME), and at user scope with the platform's
-# configDirEnv pointing at a temp dir; then `uninstall.sh` in the same target. Each tree is
+# scope (--project <repo>), at user scope (the default, a temp $HOME), and at user scope with the
+# platform's configDirEnv pointing at a temp dir; then `uninstall.sh` in the same target. Each tree is
 # recorded as one sorted line per entry — `<ROOT>/<relative path> <fact>` (`/` for a directory) —
 # and compared against tests/fixtures/platform-golden/install/<platform>-<scope>.
 # {install,uninstall}.txt. A refactor of install/uninstall must leave them unchanged; a deliberate
@@ -11,14 +11,11 @@
 #
 # A file's fact is not its content hash: that would rewrite every fixture on any edit to any shipped
 # file. It is the executable bit, plus for a SKILL.md (the rendered file) the count of `{{` placeholders
-# left in it, so a changed path, scope, executable bit or a broken render still fails; the manifest,
-# which is structural, keeps its hash.
+# left in it, so a changed path, scope, executable bit or a broken render still fails; a library
+# link's fact is its target; the manifest, which is structural, keeps its hash.
 #
 # Roots are written as REPO, HOME and CONFIG, and the manifest's per-run fields (installed_at,
 # source, source_sha) are dropped before hashing, so a fixture holds no machine-specific value.
-# Each manifest skill version is read as the one it had when the fixtures were recorded
-# (manifest-versions.json): a version bump is registry data, not a change to what installs where,
-# and must not churn every fixture.
 
 load helpers/isolate-env
 load helpers/shared-install
@@ -54,12 +51,13 @@ _tree() {
     done
     find . -mindepth 1 \( -type f -o -type l \) | LC_ALL=C sort | while IFS= read -r rel; do
       path="${rel#./}"
-      if [[ "$(basename "$path")" == manifest.json ]]; then
+      if [[ -L "$path" ]]; then
+        local target; target=$(readlink "$path")
+        target="${target/#$WORK\/home/HOME}"; target="${target/#$WORK\/repo/REPO}"; target="${target/#$WORK\/config/CONFIG}"
+        printf '%s/%s link=%s\n' "$label" "$path" "$target"
+      elif [[ "$(basename "$path")" == manifest.json ]]; then
         printf '%s/%s %s\n' "$label" "$path" \
-          "$(jq -S --slurpfile v "$GOLDEN/manifest-versions.json" '
-              del(.installed_at, .source, .source_sha)
-              | .skills |= with_entries(.value.version = ($v[0][.key] // .value.version))' "$path" \
-            | git hash-object --stdin)"
+          "$(jq -S 'del(.installed_at, .source, .source_sha)' "$path" | git hash-object --stdin)"
       else
         local fact="exec=$([[ -x "$path" ]] && echo 1 || echo 0)"
         [[ "$(basename "$path")" == SKILL.md ]] && fact+=" unrendered=$(LC_ALL=C grep -c '{{' "$path" || true)"
@@ -111,17 +109,17 @@ golden_record() {
   WORK="$(_work "$platform" "$scope")"
   mkdir -p "$WORK/repo" "$WORK/home" "$WORK/config"
   env_name=$(jq -r --arg p "$platform" '.[$p].configDirEnv' "$REPO/platforms.json")
-  local -a env=(HOME="$WORK/home")
+  local -a env=(-u TARGET_REPO HOME="$WORK/home") level=()
   case "$scope" in
-    project) target="$WORK/repo" ;;
-    user) target="$WORK/home" ;;
-    user-config) target="$WORK/home"; env+=("$env_name=$WORK/config") ;;
+    project) level=(--project "$WORK/repo") ;;
+    user) ;;
+    user-config) env+=("$env_name=$WORK/config") ;;
   esac
   cd "$REPO"
-  out=$(env "${env[@]}" TARGET_REPO="$target" ./install.sh "$platform" 2>&1) \
+  out=$(env "${env[@]}" ./install.sh "$platform" "${level[@]+"${level[@]}"}" 2>&1) \
     || { echo "install.sh $platform ($scope) failed: $out" > "$WORK/error"; return 0; }
   _snapshot "$scope" > "$WORK/install.txt"
-  out=$(env "${env[@]}" TARGET_REPO="$target" ./uninstall.sh 2>&1) \
+  out=$(env "${env[@]}" ./uninstall.sh "${level[@]+"${level[@]}"}" 2>&1) \
     || { echo "uninstall.sh after $platform ($scope) failed: $out" > "$WORK/error"; return 0; }
   _snapshot "$scope" > "$WORK/uninstall.txt"
 }

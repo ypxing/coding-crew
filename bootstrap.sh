@@ -26,10 +26,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$PROJECT" ]]; then
-  export TARGET_REPO="$HOME"
-fi
-
 TMP_DIR="$(mktemp -d)"
 cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
@@ -41,10 +37,14 @@ curl -fsSL "$REPO/archive/refs/heads/$BRANCH.tar.gz" \
 INSTALL="$TMP_DIR/install.sh"
 chmod +x "$INSTALL"
 
+# User level ($HOME) is install.sh's default; --project installs into the current repo.
+LEVEL=()
+[[ -z "$PROJECT" ]] || LEVEL=(--project)
+
 if [[ -n "$UPDATE" ]]; then
-  exec "$INSTALL" --update
+  exec "$INSTALL" --update "${LEVEL[@]+"${LEVEL[@]}"}"
 elif [[ -n "$SKILLS" ]]; then
-  exec "$INSTALL" "$PLATFORM" --skills "$SKILLS"
+  exec "$INSTALL" "$PLATFORM" --skills "$SKILLS" "${LEVEL[@]+"${LEVEL[@]}"}"
 else
-  exec "$INSTALL" "$PLATFORM"
+  exec "$INSTALL" "$PLATFORM" "${LEVEL[@]+"${LEVEL[@]}"}"
 fi

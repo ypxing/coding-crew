@@ -1,86 +1,77 @@
 REPO/.coding-crew/ /
-REPO/.coding-crew/dep-install/ /
-REPO/.coding-crew/dep-install/scripts/ /
-REPO/.coding-crew/dep-install/scripts/detect-compose-bypass.sh exec=1
-REPO/.coding-crew/dep-install/scripts/detect-docker-nesting.sh exec=1
-REPO/.coding-crew/dep-install/scripts/detect-mode.sh exec=1
-REPO/.coding-crew/dep-install/scripts/detect-service.sh exec=1
-REPO/.coding-crew/dep-install/scripts/docker-install.sh exec=1
-REPO/.coding-crew/dep-install/scripts/ensure-env.sh exec=1
-REPO/.coding-crew/dep-install/scripts/gen-override.sh exec=1
-REPO/.coding-crew/dep-install/scripts/host-install.sh exec=1
-REPO/.coding-crew/dep-install/scripts/manifest-fingerprint.sh exec=1
-REPO/.coding-crew/dep-install/scripts/python-install-cmd.sh exec=1
-REPO/.coding-crew/dep-install/scripts/resolve-mode.sh exec=1
-REPO/.coding-crew/dep-install/scripts/run.sh exec=1
-REPO/.coding-crew/dep-install/scripts/shim/ /
-REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
-REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-REPO/.coding-crew/manifest.json bddffe2dc0697919d8b29f082c7e7e9fa1808939
-REPO/.coding-crew/solve-issue/ /
-REPO/.coding-crew/solve-issue/scripts/ /
-REPO/.coding-crew/solve-issue/scripts/check-requires.sh exec=1
-REPO/.coding-crew/solve-issue/scripts/preflight.sh exec=1
-REPO/.coding-crew/solve-issue/scripts/run-checks.sh exec=1
-REPO/.coding-crew/to-issues/ /
-REPO/.coding-crew/to-issues/scripts/ /
-REPO/.coding-crew/to-issues/scripts/lint-issues.sh exec=1
-REPO/.coding-crew/tracker/ /
-REPO/.coding-crew/tracker/body-format.mjs exec=0
-REPO/.coding-crew/tracker/cli.mjs exec=0
-REPO/.coding-crew/tracker/docs/ /
-REPO/.coding-crew/tracker/docs/github.md exec=0
-REPO/.coding-crew/tracker/docs/local.md exec=0
-REPO/.coding-crew/tracker/github.mjs exec=0
-REPO/.coding-crew/tracker/index.mjs exec=0
-REPO/.coding-crew/tracker/local.mjs exec=0
-REPO/.coding-crew/tracker/tracker-config.mjs exec=0
-REPO/.coding-crew/write-pr/ /
-REPO/.coding-crew/write-pr/SKILL.md exec=0 unrendered=0
+REPO/.coding-crew/lib/ /
+REPO/.coding-crew/lib/checks/ /
+REPO/.coding-crew/lib/checks/detect-compose-bypass.sh exec=1
+REPO/.coding-crew/lib/checks/detect-docker-nesting.sh exec=1
+REPO/.coding-crew/lib/checks/detect-mode.sh exec=1
+REPO/.coding-crew/lib/checks/detect-service.sh exec=1
+REPO/.coding-crew/lib/checks/docker-install.sh exec=1
+REPO/.coding-crew/lib/checks/ensure-env.sh exec=1
+REPO/.coding-crew/lib/checks/gen-override.sh exec=1
+REPO/.coding-crew/lib/checks/host-install.sh exec=1
+REPO/.coding-crew/lib/checks/manifest-fingerprint.sh exec=1
+REPO/.coding-crew/lib/checks/python-install-cmd.sh exec=1
+REPO/.coding-crew/lib/checks/resolve-mode.sh exec=1
+REPO/.coding-crew/lib/checks/run-checks.sh exec=1
+REPO/.coding-crew/lib/checks/run.sh exec=1
+REPO/.coding-crew/lib/checks/shim/ /
+REPO/.coding-crew/lib/checks/shim/docker exec=1
+REPO/.coding-crew/lib/checks/shim/docker-compose exec=1
+REPO/.coding-crew/lib/git-workflow/ /
+REPO/.coding-crew/lib/git-workflow/README.md exec=0
+REPO/.coding-crew/lib/git-workflow/branch-safety-check.sh exec=1
+REPO/.coding-crew/lib/git-workflow/commit-changes.sh exec=1
+REPO/.coding-crew/lib/git-workflow/discover-commands.sh exec=1
+REPO/.coding-crew/lib/git-workflow/write-commands-cache.sh exec=1
+REPO/.coding-crew/lib/tracker/ /
+REPO/.coding-crew/lib/tracker/body-format.mjs exec=0
+REPO/.coding-crew/lib/tracker/cli.mjs exec=0
+REPO/.coding-crew/lib/tracker/docs/ /
+REPO/.coding-crew/lib/tracker/docs/github.md exec=0
+REPO/.coding-crew/lib/tracker/docs/local.md exec=0
+REPO/.coding-crew/lib/tracker/github.mjs exec=0
+REPO/.coding-crew/lib/tracker/index.mjs exec=0
+REPO/.coding-crew/lib/tracker/local.mjs exec=0
+REPO/.coding-crew/lib/tracker/tracker-config.mjs exec=0
+REPO/.coding-crew/manifest.json f2e3bbcf88f9f9e31c38257b732a5df210ceebe4
 REPO/.pi/ /
 REPO/.pi/skills/ /
 REPO/.pi/skills/add-tests/ /
 REPO/.pi/skills/add-tests/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/add-tests/scripts/ /
-REPO/.pi/skills/add-tests/scripts/discover-commands.sh exec=1
-REPO/.pi/skills/add-tests/scripts/write-commands-cache.sh exec=1
+REPO/.pi/skills/add-tests/scripts/git-workflow link=../../../../.coding-crew/lib/git-workflow
 REPO/.pi/skills/address-pr-comments/ /
 REPO/.pi/skills/address-pr-comments/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/address-pr-comments/scripts/ /
-REPO/.pi/skills/address-pr-comments/scripts/branch-safety-check.sh exec=1
-REPO/.pi/skills/address-pr-comments/scripts/commit-changes.sh exec=1
+REPO/.pi/skills/address-pr-comments/scripts/checks link=../../../../.coding-crew/lib/checks
 REPO/.pi/skills/address-pr-comments/scripts/fetch-review-threads.sh exec=1
+REPO/.pi/skills/address-pr-comments/scripts/git-workflow link=../../../../.coding-crew/lib/git-workflow
 REPO/.pi/skills/address-pr-comments/scripts/push-rework.sh exec=1
 REPO/.pi/skills/address-pr-comments/scripts/reply-thread.sh exec=1
 REPO/.pi/skills/configure-tracker/ /
 REPO/.pi/skills/configure-tracker/SKILL.md exec=0 unrendered=0
+REPO/.pi/skills/configure-tracker/scripts/ /
+REPO/.pi/skills/configure-tracker/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.pi/skills/crew-brainstorm/ /
 REPO/.pi/skills/crew-brainstorm/SKILL.md exec=0 unrendered=0
+REPO/.pi/skills/crew-brainstorm/scripts/ /
+REPO/.pi/skills/crew-brainstorm/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.pi/skills/crew-grill/ /
 REPO/.pi/skills/crew-grill/SKILL.md exec=0 unrendered=0
+REPO/.pi/skills/crew-grill/scripts/ /
+REPO/.pi/skills/crew-grill/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.pi/skills/crew-review/ /
 REPO/.pi/skills/crew-review/SKILL.md exec=0 unrendered=0
+REPO/.pi/skills/crew-review/scripts/ /
+REPO/.pi/skills/crew-review/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.pi/skills/dep-install/ /
 REPO/.pi/skills/dep-install/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/dep-install/references/ /
 REPO/.pi/skills/dep-install/references/docker-install.md exec=0
 REPO/.pi/skills/dep-install/references/host-install.md exec=0
-REPO/.pi/lib/checks/ /
-REPO/.pi/lib/checks/detect-compose-bypass.sh exec=1
-REPO/.pi/lib/checks/detect-docker-nesting.sh exec=0
-REPO/.pi/lib/checks/detect-mode.sh exec=0
-REPO/.pi/lib/checks/detect-service.sh exec=1
-REPO/.pi/lib/checks/docker-install.sh exec=1
-REPO/.pi/lib/checks/ensure-env.sh exec=1
-REPO/.pi/lib/checks/gen-override.sh exec=0
-REPO/.pi/lib/checks/host-install.sh exec=1
-REPO/.pi/lib/checks/manifest-fingerprint.sh exec=1
-REPO/.pi/lib/checks/python-install-cmd.sh exec=1
-REPO/.pi/lib/checks/resolve-mode.sh exec=1
-REPO/.pi/lib/checks/run.sh exec=0
-REPO/.pi/lib/checks/shim/ /
-REPO/.pi/lib/checks/shim/docker exec=1
-REPO/.pi/lib/checks/shim/docker-compose exec=1
+REPO/.pi/skills/dep-install/scripts/ /
+REPO/.pi/skills/dep-install/scripts/checks link=../../../../.coding-crew/lib/checks
+REPO/.pi/skills/dep-install/scripts/git-workflow link=../../../../.coding-crew/lib/git-workflow
 REPO/.pi/skills/domain-modeling/ /
 REPO/.pi/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/domain-modeling/references/ /
@@ -91,17 +82,19 @@ REPO/.pi/skills/solve-feature/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/solve-feature/hosts/ /
 REPO/.pi/skills/solve-feature/hosts/github-actions.yml exec=0
 REPO/.pi/skills/solve-feature/scripts/ /
+REPO/.pi/skills/solve-feature/scripts/checks link=../../../../.coding-crew/lib/checks
 REPO/.pi/skills/solve-feature/scripts/solve-feature.sh exec=0
+REPO/.pi/skills/solve-feature/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.pi/skills/solve-issue/ /
 REPO/.pi/skills/solve-issue/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/solve-issue/references/ /
 REPO/.pi/skills/solve-issue/references/verification.md exec=0
 REPO/.pi/skills/solve-issue/scripts/ /
 REPO/.pi/skills/solve-issue/scripts/check-requires.sh exec=1
-REPO/.pi/skills/solve-issue/scripts/commit-changes.sh exec=1
+REPO/.pi/skills/solve-issue/scripts/checks link=../../../../.coding-crew/lib/checks
+REPO/.pi/skills/solve-issue/scripts/git-workflow link=../../../../.coding-crew/lib/git-workflow
 REPO/.pi/skills/solve-issue/scripts/preflight.sh exec=1
-REPO/.pi/skills/solve-issue/scripts/run-checks.sh exec=1
-REPO/.pi/skills/solve-issue/scripts/write-commands-cache.sh exec=1
+REPO/.pi/skills/solve-issue/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.pi/skills/tdd/ /
 REPO/.pi/skills/tdd/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/tdd/references/ /
@@ -116,9 +109,15 @@ REPO/.pi/skills/to-issues/references/ /
 REPO/.pi/skills/to-issues/references/expand-contract.md exec=0
 REPO/.pi/skills/to-issues/scripts/ /
 REPO/.pi/skills/to-issues/scripts/lint-issues.sh exec=1
+REPO/.pi/skills/to-issues/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.pi/skills/to-prd/ /
 REPO/.pi/skills/to-prd/SKILL.md exec=0 unrendered=0
+REPO/.pi/skills/to-prd/scripts/ /
+REPO/.pi/skills/to-prd/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.pi/skills/upgrade-deps/ /
 REPO/.pi/skills/upgrade-deps/SKILL.md exec=0 unrendered=0
+REPO/.pi/skills/upgrade-deps/scripts/ /
+REPO/.pi/skills/upgrade-deps/scripts/git-workflow link=../../../../.coding-crew/lib/git-workflow
+REPO/.pi/skills/upgrade-deps/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.pi/skills/write-pr/ /
 REPO/.pi/skills/write-pr/SKILL.md exec=0 unrendered=0

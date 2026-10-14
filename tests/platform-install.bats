@@ -72,7 +72,7 @@ teardown() {
   done
 }
 
-@test "uninstall removes every platform's solve-feature, every retired agent file and copilot's legacy .copilot/ copy" {
+@test "uninstall removes every platform's solve-feature and copilot's legacy .copilot/ copy" {
   cd "$SCRIPT_DIR"
   local p dir
   for p in "${PLATFORMS[@]}"; do
@@ -86,7 +86,6 @@ teardown() {
     fi
     TARGET_REPO="$TEMP_DIR/$p" ./uninstall.sh --skill solve-feature >/dev/null
     [ ! -d "$dir" ] || { echo "$p: $dir survived" >&2; return 1; }
-    [ -z "$(find "$TEMP_DIR/$p" -name 'crew-coder*')" ] || { echo "$p: a crew-coder agent file exists" >&2; return 1; }
     [ ! -d "$TEMP_DIR/$p/.copilot" ] || { echo "$p: .copilot/ survived" >&2; return 1; }
   done
 }
@@ -144,7 +143,7 @@ _assert_every_skill_in() {
   cd "$SCRIPT_DIR"
   mkdir -p "$TEMP_DIR/home/.github/skills/tdd"
   echo "a repo's own skill" > "$TEMP_DIR/home/.github/skills/tdd/SKILL.md"
-  run env HOME="$TEMP_DIR/home" TARGET_REPO="$TEMP_DIR/home" ./uninstall.sh --user --skill tdd
+  run env -u TARGET_REPO HOME="$TEMP_DIR/home" ./uninstall.sh --skill tdd
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
   [ -f "$TEMP_DIR/home/.github/skills/tdd/SKILL.md" ]
 }
@@ -163,7 +162,7 @@ _assert_every_skill_in() {
   mkdir -p "$TEMP_DIR/home/.pi/skills/tdd" "$TEMP_DIR/home/.pi/agent/skills/tdd"
   echo stale > "$TEMP_DIR/home/.pi/skills/tdd/SKILL.md"
   echo current > "$TEMP_DIR/home/.pi/agent/skills/tdd/SKILL.md"
-  run env HOME="$TEMP_DIR/home" TARGET_REPO="$TEMP_DIR/home" ./uninstall.sh --user --skill tdd
+  run env -u TARGET_REPO HOME="$TEMP_DIR/home" ./uninstall.sh --skill tdd
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
   [ ! -d "$TEMP_DIR/home/.pi/skills/tdd" ]
   [ ! -d "$TEMP_DIR/home/.pi/agent/skills/tdd" ]
@@ -210,9 +209,9 @@ _assert_every_skill_in() {
   local f names
   names=$(IFS='|'; echo "${PLATFORMS[*]}")
   for f in install.sh uninstall.sh; do
-    # Migrations keep their platform: the legacy Copilot path and retired-agents removal.
+    # The one migration keeps its platform: the legacy Copilot path.
     # Comments and echoed help text are prose, not decisions.
-    run bash -c "awk '/^(prune_legacy_copilot_path|prune_retired_agents|remove_retired_agents)\\(\\)/{skip=1} skip&&/^}/{skip=0;next} !skip' '$SCRIPT_DIR/$f' \
+    run bash -c "awk '/^prune_legacy_copilot_path\\(\\)/{skip=1} skip&&/^}/{skip=0;next} !skip' '$SCRIPT_DIR/$f' \
       | grep -vE '^[[:space:]]*(#|echo )' \
       | grep -nE '(^|[^A-Za-z0-9_.-])($names)([^A-Za-z0-9_.-]|\$)'"
     [ "$status" -ne 0 ] || { echo "$f: $output" >&2; return 1; }
@@ -232,6 +231,6 @@ _assert_every_skill_in() {
   mkdir -p "$bin"
   for c in bash dirname git env cat tr; do ln -s "$(command -v "$c")" "$bin/$c"; done
   run env PATH="$bin" "$SCRIPT_DIR/install.sh" --help
-  [[ "$output" == *"platform:  all (default), a platform in platforms.json"* ]] || { echo "$output" >&2; return 1; }
+  [[ "$output" == *"platform:   all (default), a platform in platforms.json"* ]] || { echo "$output" >&2; return 1; }
   [[ "$output" != *"required command"* ]]
 }

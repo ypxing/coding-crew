@@ -1,85 +1,76 @@
 HOME/.coding-crew/ /
-HOME/.coding-crew/dep-install/ /
-HOME/.coding-crew/dep-install/scripts/ /
-HOME/.coding-crew/dep-install/scripts/detect-compose-bypass.sh exec=1
-HOME/.coding-crew/dep-install/scripts/detect-docker-nesting.sh exec=1
-HOME/.coding-crew/dep-install/scripts/detect-mode.sh exec=1
-HOME/.coding-crew/dep-install/scripts/detect-service.sh exec=1
-HOME/.coding-crew/dep-install/scripts/docker-install.sh exec=1
-HOME/.coding-crew/dep-install/scripts/ensure-env.sh exec=1
-HOME/.coding-crew/dep-install/scripts/gen-override.sh exec=1
-HOME/.coding-crew/dep-install/scripts/host-install.sh exec=1
-HOME/.coding-crew/dep-install/scripts/manifest-fingerprint.sh exec=1
-HOME/.coding-crew/dep-install/scripts/python-install-cmd.sh exec=1
-HOME/.coding-crew/dep-install/scripts/resolve-mode.sh exec=1
-HOME/.coding-crew/dep-install/scripts/run.sh exec=1
-HOME/.coding-crew/dep-install/scripts/shim/ /
-HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
-HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
-HOME/.coding-crew/manifest.json 273775ae2cb99c768b4e5d3981aafa7b81ebe5fd
-HOME/.coding-crew/solve-issue/ /
-HOME/.coding-crew/solve-issue/scripts/ /
-HOME/.coding-crew/solve-issue/scripts/check-requires.sh exec=1
-HOME/.coding-crew/solve-issue/scripts/preflight.sh exec=1
-HOME/.coding-crew/solve-issue/scripts/run-checks.sh exec=1
-HOME/.coding-crew/to-issues/ /
-HOME/.coding-crew/to-issues/scripts/ /
-HOME/.coding-crew/to-issues/scripts/lint-issues.sh exec=1
-HOME/.coding-crew/tracker/ /
-HOME/.coding-crew/tracker/body-format.mjs exec=0
-HOME/.coding-crew/tracker/cli.mjs exec=0
-HOME/.coding-crew/tracker/docs/ /
-HOME/.coding-crew/tracker/docs/github.md exec=0
-HOME/.coding-crew/tracker/docs/local.md exec=0
-HOME/.coding-crew/tracker/github.mjs exec=0
-HOME/.coding-crew/tracker/index.mjs exec=0
-HOME/.coding-crew/tracker/local.mjs exec=0
-HOME/.coding-crew/tracker/tracker-config.mjs exec=0
-HOME/.coding-crew/write-pr/ /
-HOME/.coding-crew/write-pr/SKILL.md exec=0 unrendered=0
+HOME/.coding-crew/lib/ /
+HOME/.coding-crew/lib/checks/ /
+HOME/.coding-crew/lib/checks/detect-compose-bypass.sh exec=1
+HOME/.coding-crew/lib/checks/detect-docker-nesting.sh exec=1
+HOME/.coding-crew/lib/checks/detect-mode.sh exec=1
+HOME/.coding-crew/lib/checks/detect-service.sh exec=1
+HOME/.coding-crew/lib/checks/docker-install.sh exec=1
+HOME/.coding-crew/lib/checks/ensure-env.sh exec=1
+HOME/.coding-crew/lib/checks/gen-override.sh exec=1
+HOME/.coding-crew/lib/checks/host-install.sh exec=1
+HOME/.coding-crew/lib/checks/manifest-fingerprint.sh exec=1
+HOME/.coding-crew/lib/checks/python-install-cmd.sh exec=1
+HOME/.coding-crew/lib/checks/resolve-mode.sh exec=1
+HOME/.coding-crew/lib/checks/run-checks.sh exec=1
+HOME/.coding-crew/lib/checks/run.sh exec=1
+HOME/.coding-crew/lib/checks/shim/ /
+HOME/.coding-crew/lib/checks/shim/docker exec=1
+HOME/.coding-crew/lib/checks/shim/docker-compose exec=1
+HOME/.coding-crew/lib/git-workflow/ /
+HOME/.coding-crew/lib/git-workflow/README.md exec=0
+HOME/.coding-crew/lib/git-workflow/branch-safety-check.sh exec=1
+HOME/.coding-crew/lib/git-workflow/commit-changes.sh exec=1
+HOME/.coding-crew/lib/git-workflow/discover-commands.sh exec=1
+HOME/.coding-crew/lib/git-workflow/write-commands-cache.sh exec=1
+HOME/.coding-crew/lib/tracker/ /
+HOME/.coding-crew/lib/tracker/body-format.mjs exec=0
+HOME/.coding-crew/lib/tracker/cli.mjs exec=0
+HOME/.coding-crew/lib/tracker/docs/ /
+HOME/.coding-crew/lib/tracker/docs/github.md exec=0
+HOME/.coding-crew/lib/tracker/docs/local.md exec=0
+HOME/.coding-crew/lib/tracker/github.mjs exec=0
+HOME/.coding-crew/lib/tracker/index.mjs exec=0
+HOME/.coding-crew/lib/tracker/local.mjs exec=0
+HOME/.coding-crew/lib/tracker/tracker-config.mjs exec=0
+HOME/.coding-crew/manifest.json 556faff6bd254b4111aacb75285e412eb67e429d
 CONFIG/skills/ /
 CONFIG/skills/add-tests/ /
 CONFIG/skills/add-tests/SKILL.md exec=0 unrendered=0
 CONFIG/skills/add-tests/scripts/ /
-CONFIG/skills/add-tests/scripts/discover-commands.sh exec=1
-CONFIG/skills/add-tests/scripts/write-commands-cache.sh exec=1
+CONFIG/skills/add-tests/scripts/git-workflow link=HOME/.coding-crew/lib/git-workflow
 CONFIG/skills/address-pr-comments/ /
 CONFIG/skills/address-pr-comments/SKILL.md exec=0 unrendered=0
 CONFIG/skills/address-pr-comments/scripts/ /
-CONFIG/skills/address-pr-comments/scripts/branch-safety-check.sh exec=1
-CONFIG/skills/address-pr-comments/scripts/commit-changes.sh exec=1
+CONFIG/skills/address-pr-comments/scripts/checks link=HOME/.coding-crew/lib/checks
 CONFIG/skills/address-pr-comments/scripts/fetch-review-threads.sh exec=1
+CONFIG/skills/address-pr-comments/scripts/git-workflow link=HOME/.coding-crew/lib/git-workflow
 CONFIG/skills/address-pr-comments/scripts/push-rework.sh exec=1
 CONFIG/skills/address-pr-comments/scripts/reply-thread.sh exec=1
 CONFIG/skills/configure-tracker/ /
 CONFIG/skills/configure-tracker/SKILL.md exec=0 unrendered=0
+CONFIG/skills/configure-tracker/scripts/ /
+CONFIG/skills/configure-tracker/scripts/tracker link=HOME/.coding-crew/lib/tracker
 CONFIG/skills/crew-brainstorm/ /
 CONFIG/skills/crew-brainstorm/SKILL.md exec=0 unrendered=0
+CONFIG/skills/crew-brainstorm/scripts/ /
+CONFIG/skills/crew-brainstorm/scripts/tracker link=HOME/.coding-crew/lib/tracker
 CONFIG/skills/crew-grill/ /
 CONFIG/skills/crew-grill/SKILL.md exec=0 unrendered=0
+CONFIG/skills/crew-grill/scripts/ /
+CONFIG/skills/crew-grill/scripts/tracker link=HOME/.coding-crew/lib/tracker
 CONFIG/skills/crew-review/ /
 CONFIG/skills/crew-review/SKILL.md exec=0 unrendered=0
+CONFIG/skills/crew-review/scripts/ /
+CONFIG/skills/crew-review/scripts/tracker link=HOME/.coding-crew/lib/tracker
 CONFIG/skills/dep-install/ /
 CONFIG/skills/dep-install/SKILL.md exec=0 unrendered=0
 CONFIG/skills/dep-install/references/ /
 CONFIG/skills/dep-install/references/docker-install.md exec=0
 CONFIG/skills/dep-install/references/host-install.md exec=0
-CONFIG/lib/checks/ /
-CONFIG/lib/checks/detect-compose-bypass.sh exec=1
-CONFIG/lib/checks/detect-docker-nesting.sh exec=0
-CONFIG/lib/checks/detect-mode.sh exec=0
-CONFIG/lib/checks/detect-service.sh exec=1
-CONFIG/lib/checks/docker-install.sh exec=1
-CONFIG/lib/checks/ensure-env.sh exec=1
-CONFIG/lib/checks/gen-override.sh exec=0
-CONFIG/lib/checks/host-install.sh exec=1
-CONFIG/lib/checks/manifest-fingerprint.sh exec=1
-CONFIG/lib/checks/python-install-cmd.sh exec=1
-CONFIG/lib/checks/resolve-mode.sh exec=1
-CONFIG/lib/checks/run.sh exec=0
-CONFIG/lib/checks/shim/ /
-CONFIG/lib/checks/shim/docker exec=1
-CONFIG/lib/checks/shim/docker-compose exec=1
+CONFIG/skills/dep-install/scripts/ /
+CONFIG/skills/dep-install/scripts/checks link=HOME/.coding-crew/lib/checks
+CONFIG/skills/dep-install/scripts/git-workflow link=HOME/.coding-crew/lib/git-workflow
 CONFIG/skills/domain-modeling/ /
 CONFIG/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 CONFIG/skills/domain-modeling/references/ /
@@ -90,17 +81,19 @@ CONFIG/skills/solve-feature/SKILL.md exec=0 unrendered=0
 CONFIG/skills/solve-feature/hosts/ /
 CONFIG/skills/solve-feature/hosts/github-actions.yml exec=0
 CONFIG/skills/solve-feature/scripts/ /
+CONFIG/skills/solve-feature/scripts/checks link=HOME/.coding-crew/lib/checks
 CONFIG/skills/solve-feature/scripts/solve-feature.sh exec=0
+CONFIG/skills/solve-feature/scripts/tracker link=HOME/.coding-crew/lib/tracker
 CONFIG/skills/solve-issue/ /
 CONFIG/skills/solve-issue/SKILL.md exec=0 unrendered=0
 CONFIG/skills/solve-issue/references/ /
 CONFIG/skills/solve-issue/references/verification.md exec=0
 CONFIG/skills/solve-issue/scripts/ /
 CONFIG/skills/solve-issue/scripts/check-requires.sh exec=1
-CONFIG/skills/solve-issue/scripts/commit-changes.sh exec=1
+CONFIG/skills/solve-issue/scripts/checks link=HOME/.coding-crew/lib/checks
+CONFIG/skills/solve-issue/scripts/git-workflow link=HOME/.coding-crew/lib/git-workflow
 CONFIG/skills/solve-issue/scripts/preflight.sh exec=1
-CONFIG/skills/solve-issue/scripts/run-checks.sh exec=1
-CONFIG/skills/solve-issue/scripts/write-commands-cache.sh exec=1
+CONFIG/skills/solve-issue/scripts/tracker link=HOME/.coding-crew/lib/tracker
 CONFIG/skills/tdd/ /
 CONFIG/skills/tdd/SKILL.md exec=0 unrendered=0
 CONFIG/skills/tdd/references/ /
@@ -115,9 +108,15 @@ CONFIG/skills/to-issues/references/ /
 CONFIG/skills/to-issues/references/expand-contract.md exec=0
 CONFIG/skills/to-issues/scripts/ /
 CONFIG/skills/to-issues/scripts/lint-issues.sh exec=1
+CONFIG/skills/to-issues/scripts/tracker link=HOME/.coding-crew/lib/tracker
 CONFIG/skills/to-prd/ /
 CONFIG/skills/to-prd/SKILL.md exec=0 unrendered=0
+CONFIG/skills/to-prd/scripts/ /
+CONFIG/skills/to-prd/scripts/tracker link=HOME/.coding-crew/lib/tracker
 CONFIG/skills/upgrade-deps/ /
 CONFIG/skills/upgrade-deps/SKILL.md exec=0 unrendered=0
+CONFIG/skills/upgrade-deps/scripts/ /
+CONFIG/skills/upgrade-deps/scripts/git-workflow link=HOME/.coding-crew/lib/git-workflow
+CONFIG/skills/upgrade-deps/scripts/tracker link=HOME/.coding-crew/lib/tracker
 CONFIG/skills/write-pr/ /
 CONFIG/skills/write-pr/SKILL.md exec=0 unrendered=0
