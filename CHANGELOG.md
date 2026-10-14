@@ -13,6 +13,30 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   replaced by a few lines; `### Dropped` stays. The always-loaded `quality.md` drops its size, style and performance
   thresholds and keeps only defects (swallowed errors, untested paths, hollow tests, a second reader, dead code, comments
   and tests that pin prose).
+
+- **review-pr, solve-feature**: review-pr is one skill and one prompt file; `review-pr.sh` is gone (nothing reads an
+  existing `.coding-crew/review-pr/` any more; delete it). The reviewer gathers the PR's spec and diff itself and
+  answers three questions — what the spec asks for that is missing or different and what was built that it did not ask
+  for, what a real run breaks (a concrete trigger, traced past the diff), and which documented repo rule the diff
+  breaks — and is told not to report hypotheticals or preferences. `/review-pr` posts one plain review (no inline
+  comments), leaves out findings earlier reviews already raised, and still marks a draft ready when the spec is met
+  with no CRITICAL or HIGH finding. solve-feature runs its reviewer on the same prompt, read from review-pr's skill
+  directory, runs its script from its own skill directory (nothing reads `.coding-crew/solve-feature/` any more), and
+  its `start` clears an earlier run's review report.
+
+- **solve-feature**: the PR now opens with a body a person can read. After `fix`, a fresh subagent runs write-pr
+  (Why / What changes / Risk / Tested) into `.solve-feature/pr-<n>.summary.md`, and the new
+  `solve-feature.sh describe <slug> <pr>` puts it, with any `Needs attention` list, at the top of the PR body and
+  titles the PR after it; the spec and `Closes` lines stay below. Acceptance criteria in the spec are plain bullets,
+  so GitHub no longer shows the PR as "0 of N tasks". write-pr is now a solve-feature dependency.
+
+- **solve-feature, review-pr**: `solve-feature.sh fix` drops the guards no run has needed (PR open, head branch,
+  HEAD containing the PR head, the report's `prd` value and findings shape, a reviewer-edited tree) and the
+  `pr-<n>.reviewed-head` file `review-pr.sh prepare` wrote for them; the PR still stays a draft on a gap, an unmet spec,
+  an unfixed finding or a fixer that changed nothing. The last line is now
+  `FIX: findings=<k> needs-attention=<a> ready=<yes|no|already>` (no `fixed=`), and the progress row reads
+  `<k> finding(s), fixed in <sha>`. A rejected push in `land` now stops naming the `land` to re-run, since a plain
+  re-run would skip the already-closed issue and leave its spec out of the PR body.
 - **solve-feature, address-pr-comments**: a solve-feature run fixes its review's findings itself instead of posting
   them. After the read-only reviewer (`review-pr.sh prepare` and its prompt), a fresh subagent fixes every finding with
   the tdd skill, and the new `solve-feature.sh fix <slug> <pr> <branch>` gates the fixes with the checks, commits and

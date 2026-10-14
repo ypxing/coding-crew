@@ -80,8 +80,7 @@ REPO/.claude/skills/domain-modeling/references/adr-format.md exec=0
 REPO/.claude/skills/domain-modeling/references/context-format.md exec=0
 REPO/.claude/skills/review-pr/ /
 REPO/.claude/skills/review-pr/SKILL.md exec=0 unrendered=0
-REPO/.claude/skills/review-pr/scripts/ /
-REPO/.claude/skills/review-pr/scripts/review-pr.sh exec=1
+REPO/.claude/skills/review-pr/reviewer-prompt.md exec=0
 REPO/.claude/skills/solve-feature/ /
 REPO/.claude/skills/solve-feature/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/solve-feature/hosts/ /
@@ -204,9 +203,6 @@ REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
 REPO/.coding-crew/manifest.json c87e9e1e1cfe72a06b0a62c40d907150d61386be
-REPO/.coding-crew/review-pr/ /
-REPO/.coding-crew/review-pr/scripts/ /
-REPO/.coding-crew/review-pr/scripts/review-pr.sh exec=1
 REPO/.coding-crew/skills/ /
 REPO/.coding-crew/skills/_shared/ /
 REPO/.coding-crew/skills/_shared/fragments/ /
@@ -216,11 +212,6 @@ REPO/.coding-crew/skills/_shared/fragments/human-issue.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
-REPO/.coding-crew/solve-feature/ /
-REPO/.coding-crew/solve-feature/hosts/ /
-REPO/.coding-crew/solve-feature/hosts/github-actions.yml exec=0
-REPO/.coding-crew/solve-feature/scripts/ /
-REPO/.coding-crew/solve-feature/scripts/solve-feature.sh exec=1
 REPO/.coding-crew/solve-issue/ /
 REPO/.coding-crew/solve-issue/scripts/ /
 REPO/.coding-crew/solve-issue/scripts/check-requires.sh exec=1

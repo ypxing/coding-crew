@@ -69,6 +69,40 @@ Total cost: $45.21 (judge included). Base `main`, head `worktree`, 2 run(s) each
 - tracker-agnostic-feature head #2: replace-deletes-known-blocker not caught, worktree-cli-lookup not caught; 2 finding(s), 2 distinct — It reports the github `known`-blocker rewrite drop and the criteria-heading regex, but neither expected miss; it drops the local case, reasoning that `--replace` deletes the open issues.
 
 
+## review-pr: `reviewer-prompt.md` against the 6-line `review-pr.sh` prompt
+
+`node scripts/eval-reviewer-misses.mjs --reviewer review-pr --runs 2`, base `main` (the prompt in `review-pr.sh`),
+head `review-pr-one-skill` (`skills/review-pr/reviewer-prompt.md`). Reviewers on opus, judge on opus. Total cost
+$54.85, plus $2.65 re-running the one failed run (it failed again, with no output).
+
+| case | version | caught (per expected miss) | mean findings (distinct) |
+|---|---|---|---|
+| afk-effectiveness-feature-prd-props | base | signal-no-run-end 2/2; release-gate-version-only 0/2; registry-description-stale 0/2 | 9.0 |
+| afk-effectiveness-feature-prd-props | head | signal-no-run-end 2/2; release-gate-version-only 0/2; registry-description-stale 2/2 | 4.5 |
+| afk-effectiveness-feature | base | signal-no-run-end 2/2; release-gate-version-only 0/2; registry-description-stale 1/2 | 7.0 |
+| afk-effectiveness-feature | head (1 of 2 runs ok) | signal-no-run-end 0/1; release-gate-version-only 0/1; registry-description-stale 0/1 | 6.0 |
+| force-keeps-stamp | base | force-keeps-stamp 2/2 | 7.0 |
+| force-keeps-stamp | head | force-keeps-stamp 2/2 | 2.5 |
+| lightweight-flow-feature | base | tracker-undefined 2/2; eval-close-stale 1/2; eval-round1-conflict 0/2 | 8.5 |
+| lightweight-flow-feature | head | tracker-undefined 2/2; eval-close-stale 2/2; eval-round1-conflict 0/2 | 7.0 |
+| promote-after-merge-207 | base | repromote-earlier-run 2/2 | 4.0 |
+| promote-after-merge-207 | head | repromote-earlier-run 2/2 | 1.0 |
+| promote-after-merge-feature | base | triage-diff-inverted 0/2 | 4.0 |
+| promote-after-merge-feature | head | triage-diff-inverted 1/2 | 1.0 |
+| shim-mutual-exec | base | shim-mutual-exec 0/2 | 5.5 |
+| shim-mutual-exec | head | shim-mutual-exec 0/2 | 3.0 |
+| tracker-agnostic-drain | base | unknown-blocker-mapped 2/2 | 5.0 |
+| tracker-agnostic-drain | head | unknown-blocker-mapped 0/2 | 2.0 |
+| tracker-agnostic-feature | base | replace-deletes-known-blocker 0/2; worktree-cli-lookup 0/2 | 7.0 |
+| tracker-agnostic-feature | head | replace-deletes-known-blocker 1/2; worktree-cli-lookup 1/2 | 4.0 |
+
+Head caught 15 of 29 (one run failed), base 14 of 32, with about half the findings (3.4 against 6.3 distinct per
+run): as many catches as crew-afk's feature reviewer above (15 of 32, 2.9 findings) from a prompt a seventh its
+length. Every review-pr run on shim-mutual-exec reproduced the endless exec loop; none is counted, because the
+reference judgement asks for crew-afk's D2 to be named. tracker-agnostic-drain's typo'd blocker name is the one
+loss: a re-check of that case alone gave base 1/2, head 0/2, and the same head 0/2 again after telling the
+reviewer to count a guard only once it cites its line (dropped: lint does run first and rejects that name).
+
 ## Lean feature reviewer (`afk-reviewer-lean`)
 
 `node scripts/eval-reviewer-misses.mjs --runs 2`, base `main`, head `afk-reviewer-lean` (feature.md cut to review-pr's
