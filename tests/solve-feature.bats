@@ -787,6 +787,14 @@ fix_stops() {
   grep -qx -- '- the reviewer found the spec unmet' <<<"$(progress_body)"
 }
 
+@test "a report whose gaps is a string, not a list, still finishes fix and lists it under Needs attention" {
+  fix_ready '{"prd":"met","gaps":"no logout endpoint","findings":[]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -qx -- '- no logout endpoint' <<<"$(progress_body)"
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=0 needs-attention=1 ready=no" ]
+}
+
 # --- describe: the writer's summary on the PR ------------------------------------------
 
 # summary — what the writer subagent leaves: write-pr's title line and body.
@@ -827,6 +835,20 @@ EOF
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ]
   [ "$(grep -c '^## Why$' "$STATE/pr-body")" -eq 1 ] && [ "$(grep -c '^### 2 — Two$' "$STATE/pr-body")" -eq 1 ]
+}
+
+@test "a summary with its own ### heading or </details> line survives a re-describe without eating the spec" {
+  fix_ready
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ]
+  printf '# Let users log in\n\n## What changes\n\n### Login\n\n</details>\n\nDone.\n' > .solve-feature/pr-10.summary.md
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  local body; body=$(cat "$STATE/pr-body")
+  [ "$(grep -c '^### Login$' <<<"$body")" -eq 1 ] && [ "$(grep -c '^Implemented by solve-feature' <<<"$body")" -eq 1 ]
+  [ "$(grep -c '^### 2 — Two$' <<<"$body")" -eq 1 ] && [ "$(grep -c '^### 3 — Three$' <<<"$body")" -eq 1 ]
 }
 
 @test "with nothing needing a person describe adds no Needs attention, and without a summary it leaves the PR alone" {

@@ -136,7 +136,9 @@ pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block reb
   if [[ "$old" == *"$BEGIN"* && "$old" == *"$END"* ]]; then
     before=$(awk -v b="$BEGIN" '$0 == b {exit} {print}' <<<"$old")
     after=$(awk -v e="$END" 'f {print} $0 == e {f = 1}' <<<"$old")
-    old_sections=$(awk -v b="$BEGIN" '$0 == b {blk = 1} blk && /^### / {s = 1} blk && /^<\/details>$/ {s = 0; blk = 0} s' <<<"$old")
+    # Only inside the spec's <details>: the summary above it is the writer's free text.
+    old_sections=$(awk -v b="$BEGIN" '$0 == b {blk = 1} blk && $0 == "<details><summary>Spec</summary>" {d = 1}
+      d && /^### / {s = 1} d && /^<\/details>$/ {s = 0; d = 0; blk = 0} s' <<<"$old")
   else before="$old" after=""; fi
   sections="$old_sections"
   if [ -n "$1" ] && [[ "$old_sections" != *"### $1 — "* ]]; then
@@ -213,7 +215,7 @@ fix() {
   [ "$(git rev-parse HEAD)" = "$head_oid" ] || sha=$(git rev-parse --short HEAD)
   # Markdown headings in unfixed.md are not findings ('#2: …' is).
   [ ! -f "$unfixed" ] || listed=$({ grep -v -E '^[[:space:]]*#+[[:space:]]' "$unfixed" || true; } | sed -E 's/^[[:space:]]*[-*][[:space:]]+//' | grep -v '^[[:space:]]*$' || true)
-  attention=$(jq -r '.gaps // [] | .[] | tostring' "$report")
+  attention=$(jq -r '.gaps // [] | if type == "array" then .[] else . end | tostring' "$report")
   [ "$prd" = met ] || attention+=$'\n'"the reviewer found the spec unmet"
   attention+=$'\n'"$listed"
   [ "$total" = 0 ] || [ -n "$sha" ] || [ -n "$listed" ] || attention+=$'\n'"the fixer changed nothing"
