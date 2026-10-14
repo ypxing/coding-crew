@@ -6,6 +6,24 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **checks library, dep-install, solve-issue**: every checks script works on the one checkout it is given:
+  `--main-root` is gone from `run-checks.sh`, `run.sh`, `gen-override.sh`, `docker-install.sh`, `ensure-env.sh`,
+  `host-install.sh`, `resolve-mode.sh` and `preflight.sh` (and `--dep-scripts` from `run-checks.sh`), and a
+  worktree reads its own committed `.coding-crew/dev-commands.json`, which `write-commands-cache.sh` now writes
+  into the current checkout. Each linked worktree is its own compose project with its own dependency volumes
+  (no shared DB between features); a `.env` is generated per checkout instead of linked from the main one. The
+  install mode is `dev-commands.json`'s `install_mode` (`host` | `docker`) and `docker_service`, decided once by
+  `dep-install` with a person and committed; absent means host, and `git config agent.install-mode` /
+  `agent.install-service` are no longer read. Docker mode never falls back to the host: with no override,
+  `run.sh` installs first, and a failed install stops with the service, the step and its log. Removed:
+  `run.sh --describe`/`--via`, `resolve-mode.sh --deps`/`ACTION=`, `detect-service.sh`,
+  `detect-compose-bypass.sh`, the `docker-compose` (v1) shim, the install lock, host-run install commands and
+  their volume probe (an `install` command that runs docker itself is now refused, exit 5),
+  `gen-override.sh --query owner-prefix|platform|state-path`, host-install's fingerprint fast path and
+  `--force`, and `CREW_DOCKER_PLATFORM` with the override's `platform:` pin. Also cut, restorable if a
+  corporate proxy needs it: the sandbox CA bundle mount and proxy variable passthrough (`IS_SANDBOX`,
+  `--sandbox`, `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`, `SSL_CERT_FILE`) (#484).
+
 - **install, every skill**: `install.sh <platform>` installs at user level (`$HOME`) by default;
   `--project [<path>]` (or `TARGET_REPO`) installs into a repo, and `uninstall.sh` takes the same flags
   (`uninstall.sh --user` is gone). Shared code is three libraries — `lib/tracker/` (was `tracker/`),

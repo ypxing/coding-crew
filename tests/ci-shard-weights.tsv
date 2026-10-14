@@ -10,9 +10,7 @@
 1	crew-rework-workflow.bats
 5	cut-release.bats
 14	dep-install-assets.bats
-1	dep-install-detect-compose-bypass.bats
 1	dep-install-detect-mode.bats
-2	dep-install-detect-service.bats
 89	dep-install-docker-install.bats
 3	dep-install-ensure-env.bats
 7	dep-install-gen-override-git-mount.bats

@@ -88,10 +88,8 @@ HOME/.claude/skills/write-pr/SKILL.md exec=0 unrendered=0
 HOME/.coding-crew/ /
 HOME/.coding-crew/lib/ /
 HOME/.coding-crew/lib/checks/ /
-HOME/.coding-crew/lib/checks/detect-compose-bypass.sh exec=1
 HOME/.coding-crew/lib/checks/detect-docker-nesting.sh exec=1
 HOME/.coding-crew/lib/checks/detect-mode.sh exec=1
-HOME/.coding-crew/lib/checks/detect-service.sh exec=1
 HOME/.coding-crew/lib/checks/docker-install.sh exec=1
 HOME/.coding-crew/lib/checks/ensure-env.sh exec=1
 HOME/.coding-crew/lib/checks/gen-override.sh exec=1
@@ -103,7 +101,6 @@ HOME/.coding-crew/lib/checks/run-checks.sh exec=1
 HOME/.coding-crew/lib/checks/run.sh exec=1
 HOME/.coding-crew/lib/checks/shim/ /
 HOME/.coding-crew/lib/checks/shim/docker exec=1
-HOME/.coding-crew/lib/checks/shim/docker-compose exec=1
 HOME/.coding-crew/lib/git-workflow/ /
 HOME/.coding-crew/lib/git-workflow/README.md exec=0
 HOME/.coding-crew/lib/git-workflow/branch-safety-check.sh exec=1

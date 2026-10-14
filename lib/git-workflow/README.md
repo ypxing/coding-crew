@@ -136,7 +136,7 @@ directly and reads `.coding-crew/dev-commands.json` itself when it is usable.
 bash scripts/git-workflow/write-commands-cache.sh --response-file <path>
 ```
 
-**Behavior**: Extracts `test`/`lint`/`typecheck`/`install`/`env` from the response (tolerant of surrounding prose or a markdown code fence). A response with none of the five fields recognisable fails without touching any existing cache.
+**Behavior**: Extracts `test`/`lint`/`typecheck`/`install`/`env`/`credential_target`/`coverage`/`integration` from the response, and `install_mode`/`docker_service` from dep-install's confirmed answer (tolerant of surrounding prose or a markdown code fence), and merges them into the current checkout's `.coding-crew/dev-commands.json`. A response with none of the fields recognisable fails without touching any existing cache.
 
 **Used by**: the same two callers as `discover-commands.sh`, immediately after the model call it requested.
 
