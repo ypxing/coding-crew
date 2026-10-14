@@ -33,7 +33,7 @@ node "$TRACKER" config   # prints tracker=<kind> and configured=yes|no
 
 On `configured=no`, no tracker was ever chosen for this repo. On an interactive run, invoke the
 `configure-tracker` skill now to choose one, then continue. On a non-interactive run
-(`CREW_ORCHESTRATED` is set, or a headless/`-p` invocation) never ask: proceed as `local`, which
+(a headless/`-p` invocation or a subagent) never ask: proceed as `local`, which
 is what the CLI already uses. How the tracker works — its refs, statuses and labels — is in
 `.coding-crew/tracker/docs/<kind>.md`, beside `cli.mjs`.
 

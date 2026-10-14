@@ -21,7 +21,7 @@ setup() {
   TEMP_DIR=$(cd "$(mktemp -d)" && pwd -P)
   export STATE="$TEMP_DIR/state" HOME="$TEMP_DIR/home"
   mkdir -p "$STATE" "$HOME"
-  unset CREW_ORCHESTRATED PR_EXISTS PR_DRAFT PR_HEAD_OID PR_STATE PR_HEAD_REF GH_READY_FAIL TRACKER_KIND SOLVE_FEATURE_HOST
+  unset PR_EXISTS PR_DRAFT PR_HEAD_OID PR_STATE PR_HEAD_REF GH_READY_FAIL TRACKER_KIND SOLVE_FEATURE_HOST
 
   INSTALL="$HOME/.coding-crew"
   mkdir -p "$INSTALL/solve-feature" "$INSTALL/solve-issue/scripts" "$INSTALL/dep-install/scripts" "$INSTALL/tracker"
@@ -193,7 +193,7 @@ land_ready() {
   [ ! -e "$WORK/.solve-feature/outcome" ]
 }
 
-@test "start: a missing tool, an invalid slug, no tracker CLI, a dirty tree, no dev-commands.json or CREW_ORCHESTRATED exits 1 before any checkout or gh call" {
+@test "start: a missing tool, an invalid slug, no tracker CLI, a dirty tree or no dev-commands.json exits 1 before any checkout or gh call" {
   local tool
   for tool in gh jq; do
     local bin="$TEMP_DIR/bin-$tool"
@@ -222,10 +222,6 @@ land_ready() {
   [ "$status" -eq 1 ]
   [[ "$output" == *".coding-crew/dev-commands.json"* ]]
   git revert --no-edit HEAD >/dev/null
-
-  CREW_ORCHESTRATED=1 run bash "$SCRIPT" start feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"CREW_ORCHESTRATED"* ]]
 
   echo dirt > dirt.txt
   run bash "$SCRIPT" start feat

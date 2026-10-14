@@ -19,7 +19,7 @@ directory's git remote; there is no override. This doc ships with the tracker CL
 
 ## Tracker CLI
 
-Skills and crew-afk read and write this tracker only through the tracker CLI, which runs `gh`
+Skills read and write this tracker only through the tracker CLI, which runs `gh`
 for them. To run an op by hand, from the repo root (needs Node and an authenticated `gh`):
 
 ```bash
@@ -62,7 +62,7 @@ never files a duplicate.
 root or any of its sub-issues is open (`closed` otherwise) and the count of issues among the root
 and its sub-issues that can start now: open, `ready-for-agent`, no `blocked` label, and every
 `## Blocked by` issue closed or `awaiting-merge` — a blocker outside the feature keeps the issue
-out, as dispatch does. A slug on more than one root is listed once, with a warning on stderr, its
+out, as `next` does. A slug on more than one root is listed once, with a warning on stderr, its
 roots' issues counted as one feature. A closed root whose sub-issues have all closed is listed from its
 `sub_issues_summary` without reading them. A failing `gh` exits `1` with `gh`'s stderr verbatim.
 
@@ -72,7 +72,7 @@ one is created as a sub-issue of that root (`gh issue create --parent <root>`). 
 never reopened; new issues are filed under it as it is. `publish-issues` creates one issue per
 draft, labelled by its `Status:` line, in dependency order, rewriting each draft's `## Blocked by`
 to `Issue #<n>` with the number its blocker got and mirroring those edges as native GitHub
-dependencies (best-effort: a failed link only warns; dispatch reads the body's `## Blocked by`).
+dependencies (best-effort: a failed link only warns; `next` reads the body's `## Blocked by`).
 A feature's issues only accumulate, so it never exits `4` or `5`. `publish-prd` creates the
 `PRD: <feature title>` issue — as the root when the slug has none, else as a sub-issue of the
 root — or edits the feature's existing one, keeping its `Feature:` line. It pins nothing: the
@@ -88,8 +88,7 @@ of another feature. One exception: an issue that becomes the root keeps a parent
 
 `feature-issues` prints the feature's issues — the root and its sub-issues, all of them or only
 the open ones — as one JSON array of `{number, title, state, labels}`, the root's entry also
-carrying `"root": true`, `[]` for a slug with no root. `close-shipped.sh`, `issue-labels.sh sweep`
-and `solve-feature.sh` read a feature only through it.
+carrying `"root": true`, `[]` for a slug with no root.
 
 `closing-refs` prints the `Closes #<n>` lines the feature's PR body needs, one per line, by the
 rule below: every open `awaiting-merge` issue of the feature, plus its `PRD:` issue (and that
@@ -106,29 +105,16 @@ writes it back with `gh issue edit`, printing `TICKED: issue #<n> — <k> criter
 every criterion holds. `write-section <number> --heading <h> --body-file <file>` posts the file as
 a comment headed `## <h>` — never a body edit — which is how `## Unmet criteria` is recorded here.
 `mark-done` re-fetches the body live and refuses with exit `4` while an `- [ ]` in
-`## Acceptance criteria` (or `## Cross-cutting Requirements`) is unchecked, or exit `3` when an
-orchestrator owns the close — report your status and stop in either case. It also exits `4` for a
+`## Acceptance criteria` (or `## Cross-cutting Requirements`) is unchecked — report your status
+and stop. It also exits `4` for a
 body with no `## Acceptance criteria` section at all, unless `--force`. Never close the issue by
 hand instead.
 
 On success `mark-done` swaps `ready-for-agent` for `awaiting-merge` (creating that label if the repo
 lacks it) and leaves the issue **open**. Put `Closes #<number>` in the body of the PR that
-carries the work: GitHub closes the issue when that PR merges into the default branch. With
-`afk.openPr: true` (or `--open-pr`) crew-afk pushes the feature branch and opens or updates that
-PR itself, writing these lines for every open `awaiting-merge` issue of the feature, plus `Closes #<prd>` for the
-`PRD:` issue once no open work issue is left in it; without it,
-the end-of-sprint summary prints them for you to paste. (A PR into any other branch does not
-trigger the keyword — close those by hand.)
-
-GitHub only closes an issue whose `Closes #n` line it linked when the PR was opened, and it can
-fail to link one. So crew-afk does not rely on it: right after taking the feature lease, each run
-runs `close-shipped.sh <feature-slug> <feature-branch>`, which reads the bodies of the feature
-branch's PRs merged into the default branch itself and closes (`completed`, with a comment naming
-the PR) every open `awaiting-merge` issue of the feature that a closing keyword names — `#n`,
-`owner/repo#n` or the issue URL. Once no open work issue of the feature is left it closes the
-`PRD:` issue too. A slug with no root has nothing to close (`SHIPPED: 0`). Run it by hand from the repo root to close them right
-after a merge: `bash .claude/skills/crew-afk/scripts/close-shipped.sh <feature-slug> <feature-branch>`
-(the skill's install path varies by platform). A failure only warns.
+carries the work: GitHub closes the issue when that PR merges into the default branch.
+solve-feature writes these lines (`closing-refs`) into its PR's body. (A PR into any other branch
+does not trigger the keyword — close those by hand.)
 
 ## Reopen an issue
 
@@ -138,7 +124,7 @@ To undo `mark-done` (or put a finished issue back in a human's hands), swap the 
 gh issue edit <number> --remove-label awaiting-merge --add-label ready-for-human
 ```
 
-Use `ready-for-agent` instead of `ready-for-human` to hand it to crew-afk again. An issue already
+Use `ready-for-agent` instead of `ready-for-human` to hand it to an agent again. An issue already
 closed by its merged PR is reopened first: `gh issue reopen <number>`.
 
 ## Labels
@@ -158,10 +144,10 @@ maps to a close-reason.
 `done` has two representations on purpose: "merged into the feature branch" and "shipped" are
 different facts, and only a PR merge establishes the second. Closing at the first would show
 issues as completed on GitHub while their code exists only in a local branch. Both read as
-`done` for dispatch and for `## Blocked by` resolution. `configure-tracker`'s github setup
-idempotently creates the real labels (including `blocked` and `in-progress`) before first publish, since `gh issue create --label x`
-fails outright if `x` isn't already a repo label; `mark-done` also creates `awaiting-merge` and
-`in-progress` on demand, for repos configured before they existed.
+`done` for `next` and for `## Blocked by` resolution. `configure-tracker`'s github setup
+idempotently creates the real labels (including `blocked`) before first publish, since `gh issue create --label x`
+fails outright if `x` isn't already a repo label; `mark-done` also creates `awaiting-merge` on
+demand, for repos configured before it existed.
 
 Statuses other than `done` are labels a person sets in GitHub; `wontfix` closes the issue with a
 reason instead of setting a label:
@@ -170,51 +156,15 @@ reason instead of setting a label:
 gh issue close <number> --reason not-planned   # wontfix
 ```
 
-## In-progress issues
-
-While a crew-afk run works an issue it carries the `in-progress` label, so a human on GitHub can
-see it. It is **display only**: the feature lease, not this label, decides what is dispatched, and
-a human adding or removing it changes nothing. The run adds it when it claims the issue (before the
-worker is dispatched) and removes it when the issue merges — in the same `gh issue edit` that adds
-`awaiting-merge` (`mark-done` does this; running it by hand on an issue without the label still
-succeeds) — or is blocked (swapped for `blocked`). An issue the run still holds at its end
-(partial, round cap, stall) is released before the summary. A `## Requires` failure is
-never labelled. The new holder of a feature's lease also removes `in-progress` from every issue of
-the feature (the root and its sub-issues, open or closed) right after acquiring it: only a dead run can have left one. A failed label write only
-warns.
-
-## Feature lease ref namespace
-
-The feature lease is a ref `refs/crew-lock/<feature-slug>` on `origin`, pointing at an annotated
-tag. **Verified live against github.com (2026-09-30):** GitHub accepts create, compare-and-swap
-reclaim and compare-and-swap delete of an annotated tag pushed to `refs/crew-lock/<slug>`, and
-rejects a stale-sha reclaim or delete, so no fallback is needed there. To re-check (it pushes and
-deletes a throwaway ref on `origin`, so it is opt-in):
-
-```bash
-CREW_LEASE_LIVE=1 scripts/verify-lease-live.sh     # or: CREW_LEASE_LIVE=1 bats tests/crew-afk-lease.bats
-```
-
-A host or ruleset that refuses the namespace makes `lease.sh` exit 4 and the acquire error says so
-and names the fallback: `export CREW_LEASE_NAMESPACE=refs/tags/crew-lock` (read by `lease.sh` and
-`lease.mjs` alike; the manual release command follows it).
-
 ## Blocked issues
 
-When crew-afk stops on an issue that needs a human (retry limit, cost limit, not fixable, an
-environment criterion, a dirty main tree, a review that did not run), it posts a `## Blocked`
-comment and adds the `blocked` label **next to** `ready-for-agent` (creating the label if the
-repo lacks it). Every later run skips an issue labelled `blocked`, and issues whose
-`## Blocked by` names it keep waiting — `blocked` is not `done`. A failed label write only warns.
-A failed `## Requires` probe is not labelled; it is re-probed every run.
-
-To put a blocked issue back in the queue, once its cause is fixed:
+A person adds the `blocked` label **next to** `ready-for-agent` to an issue that needs a human.
+`next` and `features` skip an issue labelled `blocked`, and issues whose `## Blocked by` names it
+keep waiting — `blocked` is not `done`. To put it back in the queue once its cause is fixed:
 
 ```bash
 gh issue edit <number> --remove-label blocked
 ```
-
-The sprint summary prints that command for each issue blocked in the run.
 
 ## Workspace
 
@@ -231,9 +181,9 @@ re-publish of it) — never a skill — and finds a feature by it, scanning the 
 issues through the REST list API (open ones first, then all), paginated. That list lags a new
 issue by a few seconds, so when it shows no open root the issues numbered past its newest are read
 one by one: `publish-issues` right after `publish-prd` finds the root just created. It scans once
-per process (a crew-afk run reads its feature on every pass): later reads re-read the root it
-found, and scan again only once that issue is gone or no longer carries the line. Slices, promoted
-review-fix issues and integration-fix issues are all sub-issues of the root (`--parent <root>`).
+per process: later reads re-read the root it
+found, and scan again only once that issue is gone or no longer carries the line. Every slice is a
+sub-issue of the root (`--parent <root>`).
 A feature's issues are the root plus its sub-issues, read from
 `repos/{owner}/{repo}/issues/<root>/sub_issues`, paginated, so no page is cut short; a slug with
 no root reads as an empty feature. GitHub caps a parent at 100 sub-issues: past that, filing
@@ -243,8 +193,8 @@ feature and start a new slug well before it. The PRD is identified by title conv
 root. Work issues use the same markdown body conventions as local issues (`## Blocked by`,
 `## Acceptance criteria`, `## Requires`, `Source:`).
 `## Requires` is one backticked shell command per bullet, exit 0 = satisfied, naming what the
-issue's checks need that the install does not guarantee; crew-afk runs each once, from the
-project root, before the issue's first dispatch, and a failing one blocks the issue.
+issue's checks need that the install does not guarantee; `solve-issue`'s preflight runs each from
+the project root, and a failing one blocks the issue.
 
 No filename exists to derive a slug or branch from, so both are derived deterministically from
 the issue every time: kebab-case the title for the slug, and include the issue number in the
@@ -258,7 +208,7 @@ entries — a live activity feed, not an in-place-edited section like local's `#
 
 Earlier versions grouped a feature under a GitHub milestone named for its slug. That is gone, with
 no fallback read: after `install.sh --update`, a feature still filed under a milestone is invisible
-to crew-afk (it reads as empty) until you move it by hand. For each feature still in progress:
+to every skill (it reads as empty) until you move it by hand. For each feature still in progress:
 
 1. Pick its root — the `PRD:` issue, or for a single-slice feature the work issue — and add the
    slug line to the root's body, on a line of its own at column 0:

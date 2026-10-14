@@ -102,7 +102,6 @@ setup() {
   grep -qF 'configured=no' "$f"
   grep -qF 'configure-tracker' "$f"
   grep -qiF 'interactive run' "$f"
-  grep -qF 'CREW_ORCHESTRATED' "$f"
   grep -qF -- '-p' "$f"
   grep -qF 'proceed as `local`' "$f"
   grep -qF '.coding-crew/tracker/docs/' "$f"

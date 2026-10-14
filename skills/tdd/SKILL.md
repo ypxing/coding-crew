@@ -44,8 +44,8 @@ Before writing any code:
 - [ ] Design interfaces for testability (see `references/interface-design.md` alongside this skill file)
 - [ ] List the behaviors to test (not implementation steps)
 
-**Non-interactive runs.** With no human in the loop — `CREW_ORCHESTRATED=1`, a headless/`-p`
-invocation, or an orchestrator named as your caller — the confirm-and-approve box cannot be
+**Non-interactive runs.** With no human in the loop — a headless/`-p` invocation, a subagent, or
+a program named as your caller — the confirm-and-approve box cannot be
 satisfied and must not be waited on. Treat the issue's acceptance criteria as the approved plan,
 derive the interface and behaviour list from them, record that list in your notes, and go straight
 to §2. Never ask a question nobody will read.

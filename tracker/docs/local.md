@@ -18,7 +18,7 @@ refreshed by every install — edit `config.json`, not this file.
 
 ## Tracker CLI
 
-Skills and crew-afk read and write this tracker only through the tracker CLI. To run an op by
+Skills read and write this tracker only through the tracker CLI. To run an op by
 hand, from the repo root (needs Node):
 
 ```bash
@@ -52,13 +52,13 @@ feature's `done/`; it prints nothing and exits `3` when there is none.
 subdirectory, sorted by slug: `<slug>`, `open` (`issues/open/` holds an `.md` file) or `closed`, and
 the count of issues that can start now: `Status: ready-for-agent` files in `issues/open/` whose
 every blocker (from `issues-deps.json` when the feature has one, else `## Blocked by`) is in the
-feature's `issues/done/`, as dispatch reads them. A directory without `issues/` is
+feature's `issues/done/`, as `next` reads them. A directory without `issues/` is
 not listed, and no `.scratch/` prints nothing.
 
 `publish-issues` writes each draft to `.scratch/<slug>/issues/open/<NN>-<slug>.md` (numbered from
 `01`) and the drafts' `deps.json` to `.scratch/<slug>/issues/issues-deps.json` — a flat filename
-→ blocker-filenames map. That file, not each issue's `## Blocked by` prose, is what the
-orchestrator reads to decide whether an issue is ready to dispatch. It exits `4` when the feature
+→ blocker-filenames map. That file, not each issue's `## Blocked by` prose, is what `next` and
+`features` read to decide whether an issue can start. It exits `4` when the feature
 already has issues in `done/` and `5` when it has open ones and `--replace` is absent; both write
 nothing. `publish-prd` writes `.scratch/<slug>/PRD.md`.
 
@@ -67,35 +67,29 @@ running it, verify every `- [ ]` in `## Acceptance criteria` (and `## Cross-cutt
 if present) against the implemented code; once all of them hold, `tick <ref>` checks them off in
 one write (it prints `TICKED: <file> — <n> criteria`; a body with no criteria section ticks
 nothing). `write-section <ref> --heading <h> --body-file <file>` replaces, or appends, the `## <h>`
-section of the file: how `## Unmet criteria` is recorded. `mark-done` then refuses the close in two
-cases, and both refusals are correct:
+section of the file: how `## Unmet criteria` is recorded. `mark-done` then refuses the close with
+exit `4` while criteria are still unchecked: do not move the file; add a `## Unmet criteria` section
+saying what is missing and why (descoped, blocked, split out), then stop. It also exits `4` for an
+issue with no `## Acceptance criteria` section at all, unless `--force`.
 
-| Exit | Meaning                                                                    | What to do                                                                                                                          |
-| ---- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `3`  | An orchestrator owns this close (`.scratch/<slug>/.orchestrated` exists, or `CREW_ORCHESTRATED=1`) | Nothing. Report your status and stop — the orchestrator closes the issue after its own verification, criteria and review gates pass. |
-| `4`  | Criteria are still unchecked                                               | Do not move the file. Add a `## Unmet criteria` section saying what is missing and why (descoped, blocked, split out), then stop.     |
-
-It also exits `4` for an issue with no `## Acceptance criteria` section at all, unless `--force`.
-
-Pass `--force` only to override a stale marker left by a crashed sprint, or a criterion
-deliberately recorded as descoped. On success it sets `Status: done` and moves the file to
+Pass `--force` only for a criterion deliberately recorded as descoped. On success it sets `Status: done` and moves the file to
 `issues/done/` (sibling of `issues/open/`); an issue already in `done/` exits 0.
 
 `done` means implemented and merged into the feature branch, not shipped — for this tracker
 there is no later state: nothing outside `.scratch/` reads it, so no PR has anything to close.
 
-An issue may carry a `## Requires` section: one backticked shell command per bullet, naming what its checks need that the project's install does not guarantee (`- \`test -n "$LOCALSTACK_AUTH_TOKEN"\``). Exit 0 means satisfied. Each runs on the host from the project root — once per run, before the issue's first dispatch, under crew-afk; in `solve-issue`'s preflight on a direct run — and a failing one blocks the issue.
+An issue may carry a `## Requires` section: one backticked shell command per bullet, naming what its checks need that the project's install does not guarantee (`- \`test -n "$LOCALSTACK_AUTH_TOKEN"\``). Exit 0 means satisfied. Each runs on the host from the project root, in `solve-issue`'s preflight, and a failing one blocks the issue.
 
 ## Reopen an issue
 
 To undo `mark-done` (or put a finished issue back in a human's hands):
 
 1. Move the file from `.scratch/<slug>/issues/done/` back to `.scratch/<slug>/issues/open/`.
-2. Set its `Status:` line to `ready-for-human` (or `ready-for-agent` to hand it to crew-afk again).
+2. Set its `Status:` line to `ready-for-human` (or `ready-for-agent` to hand it to an agent again).
 
 ## Labels
 
-The agents speak in terms of six canonical triage labels, each the `Status:` line's value as written. The strings are fixed: the tracker CLI and crew-afk match them exactly.
+The agents speak in terms of six canonical triage labels, each the `Status:` line's value as written. The strings are fixed: the tracker CLI matches them exactly.
 
 | Canonical label   | `Status:` value   | Meaning                                                                              |
 | ----------------- | ----------------- | ------------------------------------------------------------------------------------ |

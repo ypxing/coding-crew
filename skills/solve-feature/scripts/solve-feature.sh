@@ -79,8 +79,6 @@ start() {
   [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
   # DISCOVER needs an agent and a human once; run-checks.sh's own exit 3 guards a file that names no usable command.
   [ -f "$ROOT/.coding-crew/dev-commands.json" ] || die "no .coding-crew/dev-commands.json: run /solve-issue or dep-install once by hand and commit it"
-  # solve-issue's Step 7 must close the issue itself: land sees `next` move on.
-  [ -z "${CREW_ORCHESTRATED:-}" ] || die "CREW_ORCHESTRATED is set: solve-issue would leave every close to crew-afk; unset it"
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
   grep -qxF "$SLUG" <<<"$features" || die "no feature '$SLUG'; features: $(paste -sd' ' - <<<"$features")"
   # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase

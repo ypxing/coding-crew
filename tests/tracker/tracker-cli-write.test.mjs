@@ -598,21 +598,6 @@ test("mark-done with no issue ref is a usage error", async () => {
   assert.match(r.stderr, /usage:/);
 });
 
-test("mark-done closes the issue like any other with CREW_ORCHESTRATED=1 and a .orchestrated file, on both backends", async () => {
-  for (const github of [false, true]) {
-    const dir = root({ github });
-    mkdirSync(join(dir, ".scratch/feat"), { recursive: true });
-    writeFileSync(join(dir, ".scratch/feat/.orchestrated"), "");
-    const ref = github ? "12" : localIssue(dir);
-    const exec = github ? fakeGh({ "issue view 12": { stdout: MET }, "label create": {}, "issue edit 12": {} }) : undefined;
-    const r = await cli(dir, ["mark-done", ref], exec, { CREW_ORCHESTRATED: "1", FEATURE_SLUG: "feat" });
-    assert.equal(r.code, 0, `github=${github}: ${r.stderr}`);
-    assert.doesNotMatch(r.stderr, /REFUSED/);
-    if (github) assert.equal(exec.find("issue edit 12").length, 1);
-    else assert.equal(existsSync(join(dir, ".scratch/feat/issues/done/01-t.md")), true);
-  }
-});
-
 test("mark-done exits 4 while a criterion is unchecked in a fresh read, on both backends", async () => {
   const dir = root();
   const path = localIssue(dir, UNMET);

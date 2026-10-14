@@ -8,13 +8,12 @@
 #   OK
 #   ISSUE_SLUG=<issue file name without .md>
 #   PRD=<absolute path, or empty when there is none — normal>
-#   ORCHESTRATED=0|1       1: another program closes the issue; write nothing to it (Step 7)
 #   DEP_SCRIPTS=<dir>      dep-install's scripts (resolve-mode.sh, run.sh); empty if not installed
 #
 # Or one line and exit 1 — stop, report it verbatim:
 #   BLOCKED: on default branch (<name>) — create or switch to a feature branch first
 #   BLOCKED: depends on <file> which is not yet done
-#   BLOCKED: requires: <cmd>          then check-requires.sh's output tail; skipped when ORCHESTRATED=1
+#   BLOCKED: requires: <cmd>          then check-requires.sh's output tail
 # --issue is optional: an issue handed over inline has no Blocked by or PRD to resolve.
 
 set -uo pipefail
@@ -87,13 +86,7 @@ if [ -n "$ISSUE" ]; then
   fi
 fi
 
-ORCHESTRATED=0
-if [ "${CREW_ORCHESTRATED:-}" = 1 ] || ls "$MAIN_ROOT"/.scratch/*/.orchestrated >/dev/null 2>&1; then
-  ORCHESTRATED=1
-fi
-
-# An orchestrator probes every issue's `## Requires` before dispatch, so an orchestrated worker skips it.
-if [ "$ORCHESTRATED" = 0 ] && [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
+if [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
   REQ_OUT=$(bash "$SELF_DIR/check-requires.sh" --project-root "$PROJECT_ROOT" --issue "$ISSUE")
   if [ $? -ne 0 ]; then
     REQ_FAIL=$(printf '%s\n' "$REQ_OUT" | sed -n "s|^REQUIRE: fail $ISSUE ||p" | head -1)
@@ -103,10 +96,9 @@ if [ "$ORCHESTRATED" = 0 ] && [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
   fi
 fi
 
-# CREW_INSTALL_DIR first, then the sibling skill, then the project's and $HOME's asset copies.
+# The sibling skill first, then the project's and $HOME's asset copies.
 DEP_SCRIPTS=""
-for d in ${CREW_INSTALL_DIR:+"$CREW_INSTALL_DIR/dep-install/scripts"} \
-         "$SELF_DIR/../../dep-install/scripts" \
+for d in "$SELF_DIR/../../dep-install/scripts" \
          "$MAIN_ROOT/.coding-crew/dep-install/scripts" \
          "$PROJECT_ROOT/.coding-crew/dep-install/scripts" \
          ${HOME:+"$HOME/.coding-crew/dep-install/scripts"}; do
@@ -122,5 +114,4 @@ ISSUE_SLUG=""
 echo "OK"
 echo "ISSUE_SLUG=$ISSUE_SLUG"
 echo "PRD=$PRD"
-echo "ORCHESTRATED=$ORCHESTRATED"
 echo "DEP_SCRIPTS=$DEP_SCRIPTS"

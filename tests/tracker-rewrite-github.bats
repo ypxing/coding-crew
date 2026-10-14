@@ -23,7 +23,6 @@ tracker: github
 # Issue tracker: GitHub Issues
 EOF
   cp -R "$REPO_ROOT/tracker" "$MAIN_ROOT/.coding-crew/tracker"
-  unset CREW_TRACKER_CLI CREW_INSTALL_DIR
 
   STUB="$TEMP_DIR/.stub"
   mkdir -p "$STUB"

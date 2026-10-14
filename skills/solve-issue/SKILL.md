@@ -65,12 +65,11 @@ bash "<skill-dir>/scripts/preflight.sh" --project-root "$PROJECT_ROOT" --main-ro
 A `BLOCKED:` line (exit 1) ends the run: report it verbatim and do not proceed. It is
 `BLOCKED: on default branch` (`DEFAULT_BRANCH`: `origin/HEAD`, else `main`), `BLOCKED: depends on
 <file>` for a `## Blocked by` file not yet in the sibling `done/`, or `BLOCKED: requires: <cmd>` for
-a failing `## Requires` command. Otherwise it prints `OK` and four values; each bash call is a fresh
+a failing `## Requires` command. Otherwise it prints `OK` and three values; each bash call is a fresh
 shell, so carry them as literals for the rest of the run:
 
 - `ISSUE_SLUG` — the commit prefix (Steps 4 and 6)
 - `PRD` — the PRD path, or empty (Step 1.5)
-- `ORCHESTRATED` — who closes the issue (Step 7)
 - `DEP_SCRIPTS` — dep-install's scripts (Steps 2, 4 and 5)
 
 ### 1. Understand the issue
@@ -202,13 +201,6 @@ bash "<skill-dir>/scripts/run-checks.sh" --project-root "$PROJECT_ROOT" --main-r
 It runs every `.coding-crew/dev-commands.json` check — `typecheck`, `lint`, `test`, then every other
 key with a command (coverage, integration) — each through `run.sh`, and reports each. `NOT RUN: no
 command found` means no local command exists: report it, do not re-check CLAUDE.md/Makefile.
-`<key>: deferred` means the verify gate runs it: report `deferred`.
-
-**Under `CREW_DEFER_FULL_CHECKS=1`** the full suite is the verify gate's: never run the
-`dev-commands.json` `test` command (or any whole-suite glob) yourself. Pass `--targeted` to
-`run-checks.sh`: it runs only the test files changed on the branch against its merge-base and
-reports `test: pass (targeted)` / `test: fail (targeted, exit N)`, or `test: deferred` when no
-changed test file is one the test command's suite selects (report `deferred`).
 
 - `CHECKS: pass` — continue.
 - `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
@@ -262,28 +254,17 @@ fi
 
 ### 7. Mark done
 
-`ORCHESTRATED` from Step 0 says who owns the close — the same fact `mark-done` checks:
-`CREW_ORCHESTRATED=1`, or a `$MAIN_ROOT/.scratch/*/.orchestrated` marker.
-
-**`1` — write nothing to the issue file, in this step or the next:** no tick, no `mark-done`, no
-`Status:` rewrite, no move, no added section. Report every criterion and its state and stop; the
-owner ticks the boxes and closes the issue once its own gates pass on your branch.
-
-**`0` — the close is yours.** Verify every criterion under `## Acceptance criteria` — and under
-`## Cross-cutting Requirements` if present — against the code. Once each one holds, run `node
-"$TRACKER" tick <issue-ref>` (it checks every `- [ ]` off, on any tracker: a GitHub issue's body
-has no file to edit), then `node "$TRACKER" mark-done <issue-ref>`. Never hand-roll `mv`, `sed`,
-`gh issue edit` or a label edit. Exit 3 means another owner holds the close (report and stop);
-exit 4 that a criterion is still unchecked, or the section missing (Step 8). A criterion that does
-not hold is never ticked: Step 8 is for that, with nothing ticked.
+Verify every criterion under `## Acceptance criteria` — and under `## Cross-cutting Requirements` if
+present — against the code. Once each one holds, run `node "$TRACKER" tick <issue-ref>` (it checks
+every `- [ ]` off, on any tracker: a GitHub issue's body has no file to edit), then `node "$TRACKER"
+mark-done <issue-ref>`. Never hand-roll `mv`, `sed`, `gh issue edit` or a label edit. Exit 4 means a
+criterion is still unchecked, or the section missing (Step 8). A criterion that does not hold is
+never ticked: Step 8 is for that, with nothing ticked.
 
 ### 8. Unmet criteria
 
-Orchestrated (Step 7): report status `partial` with the unmet criteria, and stop.
-
-Otherwise record a `## Unmet criteria` section saying what is missing and why (descoped, blocked,
-split out): write it to a file and run `node "$TRACKER" write-section <issue-ref> --heading
-"Unmet criteria" --body-file <file>` (into the issue file on a local tracker, as a comment on a
-GitHub issue). On a **non-interactive run** (a headless/`-p` invocation or a subagent;
-`CREW_ORCHESTRATED` took the branch above), report `partial` listing them and stop — nobody can
-answer a question. Only on an interactive run, ask the user how to proceed.
+Record a `## Unmet criteria` section saying what is missing and why (descoped, blocked, split out):
+write it to a file and run `node "$TRACKER" write-section <issue-ref> --heading "Unmet criteria"
+--body-file <file>` (into the issue file on a local tracker, as a comment on a GitHub issue). On a
+**non-interactive run** (a headless/`-p` invocation or a subagent), report `partial` listing them
+and stop — nobody can answer a question. Only on an interactive run, ask the user how to proceed.
