@@ -30,12 +30,12 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.s
 That installs every skill at user level (under `~`). To install into one repo instead, run it from
 inside the repo with `| bash -s -- --project` (or `./install.sh <platform> --project` from a clone).
 
-Then, inside Claude Code, Copilot CLI, Codex CLI or [pi](https://github.com/badlogic/pi-mono):
+Then, inside your coding agent:
 
 ```bash
 /crew-grill add rate limiting to the public API   # 👤 plan it together → PRD + issues
 /crew-afk rate-limit                              # 🤖 the crew builds it in its own worktree while you're away
-/crew-afk status                                  # how each run ended: ready pr=<n>, needs-attention, …
+/crew-afk status                                  # which PRs are ready for you
 ```
 
 That's the whole workflow.
@@ -44,51 +44,20 @@ That's the whole workflow.
 
 ```mermaid
 flowchart LR
-    idea(["💡 <b>Your idea</b>"]) --> plan
-
-    subgraph you1 ["👤 You"]
-        plan["🧭 <b>Plan together</b><br/><code>/crew-grill</code>"]
+    plan["👤 <b>Plan together</b><br/>/crew-grill → issues"] --> coder
+    subgraph away ["🤖 /crew-afk · while you're away"]
+        coder["🧪 <b>Fresh coder per issue</b><br/>test-first"] --> gate{"🚦 <b>Your checks</b>"}
+        gate -- "next issue" --> coder
+        gate -- "all issues pass" --> review["🔍 <b>Review the whole feature</b><br/>one fix round"]
     end
-
-    plan --> issues
-
-    subgraph crew ["🤖 The crew · /crew-afk → /solve-feature · while you're away"]
-        direction LR
-        issues["📋 <b>PRD + issues</b><br/>testable criteria"]
-        issues --> c1["🧪 <b>Coder</b><br/>TDD · one issue"]
-        c1 --> gate{{"🚦 <b>Gate</b><br/>your checks + criteria"}}
-        gate -- "next issue" --> c1
-        gate -- "all landed" --> review["🔍 <b>Feature review</b><br/>against the PRD"]
-        review -. "fix findings once" .-> gate
-    end
-
-    review --> pr
-
-    subgraph you2 ["👤 You"]
-        pr(["✅ <b>One reviewed PR</b>"])
-    end
-
-    classDef human fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
-    classDef bot fill:#ffffff,stroke:#64748b,stroke-width:1.5px,color:#0f172a
-    classDef code fill:#ecfdf5,stroke:#059669,stroke-width:1.5px,color:#064e3b
-    classDef gate fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
-    classDef done fill:#dcfce7,stroke:#16a34a,stroke-width:2.5px,color:#14532d
-    class idea,plan human
-    class issues,review bot
-    class c1 code
-    class gate gate
-    class pr done
-    style you1 fill:#eff6ff,stroke:#93c5fd,color:#1e3a8a
-    style you2 fill:#eff6ff,stroke:#93c5fd,color:#1e3a8a
-    style crew fill:#f8fafc,stroke:#cbd5e1,color:#334155
+    review --> pr(["✅ <b>One PR for you</b>"])
 ```
 
 1. **Plan.** `/crew-grill` questions your idea until the edge cases are decided, then splits the work
    into small issues with testable acceptance criteria. If you're starting from a fuzzy idea,
    `/crew-brainstorm` shapes it first.
-2. **Build.** `/crew-afk` starts `/solve-feature` unattended in the feature's own worktree — locally
-   (capped at $10 and an hour), or in an orca or herdr terminal with `--to` — and returns at once.
-   `/solve-feature` hands each issue, in order, to a fresh coder on one branch. Each one has to pass
+2. **Build.** `/crew-afk` starts the build in the feature's own worktree and returns at once.
+   It hands each issue, in order, to a fresh coder on one branch. Each one has to pass
    your own checks and meet its acceptance criteria before it lands in the feature's draft PR.
 3. **Review.** A reviewer reads the whole feature against the plan and catches what no single issue
    shows. The crew fixes the findings once, gated by your checks, and the run stops.
@@ -100,7 +69,7 @@ flowchart LR
 | You want to…                              | Run                                                         |
 | ----------------------------------------- | ----------------------------------------------------------- |
 | 🚀 **Ship a feature overnight**           | `/crew-grill <idea>` → `/crew-afk <slug>`                   |
-| 🐛 **Burn down a bug backlog**            | `/to-issues <ref>` for each bug, then `/solve-feature`      |
+| 🐛 **Burn down a bug backlog**            | `/to-issues <the bugs>` → `/crew-afk <slug>`                |
 | 🧪 **Cover risky untested code**          | `/add-tests` → `/solve-feature`                             |
 | 📦 **Upgrade dependencies safely**        | `/upgrade-deps` → `/solve-feature`                          |
 | 🔀 **Build several features in parallel** | one `/crew-afk <slug>` per feature, each in its own worktree |
@@ -116,7 +85,7 @@ Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to t
 - 🔍 **A reviewer that sees the whole feature.** It reviews against the plan, not one diff at a time.
 - 🔁 **Fixes itself without looping.** One fix round, gated by your checks, then it stops.
 - 🙋 **Only what needs you.** A PR it could not finish lists what needs a person; one it could is marked ready.
-- 🧩 **Fits what you already use.** It works with four coding CLIs, and keeps issues as local markdown or in GitHub Issues.
+- 🧩 **Agent-agnostic.** Plain skills any skills-capable coding CLI can run; Claude Code, Copilot CLI, Codex CLI and [pi](https://github.com/badlogic/pi-mono) are supported today. Issues stay as local markdown or in GitHub Issues.
 
 ## The toolkit
 
