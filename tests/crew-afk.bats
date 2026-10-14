@@ -163,3 +163,82 @@ SH
   run bash "$SCRIPT" status
   [[ "$output" == *'capped at $10/1h — re-run /crew-afk report-cli to continue'* ]]
 }
+
+# The orca and herdr stubs log one line per call and answer with the JSON fields the destination reads.
+# Their worktree create adds a real detached worktree, which is what the real CLIs leave behind.
+stub_orca() {
+  export MAIN
+  cat > "$T/stub/orca" <<'SH'
+#!/usr/bin/env bash
+echo "$*" >> "$T/orca-calls"
+case "$1 $2" in
+  "worktree show") exit 1 ;;
+  "worktree create") git -C "$MAIN" worktree add -q --detach "$T/orca-wt/report-cli" >&2
+    echo "{\"ok\":true,\"result\":{\"worktree\":{\"path\":\"$T/orca-wt/report-cli\"}}}" ;;
+  "terminal create") echo '{"ok":true,"result":{"terminal":{"handle":"h1"}}}' ;;
+esac
+SH
+  chmod +x "$T/stub/orca"
+}
+
+stub_herdr() {
+  cat > "$T/stub/herdr" <<'SH'
+#!/usr/bin/env bash
+echo "$*" >> "$T/herdr-calls"
+case "$1 $2" in
+  "worktree create") while [ $# -gt 0 ]; do [ "$1" = --path ] && p="$2"; shift; done
+    git worktree add -q --detach "$p" >&2 ;;
+  "worktree open") echo '{"result":{"workspace":{"workspace_id":"w1"}}}' ;;
+  "tab create") echo '{"result":{"tab":{"tab_id":"t1"},"root_pane":{"pane_id":"p1"}}}' ;;
+esac
+SH
+  chmod +x "$T/stub/herdr"
+}
+
+@test "--to orca creates an orca worktree and starts an interactive, uncapped claude in an orca terminal" {
+  stub_orca
+  run bash "$SCRIPT" dispatch report-cli --agent claude --to orca
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(field worktree)" = "$T/orca-wt/report-cli" ]
+  [ -z "$(field pid)" ] && [ -z "$(field session)" ]
+  grep -qxF "worktree create --repo path:$MAIN --name report-cli --base-branch main --json" "$T/orca-calls"
+  term=$(grep '^terminal create' "$T/orca-calls")
+  [[ "$term" == "terminal create --worktree path:$T/orca-wt/report-cli --title report-cli --command claude --dangerously-skip-permissions "*"/solve-feature\\ report-cli"* ]]
+  [[ "$term" != *budget* ]]
+  [ ! -f "$T/timeout-argv" ]
+  [ -L "$T/orca-wt/report-cli/node_modules" ]
+  run bash "$SCRIPT" status
+  [ "$output" = "report-cli: no outcome yet — orca run, see its terminal" ]
+}
+
+@test "--to herdr creates the worktree through herdr and starts an interactive, uncapped claude in a new pane" {
+  stub_herdr
+  run bash "$SCRIPT" dispatch report-cli --agent claude --to herdr
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(field worktree)" = "$WT" ]
+  [ -z "$(field pid)" ] && [ -z "$(field session)" ]
+  grep -qxF "worktree create --cwd $MAIN --branch crew-afk/report-cli --base main --path $WT --label report-cli --no-focus" "$T/herdr-calls"
+  grep -qxF "agent start report-cli --kind claude --pane p1 -- --dangerously-skip-permissions /solve-feature report-cli" "$T/herdr-calls"
+  [ ! -f "$T/timeout-argv" ]
+  run bash "$SCRIPT" status report-cli
+  [ "$output" = "report-cli: no outcome yet — herdr run, see its terminal" ]
+}
+
+@test "--to orca or herdr without its CLI on PATH exits 1 naming it and creates nothing" {
+  local d dirs=()
+  while IFS= read -r d; do [ -x "$d/orca" ] || [ -x "$d/herdr" ] || dirs+=("$d"); done < <(tr ':' '\n' <<<"$PATH")
+  local to
+  for to in orca herdr; do
+    run env PATH="$(IFS=:; echo "${dirs[*]}")" bash "$SCRIPT" dispatch report-cli --agent claude --to "$to"
+    [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"$to not found"* ]]
+  done
+  [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 1 ]
+}
+
+@test "each destination defines only prepare and launch" {
+  local f
+  for f in "$REPO_ROOT"/skills/crew-afk/scripts/destinations/*.sh; do
+    [ "$(env -i PATH="$PATH" bash --norc -c 'source "$1"; declare -F' _ "$f" | awk '{print $3}' | sort | paste -sd' ' -)" = "launch prepare" ] || { echo "$f"; return 1; }
+  done
+}
