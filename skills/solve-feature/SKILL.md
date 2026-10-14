@@ -50,7 +50,8 @@ A bare word the user gave is the slug: pass it as is.
      run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt, `<repo>` the repo's absolute top level: `Use the tdd skill to fix every
      finding in <repo>/.solve-feature/pr-<n>.review.json; list any you could not fix, one per line,
-     in <repo>/.solve-feature/pr-<n>.unfixed.md, and leave that file absent if you fixed them all`. Run it on `coder-model=` as for each issue's coder.
+     in <repo>/.solve-feature/pr-<n>.unfixed.md, and leave that file absent if you fixed them all. This
+     run is non-interactive: the report's findings are the approved plan; ask no questions`. Run it on `coder-model=` as for each issue's coder.
      Wait for it to finish.
    4. `bash <path> fix <slug> <n> <branch>` — always, whatever the subagents reported. It gates the
      fixes with the checks, commits and pushes them, records the review on the PR's progress comment

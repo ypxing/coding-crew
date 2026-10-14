@@ -184,7 +184,7 @@ land() {
 # The fixer's edits are staged before the checks and committed after, so the push carries exactly what was gated.
 fix() {
   local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.md" clog="$LOGS/pr-$PR.checks.log"
-  local checks_dir dep_dir head_oid draft state head_ref prd rc=0 changed total n_unfixed fixed=0 sha="" result
+  local checks_dir dep_dir head_oid reviewed draft state head_ref prd rc=0 total n_unfixed fixed=0 sha="" result
   local attention="" ready=no note
   checks_dir=$(scripts_of solve-issue) dep_dir=$(scripts_of dep-install)
   VIEW=$(gh pr view "$PR" --json state,headRefName,headRefOid,isDraft) || die "gh pr view $PR failed"
@@ -194,29 +194,34 @@ fix() {
   [ "$state" = OPEN ] || stop "review ✗  checks ·" fix "PR #$PR is $state, not OPEN"
   [ "$head_ref" = "$BRANCH" ] || stop "review ✗  checks ·" fix "PR #$PR's head branch is '$head_ref', not '$BRANCH'"
   git merge-base --is-ancestor "$head_oid" HEAD 2>/dev/null || stop "review ✗  checks ·" fix "HEAD does not contain PR #$PR's head ${head_oid:0:7}"
+  # What was fixed is counted from the commit the reviewer read, which a hand push after a stop moves the PR past.
+  [ -f "$LOGS/pr-$PR.reviewed-head" ] || stop "review ✗  checks ·" fix "no reviewed head at $LOGS/pr-$PR.reviewed-head: run review-pr.sh prepare $PR first"
+  reviewed=$(head -n 1 "$LOGS/pr-$PR.reviewed-head")
+  git merge-base --is-ancestor "$reviewed" HEAD 2>/dev/null || stop "review ✗  checks ·" fix "HEAD does not contain the reviewed commit ${reviewed:0:7}"
   [ -f "$report" ] || stop "review ✗  checks ·" fix "no review report at $report"
   prd=$(jq -r '.prd // empty' "$report" 2>/dev/null) || stop "review ✗  checks ·" fix "unreadable review report $report"
   case "$prd" in met|unmet) ;; *) stop "review ✗  checks ·" fix "review report $report: prd '${prd:-missing}' is not met|unmet" ;; esac
   # The same predicate as review-pr.sh post's, so both accept the same reports.
   jq -e '(.findings // [] | type == "array" and all(type == "object")) and (.gaps // [] | type == "array")' "$report" >/dev/null ||
     stop "review ✗  checks ·" fix "review report $report: findings must be an array of objects and gaps an array"
+  total=$(jq '.findings // [] | length' "$report")
+  # With no findings no fixer ran, so a change can only be the read-only reviewer's.
+  [ "$total" != 0 ] || [ -z "$(git status --porcelain)" ] ||
+    stop "review ✗  checks ·" fix "the tree changed though the review had no findings (the reviewer edited it): revert that, then run fix $SLUG $PR $BRANCH"
+  # Staged before the checks, so run-checks.sh's modified-files test also sees a check rewrite a file the fixer changed.
   git add -A
   bash "$checks_dir/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$dep_dir" >"$clog" 2>&1 || rc=$?
   [ "$rc" != 3 ] || stop "review ✓  checks ✗" fix "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand and commit .coding-crew/dev-commands.json" "$clog"
   [ "$rc" = 0 ] || stop "review ✓  checks ✗" fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH" "$clog"
-  # A check that rewrote a staged file, or wrote a new one, changed what it passed.
-  changed=$({ git diff --name-only; git ls-files --others --exclude-standard; } | sort -u | paste -sd ' ' -)
-  [ -z "$changed" ] || stop "review ✓  checks ✗" fix "the checks changed files: $changed; commit or revert them, then run fix $SLUG $PR $BRANCH"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings on PR #$PR"
-  git push -q -u origin "$BRANCH"
+  git push -q -u origin "$BRANCH" || stop "review ✓  checks ✓" fix "git push failed; once it can push, run fix $SLUG $PR $BRANCH"
 
-  total=$(jq '.findings // [] | length' "$report")
   # One line per finding the fixer could not fix, markdown bullets or not; headings are not findings.
-  if [ -f "$unfixed" ]; then attention=$(sed -E 's/^[[:space:]]*[-*][[:space:]]+//' "$unfixed" | grep -v -E '^[[:space:]]*(#|$)' || true); fi
+  if [ -f "$unfixed" ]; then attention=$(sed -E 's/^[[:space:]]*[-*][[:space:]]+//' "$unfixed" | grep -v -E '^[[:space:]]*(#+[[:space:]]|$)' || true); fi
   rm -f "$unfixed"
   n_unfixed=$(grep -c . <<<"$attention" || true)
   # A fixer that crashed or gave up leaves HEAD at the PR's head: nothing it was given counts as fixed.
-  if [ "$(git rev-parse HEAD)" != "$head_oid" ]; then
+  if [ "$(git rev-parse HEAD)" != "$reviewed" ]; then
     sha=$(git rev-parse --short HEAD) fixed=$(( total > n_unfixed ? total - n_unfixed : 0 ))
   elif [ "$total" -gt "$n_unfixed" ]; then
     attention+="${attention:+$'\n'}the fixer changed nothing for $(( total - n_unfixed )) finding(s)"
@@ -230,7 +235,7 @@ fix() {
     note="Needs attention:"$'
 '"$(sed 's/^/- /' <<<"$attention")"
   elif [ "$draft" = true ]; then
-    gh pr ready "$PR" >/dev/null || die "gh pr ready $PR failed"
+    gh pr ready "$PR" >/dev/null || stop "review ✓  $result  checks ✓" fix "gh pr ready $PR failed; run fix $SLUG $PR $BRANCH again"
     ready=yes note="Marked ready for review: nothing needs attention."
   else ready=already note="Nothing needs attention; the PR was already ready for review."; fi
   progress "review ✓  $result  checks ✓" "$note"

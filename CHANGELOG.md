@@ -10,7 +10,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   them. After the read-only reviewer (`review-pr.sh prepare` and its prompt), a fresh subagent fixes every finding with
   the tdd skill, and the new `solve-feature.sh fix <slug> <pr> <branch>` gates the fixes with the checks, commits and
   pushes them as one commit, adds one `review` row to the progress comment and marks the draft ready unless a spec gap
-  or an unfixed finding needs a person (listed there under `Needs attention`). No review or review comment is posted;
+  or an unfixed finding needs a person (listed there under `Needs attention`); a fixer that left the reviewed commit
+  unchanged counts nothing as fixed, so its findings are listed too. No review or review comment is posted;
   `.solve-feature/reviewed` is now written by `fix`, which the Actions host's last step checks. address-pr-comments no
   longer suggests `next: /review-pr <n>` on a solve-feature PR. `/review-pr` run by hand is unchanged (#475).
 - **solve-issue**: a subagent run counts as non-interactive, so unmet criteria end it `partial` instead of a question
