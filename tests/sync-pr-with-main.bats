@@ -10,9 +10,8 @@ setup() {
   cd "$W/work"
   git config user.email t@t; git config user.name t
   git checkout -q -b main
-  mkdir -p scripts skills/crew-afk/scripts skills/a
-  cp "$REPO_ROOT/scripts/sync-pr-with-main.sh" scripts/
-  cp "$REPO_ROOT/skills/crew-afk/scripts/resolve-merge-conflicts.sh" skills/crew-afk/scripts/
+  mkdir -p scripts skills/a
+  cp "$REPO_ROOT/scripts/sync-pr-with-main.sh" "$REPO_ROOT/scripts/resolve-merge-conflicts.sh" scripts/
   reg 2.6.0 > registry.json
   printf '# Changelog\n\n' > CHANGELOG.md
   echo one > skills/a/f.txt

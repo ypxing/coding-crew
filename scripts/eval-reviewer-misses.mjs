@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// eval-reviewer-misses.mjs — replay eval: does the reviewer report bugs in unchanged code a change
+// eval-reviewer-misses.mjs — replay eval: does crew-review report bugs in unchanged code a change
 // affected? Base and head review each case; a judge checks outputs blind. Maintainer-only, costs API money.
 // Usage: node scripts/eval-reviewer-misses.mjs [--base <git ref>] [--head <git ref>|worktree]
-//   [--reviewer afk|crew-review] [--case <name>]... [--runs N] [--model opus] [--effort <level>] [--subagents]
+//   [--case <name>]... [--runs N] [--model opus] [--effort <level>] [--subagents]
 //   [--judge-model opus] [--parallel 4] [--dry-run] [--resume <out dir>]
 // Each ref builds its prompts from its own files; a reviewer or judge CLI failure is a failed run.
 
@@ -10,11 +10,11 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { LIMIT_RE, parseJudge, pool, runClaude, shuffleLabels } from "./eval-design-skills.mjs";
-import claudeAdapter, { HEADLESS_SETTINGS } from "../orchestrator/lib/adapters/claude.mjs";
-import { ROLE_POLICY } from "../orchestrator/lib/adapters/render.mjs";
 
 const ROOT = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
 const HERE = path.join(ROOT, "scripts", "eval-reviewer-misses");
+// No claude.ai connectors or bundled skills: the reviewer sees only the repo and its prompt.
+const HEADLESS_SETTINGS = JSON.stringify({ disableClaudeAiConnectors: true, disableBundledSkills: true });
 
 const EVAL_NOTE = (prdPath) =>
   "EVAL MODE (non-interactive): you cannot write files. Where the protocol says to write the report " +
@@ -22,7 +22,7 @@ const EVAL_NOTE = (prdPath) =>
   `Modify nothing. The PRD is at ${prdPath}.`;
 
 function parseArgs(argv) {
-  const o = { base: "main", head: "worktree", reviewer: "afk", cases: [], runs: 2, model: "opus", judgeModel: "opus",
+  const o = { base: "main", head: "worktree", cases: [], runs: 2, model: "opus", judgeModel: "opus",
     effort: null, subagents: false, parallel: 4, dryRun: false, resume: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], v = () => {
@@ -32,7 +32,6 @@ function parseArgs(argv) {
     switch (a) {
       case "--base": o.base = v(); break;
       case "--head": o.head = v(); break;
-      case "--reviewer": o.reviewer = v(); break;
       case "--case": o.cases.push(v()); break;
       case "--runs": o.runs = Number(v()); break;
       case "--model": o.model = v(); break;
@@ -45,7 +44,6 @@ function parseArgs(argv) {
       default: throw new Error(`unknown argument: ${a}`);
     }
   }
-  if (!["afk", "crew-review"].includes(o.reviewer)) throw new Error("--reviewer must be afk or crew-review");
   if (!(o.runs >= 1) || !(o.parallel >= 1)) throw new Error("--runs and --parallel must be >= 1");
   if (o.effort !== null && !["low", "medium", "high", "xhigh", "max"].includes(o.effort)) throw new Error("--effort must be low, medium, high, xhigh or max");
   return o;
@@ -214,7 +212,7 @@ async function main() {
     // The case's PRD as a file: in its tree when the reviewer runs there, beside the prompts on a dry run.
     const prdFile = {};
     const input = (c) => ({ mode: c.mode, base: c.base, tip: c.tip, branch: c.tip, slug: c.slug, issue: c.issue,
-      criteria: c.criteria, notes: c.notes, prdPath: prdFile[c.name], prdText: c.prd, reportPath: "(print it in your final message)", reviewer: o.reviewer });
+      criteria: c.criteria, notes: c.notes, prdPath: prdFile[c.name], prdText: c.prd, reportPath: "(print it in your final message)" });
     const prompt = (c, name, body, role) => `${role ? `${role}\n\n=== THIS DISPATCH ===\n\n` : ""}${body}\n\n${EVAL_NOTE(prdFile[c.name])}\n`;
 
     for (const c of cases) {
@@ -242,9 +240,9 @@ async function main() {
     const note = (r) => { if (!r.ok && LIMIT_RE.test(`${r.text}\n${r.err}`) && !stop.hit) { stop.hit = true; stop.why = (r.text || r.err).trim().split("\n")[0]; } };
     const claude = (model, turns, inputText, cwd, flags) => runClaude(["-p", "--model", model,
       "--output-format", "json", "--max-turns", String(turns), ...flags], inputText, cwd);
-    // A sprint reviewer's tools and settings, so the eval measures what crew-afk dispatches. `--tools` is variadic: it goes last.
-    const reviewerFlags = ["--settings", HEADLESS_SETTINGS,
-      ...claudeAdapter.policyArgs({ ...ROLE_POLICY.reviewer, subagents: o.subagents, effort: o.effort })];
+    // A read-only reviewer: it reads and runs commands, and starts subagents only with --subagents. `--tools` is variadic: it goes last.
+    const reviewerFlags = ["--settings", HEADLESS_SETTINGS, ...(o.effort ? ["--effort", o.effort] : []),
+      "--tools", "Bash", "Read", ...(o.subagents ? ["Agent"] : []), "ToolSearch"];
 
     const runs = await pool(plan.map(({ c, v, i }) => async () => {
       const id = `${c.name}-${v}-${i}`;

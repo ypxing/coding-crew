@@ -28,12 +28,7 @@ BASE=$(git merge-base HEAD "$MAIN") || die "no merge-base between $BRANCH and $M
 
 if ! git merge --no-ff --no-commit "$MAIN"; then
   CONFLICTS=$(git diff --name-only --diff-filter=U)
-  RESOLVER=""
-  for r in "$SCRIPT_DIR/../skills/crew-afk/scripts/resolve-merge-conflicts.sh" \
-           "$TOP/skills/crew-afk/scripts/resolve-merge-conflicts.sh"; do
-    [ -f "$r" ] && { RESOLVER="$r"; break; }
-  done
-  if [ -z "$CONFLICTS" ] || [ -z "$RESOLVER" ] || ! bash "$RESOLVER"; then
+  if [ -z "$CONFLICTS" ] || ! bash "$SCRIPT_DIR/resolve-merge-conflicts.sh"; then
     echo "sync-pr-with-main: merge of $MAIN into $BRANCH has conflicts that need a human:" >&2
     if [ -n "$CONFLICTS" ]; then printf '  %s\n' $CONFLICTS >&2; else echo "  (merge failed without conflicts; see git output above)" >&2; fi
     echo "The merge is left in progress; resolve, commit, or 'git merge --abort'." >&2

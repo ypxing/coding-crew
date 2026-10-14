@@ -1,10 +1,7 @@
 #!/usr/bin/env bats
 
-# scripts/eval-reviewer-misses.mjs — the replay eval for reviewer misses. Runs against a throwaway
-# repo (a copy of this repo's orchestrator/) with a fake `claude` on CLAUDE_BIN, so it costs nothing.
-# Also the rendered reviewer role and to-prd SKILL.md this eval's change is about.
-
-load helpers/render
+# scripts/eval-reviewer-misses.mjs — the replay eval for crew-review's misses. Runs against a throwaway
+# repo with its own skills/crew-review/SKILL.md and a fake `claude` on CLAUDE_BIN, so it costs nothing.
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
@@ -14,15 +11,13 @@ setup() {
   cp "$REPO_ROOT/scripts/eval-design-skills.mjs" "$REPO_ROOT/scripts/eval-reviewer-misses.mjs" "$R/scripts/"
   cp "$REPO_ROOT/scripts/eval-reviewer-misses/build-prompts.mjs" "$R/scripts/eval-reviewer-misses/"
   echo "RUBRIC-TEXT" > "$R/scripts/eval-reviewer-misses/rubric.md"
-  cp -R "$REPO_ROOT/orchestrator" "$R/orchestrator"
-  cp -R "$REPO_ROOT/skills/_shared" "$R/skills/_shared"
-  echo "PROTO-V1" >> "$R/orchestrator/roles/reviewer.md"
+  mkdir -p "$R/skills/crew-review"
+  echo "PROTO-V1" > "$R/skills/crew-review/SKILL.md"
   git -C "$R" init -q -b main
   git -C "$R" -c user.email=t@t -c user.name=t add -A
   git -C "$R" -c user.email=t@t -c user.name=t commit -qm one
   C1=$(git -C "$R" rev-parse HEAD)
-  sed -i.bak 's/PROTO-V1/PROTO-V2/' "$R/orchestrator/roles/reviewer.md"
-  rm "$R/orchestrator/roles/reviewer.md.bak"
+  echo "PROTO-V2" > "$R/skills/crew-review/SKILL.md"
   git -C "$R" -c user.email=t@t -c user.name=t commit -qam two
   C2=$(git -C "$R" rev-parse HEAD)
   BASEREF="$C1"
@@ -52,7 +47,7 @@ printf '%s\n' "$*" >> "$FAKE_DIR/reviewer-args.txt"
 if [ -n "${FAKE_FAIL:-}" ] && [[ "$input" == *"$FAKE_FAIL"* ]]; then
   echo '{"result":"boom","total_cost_usd":0.1,"is_error":true}'; exit 1
 fi
-if [ -n "${FAKE_BASE_EMPTY:-}" ] && [[ "$input" == *PROTO-V1* ]]; then
+if [ -n "${FAKE_BASE_EMPTY:-}" ] && [[ "$input" == */ref-base/* ]]; then
   jq -n --arg r $'Reviewed.\n```json\n{"findings":[]}\n```' '{result:$r,total_cost_usd:0.25,is_error:false}'; exit 0
 fi
 jq -n --arg r $'Reviewed.\n```json\n{"findings":[{"severity":"HIGH"},{"severity":"LOW"}]}\n```' '{result:$r,total_cost_usd:0.25,is_error:false}'
@@ -108,24 +103,32 @@ run_eval() {
 
 out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
 
-@test "dry run lists the cases, writes each ref's prompts, and calls no model" {
+@test "dry run lists the cases, writes each ref's crew-review prompt, and calls no model" {
   FAKE_FORBID=1 run run_eval --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" == *"branch-case"* ]]
   [[ "$output" == *"feature-case"* ]]
   [ ! -e "$T/called" ]
   d=$(out_dir)
-  for f in branch-case-base.feat.prompt.md branch-case-head.feat.prompt.md \
-           feature-case-base.feature.prompt.md feature-case-head.feature.prompt.md; do
+  for f in branch-case-base.crew-review.prompt.md branch-case-head.crew-review.prompt.md \
+           feature-case-base.crew-review.prompt.md feature-case-head.crew-review.prompt.md; do
     [ -s "$d/$f" ]
   done
-  # the dispatch itself (the role above it names PRD decisions in its own rules)
-  dispatch=$(sed -n '/^=== THIS DISPATCH ===$/,$p' "$d/branch-case-head.feat.prompt.md")
-  ! grep -q 'the decision text' <<<"$dispatch"
-  ! grep -q 'PRD decisions' <<<"$dispatch"
+  [ "$(ls "$d" | grep -c '\.prompt\.md$')" -eq 4 ]
 }
 
-@test "--reviewer crew-review builds head's prompt from skills/crew-review/SKILL.md, and a base from before the rename from review-pr's prompt" {
+@test "each ref's prompt names the SKILL.md in that ref's own tree" {
+  run run_eval --dry-run
+  [ "$status" -eq 0 ]
+  d=$(out_dir)
+  for n in branch-case feature-case; do
+    grep -qF "${d%/}/ref-base/skills/crew-review/SKILL.md" "$d/$n-base.crew-review.prompt.md"
+    grep -qF "${d%/}/ref-head/skills/crew-review/SKILL.md" "$d/$n-head.crew-review.prompt.md"
+  done
+}
+
+@test "a base from before the rename gets review-pr's prompt, and --reviewer is not an argument" {
+  git -C "$R" rm -rq skills/crew-review
   mkdir -p "$R/skills/review-pr"
   echo "OLD-REVIEW-PR-PROMPT" > "$R/skills/review-pr/reviewer-prompt.md"
   git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm "review-pr"
@@ -134,40 +137,15 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   mkdir -p "$R/skills/crew-review"
   echo "CREW-REVIEW-SKILL" > "$R/skills/crew-review/SKILL.md"
   git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm "crew-review"
-  FAKE_FORBID=1 run run_eval --dry-run --reviewer crew-review --case branch-case
+  FAKE_FORBID=1 run run_eval --dry-run --case branch-case
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   d=$(out_dir)
   grep -qF 'skills/crew-review/SKILL.md' "$d/branch-case-head.crew-review.prompt.md"
   grep -qF 'skills/review-pr/reviewer-prompt.md' "$d/branch-case-base.crew-review.prompt.md"
   [ ! -e "$T/called" ]
-  run run_eval --dry-run --reviewer review-pr
+  run run_eval --dry-run --reviewer crew-review
   [ "$status" -ne 0 ]
-}
-
-@test "a feature case is one reviewer whose prompt names the case's PRD file, read whole, with no area blocks" {
-  run run_eval --dry-run
-  [ "$status" -eq 0 ]
-  d=$(out_dir)
-  p="$d/feature-case-head.feature.prompt.md"
-  prd=$(sed -n "s/^PRD (read it whole; the feature's intent): //p" "$p")
-  [ -n "$prd" ]
-  grep -q 'Old reports stay readable.' "$prd"
-  ! grep -qE '^Area:|Other areas|PRD ## Compatibility' "$p"
-  [ "$(ls "$d" | grep -c '^feature-case-head\..*\.prompt\.md$')" -eq 1 ]
-  ! ls "$d" | grep -q planner
-}
-
-@test "each ref's prompts carry that ref's own protocol text" {
-  run run_eval --dry-run
-  [ "$status" -eq 0 ]
-  d=$(out_dir)
-  for c in branch-case:feat feature-case:feature; do
-    n=${c%%:*}; a=${c##*:}
-    grep -q 'PROTO-V1' "$d/$n-base.$a.prompt.md"
-    ! grep -q 'PROTO-V2' "$d/$n-base.$a.prompt.md"
-    grep -q 'PROTO-V2' "$d/$n-head.$a.prompt.md"
-    ! grep -q 'PROTO-V1' "$d/$n-head.$a.prompt.md"
-  done
+  [[ "$output" == *"unknown argument: --reviewer"* ]]
 }
 
 @test "a full run writes summary.md and results.json per case and ref; the judge is blind" {
@@ -182,7 +160,7 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   grep -q 'RUBRIC-TEXT' "$p"
   grep -q 'The helper is wrong after the change.' "$p"
   [ "$(grep -c '^### Output [A-D]$' "$p")" -eq 4 ]
-  ! grep -qiE '\b(base|head)\b|PROTO-V' "$p"
+  ! grep -qiE '\b(base|head)\b|ref-(base|head)' "$p"
   [ "$(git -C "$R" worktree list | wc -l)" -eq 1 ]
 }
 
@@ -197,7 +175,7 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
 }
 
 @test "a failed reviewer run is a failed run, never not-caught" {
-  FAKE_FAIL=PROTO-V2 run run_eval --runs 1 --case branch-case
+  FAKE_FAIL=/ref-head/ run run_eval --runs 1 --case branch-case
   [ "$status" -ne 0 ]
   d=$(out_dir)
   [ "$(jq -r '.rows[] | select(.version=="head") | .ok' "$d/results.json")" = "false" ]
@@ -246,20 +224,6 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   grep -qF 'Origin: #182' "$f"
 }
 
-@test "a feature case's ## Notes reach the feature prompt's concerns block; a case without notes has none" {
-  # a ref whose featureReviewPrompt predates `notes` ignores them (the base side of an A/B)
-  cp "$R/scripts/eval-reviewer-misses/cases/feature-case.md" "$R/scripts/eval-reviewer-misses/cases/noted-case.md"
-  sed -i.bak 's|^## PRD$|## Notes\n\n- `src/a.sh:9` — the stamp survives --force\n- not a note line\n\n## PRD|' "$R/scripts/eval-reviewer-misses/cases/noted-case.md"
-  rm "$R/scripts/eval-reviewer-misses/cases/noted-case.md.bak"
-  run run_eval --dry-run --case noted-case --case feature-case
-  [ "$status" -eq 0 ]
-  d=$(out_dir)
-  grep -qF 'Concerns per-issue reviewers noted outside their criteria:' "$d/noted-case-head.feature.prompt.md"
-  grep -qF -- '- src/a.sh:9 — the stamp survives --force' "$d/noted-case-head.feature.prompt.md"
-  ! grep -qF 'not a note line' "$d/noted-case-head.feature.prompt.md"
-  ! grep -q '^Concerns per-issue reviewers noted' "$d/feature-case-head.feature.prompt.md"
-}
-
 @test "the docker-deps-isolation cases replay PR #382's two escapes; force-keeps-stamp carries #380's note" {
   local dir="$REPO_ROOT/scripts/eval-reviewer-misses/cases" c
   for c in force-keeps-stamp shim-mutual-exec; do
@@ -289,7 +253,7 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   [ "$(jq -r .model "$d/results.json")" = opus ]
 }
 
-@test "the reviewer gets a sprint reviewer's --tools and --settings, no Agent or --effort by default; --effort and --subagents reach its CLI and the results" {
+@test "the reviewer gets read-only --tools and --settings, no Agent or --effort by default; --effort and --subagents reach its CLI and the results" {
   local settings='--settings {"disableClaudeAiConnectors":true,"disableBundledSkills":true}'
   run run_eval --runs 1 --case feature-case
   [ "$status" -eq 0 ]
