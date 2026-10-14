@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 
 /** body-format.mjs — markdown-body parsing shared by every backend's `parseIssue`. */
 
@@ -155,15 +154,4 @@ export function tickCriteria(text) {
  */
 export function extractBlockedByNumbers(section) {
   return [...section.matchAll(/\bissue[\s-]*#?0*([0-9]+)\b/gi)].map((m) => m[1]);
-}
-
-/**
- * A hash of `## What to build` and `## Acceptance criteria`, checkbox marks normalised. Everything
- * crew-afk writes itself is outside it, so only a human edit changes it.
- */
-export function issueFingerprint(text) {
-  const parts = ["What to build", "Acceptance criteria"].map((h) =>
-    (sectionBody(String(text ?? ""), h) ?? "").replace(/^(\s*[-*]\s*)\[[xX ]\]/gm, "$1[ ]").trim(),
-  );
-  return createHash("sha256").update(parts.join("\n\u0000\n")).digest("hex");
 }

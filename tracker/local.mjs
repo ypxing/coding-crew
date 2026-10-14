@@ -20,13 +20,10 @@ import {
 export const READY_STATUS = "ready-for-agent";
 export const PARKED_STATUS = "deferred-findings";
 
-/** A promoted fix issue is written parked (`deferred-findings`) for the loop's flush to make ready. */
-export const fixIssuesCreatedReady = false;
-
 /** Local has no PRD issue: the PRD is `.scratch/<slug>/PRD.md`, never a file in `issues/`. */
 export const isPrdIssue = () => false;
 
-/** Filename minus leading digits and extension. Mirrors receipts.sh issue_slug_of(). */
+/** Filename minus leading digits and extension. */
 export function issueSlug(file) {
   return basename(file).replace(/\.md$/, "").replace(/^[0-9]+[-_]?/, "");
 }
@@ -42,8 +39,7 @@ export function branchFor(featureSlug, slug) {
 
 /**
  * Every open issue file, sorted, across every feature under .scratch/ unless `featureSlug` names
- * one. A live sprint must pass its own slug, or a ready issue of another feature is dispatched and
- * merged onto this sprint's branch.
+ * one. A run on one feature must pass its slug, or it picks up a ready issue of another feature.
  */
 export function listOpenIssueFiles(mainRoot, { featureSlug = null } = {}) {
   const scratch = join(mainRoot, ".scratch");
@@ -342,18 +338,17 @@ export function writeSection(mainRoot, path, { heading, body } = {}) {
   return true;
 }
 
-/** What `mark-done` closes at `path`: its name, its sprint dir, and whether it is already done or missing. */
+/** What `mark-done` closes at `path`: its name, and whether it is already done or missing. */
 export function doneTarget(mainRoot, path) {
   const name = basename(path);
   const stateDir = dirname(path);
   const doneDir = join(dirname(stateDir), "done");
-  const sprintDir = dirname(dirname(stateDir));
-  if (basename(stateDir) === "done" && existsSync(path)) return { name, sprintDir, alreadyDone: `${name} already closed (${path})`, donePath: path };
+  if (basename(stateDir) === "done" && existsSync(path)) return { name, alreadyDone: `${name} already closed (${path})`, donePath: path };
   if (!existsSync(path)) {
     const done = join(doneDir, name);
-    return existsSync(done) ? { name, sprintDir, alreadyDone: `${name} already closed (${done})`, donePath: done } : { name, sprintDir, missing: true };
+    return existsSync(done) ? { name, alreadyDone: `${name} already closed (${done})`, donePath: done } : { name, missing: true };
   }
-  return { name, sprintDir };
+  return { name };
 }
 
 /** A file already in done/ (moved by hand, or a re-run): its `Status:` made `done` in place, nothing else touched. */

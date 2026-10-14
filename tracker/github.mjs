@@ -21,16 +21,12 @@ import {
 
 export const READY_STATUS = "ready-for-agent";
 
-/** promote-findings.sh creates a fix issue `ready-for-agent` (no parked state to flush), and the
- * sub-issues listing can lag the create, so the loop waits for it to appear. */
-export const fixIssuesCreatedReady = true;
-
 /** "Done" short of shipped: implemented and merged into the feature branch, closed only by the
  * `Closes #n` in the feature's PR once that merges. An open issue carrying it reads as `done`. */
 export const AWAITING_MERGE_LABEL = "awaiting-merge";
 
-/** Added by crew-afk (issue-labels.sh) when a run stops on an issue that needs a human; the
- * issue keeps `ready-for-agent`, but selectDispatchable skips it until a human removes this. */
+/** Added by a person to an issue that needs a human; the issue keeps `ready-for-agent`, but
+ * selectDispatchable skips it until a person removes this. */
 export const BLOCKED_LABEL = "blocked";
 
 /** POSIX single-quoting, kept local so the tracker does not depend on pane-host. */
@@ -230,8 +226,8 @@ function ambiguousRoots(featureSlug, roots) {
   return new Error(`feature ${featureSlug} has ${roots.length} root issues carrying 'Feature: ${featureSlug}': ${refs} — keep the line on one of them`);
 }
 
-/** Root numbers by slug, per `exec` (one GitHub): the sprint loop reads its feature on every
- * pass, and a scan costs a page per 100 of the repo's issues. Nothing outlives the process. */
+/** Root numbers by slug, per `exec` (one GitHub): a caller may read its feature more than once,
+ * and a scan costs a page per 100 of the repo's issues. Nothing outlives the process. */
 const rootsSeen = new WeakMap();
 
 /** Issue `number` (REST JSON) while it still carries `featureSlug`'s marker, else null. */
@@ -401,8 +397,8 @@ export function linkBlockers(number, { mainRoot, exec = gh, body, warn = (m) => 
 
 /**
  * The feature PR's `Closes #n` lines: every open `awaiting-merge` issue of the feature, plus its
- * open `PRD:` issue (and the PRD's `Origin:` issues) once no open work issue is left, as
- * `close-shipped.sh`. A PR that ships nothing closes nothing.
+ * open `PRD:` issue (and the PRD's `Origin:` issues) once no open work issue is left. A PR that
+ * ships nothing closes nothing.
  */
 export function closingRefs(mainRoot, { featureSlug, exec = gh } = {}) {
   const raw = featureIssuesJson(featureSlug, { exec }).filter(isOpen);
@@ -611,9 +607,9 @@ export function writeSection(mainRoot, number, { heading, body, exec = gh } = {}
   return true;
 }
 
-/** What `mark-done` closes: a github issue has no file, so no sprint dir of its own (the CLI falls back to the env). */
+/** What `mark-done` closes: a github issue has no file, so only its name. */
 export function doneTarget(mainRoot, number) {
-  return { name: `issue #${number}`, sprintDir: null };
+  return { name: `issue #${number}` };
 }
 
 /** Issue `number`'s body, fetched live — never a copy the caller may hold — for `mark-done`'s criteria guard. */
@@ -636,11 +632,6 @@ export function markDone(mainRoot, number, { exec = gh, warn = (m) => process.st
   const human = exec("gh", ["label", "create", "ready-for-human", "--description", "Requires human implementation"]);
   if (human.code === 0 || /already exists/.test(`${human.stderr}${human.stdout}`)) remove.push("--remove-label", "ready-for-human");
   else warn(`WARNING: gh label create ready-for-human failed; leaving it alone: ${human.stderr || human.stdout}`);
-  // A display label never fails a close: without it created the edit just leaves it alone.
-  const inProgress = exec("gh", ["label", "create", "in-progress", "--force",
-    "--description", "A crew-afk run is working this issue (display only)"]);
-  if (inProgress.code === 0) remove.push("--remove-label", "in-progress");
-  else warn(`WARNING: gh label create in-progress failed; leaving it alone: ${inProgress.stderr || inProgress.stdout}`);
   const edit = exec("gh", ["issue", "edit", String(number), "--add-label", AWAITING_MERGE_LABEL, ...remove]);
   if (edit.code !== 0) throw new Error(`ERROR: gh issue edit failed for #${number}:\n${edit.stderr || edit.stdout}`);
   return `DONE: issue #${number} labelled ${AWAITING_MERGE_LABEL} — put 'Closes #${number}' in the PR body so merging it closes the issue`;

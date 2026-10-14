@@ -15,7 +15,7 @@ import { hasCriteriaSection, uncheckedCriteria } from "./body-format.mjs";
 import { getTracker } from "./index.mjs";
 import { readTrackerConfig } from "./tracker-config.mjs";
 
-export const EXIT = { OK: 0, FAILED: 1, USAGE: 2, NOT_FOUND: 3, DONE_EXIST: 4, OPEN_EXIST: 5, ORCHESTRATED: 3, UNCHECKED: 4 };
+export const EXIT = { OK: 0, FAILED: 1, USAGE: 2, NOT_FOUND: 3, DONE_EXIST: 4, OPEN_EXIST: 5, UNCHECKED: 4 };
 
 class UsageError extends Error {}
 
@@ -180,14 +180,6 @@ function checkExistingBlockers(existing, { tracker, mainRoot, featureSlug, exec,
   }
 }
 
-/** Why an orchestrator owns this close, or null: `CREW_ORCHESTRATED`, or the sprint's `.orchestrated` marker. */
-function orchestratedReason(env, mainRoot, sprintDir) {
-  const dir = sprintDir ?? env.SPRINT_DIR ?? (env.FEATURE_SLUG ? join(mainRoot, ".scratch", env.FEATURE_SLUG) : null);
-  if (dir && existsSync(join(dir, ".orchestrated"))) return `sprint marker ${join(dir, ".orchestrated")}`;
-  if (/^(1|true|yes)$/.test(env.CREW_ORCHESTRATED ?? "")) return `CREW_ORCHESTRATED=${env.CREW_ORCHESTRATED}`;
-  return null;
-}
-
 const OPS = {
   async fetch(argv, { tracker, mainRoot, exec, cwd, out }) {
     const args = parseArgs("fetch", argv, { positionals: 1, flags: ["comments"] });
@@ -303,11 +295,7 @@ const OPS = {
     return EXIT.OK;
   },
 
-  /**
-   * Every criterion ticked at once, on either backend: the direct path's own record before
-   * `mark-done`, and close-issue.sh's after its receipt. No orchestration guard: a sprint worker's
-   * ticks buy nothing, since `mark-done` still refuses it.
-   */
+  /** Every criterion ticked at once, on either backend: the record `mark-done` checks. */
   async tick(argv, { tracker, mainRoot, exec, cwd, out, err }) {
     const args = parseArgs("tick", argv, { positionals: 1 });
     const ref = tracker.validateRef(mainRoot, args._[0], { cwd });
@@ -338,11 +326,10 @@ const OPS = {
   },
 
   /**
-   * The close guards, for every backend: an orchestrator owns the close (exit 3); a fresh read has no
-   * criteria section, or a criterion still unchecked (exit 4). `--force` skips them all: a crashed
-   * sprint's stale marker, or a criterion descoped on purpose.
+   * The close guards, for every backend: a fresh read has no criteria section, or a criterion still
+   * unchecked (exit 4). `--force` skips them: a criterion descoped on purpose.
    */
-  async "mark-done"(argv, { tracker, mainRoot, exec, cwd, out, err, env }) {
+  async "mark-done"(argv, { tracker, mainRoot, exec, cwd, out, err }) {
     const args = parseArgs("mark-done", argv, { positionals: 1, flags: ["force"] });
     const ref = tracker.validateRef(mainRoot, args._[0], { cwd });
     if (ref === null) throw new UsageError(`mark-done: invalid ref: ${args._[0]}`);
@@ -357,17 +344,6 @@ const OPS = {
       return EXIT.FAILED;
     }
     if (!args.force) {
-      const reason = orchestratedReason(env, mainRoot, target.sprintDir);
-      if (reason) {
-        err(
-          `REFUSED: ${target.name} is orchestrated (${reason}) — the orchestrator closes it.\n` +
-            "  It closes only after independent check verification, acceptance-criteria\n" +
-            "  verification and code review pass on your branch. Report your status and stop.\n" +
-            "  If no sprint is running: remove the sprint's .orchestrated marker if it exists,\n" +
-            "  unset CREW_ORCHESTRATED, or pass --force.\n",
-        );
-        return EXIT.ORCHESTRATED;
-      }
       const body = tracker.readIssueBody(mainRoot, ref, { exec });
       if (!hasCriteriaSection(body)) {
         err(

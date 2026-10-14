@@ -1,7 +1,7 @@
-# Shared bats helper: the platform list, read from orchestrator/platforms.json — the file
+# Shared bats helper: the platform list, read from platforms.json — the file
 # install.sh reads — so a suite that loops over platforms covers a new one without an edit.
 
-PLATFORMS_JSON="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/orchestrator/platforms.json"
+PLATFORMS_JSON="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/platforms.json"
 
 PLATFORMS=()
 while IFS= read -r _p; do
