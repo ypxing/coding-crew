@@ -83,7 +83,8 @@ _preflight() {
   touch "$WORK/.scratch/feat/issues/done/01-first.md"
   run bash -c 'cd "$1" && bash "$2" --project-root "$1" --issue .scratch/feat/issues/open/02-second.md' _ "$TEMP_DIR/wt" "$PREFLIGHT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"PRD=$WORK/.scratch/feat/PRD.md"* ]]
+  # git names the main checkout by its physical path: macOS's /var is /private/var.
+  [[ "$output" == *"PRD=$(cd "$WORK" && pwd -P)/.scratch/feat/PRD.md"* ]]
 }
 
 @test "preflight: --main-root is an unknown argument" {
