@@ -25,8 +25,7 @@ hand that prompt to a model, then persist its response:
 bash scripts/write-commands-cache.sh --response-file <path>
 ```
 
-Then read the two fields this skill needs from `.coding-crew/dev-commands.json`, the same way
-`ensure-deps.sh` already reads `install`:
+Then read the two fields this skill needs from `.coding-crew/dev-commands.json`:
 
 ```bash
 grep -o '"coverage"[[:space:]]*:[[:space:]]*"[^"]*"' .coding-crew/dev-commands.json

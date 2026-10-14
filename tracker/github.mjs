@@ -643,8 +643,8 @@ function usage(message) {
 }
 
 /**
- * `create-issue --title T --body-file F --feature-slug S [--label L]… [--main-root DIR]`, so
- * `promote-findings.sh` files its issue under the feature's root as every other create does.
+ * `create-issue --title T --body-file F --feature-slug S [--label L]… [--main-root DIR]`: filed under
+ * the feature's root as every other create is.
  * Prints the issue URL.
  */
 function cliCreateIssue(argv, { exec, out }) {
@@ -687,8 +687,7 @@ const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 /**
  * `feature-issues --feature-slug S [--state open|all] [--main-root DIR]` — the feature's issues as
  * one JSON array of `{number, title, state, labels, root?}` (state `OPEN`|`CLOSED`; `root: true` on
- * the root only), `[]` for a slug with no root: the one membership read close-shipped.sh,
- * issue-labels.sh and solve-feature.sh make.
+ * the root only), `[]` for a slug with no root.
  */
 function cliFeatureIssues(argv, { exec = gh, out }) {
   const opts = { state: "all" };

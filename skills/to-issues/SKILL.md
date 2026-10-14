@@ -17,7 +17,7 @@ Work from whatever is already in the conversation context. If the user passes an
 
 When the plan references an issue, read its full body and its comments, not just the title: `node "$TRACKER" fetch <ref> --comments`.
 
-**An existing issue as the source.** `/to-issues <ref>` on an existing issue is how it moves from `needs-triage` to `ready-for-agent`: it goes through steps 3–5 like any plan. If it is still one slice after step 4, step 6 rewrites that issue in place; if it splits into several slices, each becomes a new child issue with `## Parent` naming it. An issue with a column-0 `Source:` line outside a code fence (`Source: review (<branch>)` or `Source: <report> (<branch>)`, anywhere in the body) was auto-promoted by crew-afk from findings already judged — the same line `promote-findings.sh`'s guard reads: it is not checked against the design standard.
+**An existing issue as the source.** `/to-issues <ref>` on an existing issue is how it moves from `needs-triage` to `ready-for-agent`: it goes through steps 3–5 like any plan. If it is still one slice after step 4, step 6 rewrites that issue in place; if it splits into several slices, each becomes a new child issue with `## Parent` naming it. An issue with a column-0 `Source:` line outside a code fence (`Source: review (<branch>)` or `Source: <report> (<branch>)`, anywhere in the body) was promoted from review findings already judged: it is not checked against the design standard.
 
 Determine the **feature slug** (the root issue or directory the issues are filed under):
 
@@ -179,7 +179,7 @@ node "$TRACKER" rewrite <ref> --body-file <file> --status <status> --feature-slu
 
 where `<status>` is the slice's status (`ready-for-agent`, or `ready-for-human`) — the status is what solve-feature's `next` picks by, so a body rewrite alone would leave it `needs-triage` and never dispatched; `rewrite` also files it under the feature. Keep the source's title and its column-0 `Source:` line as `fetch` printed them, so the rewritten issue stays exempt from the design standard (step 1). A source that split into several slices keeps it open and gets one child issue per slice, each with `## Parent`. Use the issue body template below.
 
-**`## Requires`.** When a slice's checks need a service, a credential or a tool the project's install does not guarantee (a LocalStack container, an auth token, a CLI), write one backticked shell command per requirement — exit 0 means satisfied; it runs on the host from the project root, before any coder is dispatched, and may start the service it checks. Run each one while authoring. If one fails, publish the issue as `Status: ready-for-human` instead of `ready-for-agent`, because no coder can supply what it lacks: the failing command and its output go in `### Why a person`, and the fix goes in `### Steps`. A command that can only hold once one of the issue's blockers lands (a Makefile target that blocker adds) is not run now — crew-afk probes it when the issue unblocks.
+**`## Requires`.** When a slice's checks need a service, a credential or a tool the project's install does not guarantee (a LocalStack container, an auth token, a CLI), write one backticked shell command per requirement — exit 0 means satisfied; it runs on the host from the project root, before any coder is dispatched, and may start the service it checks. Run each one while authoring. If one fails, publish the issue as `Status: ready-for-human` instead of `ready-for-agent`, because no coder can supply what it lacks: the failing command and its output go in `### Why a person`, and the fix goes in `### Steps`. A command that can only hold once one of the issue's blockers lands (a Makefile target that blocker adds) is not run now — `solve-issue`'s preflight runs it when the issue's turn comes.
 
 **`ready-for-human` bodies.** Every slice published as `ready-for-human` (a HITL slice from step 5, or a failing `## Requires`) opens with this block:
 
@@ -220,7 +220,7 @@ A reference to the parent issue on the issue tracker (if the source was an exist
 
 ## What to build
 
-A concise description of this vertical slice: the end-to-end behavior, not layer-by-layer implementation. Its first sentence is a one-line summary (`squash-commits.sh:109` takes the commit title from it).
+A concise description of this vertical slice: the end-to-end behavior, not layer-by-layer implementation. Its first sentence is a one-line summary.
 
 This section may cite grounded paths and signatures (confirmed in step 3). If a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it here and note briefly that it came from a prototype. Trim to the decision-rich parts — not the working demo, just the important bits.
 

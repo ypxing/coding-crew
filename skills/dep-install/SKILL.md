@@ -39,7 +39,7 @@ bash "<skill-dir>/scripts/resolve-mode.sh" --project-root "$PROJECT_ROOT" --main
 
 It prints `INSTALL_MODE=docker` or `INSTALL_MODE=host`, and `DOCKER_SERVICE`. Its order: `git config
 --local agent.install-mode`, then `$MAIN_ROOT/.coding-crew/dev-commands.json`'s cached
-`"install_mode"` (written by `ensure-deps.sh`, trusted until a human clears it), then
+`"install_mode"` (trusted until a human clears it), then
 `detect-mode.sh`'s Makefile dry-run. Do not re-derive
 any of these yourself. A non-empty `DOCKER_SERVICE` is the recorded service (`agent.install-service`,
 or the cache's `detect-service.sh` verdict): use it as `<service>` throughout the docker guide

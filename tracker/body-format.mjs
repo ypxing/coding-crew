@@ -100,7 +100,7 @@ export function hasCriteriaSection(text) {
 
 /** A `Source:` line marks a fix issue promoted from review findings: findings against it are never promoted again. */
 export function isSourceGuarded(text) {
-  // Only where promote-findings.sh writes it: column 0, outside a ``` / ~~~ fence.
+  // Only at column 0, outside a ``` / ~~~ fence.
   let fence = "";
   for (const line of String(text).split("\n")) {
     if (fence) {

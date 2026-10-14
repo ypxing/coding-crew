@@ -36,7 +36,7 @@ function issuesDeps(root, feature, map) {
   writeFileSync(join(d, "issues-deps.json"), JSON.stringify(map));
 }
 
-test("issueSlug strips leading digits and extension like receipts.sh", () => {
+test("issueSlug strips leading digits and extension", () => {
   assert.equal(issueSlug("/x/01-add-widget.md"), "add-widget");
   assert.equal(issueSlug("/x/12_add_widget.md"), "add_widget");
   assert.equal(issueSlug("/x/add-widget.md"), "add-widget");

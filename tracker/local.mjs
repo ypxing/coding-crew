@@ -1,7 +1,5 @@
 /**
  * local.mjs — the local markdown issue tracker backend.
- * The slug derivation must match `issue_slug_of()` in receipts.sh: it ties an acceptance-criteria
- * receipt to one issue rather than to whichever branch was verified last.
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";

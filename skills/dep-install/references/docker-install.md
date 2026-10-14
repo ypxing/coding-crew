@@ -102,7 +102,7 @@ RAW=""
   ```
 
 **Then run `scripts/docker-install.sh`** — the one mechanism every docker install goes through,
-whether this is a fresh worktree's own call or `ensure-deps.sh`'s per-worktree one. It generates
+including a fresh worktree's first one. It generates
 the override, checks for the volumes' completion stamp (`.crew-stamp` in the root dependency
 volume; present → no install command runs), runs an `--install-cmd` that invokes docker itself on
 the host rather than nesting it — after checking it is not a `docker run`/`docker exec` (which load

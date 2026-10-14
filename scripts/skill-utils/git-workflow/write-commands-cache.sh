@@ -112,8 +112,7 @@ for f in "${FIELDS[@]}"; do
   JSON_BODY="$JSON_BODY\"$f\": ${FINAL_VAL[$f]}"
 done
 
-# Atomic write: a reader (discover-commands.sh, or verify-worktree.sh once it consumes this
-# cache) must never observe a half-written file.
+# Atomic write: a reader (discover-commands.sh, run-checks.sh) must never observe a half-written file.
 TMP_FILE=$(mktemp "$MAIN_ROOT/.coding-crew/dev-commands.json.XXXXXX")
 printf '{%s}\n' "$JSON_BODY" > "$TMP_FILE"
 mv "$TMP_FILE" "$CACHE_FILE"
