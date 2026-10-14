@@ -203,9 +203,6 @@ HOME/.coding-crew/dep-install/scripts/shim/ /
 HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
 HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
 HOME/.coding-crew/manifest.json 613ef894a70c3fe31168af4dedb4c40f62546f44
-HOME/.coding-crew/review-pr/ /
-HOME/.coding-crew/review-pr/SKILL.md exec=0 unrendered=0
-HOME/.coding-crew/review-pr/reviewer-prompt.md exec=0
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
 HOME/.coding-crew/skills/_shared/fragments/ /

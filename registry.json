@@ -82,11 +82,7 @@
     "review-pr": {
       "version": "0.4.0",
       "source-dir": "review-pr",
-      "description": "One read-only subagent reviews a checked-out PR against its spec, for what breaks and for the repo's documented rules; the agent posts one review and marks a draft ready when the spec is met.",
-      "assets": {
-        "source": "skills/review-pr",
-        "dest": ".coding-crew/review-pr"
-      }
+      "description": "One read-only subagent reviews a checked-out PR against its spec, for what breaks and for the repo's documented rules; the agent posts one review and marks a draft ready when the spec is met."
     },
     "tdd": {
       "version": "1.2.4",

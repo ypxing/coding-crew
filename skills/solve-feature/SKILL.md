@@ -14,8 +14,9 @@ You drive the loop; a script guards every step. **You do not implement, check, r
 or close anything yourself** — each issue's coder, the reviewer, the fixer and the PR's writer are fresh subagents,
 and the script decides whether their work lands.
 
-Find the script once, then run each step as `bash <path> …` with the absolute path it printed;
-`<review>` is the reviewer's instructions, printed after it:
+Find the script once, then run each step as `bash <path> …` with the absolute path it printed.
+`<review>` is the reviewer's instructions: the absolute path of `reviewer-prompt.md` in the review-pr
+skill's directory, installed with this one.
 
 ```bash
 LOOP="$(git rev-parse --show-toplevel)/.coding-crew/solve-feature/scripts/solve-feature.sh"
@@ -23,7 +24,6 @@ LOOP="$(git rev-parse --show-toplevel)/.coding-crew/solve-feature/scripts/solve-
 [ -f "$LOOP" ] || LOOP="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.coding-crew/solve-feature/scripts/solve-feature.sh"
 [ -f "$LOOP" ] || LOOP="$HOME/.coding-crew/solve-feature/scripts/solve-feature.sh"
 echo "$LOOP"
-echo "${LOOP%/solve-feature/scripts/solve-feature.sh}/review-pr/reviewer-prompt.md"   # <review>
 ```
 
 A bare word the user gave is the slug: pass it as is. `<repo>` is the repo's absolute top level.

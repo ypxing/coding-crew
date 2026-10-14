@@ -13,16 +13,8 @@ allowed-tools: Bash, shell
 A fresh subagent reviews; you check its work stayed read-only and post what it found. **You do not
 review the PR yourself.**
 
-The number the user gave is the PR number, `<n>`; `<repo>` is the repo's absolute top level. Find the
-reviewer's instructions once:
-
-```bash
-P="$(git rev-parse --show-toplevel)/.coding-crew/review-pr/reviewer-prompt.md"
-# a linked worktree may lack .coding-crew/: the main checkout's copy
-[ -f "$P" ] || P="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.coding-crew/review-pr/reviewer-prompt.md"
-[ -f "$P" ] || P="$HOME/.coding-crew/review-pr/reviewer-prompt.md"
-echo "$P"
-```
+The number the user gave is the PR number, `<n>`; `<repo>` is the repo's absolute top level; `<P>` is
+the absolute path of `reviewer-prompt.md` in this skill's directory, the reviewer's instructions.
 
 1. **Check out.** `HEAD` must be the PR's head (`gh pr view <n> --json headRefOid,isDraft`) and the
    tree clean; otherwise tell the user to run `gh pr checkout <n>` (or commit/stash) and stop. Note

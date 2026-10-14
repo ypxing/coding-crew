@@ -84,9 +84,6 @@ REPO/.coding-crew/dep-install/scripts/shim/ /
 REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
 REPO/.coding-crew/manifest.json 9d87cee9f977620a576043480d6883ef2140a47c
-REPO/.coding-crew/review-pr/ /
-REPO/.coding-crew/review-pr/SKILL.md exec=0 unrendered=0
-REPO/.coding-crew/review-pr/reviewer-prompt.md exec=0
 REPO/.coding-crew/skills/ /
 REPO/.coding-crew/skills/_shared/ /
 REPO/.coding-crew/skills/_shared/fragments/ /

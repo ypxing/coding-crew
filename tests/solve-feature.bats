@@ -910,8 +910,8 @@ EOF
   TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" claude --skill solve-feature
   [ "$status" -eq 0 ]
   [ -x "$target/.coding-crew/solve-feature/scripts/solve-feature.sh" ]
-  [ -f "$target/.coding-crew/review-pr/reviewer-prompt.md" ]
-  [ ! -e "$target/.coding-crew/review-pr/scripts" ]
+  [ -f "$target/.claude/skills/review-pr/reviewer-prompt.md" ]
+  [ ! -e "$target/.coding-crew/review-pr" ]
   [ -f "$target/.coding-crew/solve-feature/hosts/github-actions.yml" ]
   [ ! -x "$target/.coding-crew/solve-feature/hosts/github-actions.yml" ]
   [ -f "$target/.claude/skills/solve-feature/SKILL.md" ]
