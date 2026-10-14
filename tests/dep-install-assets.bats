@@ -2,7 +2,7 @@
 
 # dep-install's scripts are two things at once: skill text the model reads and launches
 # ("run scripts/detect-mode.sh from the same directory you read this skill file from"),
-# and a mechanism the platform-neutral orchestrator has to run without knowing which
+# and a mechanism a platform-neutral caller has to run without knowing which
 # platform a repo installed. The per-platform copies stay for the first reader; a single
 # copy at .coding-crew/dep-install/scripts exists for the second.
 #

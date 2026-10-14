@@ -218,7 +218,7 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   grep -qx 'base_sha: fe7022af5425' "$f"
   grep -q '^head_sha: 09aeb80' "$f"
   grep -qx 'via: origin/feature/afk-effectiveness' "$f"
-  for m in orchestrator/main.mjs scripts/cut-release.sh registry.json; do
+  for m in main.mjs scripts/cut-release.sh registry.json; do
     sed -n '/^## Expected misses$/,/^## Reference judgement$/p' "$f" | grep -qF "$m"
   done
   grep -qF 'Origin: #182' "$f"

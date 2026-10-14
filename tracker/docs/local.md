@@ -10,7 +10,7 @@ The tracker this repo uses is the `tracker` section of `.coding-crew/config.json
 { "tracker": { "kind": "local" } }
 ```
 
-`kind` is `local` or `github`; other sections of the file (`afk`) are kept beside it. No
+`kind` is `local` or `github`; other sections of the file (`solveFeature`) are kept beside it. No
 `tracker` section means `local`, so this tracker needs no config at all. `configure-tracker`
 writes the section, and `node "$TRACKER" config` prints what is in effect (`tracker=<kind>`,
 `configured=yes|no`). This doc ships with the tracker CLI in `.coding-crew/tracker/docs/` and is

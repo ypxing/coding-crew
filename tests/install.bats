@@ -30,24 +30,6 @@ teardown() {
   [ "$output" != "null" ]
 }
 
-# ─── nothing installed that no agent runs ────────────────────────────────────
-#
-# Every installed word is a word some agent may read at runtime, so a developer
-# README and a retired reference are not inert: they are exploration bait in a
-# directory the model lists. These assert the crew-afk install ships neither; the
-# prune below sweeps an older install's copies.
-
-@test "crew-afk install ships no developer README in the skill tree" {
-  [ -f "$ALL/.claude/skills/crew-afk/SKILL.md" ]
-  [ ! -f "$ALL/.claude/skills/crew-afk/scripts/README.md" ]
-}
-
-@test "crew-afk install ships no verification reference (verify-worktree.sh is the policy)" {
-  [ ! -f "$ALL/.claude/skills/crew-afk/references/verification.md" ]
-  # solve-issue's own verification reference is a different file and still ships.
-  [ -f "$ALL/.claude/skills/solve-issue/references/verification.md" ]
-}
-
 @test "to-issues installs references/ beside SKILL.md for every platform" {
   local skill_md dir count=0
   while IFS= read -r skill_md; do
@@ -108,15 +90,15 @@ teardown() {
   done < <(jq -r '.skills["solve-issue"].scripts[]' registry.json)
 }
 
-@test "re-installing crew-afk prunes its asset tree" {
+@test "re-installing dep-install prunes its asset tree" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
-  echo "// deleted module" > "$TEMP_DIR/.coding-crew/crew-afk/lib/retired.mjs"
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill dep-install >/dev/null
+  echo "# deleted script" > "$TEMP_DIR/.coding-crew/dep-install/scripts/retired.sh"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill dep-install
   [ "$status" -eq 0 ]
-  [ ! -e "$TEMP_DIR/.coding-crew/crew-afk/lib/retired.mjs" ]
-  [ -f "$TEMP_DIR/.coding-crew/crew-afk/lib/dispatch.mjs" ]
-  [[ "$output" == *".coding-crew/crew-afk/lib/retired.mjs (removed)"* ]]
+  [ ! -e "$TEMP_DIR/.coding-crew/dep-install/scripts/retired.sh" ]
+  [ -f "$TEMP_DIR/.coding-crew/dep-install/scripts/run.sh" ]
+  [[ "$output" == *".coding-crew/dep-install/scripts/retired.sh (removed)"* ]]
 }
 
 @test "the prune leaves files outside the skill root and asset dests alone" {
@@ -136,21 +118,16 @@ teardown() {
   [ -f "$other/planted.md" ]
 }
 
-@test "solve-issue and crew-afk both get write-commands-cache.sh; only crew-afk gets discover-commands.sh" {
-  # solve-issue's own agent turn already *is* the model, so it never dispatches a
-  # separate prompt-building call — only the shared write side is needed.
+@test "solve-issue and add-tests get write-commands-cache.sh; only add-tests gets discover-commands.sh" {
+  # solve-issue's own agent turn already *is* the model, so only the shared write side is needed.
   [ -f "$ALL/.claude/skills/solve-issue/scripts/write-commands-cache.sh" ]
   [ ! -f "$ALL/.claude/skills/solve-issue/scripts/discover-commands.sh" ]
+  [ -f "$ALL/.claude/skills/add-tests/scripts/write-commands-cache.sh" ]
+  [ -f "$ALL/.claude/skills/add-tests/scripts/discover-commands.sh" ]
 
-  # crew-afk dispatches an agent-less model call (orchestrator/lib/commands.mjs) and
-  # needs both halves.
-  [ -f "$ALL/.claude/skills/crew-afk/scripts/write-commands-cache.sh" ]
-  [ -f "$ALL/.claude/skills/crew-afk/scripts/discover-commands.sh" ]
-
-  # Canonical source is scripts/skill-utils/git-workflow/ for both, not duplicated by
-  # hand in either skill's own source-dir.
+  # Canonical source is scripts/skill-utils/git-workflow/, not duplicated by hand in a skill's source-dir.
   [ ! -f "$SCRIPT_DIR/skills/solve-issue/scripts/write-commands-cache.sh" ]
-  [ ! -f "$SCRIPT_DIR/skills/crew-afk/scripts/discover-commands.sh" ]
+  [ ! -f "$SCRIPT_DIR/skills/add-tests/scripts/discover-commands.sh" ]
 }
 
 @test "direct install is idempotent (produces identical output on repeat runs)" {
@@ -175,20 +152,21 @@ teardown() {
   ! grep -q 'crew:' registry.json
 }
 
-@test "registry.json has no agents: the roles ship inside crew-afk" {
+@test "registry.json has no agents" {
   cd "$SCRIPT_DIR"
   run jq -r 'has("agents")' registry.json
   [ "$output" = "false" ]
 }
 
-@test "registry.json skill keys crew-afk and crew-grill are present; crew-plan must not exist" {
+@test "registry.json skill keys solve-feature and crew-grill are present; crew-afk, crew-address-findings and crew-plan are not" {
   cd "$SCRIPT_DIR"
 
   run jq -r '.skills | keys[]' registry.json
   [ "$status" -eq 0 ]
-  # crew-afk and crew-grill must be present
-  [[ "$output" == *"crew-afk"* ]]
-  [[ "$output" == *"crew-grill"* ]]
+  echo "$output" | grep -qxF "solve-feature"
+  echo "$output" | grep -qxF "crew-grill"
+  ! echo "$output" | grep -qxF "crew-afk"
+  ! echo "$output" | grep -qxF "crew-address-findings"
   # tdd must exist without crew- prefix
   [[ "$output" == *"tdd"* ]]
   # crew-tdd must not be present
@@ -237,9 +215,9 @@ teardown() {
 @test "reinstalling an unmodified install reports no updates" {
   cd "$SCRIPT_DIR"
 
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk > /dev/null
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-feature > /dev/null
 
-  run bash -c "cd '$SCRIPT_DIR' && TARGET_REPO='$TEMP_DIR' ./install.sh claude --skill crew-afk"
+  run bash -c "cd '$SCRIPT_DIR' && TARGET_REPO='$TEMP_DIR' ./install.sh claude --skill solve-feature"
 
   # Nothing changed on disk, so nothing should be reported as updated
   [[ ! "$output" =~ "(updated)" ]]
@@ -478,12 +456,11 @@ PROBE
 
 # ── the shared tracker CLI (.coding-crew/tracker/) ─────────────────────────────
 # Installed on every install, whichever skill, since to-issues / to-prd / solve-issue reach the
-# tracker through it without crew-afk; mechanism, so always overwritten, and removed by uninstall.
+# tracker through it; mechanism, so always overwritten, and removed by uninstall.
 
-@test "install of a skill without crew-afk ships the tracker CLI, which runs" {
+@test "install of one skill ships the tracker CLI, which runs" {
   local dir; dir="$(shared_installed to-issues)"
   [ -f "$dir/.coding-crew/tracker/cli.mjs" ]
-  [ ! -d "$dir/.coding-crew/crew-afk" ]
   cd "$dir"
   run node .coding-crew/tracker/cli.mjs prd --feature-slug x
   [ "$status" -eq 3 ]
@@ -514,24 +491,4 @@ PROBE
   run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh
   [ "$status" -eq 0 ]
   [ ! -e "$TEMP_DIR/.coding-crew/tracker" ]
-}
-
-@test "installed crew-afk imports the one shared tracker copy, and an older install's lib/trackers/ is swept" {
-  cd "$SCRIPT_DIR"
-  mkdir -p "$TEMP_DIR/.coding-crew/crew-afk/lib/trackers"
-  echo "// old" > "$TEMP_DIR/.coding-crew/crew-afk/lib/trackers/github.mjs"
-  echo "// old" > "$TEMP_DIR/.coding-crew/crew-afk/lib/tracker-config.mjs"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
-  [ ! -e "$TEMP_DIR/.coding-crew/crew-afk/lib/trackers" ]
-  [ ! -e "$TEMP_DIR/.coding-crew/crew-afk/lib/tracker-config.mjs" ]
-  run grep -rl "tracker" "$TEMP_DIR/.coding-crew/crew-afk/lib" --include='tracker*.mjs'
-  [ "$output" = "$TEMP_DIR/.coding-crew/crew-afk/lib/tracker.mjs" ]
-  # Its imports resolve against .coding-crew/tracker/ — the same module the CLI loads.
-  run node --input-type=module -e "
-    const a = await import('$TEMP_DIR/.coding-crew/crew-afk/lib/tracker.mjs');
-    const b = await import('$TEMP_DIR/.coding-crew/tracker/index.mjs');
-    if (a.getTracker !== b.getTracker) process.exit(1);
-    const t = await a.getTracker('$TEMP_DIR');
-    process.exit(typeof t.listFeatureIssues === 'function' ? 0 : 1);"
-  [ "$status" -eq 0 ]
 }

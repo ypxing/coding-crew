@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
 
-# crew-afk's roles (coder, reviewer, triage) used to install as per-platform agent files, and
-# crew-reviewer was crew-code-reviewer before that. An install from either era must not leave
+# The old crew-afk's roles (coder, reviewer, triage) used to install as per-platform agent files,
+# and crew-reviewer was crew-code-reviewer before that. An install from either era must not leave
 # those files behind: a host keeps listing each as a stale agent that nothing updates any more.
-# registry.json `retired-agents` names them; install.sh (crew-afk) and uninstall.sh remove them.
+# registry.json `retired-agents` names them; install.sh and uninstall.sh remove them.
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
@@ -14,7 +14,7 @@ teardown() {
   rm -rf "$TEMP_DIR"
 }
 
-# _old_install — what an install from before the roles moved into crew-afk left behind
+# _old_install — what an install from the agent-file era left behind
 _old_install() {
   mkdir -p "$TEMP_DIR/.claude/agents" "$TEMP_DIR/.github/agents" "$TEMP_DIR/.pi/agents" \
     "$TEMP_DIR/.codex/agents" "$TEMP_DIR/.coding-crew/agents/crew-coder" "$TEMP_DIR/.coding-crew/code-review"
@@ -43,15 +43,14 @@ _retired_left() {
   [ "$output" = "false" ]
 }
 
-@test "installing crew-afk for one platform removes every platform's retired files" {
+@test "installing a skill for one platform removes every platform's retired files" {
   _old_install
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-feature >/dev/null
   [ -z "$(_retired_left)" ] || { echo "left behind: $(_retired_left)"; return 1; }
   [ -f "$TEMP_DIR/.claude/agents/my-own.md" ]
   [ ! -d "$TEMP_DIR/.coding-crew/agents" ]
   [ ! -d "$TEMP_DIR/.coding-crew/code-review" ]
-  [ -f "$TEMP_DIR/.coding-crew/crew-afk/roles/coder.md" ]
 }
 
 @test "an install of any other skill also removes them, so dropping the manifest's agents strands nothing" {
@@ -63,41 +62,31 @@ _retired_left() {
   [ "$output" = "false" ]
 }
 
-@test "--update of an install that lists agents installs crew-afk, prunes them and drops them from the manifest" {
+@test "--update of an install that lists agents prunes their files" {
   _old_install
   cd "$SCRIPT_DIR"
   run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
   [ "$status" -eq 0 ]
-  [[ "$output" == *"now part of crew-afk"* ]]
   [ -z "$(_retired_left)" ] || { echo "left behind: $(_retired_left)"; return 1; }
   [ -f "$TEMP_DIR/.claude/agents/my-own.md" ]
-  run jq -r 'has("agents")' "$TEMP_DIR/.coding-crew/manifest.json"
-  [ "$output" = "false" ]
-  run jq -r '.skills | has("crew-afk")' "$TEMP_DIR/.coding-crew/manifest.json"
-  [ "$output" = "true" ]
 }
 
-@test "install.sh <platform> <retired agent> installs crew-afk, which now holds the role" {
+@test "install.sh names an unknown argument, a retired agent's name included" {
   cd "$SCRIPT_DIR"
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-coder
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"crew-coder is now a role inside crew-afk"* ]]
-  [ -f "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md" ]
-}
-
-@test "install.sh names an unknown argument" {
-  cd "$SCRIPT_DIR"
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude no-such-agent
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"unknown argument 'no-such-agent'"* ]]
+  local arg
+  for arg in no-such-agent crew-coder; do
+    run env TARGET_REPO="$TEMP_DIR" ./install.sh claude "$arg"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"unknown argument '$arg'"* ]]
+  done
 }
 
 @test "uninstall --agent is refused and removes nothing" {
   _old_install
   cd "$SCRIPT_DIR"
   run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh --agent crew-coder
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"--skill crew-afk"* ]]
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unknown argument '--agent'"* ]]
   [ -f "$TEMP_DIR/.claude/agents/crew-coder.md" ]
 }
 
@@ -119,23 +108,23 @@ _retired_left() {
   [ -f "$TEMP_DIR/.claude/agents/my-own.md" ]
 }
 
-@test "uninstall --skill crew-afk removes the retired files too" {
+@test "uninstall --skill removes the retired files too" {
   _old_install
   cd "$SCRIPT_DIR"
-  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill crew-afk
+  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill solve-feature
   [ "$status" -eq 0 ]
   [ -z "$(_retired_left)" ] || { echo "left behind: $(_retired_left)"; return 1; }
 }
 
-@test "a project install warns about a user-level copy of a retired agent" {
+@test "a project install warns about a user-level copy of solve-feature" {
   local home="$TEMP_DIR/home" repo="$TEMP_DIR/repo"
-  mkdir -p "$home/.claude/agents" "$repo"
-  echo old > "$home/.claude/agents/crew-code-reviewer.md"
+  mkdir -p "$home/.claude/skills/solve-feature" "$repo"
+  echo old > "$home/.claude/skills/solve-feature/SKILL.md"
   cd "$SCRIPT_DIR"
-  run env HOME="$home" CLAUDE_CONFIG_DIR= TARGET_REPO="$repo" ./install.sh claude --skill crew-afk
+  run env HOME="$home" CLAUDE_CONFIG_DIR= TARGET_REPO="$repo" ./install.sh claude --skill solve-feature
   [ "$status" -eq 0 ]
   [[ "$output" == *"may shadow"* ]]
-  [[ "$output" == *"$home/.claude/agents/crew-code-reviewer"* ]]
+  [[ "$output" == *"$home/.claude/skills/solve-feature"* ]]
 }
 
 # ── retired tracker wrappers (.coding-crew/scripts/) ──────────────────────────

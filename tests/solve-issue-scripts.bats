@@ -133,7 +133,7 @@ _cache() {
   [[ "$output" == *"$(cd "$TEMP_DIR/wt" && pwd -P)"* ]]
 }
 
-# The same rule, and the same line, as crew-afk's verify gate — so a coder sees its verdict.
+# A check must leave the tree as it found it.
 _committed_src() {
   mkdir -p "$WORK/src"
   printf 'a = 1\n' > "$WORK/src/app.py"

@@ -1,25 +1,16 @@
 #!/usr/bin/env bats
 
-# The layer-ownership table from .scratch/coder-boundary/PRD.md, asserted.
+# CLAUDE.md's layer-ownership table, asserted. The call direction is solve-feature → solve-issue
+# (skill) → tdd / dep-install; a human running /solve-issue gets the same procedure:
 #
-# The call direction is right — crew-afk (program) → crew-coder (agent) → solve-issue
-# (skill) → tdd / dep-install — but crew-coder is on the *sprint path only*. A human
-# running /solve-issue never touches it; their own session plays the coder role. So every
-# piece of "coder role" content that lived in crew-coder was missing from the direct path
-# and duplicated on the sprint path:
-#
-#   | layer        | owns                                          | must not contain      |
-#   | crew-coder   | protocol + report wire                         | the implementation loop |
-#   | solve-issue  | the ordered procedure + the outcome vocabulary | who its caller is       |
-#   | tdd/dep-install | one technique each                         | issue/report/status     |
+#   | layer           | owns                                           | must not contain        |
+#   | solve-issue     | the ordered procedure + the outcome vocabulary | who its caller is       |
+#   | tdd/dep-install | one technique each                             | issue/report/status     |
 #
 # Anything that fits no row is in the wrong file. These tests are that table.
 
-load helpers/render
-
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 SOLVE_ISSUE="$REPO_ROOT/skills/solve-issue/SKILL.md"
-PROTOCOL="$REPO_ROOT/orchestrator/roles/coder.md"
 HOST_INSTALL="$REPO_ROOT/skills/dep-install/references/host-install.md"
 TDD="$REPO_ROOT/skills/tdd/SKILL.md"
 
@@ -58,39 +49,7 @@ defines_term() {
   echo "$section" | grep -q 'its exit code and its verbatim'
   echo "$section" | grep -q 'Do not start services by hand, search for tokens'
   echo "$section" | grep -qF '$ <command> (exit <N>)'
-  ! echo "$section" | grep -qiE 'crew-afk|triage|orchestrat'
-}
-
-@test "solve-issue is the only place the three outcome words are defined" {
-  # crew-coder used to define them, so a direct invocation ran with an undefined
-  # vocabulary while the sprint path got two copies.
-  for term in complete partial blocked; do
-    ! defines_term "$PROTOCOL" "$term" || {
-      echo "crew-coder's protocol still defines '$term' — solve-issue owns it" >&2; return 1; }
-  done
-}
-
-@test "crew-coder's report section defines the transport and nothing more" {
-  # What it genuinely owns: where the result goes, what the fields are called, and when.
-  grep -q 'report.json' "$PROTOCOL"
-  grep -q 'as your last action' "$PROTOCOL"
-  grep -q '"status"' "$PROTOCOL"
-  grep -q '"progress"' "$PROTOCOL"
-  # ...and it points at the procedure for what the words mean, rather than restating them.
-  grep -q 'solve-issue' "$PROTOCOL"
-}
-
-@test "every rendered coder body still carries the wire format" {
-  # Reducing crew-coder to transport must not lose the transport.
-  for p in "${CODER_VARIANTS[@]}"; do
-    local f
-    f=$(coder_variant "$p")
-    grep -qF 'report.json' "$f"
-    grep -qF 'as your last action' "$f"
-    for field in status branch working_directory checks criteria progress notes; do
-      grep -qF "\"$field\"" "$f" || { echo "$p lost field $field" >&2; return 1; }
-    done
-  done
+  ! echo "$section" | grep -qiE 'solve-feature|triage|orchestrat'
 }
 
 @test "tdd and dep-install carry no issue, report or status concepts" {
@@ -108,7 +67,7 @@ defines_term() {
 @test "solve-issue names no caller as an actor" {
   # A procedure that describes its caller by name is wrong the moment a second caller
   # exists. Every such branch must be a capability check instead.
-  for name in 'crew-coder' 'crew worker' 'the orchestrator' 'An orchestrator' 'crew-afk'; do
+  for name in 'solve-feature' 'crew-coder' 'the orchestrator' 'An orchestrator' 'crew-afk'; do
     ! grep -qF "$name" "$SOLVE_ISSUE" || {
       echo "solve-issue still names its caller: $name" >&2
       grep -nF "$name" "$SOLVE_ISSUE" >&2
@@ -116,16 +75,9 @@ defines_term() {
   done
 }
 
-@test "solve-issue branches on capabilities, not identities" {
-  # The facts it is allowed to test: the orchestration marker, the env var, a worktree.
-  grep -q 'CREW_ORCHESTRATED' "$SOLVE_ISSUE"
-  grep -q '\.orchestrated' "$SOLVE_ISSUE"
-}
-
 @test "the non-interactive branch fires on the capability check, not on caller identity" {
   section=$(awk '/^### 8\./{f=1} /^## /{if(f)exit} f' "$SOLVE_ISSUE")
   echo "$section" | grep -qi 'non-interactive'
-  echo "$section" | grep -q 'CREW_ORCHESTRATED'
   echo "$section" | grep -qi 'partial'
   # The retired form: "your instructions name an orchestrator as your caller".
   ! echo "$section" | grep -qi 'name an orchestrator\|your caller'
@@ -137,19 +89,6 @@ defines_term() {
 }
 
 # ─── the environment contract is stated once ─────────────────────────────────
-
-@test "MAIN_ROOT and PROJECT_ROOT are defined in exactly one place" {
-  local definers=0
-  for f in "$PROTOCOL" "$SOLVE_ISSUE" "$HOST_INSTALL"; do
-    if defines_term "$f" 'MAIN_ROOT'; then
-      definers=$((definers + 1))
-      [ "$f" = "$PROTOCOL" ] || {
-        echo "$f defines MAIN_ROOT — crew-coder binds it, everyone else references it" >&2
-        return 1; }
-    fi
-  done
-  [ "$definers" -eq 1 ] || { echo "MAIN_ROOT is defined in $definers places, want 1" >&2; return 1; }
-}
 
 @test "solve-issue and host-install reference the variables without redefining them" {
   for f in "$SOLVE_ISSUE" "$HOST_INSTALL"; do
@@ -163,45 +102,23 @@ defines_term() {
   done
 }
 
-@test "the orchestrator is the only thing that emits them" {
-  # prompts.mjs is the one place the values are produced; crew-coder binds what it emits.
-  grep -q 'MAIN_ROOT=' "$REPO_ROOT/orchestrator/lib/prompts.mjs"
-  grep -q 'Working directory' "$REPO_ROOT/orchestrator/lib/prompts.mjs"
-  grep -q 'Working directory' "$PROTOCOL"
-}
-
 # ─── a direct run is self-sufficient ─────────────────────────────────────────
 
-@test "nothing in solve-issue depends on a definition only crew-coder has" {
-  # The three outcome words are used in the skill, so the skill must define them.
-  grep -q 'partial' "$SOLVE_ISSUE"
-  grep -q '^## Outcome' "$SOLVE_ISSUE"
-  # And its two variables must be named as inherited, so a human can set them.
-  grep -qi 'inherited' "$SOLVE_ISSUE"
-}
-
-@test "solve-issue keeps the accepted redundancies finding 7 recorded" {
-  # The branch guard is redundant inside a sprint but correct and cheap for a direct run.
+@test "solve-issue keeps its branch guard" {
   grep -q '^### 0\. Branch guard' "$SOLVE_ISSUE"
   grep -q 'DEFAULT_BRANCH' "$SOLVE_ISSUE"
 }
 
 # ─── the table is written down where the next change will look ───────────────
 
-@test "CLAUDE.md records the ownership table" {
+@test "CLAUDE.md records the ownership table, with no orchestrator, crew-afk scripts or crew-coder row" {
   local f="$REPO_ROOT/CLAUDE.md"
   grep -q 'Layer ownership\|ownership table' "$f"
   # Every layer named, with a "must not contain" column.
   grep -q 'Must not contain' "$f"
-  for layer in 'crew-coder' 'solve-issue' 'orchestrator' 'tdd'; do
+  for layer in 'solve-feature' 'solve-issue' 'tdd' 'dep-install'; do
     grep -q "$layer" "$f" || { echo "CLAUDE.md's table omits $layer" >&2; return 1; }
   done
+  ! grep -qE '^\| `((orchestrator|skills/crew-afk/scripts)/|crew-coder)`' "$f"
 }
 
-@test "CLAUDE.md's crew-coder row reads protocol + report wire" {
-  grep -qE '^\| `crew-coder` +\| protocol \+ report wire +\|' "$REPO_ROOT/CLAUDE.md"
-}
-
-@test "CLAUDE.md asks a crew-afk mechanism change to cite its incident count" {
-  grep -qF 'A crew-afk mechanism change cites how many times its incident happened' "$REPO_ROOT/CLAUDE.md"
-}

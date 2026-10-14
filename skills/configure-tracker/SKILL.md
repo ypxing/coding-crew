@@ -14,7 +14,7 @@ Choose the project's issue tracker and record it in the repo's `.coding-crew/con
 { "tracker": { "kind": "github" } }
 ```
 
-Every other section of that file (`afk`) is kept. This is an explicit (re)configuration: an
+Every other section of that file (`solveFeature`) is kept. This is an explicit (re)configuration: an
 existing `tracker` section is replaced.
 
 ## Step 1 — Offer the trackers

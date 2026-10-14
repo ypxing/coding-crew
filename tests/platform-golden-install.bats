@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # platform-golden-install.bats — today's per-platform install tree, frozen.
 #
-# For each platform in orchestrator/platforms.json, a full `install.sh <platform>` at project
+# For each platform in platforms.json, a full `install.sh <platform>` at project
 # scope, at user scope (TARGET_REPO=$HOME, a temp $HOME), and at user scope with the platform's
 # configDirEnv pointing at a temp dir; then `uninstall.sh` in the same target. Each tree is
 # recorded as one sorted line per entry — `<ROOT>/<relative path> <fact>` (`/` for a directory) —
@@ -33,7 +33,7 @@ setup_file() {
   isolate_project_env
   # A developer's own config-dir override must not move what this records.
   local v p scope
-  while IFS= read -r v; do unset "$v"; done < <(jq -r '.[].configDirEnv' "$REPO/orchestrator/platforms.json")
+  while IFS= read -r v; do unset "$v"; done < <(jq -r '.[].configDirEnv' "$REPO/platforms.json")
   for p in "${CASES[@]}"; do
     for scope in "${SCOPES[@]}"; do bg_start "$p-$scope" golden_record "$p" "$scope"; done
   done
@@ -110,7 +110,7 @@ golden_record() {
   local platform="$1" scope="$2" target env_name out
   WORK="$(_work "$platform" "$scope")"
   mkdir -p "$WORK/repo" "$WORK/home" "$WORK/config"
-  env_name=$(jq -r --arg p "$platform" '.[$p].configDirEnv' "$REPO/orchestrator/platforms.json")
+  env_name=$(jq -r --arg p "$platform" '.[$p].configDirEnv' "$REPO/platforms.json")
   local -a env=(HOME="$WORK/home")
   case "$scope" in
     project) target="$WORK/repo" ;;
@@ -138,7 +138,7 @@ golden_install() {
 @test "install.sh's platforms are platforms.json's, and the cases below cover them all" {
   local want got
   want=$(SCRIPT_DIR="$REPO" REPO_ROOT="$BATS_TEST_TMPDIR" bash -c 'source "$SCRIPT_DIR/scripts/lib/platforms.sh"; printf "%s\n" "${PLATFORMS[@]}"' | LC_ALL=C sort)
-  got=$(jq -r 'keys[]' "$REPO/orchestrator/platforms.json" | LC_ALL=C sort)
+  got=$(jq -r 'keys[]' "$REPO/platforms.json" | LC_ALL=C sort)
   [ "$want" = "$got" ]
   [ "$got" = "$(printf '%s\n' "${CASES[@]}")" ]
 }
