@@ -27,6 +27,9 @@ get one PR at the end.
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
 ```
 
+That installs every skill at user level (under `~`). To install into one repo instead, run it from
+inside the repo with `| bash -s -- --project` (or `./install.sh <platform> --project` from a clone).
+
 Then, inside Claude Code, Copilot CLI, Codex CLI or [pi](https://github.com/badlogic/pi-mono):
 
 ```bash

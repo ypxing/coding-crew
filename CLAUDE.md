@@ -11,11 +11,11 @@ For the end-user pipeline (crew-grill/crew-brainstorm → solve-feature), see `R
 ## Working in this repo
 
 ```bash
-# Install into a scratch repo to see what a platform actually receives
-TARGET_REPO=/tmp/test-repo ./install.sh claude --skill solve-feature
+# Install into a scratch repo to see what a platform actually receives (no --project: $HOME, the default)
+./install.sh claude --skill solve-feature --project /tmp/test-repo
 
 # Render a skill body without a full install
-bash scripts/render-skill.sh solve-issue codex | less
+bash scripts/render-skill.sh solve-issue | less
 
 # Run tests: one bats process per file, CPU-count at a time, heaviest first (plain `bats tests/*.bats` runs files one by one, ~6x slower)
 bash scripts/ci-run-bats.sh tests/*.bats
@@ -26,27 +26,26 @@ node scripts/eval-design-skills.mjs --skill crew-grill --runs 2 --dry-run   # dr
 # After editing skills/crew-review/SKILL.md: replay the bugs earlier reviews missed against base and head, judged blind; costs API money
 node scripts/eval-reviewer-misses.mjs --runs 2 --dry-run   # writes each ref's prompts, calls no model; drop --dry-run to run
 
-# Bring a PR branch up to date with origin/main (local only, never pushes): merge it, resolve registry version / CHANGELOG append conflicts, bump versions to sit above main's
+# Bring a PR branch up to date with origin/main (local only, never pushes): merge it, resolving CHANGELOG append conflicts
 scripts/sync-pr-with-main.sh <branch>
 
-# Cut a milestone release (not per merge) once CHANGELOG.md's top version entry and any registry.json version bumps are committed;
+# Cut a milestone release (not per merge) once CHANGELOG.md's top version entry is committed;
 # needs a passing demo smoke log (`SMOKE: PASS (<platform>, demo)` and the `crew-afk-commit:` it ran at), run on a clean checkout with nothing but CHANGELOG.md and RESULTS.md committed since, or an explicit opt-out; the tree must be clean, RESULTS.md row included
 scripts/cut-release.sh --dry-run --demo-smoke /tmp/smoke.log   # or --no-demo-smoke "<reason>"; verify, then re-run without --dry-run to tag and push
 ```
 
-- Version bump (D4): a change to any file a `skills.*` entry in `registry.json` ships (its `source-dir` tree, `assets.source` tree, `scripts[]`) or to that entry's own registry fields needs that entry's `version` in `registry.json` strictly above `origin/main`'s version for it — `install.sh --update` skips an entry whose version is unchanged, and two branches bumping to the same number would collide. An entry the branch did not change (measured from the merge-base) is exempt even if main bumped it. `tests/registry-version-bump.bats` enforces it against `origin/main` (skips when it is not found) and fails the verify gate otherwise.
 - Code comments follow solve-issue's comment rule (`skills/solve-issue/SKILL.md`, Step 4).
 - One writer per issue file: don't add code paths where an agent edits an issue's `Status:`/checkboxes directly — that's the tracker CLI's job (`tick`, `mark-done`).
 - `CHANGELOG.md`: add one entry at the top of `[Unreleased]` (component prefix, what changed for a user, issue/PR number). Read only its first ~20 lines to do it, not the whole file.
-- Issues (this repo's own dev use) live in `.scratch/<feature-slug>/issues/{open,done}/`; the tracker is set in `.coding-crew/config.json` (`{"tracker": {"kind": …}}`); see `tracker/docs/<kind>.md`.
+- Issues (this repo's own dev use) live in `.scratch/<feature-slug>/issues/{open,done}/`; the tracker is set in `.coding-crew/config.json` (`{"tracker": {"kind": …}}`); see `lib/tracker/docs/<kind>.md`.
 
 ## Axes of variation
 
 The design standard (`skills/_shared/fragments/design-standard.md`, criterion 3) counts these as real axes, so a decision that varies along one belongs behind one abstraction even with a single implementation today:
 
 - platforms — `platforms.json` (claude, copilot, pi, codex)
-- trackers — local, github (`tracker/`, `tracker/docs/`, `.coding-crew/config.json`'s `tracker` section)
-- dependency-install ecosystems — `dep-install`'s detection and install scripts
+- trackers — local, github (`lib/tracker/`, `lib/tracker/docs/`, `.coding-crew/config.json`'s `tracker` section)
+- dependency-install ecosystems — the checks library's detection and install scripts (`lib/checks/`)
 
 ## Layer ownership
 

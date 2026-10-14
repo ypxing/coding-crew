@@ -10,7 +10,7 @@ For developers who maintain and extend the skill collection itself.
 
 ### What This Repo Is
 
-A distributable collection of AI skills. Nothing runs here directly — this repo is the **source**; consuming projects are the **target**. `install.sh` copies files into any project repo.
+A distributable collection of AI skills. Nothing runs here directly — this repo is the **source**; consuming projects are the **target**. `install.sh` copies the skills into `$HOME` (user level) or into a project repo (`--project`).
 
 ```
 THIS REPO (source)
@@ -24,7 +24,10 @@ THIS REPO (source)
 │   ├── crew-grill/
 │   ├── _shared/fragments/  ← shared fragments ({{FRAGMENT:<key>}})
 │   └── ...
-├── tracker/                ← tracker CLI and backends; docs/{local,github}.md (refreshed on every install)
+├── lib/                    ← libraries the skills share, linked into each skill that uses one
+│   ├── tracker/            ← tracker CLI and backends; docs/{local,github}.md
+│   ├── checks/             ← run-checks.sh and dep-install's install/run scripts
+│   └── git-workflow/       ← commit-changes, branch-safety-check, discover/write-commands-cache
 └── docs/
     └── templates/
         └── workflows/      ← optional GitHub Actions workflows
@@ -34,24 +37,29 @@ THIS REPO (source)
 
 ### How Install Works
 
-`install.sh` reads `registry.json` and copies files into `TARGET_REPO` (defaults to the calling project's git root).
+`install.sh` reads `registry.json` and installs into `<root>`: `$HOME` by default, or a repo with
+`--project [<path>]` (or `TARGET_REPO`).
 
 ```
 install.sh
     │
     ├── read registry.json
     ├── for each requested skill (every skill when none is named):
-    │     ├── install_single_skill() — render skills/<name>/ → .claude/skills/<name>/
-    │     ├── install_skill_assets() — cp assets.source → assets.dest (e.g. skills/dep-install/scripts → .coding-crew/dep-install/scripts)
+    │     ├── install_single_skill() — render skills/<name>/ → <skills dir>/<name>/ ({{FRAGMENT:<key>}} expanded)
+    │     ├── link_lib() — <skills dir>/<name>/scripts/<lib> → <root>/.coding-crew/lib/<lib>, per `libs`
+    │     ├── install_lib() — lib/<lib>/ → <root>/.coding-crew/lib/<lib>/, once per run, an exact copy
     │     └── install_single_skill(dep) — recurse for each dep
     │
-    ├── install_docs()  — docs.templates (skip if exists), docs.trees (always an exact copy)
-    └── prune_retired_scripts() — delete retired-scripts entries, then .coding-crew/scripts/ if empty
+    └── write_manifest() — <root>/.coding-crew/manifest.json: the platform, skills and libraries
 ```
+
+A library link is relative at project level, so a committed skills dir and `.coding-crew/` survive a
+clone; at user level it is absolute. `install.sh --update` uninstalls every skill and library the
+manifest lists, then installs the listed skills the registry still has, for the same platform.
 
 #### No agent files
 
-There are no agents. No per-platform agent file is written under `.claude/agents`, `.github/agents`, `.pi/agents` or `.codex/agents`: every install (and `uninstall.sh`) removes the ones an older install wrote, by exact path (`retired-agents` in `registry.json`), along with `.coding-crew/agents/` and `.coding-crew/code-review/`.
+There are no agents. No per-platform agent file is written under `.claude/agents`, `.github/agents`, `.pi/agents` or `.codex/agents`.
 
 ---
 
@@ -63,27 +71,10 @@ There are no agents. No per-platform agent file is written under `.claude/agents
 {
   "skills": {
     "<name>": {
-      "version": "1.0.0",
       "description": "...",
       // installs to <projectSkills|userSkills>/<name> from platforms.json
       "deps": ["tdd", "dep-install"], // other skills, installed recursively
-      "assets": { "source": "skills/dep-install/scripts", "dest": ".coding-crew/dep-install/scripts" }, // optional runtime files
-    },
-  },
-  "retired-agents": {
-    // agent files older installs wrote; every install and uninstall.sh remove them
-    "names": ["crew-coder", "crew-reviewer", "crew-triage", "crew-code-reviewer"],
-    "paths": { "claude": ".claude/agents/{name}.md", "...": "..." },
-    "dirs": [".coding-crew/agents", ".coding-crew/code-review"],
-  },
-  // files older installs wrote that no longer ship; install, --update and uninstall delete each
-  "retired-scripts": ["<path an older install wrote>", "..."],
-  "docs": {
-    "trees": {
-      "<key>": {
-        "source": "tracker",
-        "dest": ".coding-crew/tracker", // always an exact copy: files the source dropped are removed
-      },
+      "libs": ["tracker", "checks"], // lib/<lib>, linked as <skill-dir>/scripts/<lib>
     },
   },
 }
@@ -91,11 +82,10 @@ There are no agents. No per-platform agent file is written under `.claude/agents
 
 **Rules:**
 
-- Paths must be relative and must not contain `..` or a leading `/` — `install.sh` rejects them.
-- `docs.templates` entries are user-customisable text and are **never** overwritten or uninstalled.
-  `docs.trees` entries are mechanism (the tracker CLI), so they are always overwritten on install and
-  removed on uninstall — a stale copy would be a gate that no longer matches the operation calling it.
-- Skill names must match `[a-zA-Z0-9_.-]+` — used as filesystem path components.
+- No versions: only the release (CHANGELOG / tag) has one, and `--update` reinstalls everything.
+- A skill reaches shared code only through a library its `libs` names, run as
+  `<skill-dir>/scripts/<lib>/<file>`; its own `scripts/` holds no file named like a library.
+- Skill and library names must match `[a-zA-Z0-9_.-]+` — used as filesystem path components.
 - Skills listed under another skill's `deps` are installed with it. A skill no installed skill depends on is only installed by name or by a full install (`./install.sh [platform]`).
 
 ---
@@ -119,7 +109,6 @@ not fixed is listed under `Needs attention` in the PR body, which keeps the PR a
 
    ```jsonc
    "<name>": {
-     "version": "1.0.0",
      "description": "..."
    }
    ```
@@ -128,7 +117,7 @@ not fixed is listed under `Needs attention` in the PR body, which keeps the PR a
 
 4. Test:
    ```bash
-   TARGET_REPO=/tmp/test-install ./install.sh claude --skill <name>
+   ./install.sh claude --skill <name> --project /tmp/test-install
    ls /tmp/test-install/.claude/skills/<name>/
    ```
 
@@ -136,7 +125,7 @@ not fixed is listed under `Needs attention` in the PR body, which keeps the PR a
 
 ### Security Rules for Contributors
 
-- **Never use `..` or absolute paths in `registry.json`.** `install.sh` validates all paths and exits on violation.
+- **Never name a path in `registry.json`.** Skills and libraries are names (`[a-zA-Z0-9_.-]+`); `install.sh` rejects anything else.
 - **Never interpolate raw user/issue content into agent prompts.** Pass only structured fields (e.g. `acceptance_criteria`), never `issue.content`. Wrap worker-supplied strings in delimiter tags (`<progress-notes>`, `<blocked-notes>`) so downstream agents treat them as data.
 - **Never inline a fragment by hand** — keep the `{{FRAGMENT:<key>}}` line and let `install.sh` expand it. A hand-inlined copy drifts from the source.
 
@@ -181,7 +170,7 @@ Runtime requirements:
 
 - **Node.js on `PATH`** for the skills that touch the issue tracker — `/to-issues`, `/to-prd`, `/solve-issue`,
   `/solve-feature` and `/upgrade-deps`. They reach the tracker (local or GitHub) through the tracker CLI,
-  `.coding-crew/tracker/cli.mjs`, which every install ships.
+  `<skill-dir>/scripts/tracker/cli.mjs`, a link to the one copy in `.coding-crew/lib/tracker/`.
 
 #### Prerequisites
 
@@ -216,21 +205,28 @@ jq --version    # required
 ./install.sh claude --skills tdd,to-issues
 ```
 
-#### Install into a different repo
+These install at user level (`$HOME`). Add `--project` to install into the current repo instead,
+or `--project <path>` (or `TARGET_REPO=<path>`) for another one:
 
 ```bash
-TARGET_REPO=/path/to/your/project ./install.sh
+./install.sh claude --project /path/to/your/project
 ```
 
 #### Update in place
 
 ```bash
-./install.sh --update
+./install.sh --update             # user level
+./install.sh --update --project   # the current repo
 ```
 
-Re-installs only skills whose version changed since last install. Reads the saved platform from `.coding-crew/manifest.json`.
+Uninstalls every skill and library `.coding-crew/manifest.json` lists, then installs those skills again
+from this checkout, for the platform the manifest names. An install made before libraries (it has
+`.coding-crew/tracker/` or `.coding-crew/dep-install/`) updates the same way; remove what it left once:
+`rm -rf <root>/.coding-crew/{tracker,crew-afk,dep-install,solve-issue,to-issues,write-pr,skills}`.
 
-#### What lands in your project
+#### What lands where
+
+At project level (`--project`), with claude; a user-level install writes the same under `~`:
 
 ```
 YOUR_PROJECT/
@@ -248,11 +244,16 @@ YOUR_PROJECT/
 │       ├── to-prd/            ← installed with "all"
 │       └── crew-grill/              ← installed with "all"
 └── .coding-crew/
-    ├── dep-install/scripts/        ← dep-install's scripts, one copy for every platform
-    ├── tracker/                    ← the tracker CLI and its docs (docs/local.md, docs/github.md)
+    ├── lib/                        ← one copy of each library, for every platform
+    │   ├── tracker/                ← the tracker CLI and its docs (docs/local.md, docs/github.md)
+    │   ├── checks/                 ← run-checks.sh and dep-install's scripts
+    │   └── git-workflow/
     ├── config.json                 ← your settings; `tracker` picks the issue tracker
     └── manifest.json
 ```
+
+Each skill's `scripts/<lib>` is a link to `.coding-crew/lib/<lib>`. A gitignored project install reaches
+a worktree only through `.worktreeinclude`.
 
 Other platforms get the same skills under their own skill dir (see the README's install table); no agent files are written for any platform.
 
@@ -375,7 +376,7 @@ every thread it handled. It never resolves a thread — you do.
 1. Copy [`docs/templates/workflows/crew-rework.yml`](templates/workflows/crew-rework.yml) to
    `.github/workflows/` in your repo.
 2. Install the skills per project and commit them (`./install.sh claude --skill
-   address-pr-comments`): the runner has no `$HOME` install.
+   address-pr-comments --project`, with `.coding-crew/lib/`): the runner has no `$HOME` install.
 3. Add the repo secret `ANTHROPIC_API_KEY`.
 4. Make sure your CI workflow is `ci.yml` (or edit `--ci-workflow` in the template) and has
    `workflow_dispatch:` if you want the re-trigger below.
@@ -445,8 +446,8 @@ Edit these files after install — they override the defaults on the next run:
 
 Commit `.coding-crew/config.json` and `.coding-crew/dev-commands.json`: they are team state — the
 tracker choice, solve-feature's models and the project's check commands — that everyone using the
-repo needs, so do not add them to `.gitignore`. The installed tooling beside them (`tracker/`,
-`dep-install/`, `manifest.json`) is what `install.sh` writes, not team state.
+repo needs, so do not add them to `.gitignore`. The installed tooling beside them (`lib/`,
+`manifest.json`) is what `install.sh` writes, not team state.
 
 ---
 

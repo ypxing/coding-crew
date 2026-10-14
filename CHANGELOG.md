@@ -1,10 +1,28 @@
 # Changelog
 
-Users install from `main` (`bootstrap.sh`), and `install.sh --update` follows each agent's and
-skill's own `version` in `registry.json`. Tagged releases mark milestones only, not every merge.
+Users install from `main` (`bootstrap.sh`), and `install.sh --update` reinstalls every skill its
+manifest lists. Tagged releases mark milestones only, not every merge.
 Record changes under `[Unreleased]` and move them under a version heading when you cut a release.
 
 ## [Unreleased]
+
+- **install, every skill**: `install.sh <platform>` installs at user level (`$HOME`) by default;
+  `--project [<path>]` (or `TARGET_REPO`) installs into a repo, and `uninstall.sh` takes the same flags
+  (`uninstall.sh --user` is gone). Shared code is three libraries — `lib/tracker/` (was `tracker/`),
+  `lib/checks/` (`run-checks.sh` and dep-install's scripts) and `lib/git-workflow/` (was
+  `scripts/skill-utils/git-workflow/`) — each installed once to `<root>/.coding-crew/lib/<name>/` and linked
+  as `<skill-dir>/scripts/<name>` into each skill whose new `registry.json` `libs` names it (relative at
+  project level, so a committed install survives a clone). Skills run `node <skill-dir>/scripts/tracker/cli.mjs`
+  and `bash <skill-dir>/scripts/checks/…`; the tracker locator, `.coding-crew/tracker/`,
+  `.coding-crew/<skill>/scripts/` and the per-skill script copies are gone, and `render-skill.sh` takes no
+  platform (`{{PLATFORM}}` is no longer expanded). `registry.json` drops every `version`, `scripts`,
+  `assets`, `more-assets`, `docs`, `retired-agents` and `retired-scripts`; the manifest records the platform,
+  skills and libraries with no versions, and `install.sh --update` uninstalls everything it lists, then
+  installs those skills again. Gone with the versions: the version-bump rule, `tests/registry-version-bump.bats`,
+  and `sync-pr-with-main.sh`'s version repair (it still merges and resolves CHANGELOG appends). An install made
+  before this updates with `install.sh --update` (add `--project` for a project install), then needs a
+  one-time `rm -rf <root>/.coding-crew/{tracker,crew-afk,dep-install,solve-issue,to-issues,write-pr,skills}`,
+  `<root>` being `~` or the repo (#483).
 
 - **crew-afk, crew-address-findings (removed)**: the old crew-afk program — `orchestrator/`, `skills/crew-afk/`
   and everything only it used — is deleted, so `/solve-feature` is the one unattended path (a new, thin crew-afk

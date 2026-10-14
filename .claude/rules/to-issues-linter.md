@@ -6,7 +6,7 @@ paths:
 
 # `to-issues`' linter (`skills/to-issues/scripts/lint-issues.sh`)
 
-Read-only checker for a feature's issue set, shipped as an asset at `.coding-crew/to-issues/scripts/` and
+Read-only checker for a feature's issue set, shipped in the skill at `<skill-dir>/scripts/` and
 runnable by hand: `lint-issues.sh --issue <file>... [--known <file>...] [--deps <issues-deps.json>] [--prd <file>]`.
 `--known` names issues outside the set (done ones, written out as files under `tracker: github`) that a `## Blocked by` ref may resolve to,
 by basename; a known file's `## Implements` also counts toward `--prd` coverage. A PRD ID line ending in `(no slice)` needs no issue: no coverage `WARN`. Prints `ERROR <file>: …` (cycle, unmatched `## Blocked by` ref, `--deps` drift, no
