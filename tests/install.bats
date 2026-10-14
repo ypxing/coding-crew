@@ -70,13 +70,13 @@ teardown() {
 }
 
 # What today's main left behind: per-skill versions in the manifest, scripts copied into each skill,
-# and a skill (crew-afk) the registry no longer has.
+# and a skill (crew-address-findings) the registry no longer has.
 _old_main_install() {
   local root="$1"
-  mkdir -p "$root/.claude/skills/tdd" "$root/.claude/skills/crew-afk/scripts" "$root/.claude/skills/solve-issue/scripts" "$root/.coding-crew"
+  mkdir -p "$root/.claude/skills/tdd" "$root/.claude/skills/crew-address-findings/scripts" "$root/.claude/skills/solve-issue/scripts" "$root/.coding-crew"
   echo old > "$root/.claude/skills/tdd/SKILL.md"
-  echo old > "$root/.claude/skills/crew-afk/SKILL.md"
-  echo old > "$root/.claude/skills/crew-afk/scripts/crew-afk.sh"
+  echo old > "$root/.claude/skills/crew-address-findings/SKILL.md"
+  echo old > "$root/.claude/skills/crew-address-findings/scripts/triage.sh"
   echo old > "$root/.claude/skills/solve-issue/SKILL.md"
   echo old > "$root/.claude/skills/solve-issue/scripts/run-checks.sh"
   cat > "$root/.coding-crew/manifest.json" <<'JSON'
@@ -86,7 +86,7 @@ _old_main_install() {
   "installed_at": "2026-10-01T00:00:00Z",
   "platform": "claude",
   "skills": {
-    "crew-afk": { "version": "3.4.0" },
+    "crew-address-findings": { "version": "1.4.0" },
     "solve-issue": { "version": "1.16.0" },
     "tdd": { "version": "1.2.5" }
   }
@@ -99,8 +99,8 @@ JSON
   cd "$SCRIPT_DIR"
   run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
-  [ ! -e "$TEMP_DIR/.claude/skills/crew-afk" ]
-  [[ "$output" == *"crew-afk: removed from the registry — uninstalled"* ]]
+  [ ! -e "$TEMP_DIR/.claude/skills/crew-address-findings" ]
+  [[ "$output" == *"crew-address-findings: removed from the registry — uninstalled"* ]]
   [ ! -e "$TEMP_DIR/.claude/skills/solve-issue/scripts/run-checks.sh" ]
   [ -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/checks/run-checks.sh" ]
   [ -f "$TEMP_DIR/.claude/skills/tdd/SKILL.md" ]
@@ -112,7 +112,7 @@ JSON
   [[ "$output" == *"tracker="* ]]
   local m="$TEMP_DIR/.coding-crew/manifest.json"
   [ "$(jq -r '.skills | type' "$m")" = array ]
-  [ "$(jq -r '.skills | index("crew-afk")' "$m")" = null ]
+  [ "$(jq -r '.skills | index("crew-address-findings")' "$m")" = null ]
   [ "$(jq -r '.skills | index("dep-install") != null' "$m")" = true ]
   ! grep -q '"version"' "$m"
 }
