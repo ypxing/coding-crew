@@ -598,16 +598,16 @@ fix_ready() {
 # report <json> — the reviewer's report.
 report() { printf '%s\n' "$1" > .solve-feature/pr-10.review.json; }
 pushed() { [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]; }
-# fix_stops <reason> — exit 1, nothing pushed, a Stopped-at-fix note and .solve-feature/stopped naming it.
+# fix_stops <reason> — exit 1, nothing pushed, the stop in .solve-feature/outcome, the PR left as it was.
 fix_stops() {
   [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
   [[ "$output" == *"solve-feature: review fix failed: $1"* ]] || { echo "$output"; return 1; }
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$TIP" ] || { echo pushed; return 1; }
-  grep -qF "Stopped at fix: $1" <<<"$(progress_body)"
-  grep -qF "$1" .solve-feature/stopped
-  [ ! -e .solve-feature/reviewed ]
-  ! grep -q '^pr ready' "$STATE/gh.log"
+  [[ "$(cat .solve-feature/outcome)" == "stopped: review fix failed: $1"* ]]
+  ! grep -qE '^pr (ready|edit)' "$STATE/gh.log"
 }
+# attention — what fix handed describe.
+attention() { cat .solve-feature/pr-10.attention.md; }
 
 @test "fix on another branch, or with a missing or unreadable report, stops before the checks" {
   fix_ready
@@ -617,8 +617,6 @@ fix_stops() {
   run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "branch changed to 'elsewhere'"
   git checkout -q feature/feat
-
-
   rm .solve-feature/pr-10.review.json
   run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "no review report at $WORK/.solve-feature/pr-10.review.json"
@@ -629,16 +627,23 @@ fix_stops() {
   [ "$(cat fixed.txt)" = fixed ]
 }
 
-@test "fix with failing checks stops with the log tail, leaving the tree and commits; a second fix once committed and pushed completes" {
+@test "a report whose gaps is not a list stops fix before the checks" {
+  fix_ready '{"prd":"met","gaps":"no logout endpoint","findings":[]}'
+  TIP=$(git rev-parse HEAD)
+  local checks; checks=$(wc -l < "$STATE/checks.log")
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  fix_stops "the review report's gaps is not a list: $WORK/.solve-feature/pr-10.review.json"
+  [ "$(wc -l < "$STATE/checks.log")" -eq "$checks" ]
+}
+
+@test "fix with failing checks stops naming the log, leaving the tree and commits; a second fix once committed completes" {
   fix_ready
   TIP=$(git rev-parse HEAD)
   : > "$STATE/checks.log"
   CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "run-checks.sh exit 1; once fixed and committed (not pushed), run fix feat 10 feature/feat"
+  [[ "$output" == *"log: $WORK/.solve-feature/pr-10.checks.log"* ]]
   [ "$(cat "$STATE/checks.log")" = "--project-root $WORK --main-root $WORK --dep-scripts $HOME/.coding-crew/dep-install/scripts" ]
-  local body; body=$(progress_body)
-  grep -qx 'review ✓  checks ✗' <<<"$body"
-  grep -qx 'check line 13' <<<"$body" && ! grep -qx 'check line 12' <<<"$body"
   [ "$(git rev-parse HEAD)" = "$TIP" ]
   [ "$(git status --porcelain)" = 'A  fixed.txt' ]
 
@@ -647,8 +652,7 @@ fix_stops() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   pushed
   [ "$(git rev-parse HEAD~1)" = "$TIP" ]
-  grep -qx "review ✓  2 finding(s), fixed in $(git rev-parse --short HEAD)  checks ✓" <<<"$(progress_body)"
-  [ ! -e .solve-feature/stopped ] && ! grep -q 'Stopped' <<<"$(progress_body)"
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0" ]
 }
 
 @test "the checks see the fixer's edits staged, so run-checks.sh's own modified-files test catches a check that rewrites one" {
@@ -658,39 +662,28 @@ fix_stops() {
   [ "$(cat "$STATE/checks.status")" = 'A  fixed.txt' ]
 }
 
-@test "a rejected push or a failed gh pr ready stops fix naming the recovery" {
+@test "a rejected push stops fix naming the recovery" {
   fix_ready
   TIP=$(git rev-parse HEAD)
   printf '#!/bin/sh\nexit 1\n' > "$TEMP_DIR/origin.git/hooks/pre-receive" && chmod +x "$TEMP_DIR/origin.git/hooks/pre-receive"
   run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "git push failed; once it can push, run fix feat 10 feature/feat"
-  rm "$TEMP_DIR/origin.git/hooks/pre-receive"
-  GH_READY_FAIL=1 run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 1 ]
-  pushed
-  local body; body=$(progress_body)
-  grep -qx "review ✓  2 finding(s), fixed in $(git rev-parse --short HEAD)  checks ✓" <<<"$body"
-  grep -qx 'Stopped at fix: gh pr ready 10 failed; the fixes are pushed, so run gh pr ready 10 by hand' <<<"$body"
-  [ ! -e .solve-feature/reviewed ]
 }
 
-@test "a fixer that changed nothing fixed nothing: the findings need attention and the PR stays a draft" {
+@test "a fixer that changed nothing fixed nothing: the findings need attention" {
   fix_ready
   rm fixed.txt
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  ! grep -q '^pr ready' "$STATE/gh.log"
-  local body; body=$(progress_body)
-  grep -qx 'review ✓  2 finding(s)  checks ✓' <<<"$body"
-  grep -qx -- '- the fixer changed nothing' <<<"$body"
-  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 ready=no" ]
-  # A fixer that said why it changed nothing is listed for what it said, not twice.
-  printf -- '- a:1 needs a design call\n- b:2 too\n' > .solve-feature/pr-10.unfixed.md
+  [ "$(attention)" = "the fixer changed nothing" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1" ]
+  # A fixer that said why it changed nothing is listed for what it said, as it wrote it, not twice.
+  printf -- '- a:1 needs a design call\n\nb:2 too\n' > .solve-feature/pr-10.unfixed.md
   run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$(awk '/^Needs attention:$/ {f = 1} f' <<<"$(progress_body)")" = "$(printf 'Needs attention:\n- a:1 needs a design call\n- b:2 too')" ]
+  [ "$(attention)" = "$(printf -- '- a:1 needs a design call\nb:2 too')" ]
 }
 
-@test "fix commits a dirty tree as one commit, pushes it, appends one review row and writes reviewed" {
+@test "fix commits a dirty tree as one commit and pushes it, never marks the PR ready, and writes no stopped or reviewed file" {
   fix_ready
   TIP=$(git rev-parse HEAD)
   echo more > more.txt
@@ -700,74 +693,59 @@ fix_stops() {
   [ "$(git diff --name-only HEAD~1 HEAD | sort | tr '\n' ' ')" = "fixed.txt more.txt " ]
   [ -z "$(git status --porcelain)" ]
   pushed
-  local sha; sha=$(git rev-parse --short HEAD)
-  [ "$(sed -n '3,$p' <<<"$(progress_body)" | awk '/^$/ {exit} 1')" = "$(printf '2  solve ✓  checks ✓\n3  solve ✓  checks ✓\nreview ✓  2 finding(s), fixed in %s  checks ✓' "$sha")" ]
-  [ "$(cat .solve-feature/reviewed)" = "pr=10 head=$(git rev-parse HEAD)" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0" ]
+  [ -f .solve-feature/pr-10.attention.md ]
+  [ -z "$(attention)" ]
+  ! grep -q '^pr ready' "$STATE/gh.log"
+  [ ! -e .solve-feature/stopped ]
+  [ ! -e .solve-feature/reviewed ]
+  [ ! -e .solve-feature/outcome ]
 }
 
-@test "fix with no findings on a clean tree commits nothing and records no findings" {
+@test "fix with no findings on a clean tree commits nothing" {
   loop
   report '{"prd":"met","gaps":[],"findings":[]}'
   TIP=$(git rev-parse HEAD)
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(git rev-parse HEAD)" = "$TIP" ]
-  grep -qx 'review ✓  no findings  checks ✓' <<<"$(progress_body)"
-  [ -e .solve-feature/reviewed ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=0 needs-attention=0" ]
 }
 
-@test "fix pushes the fixer's own commits as they are and names the tip" {
+@test "fix pushes the fixer's own commits as they are" {
   fix_ready
   TIP=$(git rev-parse HEAD)
   git add fixed.txt && git commit -q -m "fixer's commit"
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(git rev-parse HEAD~1)" = "$TIP" ] && [ "$(git log -1 --format=%s)" = "fixer's commit" ]
+  [ "$(git rev-parse HEAD~1)" = "$TIP" ]
+  [ "$(git log -1 --format=%s)" = "fixer's commit" ]
   pushed
-  grep -qx "review ✓  2 finding(s), fixed in $(git rev-parse --short HEAD)  checks ✓" <<<"$(progress_body)"
 }
 
-@test "fix marks a draft ready when the spec is met with no gaps and nothing unfixed, and leaves a ready PR alone" {
-  fix_ready
-  run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 0 ]
-  [ "$(grep -c '^pr ready' "$STATE/gh.log")" -eq 1 ] && grep -qx 'pr ready 10' "$STATE/gh.log"
-  grep -qx 'Marked ready for review: nothing needs attention.' <<<"$(progress_body)"
-  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 ready=yes" ]
-
-  echo again > again.txt
-  PR_DRAFT=false run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 0 ]
-  [ "$(grep -c '^pr ready' "$STATE/gh.log")" -eq 1 ]
-  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 ready=already" ]
-}
-
-@test "a gap, an unmet spec or an unfixed finding keeps the PR a draft and is listed under Needs attention" {
+@test "a gap, an unmet spec and each unfixed line are handed to describe as needing attention" {
   fix_ready '{"prd":"unmet","gaps":["no logout endpoint"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"},{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
-  printf -- '# Unfixed\n- #2: race on the lock: needs a design call\n\n' > .solve-feature/pr-10.unfixed.md
+  printf -- '#2: race on the lock: needs a design call\n\n' > .solve-feature/pr-10.unfixed.md
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  ! grep -q '^pr ready' "$STATE/gh.log"
-  local body; body=$(progress_body)
-  grep -qx "review ✓  2 finding(s), fixed in $(git rev-parse --short HEAD)  checks ✓" <<<"$body"
-  [ "$(awk '/^Needs attention:$/ {f = 1} f' <<<"$body")" = "$(printf 'Needs attention:\n- no logout endpoint\n- the reviewer found the spec unmet\n- #2: race on the lock: needs a design call')" ]
+  [ "$(attention)" = "$(printf 'no logout endpoint\nthe reviewer found the spec unmet\n#2: race on the lock: needs a design call')" ]
   [ ! -e .solve-feature/pr-10.unfixed.md ]
-  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=3 ready=no" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=3" ]
 
   # The spec unmet with no gap named still needs a person.
   report '{"prd":"unmet","gaps":[],"findings":[]}'
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]
-  ! grep -q '^pr ready' "$STATE/gh.log"
-  grep -qx -- '- the reviewer found the spec unmet' <<<"$(progress_body)"
+  [ "$(attention)" = "the reviewer found the spec unmet" ]
 }
 
-@test "a report whose gaps is a string, not a list, still finishes fix and lists it under Needs attention" {
-  fix_ready '{"prd":"met","gaps":"no logout endpoint","findings":[]}'
+@test "fix posts nothing on the PR" {
+  fix_ready '{"prd":"unmet","gaps":["g"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
+  echo 'x' > .solve-feature/pr-10.unfixed.md
+  : > "$STATE/gh.log"
   run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  grep -qx -- '- no logout endpoint' <<<"$(progress_body)"
-  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=0 needs-attention=1 ready=no" ]
+  [ "$status" -eq 0 ]
+  [ "$(grep -E '^(pr|api|issue|repo) ' "$STATE/gh.log" | cut -d' ' -f1-3 | sort -u)" = "pr view 10" ]
 }
 
 # --- describe: the writer's summary on the PR ------------------------------------------
@@ -840,17 +818,6 @@ EOF
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ]
   grep -qx '## Why' "$STATE/pr-body" && ! grep -q 'Needs attention' "$STATE/pr-body"
-}
-
-@test "fix posts no PR review and no review comment" {
-  fix_ready '{"prd":"unmet","gaps":["g"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
-  echo 'x' > .solve-feature/pr-10.unfixed.md
-  : > "$STATE/gh.log"
-  run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 0 ]
-  ! grep -qE 'pulls/|^pr review|^pr comment' "$STATE/gh.log"
-  # Every gh call is the PR view or the progress comment (multi-line bodies make the other log lines).
-  [ -z "$(grep -E '^(pr|api|issue|repo) ' "$STATE/gh.log" | grep -v -E '^pr view 10 |^api (-X PATCH )?repos/\{owner\}/\{repo\}/issues/(10/)?comments')" ]
 }
 
 # --- packaging and the skill -------------------------------------------------------------
