@@ -17,7 +17,7 @@
     },
     "crew-afk": {
       "source-dir": "crew-afk",
-      "description": "Start one feature's solve-feature run unattended in that feature's own worktree, locally (capped at $10/1h), in an orca terminal or a herdr pane, and say how each run ended.",
+      "description": "Start one feature's solve-feature run unattended in that feature's own worktree, locally (capped at 1h, and $10 on claude), in an orca terminal or a herdr pane, and say how each run ended.",
       "deps": [
         "solve-feature"
       ],

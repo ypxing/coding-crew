@@ -1,5 +1,6 @@
 # local — a detached git worktree beside the main checkout, and a detached headless run capped at 1h.
 # Sourced by crew-afk.sh, which sets MAIN, WORKTREES and die.
+MODE=headless
 
 prepare() { # <slug> <base-branch>
   local wt="$WORKTREES/$1"
@@ -12,12 +13,11 @@ prepare() { # <slug> <base-branch>
   echo "$wt"
 }
 
-launch() { # <worktree> <argv…>
-  local wt="$1" timeout
-  shift
+launch() { # <slug> <worktree> <argv…>
+  local wt="$2" timeout
+  shift 2
   timeout=$(command -v timeout || command -v gtimeout) || die "timeout not found on PATH (macOS: brew install coreutils)"
-  # The exit line is how status tells a timed-out run (124) from a crash.
   (cd "$wt" || exit 1
-    nohup bash -c '"$@"; echo "crew-afk: exit $?"' crew-afk "$timeout" 1h "$@" >"$wt/.solve-feature/run.log" 2>&1 </dev/null &
+    nohup "$timeout" 1h "$@" >"$wt/.solve-feature/run.log" 2>&1 </dev/null &
     echo $! >"$wt/.solve-feature/run.pid")
 }

@@ -27,10 +27,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - **crew-afk**: a new, thin `crew-afk` skill. `/crew-afk <feature> [--to local|orca|herdr]` resolves the
   feature's slug, prepares (or reuses) one worktree per feature at `<repo>/../<repo-name>-worktrees/<slug>`
   (`.worktreeinclude` entries linked, `.env` copied), starts one `/solve-feature <slug>` run there and returns:
-  locally a detached headless agent capped at $10 and 1 hour (needs `timeout`; macOS: `brew install coreutils`),
+  locally a detached headless agent capped at 1 hour, and at $10 on claude (needs `timeout`; macOS: `brew install coreutils`),
   or an interactive, uncapped agent in an orca terminal or a herdr pane. The host agent names its own platform
   (`--agent claude|copilot|codex|pi`). `/crew-afk status [<feature>]` prints each run's outcome line, `running`,
-  or why there is none, with the claude session to resume and, for a capped run, how to continue; a second
+  or why there is none, with how to continue and the claude session to resume; a second
   dispatch on a feature whose local run is still going is refused. Cut from the old crew-afk, restorable if
   missed: the `jq` live-log filter and auto-detecting orca/herdr from `ORCA_ENV`/`HERDR_ENV`. The demo smoke
   (`scripts/smoke-sprint.sh <platform>`, always the demo, now pinned at `9b9c84c`) runs through `crew-afk.sh

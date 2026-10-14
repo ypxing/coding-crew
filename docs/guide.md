@@ -368,14 +368,15 @@ worktree per feature beside your checkout, at `<repo>/../<repo-name>-worktrees/<
 
 | `--to` | Where the run goes |
 | --- | --- |
-| `local` (default) | A detached headless agent, capped at $10 (claude's `--max-budget-usd`) and 1 hour; it logs to `<worktree>/.solve-feature/run.log` (needs `timeout`, on macOS `brew install coreutils`) |
+| `local` (default) | A detached headless agent, capped at 1 hour (and at $10 on claude, its `--max-budget-usd`); it logs to `<worktree>/.solve-feature/run.log` (needs `timeout`, on macOS `brew install coreutils`) |
 | `orca` | An orca-managed worktree and an interactive agent in an orca terminal, uncapped: you watch and steer it |
 | `herdr` | An interactive agent in a new herdr pane on the worktree, uncapped |
 
 `/crew-afk status [<feature>]` prints each run's outcome line (`ready pr=<n>`, `needs-attention pr=<n>`
-or `stopped: …`), `running (pid <n>)`, or why there is none — with the `claude --resume` line to pick up
-a crashed session and, when the run hit its cap, `re-run /crew-afk <slug> to continue`: a re-run skips
-the issues already done. A second `/crew-afk` on a feature whose local run is still going is refused.
+or `stopped: …`), `running (pid <n>)`, or why there is none — for a local run that ended without one,
+`re-run /crew-afk <slug> to continue` (a re-run skips the issues already done) and the `claude --resume`
+line. A second `/crew-afk` on a feature whose local run is still going is refused; one to orca or herdr
+while its agent still works starts a second agent beside it.
 Nothing removes a worktree: `git worktree remove <path>` once you are done with it.
 
 ---

@@ -160,19 +160,8 @@ SH
   ended_run
   run bash "$SCRIPT" status
   session=$(cat "$WT/.solve-feature/run.session")
-  [[ "$output" == "report-cli: ended without an outcome (capped or crashed) — log: $WT/.solve-feature/run.log"* ]]
-  [[ "$output" == *"claude --resume $session"* ]]
-  [[ "$output" != *capped\ at* ]]
-}
-
-@test "status says a run that hit the budget or the 1h timeout was capped, and how to continue" {
-  ended_run '{"type":"result","subtype":"error_max_budget_usd","total_cost_usd":10.02}' 1
-  run bash "$SCRIPT" status
-  [[ "$output" == *'capped at $10/1h — re-run /crew-afk report-cli to continue'* ]]
-  rm -rf "$WT/.solve-feature"
-  ended_run 'still working' 124
-  run bash "$SCRIPT" status
-  [[ "$output" == *'capped at $10/1h — re-run /crew-afk report-cli to continue'* ]]
+  [ "${lines[0]}" = "report-cli: ended without an outcome — log: $WT/.solve-feature/run.log; re-run /crew-afk report-cli to continue" ]
+  [ "${lines[1]}" = "  resume: cd $WT && claude --resume $session" ]
 }
 
 @test "status leaves out a worktree crew-afk did not dispatch, such as a solve-feature run started by hand" {
@@ -191,8 +180,8 @@ stub_orca() {
 echo "$*" >> "$T/orca-calls"
 case "$1 $2" in
   "worktree show") exit 1 ;;
-  "worktree create") git -C "$MAIN" worktree add -q --detach "$T/orca-wt/report-cli" >&2
-    echo "{\"ok\":true,\"result\":{\"worktree\":{\"path\":\"$T/orca-wt/report-cli\"}}}" ;;
+  "worktree create") git -C "$MAIN" worktree add -q --detach "$T/orca-wt/app-report-cli" >&2
+    echo "{\"ok\":true,\"result\":{\"worktree\":{\"path\":\"$T/orca-wt/app-report-cli\"}}}" ;;
   "terminal create") echo '{"ok":true,"result":{"terminal":{"handle":"h1"}}}' ;;
 esac
 SH
@@ -217,15 +206,16 @@ SH
   stub_orca
   run bash "$SCRIPT" dispatch report-cli --agent claude --to orca
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(field worktree)" = "$T/orca-wt/report-cli" ]
+  [ "$(field worktree)" = "$T/orca-wt/app-report-cli" ]
   [ -z "$(field pid)" ] && [ -z "$(field session)" ]
   grep -qxF "worktree create --repo path:$MAIN --name report-cli --base-branch main --json" "$T/orca-calls"
   term=$(grep '^terminal create' "$T/orca-calls")
-  [[ "$term" == "terminal create --worktree path:$T/orca-wt/report-cli --title report-cli --command claude --dangerously-skip-permissions "*"/solve-feature\\ report-cli"* ]]
+  [[ "$term" == "terminal create --worktree path:$T/orca-wt/app-report-cli --title report-cli --command claude --dangerously-skip-permissions "*"/solve-feature\\ report-cli"* ]]
   [[ "$term" != *budget* ]]
   [ ! -f "$T/timeout-argv" ]
-  [ -L "$T/orca-wt/report-cli/node_modules" ]
-  run bash "$SCRIPT" status
+  [ -L "$T/orca-wt/app-report-cli/node_modules" ]
+  # orca names the worktree after the repo too; status names the run by its slug and finds it by it.
+  run bash "$SCRIPT" status report-cli
   [ "$output" = "report-cli: no outcome yet — orca run, see its terminal" ]
 }
 
@@ -256,9 +246,10 @@ SH
   [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 1 ]
 }
 
-@test "each destination defines only prepare and launch" {
+@test "each destination defines only prepare and launch, and sets MODE to headless or interactive" {
   local f
   for f in "$REPO_ROOT"/skills/crew-afk/scripts/destinations/*.sh; do
     [ "$(env -i PATH="$PATH" bash --norc -c 'source "$1"; declare -F' _ "$f" | awk '{print $3}' | sort | paste -sd' ' -)" = "launch prepare" ] || { echo "$f"; return 1; }
+    [[ "$(env -i PATH="$PATH" bash --norc -c 'source "$1"; echo "$MODE"' _ "$f")" =~ ^(headless|interactive)$ ]] || { echo "$f"; return 1; }
   done
 }

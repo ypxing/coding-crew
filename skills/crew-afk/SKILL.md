@@ -2,7 +2,7 @@
 name: crew-afk
 description: >
   Starts one feature's /solve-feature run unattended in that feature's own worktree and returns at
-  once: locally as a detached headless agent capped at $10 and 1 hour, or as an interactive agent in
+  once: locally as a detached headless agent capped at 1 hour (and $10 on claude), or as an interactive agent in
   an orca terminal or a herdr pane. Reports how each run ended. Use when a feature's issues are ready
   and it should be built without anyone watching. Trigger with /crew-afk <feature> [--to local|orca|herdr],
   or /crew-afk status [<feature>].
@@ -38,10 +38,9 @@ review, fix or close nothing**: each run is its own top-level session in its own
    bash "<skill-dir>/scripts/crew-afk.sh" dispatch <slug> --agent <platform> [--to local|orca|herdr]
    ```
 
-   It prints `worktree=`; a local run adds `log=` and `pid=`, and claude adds `session=`. Relay them
-   and stop: the run goes on without you, so do not wait for it, read its log or check on it. Exit 1
-   (a run for the slug still going, a missing `orca`/`herdr` CLI) or 2 (a bad argument): relay the
-   message as printed.
+   Relay what it prints and stop: the run goes on without you, so do not wait for it, read its log or
+   check on it. On a non-zero exit, relay the message as printed. Only a local run is refused while it
+   is still going: a second dispatch to orca or herdr starts a second agent beside the first.
 
 ## Status
 
@@ -49,5 +48,4 @@ review, fix or close nothing**: each run is its own top-level session in its own
 bash "<skill-dir>/scripts/crew-afk.sh" status [<slug>]
 ```
 
-Relay its lines as printed: one per feature run, its outcome (`ready pr=<n>`, `needs-attention pr=<n>`
-or `stopped: …`), `running`, or why there is none, with how to resume or continue.
+Relay its lines as printed.
