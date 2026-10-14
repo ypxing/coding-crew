@@ -95,9 +95,10 @@ MK
   [ "$output" = "USE_HOST" ]
 }
 
-@test "a cached host verdict in dev-commands.json wins even when the Makefile would say docker" {
+@test "the Makefile alone decides: dev-commands.json and git config are not read" {
   mkdir -p "$WORK/.coding-crew"
   printf '{"install_mode": "host"}\n' > "$WORK/.coding-crew/dev-commands.json"
+  git -C "$WORK" config --local agent.install-mode host
   cat > "$WORK/Makefile" <<'MK'
 deps:
 	docker compose run --rm node make _deps
@@ -105,5 +106,5 @@ MK
 
   run bash "$SCRIPT" --project-root "$WORK"
   [ "$status" -eq 0 ]
-  [ "$output" = "USE_HOST" ]
+  [ "$output" = "USE_DOCKER" ]
 }

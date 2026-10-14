@@ -8,20 +8,6 @@
 
 SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks/ensure-env.sh"
 
-# assert_linked_or_copied <project-env> <main-root-env> — the MAIN_ROOT-into-PROJECT_ROOT
-# case: a real symlink where the platform allows it, or (no symlink privilege — the default
-# on Windows without Developer Mode/elevation) an independent file with identical content
-# instead — see ensure-env.sh's own symlink-with-fallback.
-assert_linked_or_copied() {
-  local link="$1" target="$2"
-  if [[ -L "$link" ]]; then
-    [ "$(readlink "$link")" = "$target" ]
-  else
-    [ -f "$link" ]
-    diff "$link" "$target"
-  fi
-}
-
 # make_dangling_symlink <link> — a symlink whose target doesn't exist, for tests that need
 # ensure-env.sh to clear one. Creating a symlink to a target that doesn't exist has nothing
 # for Windows/MSYS's own copy-fallback to fall back to (unlike a symlink to a real file,
@@ -34,10 +20,6 @@ make_dangling_symlink() {
 }
 
 setup() {
-  # Isolation from whatever the ambient shell happens to export — a caller may
-  # export MAIN_ROOT, and without this a test that means to exercise "no
-  # --main-root passed" would silently pick that up instead.
-  unset MAIN_ROOT
   PROJECT=$(mktemp -d)
   export PROJECT
 }
@@ -100,99 +82,30 @@ teardown() {
   [ "$(cat "$PROJECT/.env")" = "REAL=1" ]
 }
 
-# ─── --main-root: honor an existing MAIN_ROOT .env instead of generating a new one ─────────
-#
-# PROJECT_ROOT is a worktree; MAIN_ROOT is the shared checkout. A real .env already at
-# MAIN_ROOT must win over PROJECT_ROOT's own .env.example — regenerating independently per
-# worktree would silently diverge from whatever secrets are already in the real .env.
-
-@test "--main-root: an existing MAIN_ROOT .env is linked into PROJECT_ROOT, not regenerated" {
+@test "a worktree gets its own .env, generated in the worktree; --main-root is an unknown argument" {
   MAIN=$(mktemp -d)
   echo "SECRET=real" > "$MAIN/.env"
   echo "FOO=bar" > "$PROJECT/.env.example"
-
   run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
+  [ "$status" -eq 1 ]
+  [ ! -e "$PROJECT/.env" ]
+  run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"MAIN_ROOT"* || "$output" == *"Linked"* ]]
-  assert_linked_or_copied "$PROJECT/.env" "$MAIN/.env"
-  [ "$(cat "$PROJECT/.env")" = "SECRET=real" ]
-  [ "$(cat "$MAIN/.env")" = "SECRET=real" ]
-  rm -rf "$MAIN"
-}
-
-@test "--main-root: neither exists yet - generated once at MAIN_ROOT, then linked into PROJECT_ROOT" {
-  MAIN=$(mktemp -d)
-  echo "FOO=bar" > "$MAIN/.env.example"
-
-  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  [ -f "$MAIN/.env" ]
-  [ ! -L "$MAIN/.env" ]
-  diff "$MAIN/.env.example" "$MAIN/.env"
-  assert_linked_or_copied "$PROJECT/.env" "$MAIN/.env"
-  [ "$(cat "$PROJECT/.env")" = "$(cat "$MAIN/.env")" ]
-  rm -rf "$MAIN"
-}
-
-@test "--main-root: neither exists and MAIN_ROOT has no .env.example - empty .env generated at MAIN_ROOT and linked" {
-  MAIN=$(mktemp -d)
-
-  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  [ -f "$MAIN/.env" ]
-  [ ! -L "$MAIN/.env" ]
-  assert_linked_or_copied "$PROJECT/.env" "$MAIN/.env"
-  rm -rf "$MAIN"
-}
-
-@test "--main-root equal to --project-root behaves exactly like not passing it" {
-  echo "FOO=bar" > "$PROJECT/.env.example"
-  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$PROJECT"
-  [ "$status" -eq 0 ]
-  [ -f "$PROJECT/.env" ]
   [ ! -L "$PROJECT/.env" ]
   diff "$PROJECT/.env.example" "$PROJECT/.env"
-}
-
-@test "--main-root: an existing real PROJECT_ROOT .env still wins over everything, MAIN_ROOT included" {
-  MAIN=$(mktemp -d)
-  echo "SECRET=real" > "$MAIN/.env"
-  echo "REAL=1" > "$PROJECT/.env"
-
-  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"already exists"* ]]
-  [ "$(cat "$PROJECT/.env")" = "REAL=1" ]
-  rm -rf "$MAIN"
-}
-
-@test "--main-root: a dangling MAIN_ROOT .env symlink is cleared before generating a real one" {
-  MAIN=$(mktemp -d)
-  make_dangling_symlink "$MAIN/.env"
-  echo "FOO=bar" > "$MAIN/.env.example"
-
-  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  [ -f "$MAIN/.env" ]
-  [ ! -L "$MAIN/.env" ]
-  diff "$MAIN/.env.example" "$MAIN/.env"
-  assert_linked_or_copied "$PROJECT/.env" "$MAIN/.env"
   rm -rf "$MAIN"
 }
 
 # ─── .env is always excluded from the git repo it lands in ─────────────────────────────
 #
-# A worker's own `git add -A` must never pick up a .env this script created or linked — a
-# symlink into MAIN_ROOT committed into a branch is exactly what makes `merge-branches.sh`
-# fail later with "untracked working tree files would be overwritten by merge" the moment
-# MAIN_ROOT's own real .env differs in kind from what the branch wants to materialise there.
+# A `git add -A` must never pick up a .env this script created.
 
 # ─── the discovered env override (.coding-crew/dev-commands.json's "env" field) ────────────
 #
 # discover-commands.sh / write-commands-cache.sh run once (bootstrap) and may cache a
 # documented .env-bootstrap command this script would otherwise never see (it deliberately
 # never reads CLAUDE.md itself). When that cache names one, it wins over the mechanical
-# .env.example-or-empty convention below — mirroring ensure-deps.sh's own "install" override.
+# .env.example-or-empty convention below.
 
 @test "a documented env command in .coding-crew/dev-commands.json is used instead of the .env.example convention" {
   mkdir -p "$PROJECT/.coding-crew"
@@ -339,33 +252,6 @@ MK
   [ "$(cat "$PROJECT/.env")" = "REAL=1" ]
 }
 
-@test "--main-root: the discovered env command is read from MAIN_ROOT's cache and runs there, not PROJECT_ROOT's" {
-  MAIN=$(mktemp -d)
-  mkdir -p "$MAIN/.coding-crew"
-  printf '{"env": "echo CUSTOM=1 > .env"}' > "$MAIN/.coding-crew/dev-commands.json"
-
-  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  [ -f "$MAIN/.env" ]
-  [ ! -L "$MAIN/.env" ]
-  [ "$(cat "$MAIN/.env")" = "CUSTOM=1" ]
-  assert_linked_or_copied "$PROJECT/.env" "$MAIN/.env"
-  rm -rf "$MAIN"
-}
-
-@test "--main-root: a PROJECT_ROOT-only cached env command is ignored - the override lives with MAIN_ROOT's discovery" {
-  MAIN=$(mktemp -d)
-  mkdir -p "$PROJECT/.coding-crew"
-  printf '{"env": "echo SHOULD_NOT_RUN=1 > .env"}' > "$PROJECT/.coding-crew/dev-commands.json"
-  echo "FOO=bar" > "$MAIN/.env.example"
-
-  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  [ -f "$MAIN/.env" ]
-  diff "$MAIN/.env.example" "$MAIN/.env"
-  rm -rf "$MAIN"
-}
-
 @test "a freshly generated .env is added to .git/info/exclude, not the project's own .gitignore" {
   git -C "$PROJECT" init -q
   echo "FOO=bar" > "$PROJECT/.env.example"
@@ -425,20 +311,3 @@ MK
   [ "$status" -eq 0 ]
   [[ "$output" == *"failed, falling back to template expansion"* ]]
 }
-
-@test "--main-root: linking a MAIN_ROOT .env into a worktree excludes .env in the shared git dir" {
-  MAIN=$(mktemp -d)
-  git -C "$MAIN" init -q
-  git -C "$MAIN" config user.email t@test
-  git -C "$MAIN" config user.name T
-  git -C "$MAIN" commit -q --allow-empty -m init
-  echo "SECRET=real" > "$MAIN/.env"
-  rmdir "$PROJECT"
-  git -C "$MAIN" worktree add -q --detach "$PROJECT"
-
-  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
-  [ "$status" -eq 0 ]
-  grep -qx '.env' "$MAIN/.git/info/exclude"
-  rm -rf "$MAIN"
-}
-

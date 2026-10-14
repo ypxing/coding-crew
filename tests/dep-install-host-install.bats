@@ -10,10 +10,6 @@ SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 SCRIPT="$SCRIPT_DIR/lib/checks/host-install.sh"
 
 setup() {
-  # Isolation from whatever the ambient shell happens to export — a caller may
-  # export MAIN_ROOT, and without this a test that means to exercise "no
-  # --main-root passed" would silently pick that up instead.
-  unset MAIN_ROOT
   PROJECT=$(mktemp -d)
   export PROJECT
 }
@@ -59,48 +55,7 @@ MK
   [ "$(cat "$PROJECT/.env")" = "REAL=1" ]
 }
 
-@test "--main-root: an existing MAIN_ROOT .env is linked into the worktree instead of regenerated" {
-  MAIN=$(mktemp -d)
-  echo "SECRET=real" > "$MAIN/.env"
-  echo "FOO=bar" > "$PROJECT/.env.example"
-  cat > "$PROJECT/Makefile" <<'MK'
-install:
-	touch installed.marker
-MK
-
-  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
-
-  [ "$status" -eq 0 ]
-  # A symlink where privilege allows it (the normal case); ensure-env.sh falls back to a
-  # plain copy on Windows without Developer Mode/elevation — either way it must not be
-  # regenerated independently, so content equality is what actually matters here.
-  [ -L "$PROJECT/.env" ] || [ -f "$PROJECT/.env" ]
-  [ "$(cat "$PROJECT/.env")" = "SECRET=real" ]
-  [ -f "$PROJECT/installed.marker" ]
-  rm -rf "$MAIN"
-}
-
-# ─── the manifest-fingerprint fast path ──────────────────────────────────────
-
-@test "a FRESH fingerprint stamp skips install without running it again" {
-  cat > "$PROJECT/Makefile" <<'MK'
-install:
-	touch installed.marker
-MK
-  echo '{}' > "$PROJECT/package-lock.json"
-
-  run bash "$SCRIPT" --project-root "$PROJECT"
-  [ "$status" -eq 0 ]
-  [ -f "$PROJECT/installed.marker" ]
-  rm -f "$PROJECT/installed.marker"
-
-  run bash "$SCRIPT" --project-root "$PROJECT"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"skipped"* ]]
-  [ ! -f "$PROJECT/installed.marker" ]
-}
-
-@test "changing a lockfile after install makes the next run reinstall" {
+@test "every run installs: no fingerprint fast path, and --main-root / --force are unknown arguments" {
   cat > "$PROJECT/Makefile" <<'MK'
 install:
 	touch installed.marker
@@ -110,49 +65,15 @@ MK
   run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
   rm -f "$PROJECT/installed.marker"
-
-  echo '{"changed":true}' > "$PROJECT/package-lock.json"
   run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"skipped"* ]]
   [ -f "$PROJECT/installed.marker" ]
-}
-
-@test "--force bypasses a FRESH stamp and reinstalls anyway" {
-  cat > "$PROJECT/Makefile" <<'MK'
-install:
-	touch installed.marker
-MK
-  echo '{}' > "$PROJECT/package-lock.json"
-
-  run bash "$SCRIPT" --project-root "$PROJECT"
-  [ "$status" -eq 0 ]
-  rm -f "$PROJECT/installed.marker"
+  [ ! -e "$PROJECT/.scratch/host-install.done" ]
 
   run bash "$SCRIPT" --project-root "$PROJECT" --force
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"skipped"* ]]
-  [ -f "$PROJECT/installed.marker" ]
-}
-
-@test "a successful install writes a fingerprint stamp matching the current manifests" {
-  cat > "$PROJECT/Makefile" <<'MK'
-install:
-	touch installed.marker
-MK
-  echo '{}' > "$PROJECT/package-lock.json"
-
-  run bash "$SCRIPT" --project-root "$PROJECT"
-  [ "$status" -eq 0 ]
-  [ -f "$PROJECT/.scratch/host-install.done" ]
-  expected="$(bash "$SCRIPT_DIR/lib/checks/manifest-fingerprint.sh" compute --project-root "$PROJECT")"
-  [ "$(cat "$PROJECT/.scratch/host-install.done")" = "$expected" ]
-}
-
-@test "a failed install (no method found) writes no fingerprint stamp" {
-  run bash "$SCRIPT" --project-root "$PROJECT"
-  [ "$status" -eq 2 ]
-  [ ! -f "$PROJECT/.scratch/host-install.done" ]
+  [ "$status" -eq 1 ]
+  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$PROJECT"
+  [ "$status" -eq 1 ]
 }
 
 # _stub_pip — a fake `pip` on PATH that records its argv, so the Python fallback runs without

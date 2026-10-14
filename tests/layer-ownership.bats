@@ -90,9 +90,10 @@ defines_term() {
 
 # ─── the environment contract is stated once ─────────────────────────────────
 
-@test "solve-issue and host-install reference the variables without redefining them" {
+@test "solve-issue and host-install reference PROJECT_ROOT without redefining it, and no MAIN_ROOT" {
   for f in "$SOLVE_ISSUE" "$HOST_INSTALL"; do
-    grep -q 'MAIN_ROOT' "$f"
+    grep -q 'PROJECT_ROOT' "$f"
+    ! grep -q 'MAIN_ROOT' "$f" || { echo "$f still names MAIN_ROOT: the checks work on one checkout" >&2; return 1; }
     grep -qi 'do not re-derive\|inherited' "$f" || {
       echo "$f neither inherits nor references: it must say where they come from" >&2
       return 1; }

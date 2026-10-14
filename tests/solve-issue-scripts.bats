@@ -1,11 +1,10 @@
 #!/usr/bin/env bats
 
 # solve-issue's own scripts: preflight.sh (Steps 0, 1, 1.5 and 7's facts in one call) and
-# run-checks.sh (Step 5's cached checks, each through dep-install's run.sh).
+# run-checks.sh (Step 5's cached checks, each through the checks library's run.sh).
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 RUN_CHECKS="$REPO_ROOT/lib/checks/run-checks.sh"
-DEP_SCRIPTS="$REPO_ROOT/lib/checks"
 
 setup() {
   TEMP_DIR=$(mktemp -d)
@@ -22,7 +21,6 @@ setup() {
   git -C "$WORK" commit -q --allow-empty -m init
   git -C "$WORK" checkout -q -b feature
   ISSUE="$WORK/.scratch/feat/issues/open/02-second.md"
-  unset MAIN_ROOT
 }
 
 teardown() {
@@ -34,7 +32,7 @@ _issue() {
 }
 
 _preflight() {
-  run bash "$PREFLIGHT" --project-root "$WORK" --main-root "$WORK" --issue "$ISSUE"
+  run bash "$PREFLIGHT" --project-root "$WORK" --issue "$ISSUE"
 }
 
 # ─── preflight.sh ────────────────────────────────────────────────────────────
@@ -65,6 +63,20 @@ _preflight() {
   _issue "" "- Issue #12"
   _preflight
   [ "$status" -eq 0 ]
+}
+
+@test "preflight: a PRD under .scratch is found in the checkout that holds the issue, not --project-root" {
+  mkdir -p "$TEMP_DIR/wt"
+  touch "$WORK/.scratch/feat/PRD.md"
+  _issue "" "None"
+  run bash "$PREFLIGHT" --project-root "$TEMP_DIR/wt" --issue "$ISSUE"
+  [[ "$output" == *"PRD=$WORK/.scratch/feat/PRD.md"* ]]
+}
+
+@test "preflight: --main-root is an unknown argument" {
+  _issue "" "None"
+  run bash "$PREFLIGHT" --project-root "$WORK" --main-root "$WORK" --issue "$ISSUE"
+  [ "$status" -eq 2 ]
 }
 
 @test "preflight: the PRD comes from Context Documents first, then the feature slug" {
@@ -99,14 +111,14 @@ _cache() {
 }
 
 @test "run-checks: no cache means DISCOVER, exit 3" {
-  run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  run bash "$RUN_CHECKS" --project-root "$WORK"
   [ "$status" -eq 3 ]
   [ "$output" = DISCOVER ]
 }
 
 @test "run-checks: runs typecheck, lint, test, then the extra checks, and reports null as NOT RUN" {
   _cache '{"test": "echo T", "lint": null, "coverage": "echo C", "install": "echo I", "typecheck": "echo Y", "install_mode": "host"}'
-  run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  run bash "$RUN_CHECKS" --project-root "$WORK"
   [ "$status" -eq 0 ]
   [[ "$output" == *"typecheck: pass"*"lint: NOT RUN: no command found"*"test: pass"*"coverage: pass"*"CHECKS: pass" ]]
   # install is not a check
@@ -116,7 +128,7 @@ _cache() {
 @test "run-checks: each check writes its log through a pipe, and reports its own exit code" {
   # a log file on overlayfs can hang a bats load error forever (#266); a pipe never does
   _cache '{"typecheck": null, "lint": "if [ -p /dev/stdout ]; then echo PIPED; else echo FILE; fi; exit 3", "test": "echo T"}'
-  run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  run bash "$RUN_CHECKS" --project-root "$WORK"
   [ "$status" -eq 1 ]
   [[ "$output" == *"PIPED"*"lint: fail (exit 3)"*"test: pass"*"CHECKS: fail" ]] || { echo "$output"; return 1; }
   log="$(printf '%s\n' "$output" | sed -n 's/^lint: log: //p')"
@@ -125,19 +137,24 @@ _cache() {
 
 @test "run-checks: one failing check fails the run and does not hide the rest" {
   _cache '{"typecheck": "exit 4", "lint": "echo L", "test": "echo T"}'
-  run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  run bash "$RUN_CHECKS" --project-root "$WORK"
   [ "$status" -eq 1 ]
   [[ "$output" == *"typecheck: fail (exit 4)"*"lint: pass"*"test: pass"*"CHECKS: fail" ]]
 }
 
-@test "run-checks: finds the shared cache from a worktree when --main-root is empty" {
+@test "run-checks: a worktree runs its own committed checks, not the main checkout's" {
   _cache '{"test": "pwd -P", "lint": null, "typecheck": null}'
   git -C "$WORK" add -A && git -C "$WORK" commit -q -m cache
   git -C "$WORK" worktree add -q "$TEMP_DIR/wt" -b wt-branch
-  rm -rf "$TEMP_DIR/wt/.coding-crew"
-  run bash "$RUN_CHECKS" --project-root "$TEMP_DIR/wt" --main-root "" --dep-scripts "$DEP_SCRIPTS"
+  _cache '{"test": "echo main-checkout", "lint": null, "typecheck": null}'
+  run bash "$RUN_CHECKS" --project-root "$TEMP_DIR/wt"
   [ "$status" -eq 0 ]
   [[ "$output" == *"$(cd "$TEMP_DIR/wt" && pwd -P)"* ]]
+  [[ "$output" != *main-checkout* ]]
+  rm -rf "$TEMP_DIR/wt/.coding-crew"
+  run bash "$RUN_CHECKS" --project-root "$TEMP_DIR/wt"
+  [ "$status" -eq 3 ]
+  [ "$output" = DISCOVER ]
 }
 
 # A check must leave the tree as it found it.
@@ -151,7 +168,7 @@ _committed_src() {
 @test "run-checks: a check that edits a tracked file fails, naming the file" {
   _committed_src
   _cache '{"test": "true", "lint": "echo fixed >> src/app.py", "typecheck": null}'
-  run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  run bash "$RUN_CHECKS" --project-root "$WORK"
   [ "$status" -eq 1 ]
   [[ "$output" == *"lint: modified files: src/app.py — the check rewrote them: run it, commit the result, and re-run"* ]]
   [[ "$output" == *"lint: fail"*"test: pass"*"CHECKS: fail" ]]
@@ -161,7 +178,7 @@ _committed_src() {
   _committed_src
   printf 'b = 2\n' >> "$WORK/src/app.py"
   _cache '{"test": "mkdir -p coverage && echo 90 > coverage/lcov.info", "lint": "true", "typecheck": null}'
-  run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  run bash "$RUN_CHECKS" --project-root "$WORK"
   [ "$status" -eq 0 ]
   [[ "$output" != *"modified files"* ]]
 }

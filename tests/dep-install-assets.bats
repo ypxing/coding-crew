@@ -71,12 +71,11 @@ LIB=".coding-crew/lib/checks"
   [ ! -d "$target/.pi/skills/dep-install" ]
 }
 
-@test "install marks the extensionless shim/docker and shim/docker-compose executable" {
+@test "install marks the extensionless shim/docker executable" {
   local target; target=$(fresh_target target-shim)
   run bash "$REPO_ROOT/install.sh" claude --skill dep-install --project "$target"
   [ "$status" -eq 0 ]
   [ -x "$target/$LIB/shim/docker" ]
-  [ -x "$target/$LIB/shim/docker-compose" ]
   [ -x "$target/.claude/skills/dep-install/scripts/checks/shim/docker" ]
 }
 
