@@ -13,15 +13,14 @@ allowed-tools: Bash, shell
 A fresh subagent reviews; you check its work stayed read-only and post what it found. **You do not
 review the PR yourself.**
 
-The number the user gave is the PR number, `<n>`; `<repo>` is the repo's absolute top level; `<P>` is
-the absolute path of `reviewer-prompt.md` in this skill's directory, the reviewer's instructions.
+The number the user gave is the PR number, `<n>`; `<repo>` is the repo's absolute top level.
 
 1. **Check out.** `HEAD` must be the PR's head (`gh pr view <n> --json headRefOid,isDraft`) and the
    tree clean; otherwise tell the user to run `gh pr checkout <n>` (or commit/stash) and stop. Note
    `isDraft`, and remove any old `<repo>/.solve-feature/pr-<n>.review.json`.
 2. **Review.** Run a **fresh, read-only subagent** — none of this conversation, the repo's working
-   directory — with exactly this prompt: `Review PR #<n> following <P>. Write your report to
-   <repo>/.solve-feature/pr-<n>.review.json`. Give it tools to read files and run shell commands (it
+   directory — with exactly this prompt: `Review PR #<n> following <skill-dir>/reviewer-prompt.md. Write
+   your report to <repo>/.solve-feature/pr-<n>.review.json`. Give it tools to read files and run shell commands (it
    writes its report with one) and, where your host lets you, no tool that edits files. When
    `.coding-crew/config.json` sets `solveFeature.models.reviewer` and your host accepts that model
    name, run it on that model; otherwise on your own. Wait for it to finish.

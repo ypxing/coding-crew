@@ -14,7 +14,7 @@ SKILL="$REPO_ROOT/skills/review-pr/SKILL.md"
 }
 
 @test "the skill runs the reviewer on the prompt in its own directory, posts one review carrying the crew-finding marker, and has no script" {
-  grep -qF "\`reviewer-prompt.md\` in this skill's directory" "$SKILL"
+  grep -qF 'following <skill-dir>/reviewer-prompt.md.' "$SKILL"
   ! grep -qF '.coding-crew/review-pr' "$SKILL"
   grep -qF 'gh pr review <n> --comment' "$SKILL"
   grep -qF '<!-- crew-finding: review-pr -->' "$SKILL"
