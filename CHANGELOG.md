@@ -6,6 +6,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **review-pr, solve-feature**: review-pr is one skill and one prompt file; `review-pr.sh` is gone (an update removes
+  it). The reviewer gathers the PR's spec and diff itself and answers three questions — what the spec asks for that is
+  missing or different and what was built that it did not ask for, what a real run breaks (a concrete trigger, traced
+  past the diff), and which documented repo rule the diff breaks — and is told not to report hypotheticals or
+  preferences. `/review-pr` posts one plain review (no inline comments), leaves out findings earlier reviews already
+  raised, and still marks a draft ready when the spec is met with no CRITICAL or HIGH finding. solve-feature runs its
+  reviewer on the same prompt and its `start` clears an earlier run's review report.
+
 - **solve-feature**: the PR now opens with a body a person can read. After `fix`, a fresh subagent runs write-pr
   (Why / What changes / Risk / Tested) into `.solve-feature/pr-<n>.summary.md`, and the new
   `solve-feature.sh describe <slug> <pr>` puts it, with any `Needs attention` list, at the top of the PR body and

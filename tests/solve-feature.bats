@@ -313,16 +313,16 @@ land_ready() {
   [ "$(out reviewer-model)" = opus ]
 }
 
-@test "start writes .solve-feature/prd.md when the feature has a PRD, none when prd exits 3, and removes stale stopped, reviewed, unfixed, summary and attention markers" {
+@test "start writes .solve-feature/prd.md when the feature has a PRD, none when prd exits 3, and removes stale stopped, reviewed, review, unfixed, summary and attention files" {
   mkdir -p .solve-feature && echo '*' > .solve-feature/.gitignore && echo old > .solve-feature/stopped && echo old > .solve-feature/reviewed
-  echo old > .solve-feature/pr-7.unfixed.md && echo kept > .solve-feature/pr-7.review.json
+  echo old > .solve-feature/pr-7.unfixed.md && echo old > .solve-feature/pr-7.review.json
   echo old > .solve-feature/pr-7.summary.md && echo old > .solve-feature/pr-7.attention.md
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ]
   [ "$(cat .solve-feature/prd.md)" = "$(cat "$STATE/prd.md")" ]
   [ ! -e .solve-feature/stopped ] && [ ! -e .solve-feature/reviewed ] && [ ! -e .solve-feature/pr-7.unfixed.md ]
   [ ! -e .solve-feature/pr-7.summary.md ] && [ ! -e .solve-feature/pr-7.attention.md ]
-  [ -e .solve-feature/pr-7.review.json ]
+  [ ! -e .solve-feature/pr-7.review.json ]
   rm "$STATE/prd.md"
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ]
@@ -904,14 +904,14 @@ EOF
   ! grep -rnE -- '--agent|SOLVE_FEATURE_AGENT|--budget|afk\.models' "$REPO_ROOT/skills/solve-feature" "$REPO_ROOT/skills/review-pr"
 }
 
-@test "install.sh claude --skill solve-feature ships the script and review-pr's script, no agent.sh, the Actions host" {
+@test "install.sh claude --skill solve-feature ships the script and the reviewer's prompt, no review-pr.sh or agent.sh, the Actions host" {
   local target="$TEMP_DIR/target"
   mkdir -p "$target" && git -C "$target" init -q -b main
   TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" claude --skill solve-feature
   [ "$status" -eq 0 ]
   [ -x "$target/.coding-crew/solve-feature/scripts/solve-feature.sh" ]
-  [ -x "$target/.coding-crew/review-pr/scripts/review-pr.sh" ]
-  [ ! -e "$target/.coding-crew/review-pr/scripts/agent.sh" ]
+  [ -f "$target/.coding-crew/review-pr/reviewer-prompt.md" ]
+  [ ! -e "$target/.coding-crew/review-pr/scripts" ]
   [ -f "$target/.coding-crew/solve-feature/hosts/github-actions.yml" ]
   [ ! -x "$target/.coding-crew/solve-feature/hosts/github-actions.yml" ]
   [ -f "$target/.claude/skills/solve-feature/SKILL.md" ]

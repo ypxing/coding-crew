@@ -48,7 +48,7 @@ for t in gh jq node git; do command -v "$t" >/dev/null || die "$t not found on P
 [[ "$SLUG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid feature slug: '$SLUG'"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"; cd "$ROOT"
 LOGS="$ROOT/.solve-feature"
-[ "$CMD" != start ] || rm -f "$LOGS/stopped" "$LOGS/reviewed" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md
+[ "$CMD" != start ] || rm -f "$LOGS/stopped" "$LOGS/reviewed" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md
 COMMON="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" CLI=""
 for c in "$ROOT" "$COMMON" "$HOME"; do [ -f "$c/.coding-crew/tracker/cli.mjs" ] && { CLI="$c/.coding-crew/tracker/cli.mjs"; break; }; done
 [ -n "$CLI" ] || die "tracker CLI not found (.coding-crew/tracker/cli.mjs): run install.sh"
@@ -123,7 +123,7 @@ stop() { # <row> <step> <reason> [<log>] — a Stopped-at note (with the log's l
 }
 
 # The PR body: address-pr-comments finds a solve-feature PR by the begin line and reads its slug from the
-# slug line; review-pr reads the <details> block as the spec. Text outside the block is a human's and kept.
+# slug line; the reviewer reads the <details> block as the spec. Text outside the block is a human's and kept.
 BEGIN='<!-- solve-feature:begin -->' END='<!-- solve-feature:end -->'
 pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the prd output, else the issue's own
   local t; t=$(head -n 1 <<<"$PRD_TEXT" | sed -nE 's/^<!-- PRD issue #[0-9]+: (.*) -->$/\1/p' | sed 's/^PRD: //')

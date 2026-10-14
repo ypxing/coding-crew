@@ -85,8 +85,8 @@ REPO/.coding-crew/dep-install/scripts/shim/docker exec=1
 REPO/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
 REPO/.coding-crew/manifest.json 2cfd3a897381dadadb19704cbe8d44b50cd62cf3
 REPO/.coding-crew/review-pr/ /
-REPO/.coding-crew/review-pr/scripts/ /
-REPO/.coding-crew/review-pr/scripts/review-pr.sh exec=1
+REPO/.coding-crew/review-pr/SKILL.md exec=0 unrendered=0
+REPO/.coding-crew/review-pr/reviewer-prompt.md exec=0
 REPO/.coding-crew/skills/ /
 REPO/.coding-crew/skills/_shared/ /
 REPO/.coding-crew/skills/_shared/fragments/ /
@@ -203,8 +203,7 @@ REPO/.pi/skills/domain-modeling/references/adr-format.md exec=0
 REPO/.pi/skills/domain-modeling/references/context-format.md exec=0
 REPO/.pi/skills/review-pr/ /
 REPO/.pi/skills/review-pr/SKILL.md exec=0 unrendered=0
-REPO/.pi/skills/review-pr/scripts/ /
-REPO/.pi/skills/review-pr/scripts/review-pr.sh exec=1
+REPO/.pi/skills/review-pr/reviewer-prompt.md exec=0
 REPO/.pi/skills/solve-feature/ /
 REPO/.pi/skills/solve-feature/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/solve-feature/hosts/ /
