@@ -63,7 +63,6 @@ if [[ ! -d "$PROJECT_ROOT" ]]; then
   exit 1
 fi
 
-PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 
 _sha256() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -76,7 +75,7 @@ _sha256() {
 }
 
 PROJ_SLUG=$(basename "$PROJECT_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_*$//')
-OWNER4="$(printf '%s\n%s\n' "$(hostname 2>/dev/null || uname -n)" "$PROJECT_ROOT" | _sha256 | awk '{print substr($1, 1, 4)}')"
+OWNER4="$(printf '%s\n%s\n' "$(hostname 2>/dev/null || uname -n)" "$(cd "$PROJECT_ROOT" && pwd -P)" | _sha256 | awk '{print substr($1, 1, 4)}')"
 OWNER_PREFIX="wt_${PROJ_SLUG}_${OWNER4}_"
 
 GIT_DIR_ABS="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"

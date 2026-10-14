@@ -57,7 +57,6 @@ if [[ ! -d "$PROJECT_ROOT" ]]; then
   echo "Error: --project-root does not exist: $PROJECT_ROOT" >&2
   exit 1
 fi
-PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 
 GEN_OVERRIDE="$SELF_DIR/gen-override.sh"
 OVERRIDE="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"

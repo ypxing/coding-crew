@@ -2,16 +2,14 @@
 
 # gen-override.sh: the dependency volume names, `wt_<proj>_<owner4>_<eco>_<dir>_<lock8>`.
 #
-# <owner4> keeps another clone's, host's or sandbox's volumes out of reach (cleanup-worktrees.sh
-# removes only this owner's); <lock8> makes a worktree with different lockfiles name different
-# volumes, and one with identical lockfiles name the same. Each is an explicit top-level `name:`,
-# so neither the compose project name nor the worktree's directory renames it.
+# <owner4> hashes the host and the checkout's path, so two worktrees, clones or hosts never share a
+# volume; <lock8> makes a changed lockfile name fresh volumes. Each is an explicit top-level `name:`,
+# so the compose project name does not rename it.
 
 SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/gen-override.sh"
 
 setup() {
-  unset MAIN_ROOT
   PARENT=$(mktemp -d)
 }
 
@@ -29,9 +27,9 @@ fixture() {
   echo '{"lock":"A"}' > "$dir/package-lock.json"
 }
 
-# names <project-root> <main-root> — the dependency volume names the override carries, one per line
+# names <project-root> — the dependency volume names the override carries, one per line
 names() {
-  bash "$SCRIPT" --project-root "$1" --main-root "${2:-$1}" --dry-run | sed -n 's/^    name: //p'
+  bash "$SCRIPT" --project-root "$1" --dry-run | sed -n 's/^    name: //p'
 }
 
 @test "every dependency volume is named wt_<proj>_<owner4>_<eco>_<dir>_<lock8>, as an explicit name:" {
@@ -41,43 +39,34 @@ names() {
 
   run names "$PARENT/product-services"
   [ "$status" -eq 0 ]
-  [ "${#lines[@]}" -eq 3 ]
+  [ "${#lines[@]}" -eq 2 ]
   root="${lines[0]}"
   [[ "$root" =~ ^wt_product_services_[0-9a-f]{4}_nm_root_[0-9a-f]{8}$ ]]
   [[ "${lines[1]}" =~ ^wt_product_services_[0-9a-f]{4}_nm_packages_web_[0-9a-f]{8}$ ]]
-  # the install lock's volume follows the dependency volumes
-  [[ "${lines[2]}" =~ ^wt_product_services_[0-9a-f]{4}_state_[0-9a-f]{8}$ ]]
   # one install writes every volume, so every name carries the same lock hash
   [ "${root##*_}" = "${lines[1]##*_}" ]
-  [ "${root##*_}" = "${lines[2]##*_}" ]
   # the services mount the same name
-  run bash "$SCRIPT" --project-root "$PARENT/product-services" --main-root "$PARENT/product-services" --dry-run
+  run bash "$SCRIPT" --project-root "$PARENT/product-services" --dry-run
   grep -qx "      - $root:/opt/app/node_modules" <<<"$output"
 }
 
-@test "<owner4> differs for two MAIN_ROOTs with the same basename" {
+@test "<owner4> differs for two checkouts with the same basename, and is stable for one" {
   fixture "$PARENT/a/proj"
   fixture "$PARENT/b/proj"
   a="$(names "$PARENT/a/proj" | head -1)"
   b="$(names "$PARENT/b/proj" | head -1)"
   [ -n "$a" ] && [ "$a" != "$b" ]
-  [ "$(bash "$SCRIPT" --project-root "$PARENT/a/proj" --main-root "$PARENT/a/proj" --query owner-prefix)" != \
-    "$(bash "$SCRIPT" --project-root "$PARENT/b/proj" --main-root "$PARENT/b/proj" --query owner-prefix)" ]
-  # but the same MAIN_ROOT names the same owner, whichever worktree asks
-  [ "$(bash "$SCRIPT" --project-root "$PARENT/a/proj" --main-root "$PARENT/a/proj" --query owner-prefix)" = \
-    "$(bash "$SCRIPT" --project-root "$PARENT/b/proj" --main-root "$PARENT/a/proj" --query owner-prefix)" ]
+  [ "$(names "$PARENT/a/proj" | head -1)" = "$a" ]
 }
 
-@test "--query owner-prefix is the prefix every dependency volume name starts with, and needs no compose file" {
+@test "--main-root, --sandbox and --query owner-prefix are gone" {
   fixture "$PARENT/proj"
-  prefix="$(bash "$SCRIPT" --project-root "$PARENT/proj" --main-root "$PARENT/proj" --query owner-prefix)"
-  [[ "$prefix" =~ ^wt_proj_[0-9a-f]{4}_$ ]]
-  [[ "$(names "$PARENT/proj" | head -1)" == "$prefix"* ]]
-
-  rm -f "$PARENT/proj/docker-compose.yml"
-  run bash "$SCRIPT" --project-root "$PARENT/proj" --main-root "$PARENT/proj" --query owner-prefix
-  [ "$status" -eq 0 ]
-  [ "$output" = "$prefix" ]
+  run bash "$SCRIPT" --project-root "$PARENT/proj" --main-root "$PARENT/proj" --dry-run
+  [ "$status" -eq 1 ]
+  run bash "$SCRIPT" --project-root "$PARENT/proj" --sandbox --dry-run
+  [ "$status" -eq 1 ]
+  run bash "$SCRIPT" --project-root "$PARENT/proj" --query owner-prefix
+  [ "$status" -eq 1 ]
 }
 
 @test "<lock8> changes when the lockfile changes" {
@@ -104,14 +93,12 @@ names() {
   [ -n "$after" ] && [ "$after" != "$before" ]
 }
 
-@test "<lock8> is the same for identical lockfiles in two worktrees, and ignores unrelated files" {
+@test "<lock8> ignores unrelated files" {
   fixture "$PARENT/one"
-  fixture "$PARENT/two"
-  mkdir -p "$PARENT/main"
-  [ "$(names "$PARENT/one" "$PARENT/main")" = "$(names "$PARENT/two" "$PARENT/main")" ]
+  before="$(names "$PARENT/one")"
   echo 'console.log(1)' > "$PARENT/one/index.js"
   echo '# docs' > "$PARENT/one/README.md"
-  [ "$(names "$PARENT/one" "$PARENT/main")" = "$(names "$PARENT/two" "$PARENT/main")" ]
+  [ "$(names "$PARENT/one")" = "$before" ]
 }
 
 @test "<lock8> and the volume names ignore manifests under dot-directories, as the manifest scan does" {
@@ -122,13 +109,13 @@ names() {
   echo '{"name":"other"}' > "$PARENT/proj/.claude/worktrees/x/package.json"
   echo '{"name":"cached"}' > "$PARENT/proj/packages/.cache/y/package.json"
   [ "$(names "$PARENT/proj")" = "$before" ]
-  [ "$(bash "$SCRIPT" --project-root "$PARENT/proj" --main-root "$PARENT/proj" --query manifest-dirs)" = "$PARENT/proj" ]
+  [ "$(bash "$SCRIPT" --project-root "$PARENT/proj" --query manifest-dirs)" = "$PARENT/proj" ]
 }
 
 @test "the volume key and the explicit name are the same, and the git hooks/info volumes are not hashed" {
   fixture "$PARENT/proj"
   git -C "$PARENT/proj" init -q
-  run bash "$SCRIPT" --project-root "$PARENT/proj" --main-root "$PARENT/proj" --dry-run
+  run bash "$SCRIPT" --project-root "$PARENT/proj" --dry-run
   [ "$status" -eq 0 ]
   name="$(sed -n 's/^    name: //p' <<<"$output" | head -1)"
   grep -qx "  $name:" <<<"$output"

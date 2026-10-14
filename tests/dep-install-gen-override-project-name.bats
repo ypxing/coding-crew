@@ -2,18 +2,16 @@
 
 # gen-override.sh: the compose project name (`--query project-name`, the override's `name:`).
 #
-# The generated override pins `name:` so every worktree shares one compose project. That name
-# must be the one compose itself would have picked for the main checkout, or the project's own
-# `docker compose up` (run without our override) creates `<name>_default` while our invocations
-# create a second network, and services started by one cannot reach services started by the
-# other — e.g. a checkout named product-services got `product_services_default` alongside
-# compose's own `product-services_default`.
+# In the main checkout the override's `name:` is the one compose itself would have picked, or the
+# project's own `docker compose up` (run without our override) creates `<name>_default` while our
+# invocations create a second network — e.g. a checkout named product-services got
+# `product_services_default` alongside compose's own `product-services_default`. A linked worktree
+# appends its <owner4>, so each worktree is a compose project of its own.
 
 SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/gen-override.sh"
 
 setup() {
-  unset MAIN_ROOT
   PARENT=$(mktemp -d)
 }
 
@@ -41,7 +39,7 @@ YML
 }
 
 project_name() {
-  run bash "$SCRIPT" --project-root "$1" --main-root "$1" --query project-name
+  run bash "$SCRIPT" --project-root "$1" --query project-name
   [ "$status" -eq 0 ]
 }
 
@@ -90,7 +88,31 @@ project_name() {
 
 @test "the generated override carries the same name" {
   fixture "$PARENT/product-services"
-  run bash "$SCRIPT" --project-root "$PARENT/product-services" --main-root "$PARENT/product-services" --dry-run
+  run bash "$SCRIPT" --project-root "$PARENT/product-services" --dry-run
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = "name: product-services" ]
+}
+
+@test "each linked worktree is a compose project of its own; the main checkout keeps compose's name" {
+  fixture "$PARENT/app"
+  git -C "$PARENT/app" init -q -b main
+  git -C "$PARENT/app" -c user.email=t@t -c user.name=T commit -q --allow-empty -m init
+  git -C "$PARENT/app" worktree add -q "$PARENT/wt1" -b one
+  git -C "$PARENT/app" worktree add -q "$PARENT/wt2" -b two
+  fixture "$PARENT/wt1"
+  fixture "$PARENT/wt2"
+  project_name "$PARENT/app"
+  [ "$output" = "app" ]
+  project_name "$PARENT/wt1"
+  local one="$output"
+  project_name "$PARENT/wt2"
+  [[ "$one" =~ ^wt1-[0-9a-f]{4}$ ]]
+  [[ "$output" =~ ^wt2-[0-9a-f]{4}$ ]]
+  # a literal name: is suffixed too, so two worktrees never share it
+  printf 'name: shop\n' | cat - "$PARENT/wt1/docker-compose.yml" > "$PARENT/x" && mv "$PARENT/x" "$PARENT/wt1/docker-compose.yml"
+  printf 'name: shop\n' | cat - "$PARENT/wt2/docker-compose.yml" > "$PARENT/x" && mv "$PARENT/x" "$PARENT/wt2/docker-compose.yml"
+  project_name "$PARENT/wt1"
+  one="$output"
+  project_name "$PARENT/wt2"
+  [[ "$one" == shop-* && "$output" == shop-* && "$one" != "$output" ]]
 }

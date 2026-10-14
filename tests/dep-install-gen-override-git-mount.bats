@@ -2,12 +2,12 @@
 
 # gen-override.sh: the git metadata mount (CREW_GIT_MOUNT) and where the override is written.
 #
-# A *linked* worktree's `.git` is a file pointing at an absolute host path inside MAIN_ROOT's
-# real `.git` dir. A container never has that path, so any git command run inside one — most
+# A *linked* worktree's `.git` is a file pointing at an absolute host path inside the repo's
+# shared `.git` dir. A container never has that path, so any git command run inside one — most
 # commonly a package manager's postinstall hook (lefthook/husky/simple-git-hooks) — fails
 # with `fatal: not a git repository`. gen-override.sh fixes this in two parts:
-#   - the override always mounts MAIN_ROOT's real `.git` dir read-only at /git-common (plus
-#     writable hooks/ and info/ overlays), however the call was made — it only depends on MAIN_ROOT.
+#   - the override always mounts the shared `.git` dir (git's common dir) read-only at /git-common
+#     (plus writable hooks/ and info/ overlays).
 #   - for a linked worktree it also bakes that worktree's own GIT_DIR / GIT_COMMON_DIR *values*
 #     into the file, which lives in the worktree's own git dir, so no other worktree reads it.
 # A plain (non-worktree) checkout's `.git` is already a real, writable directory reachable
@@ -15,13 +15,6 @@
 
 SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/gen-override.sh"
-
-setup() {
-  # Isolation from whatever the ambient shell happens to export — a caller may
-  # export MAIN_ROOT, and without this a test that means to exercise "no
-  # --main-root passed" would silently pick that up instead.
-  unset MAIN_ROOT
-}
 
 # fixture_compose <dir> — the minimal node-ecosystem fixture every test here needs.
 fixture_compose() {
@@ -52,7 +45,7 @@ teardown() {
   return 0
 }
 
-@test "the shared override always mounts MAIN_ROOT's .git read-only, generated from MAIN_ROOT itself" {
+@test "the main checkout's override mounts its .git read-only" {
   MAIN=$(mktemp -d)
   git -C "$MAIN" init -q -b main
   git -C "$MAIN" config user.email t@test
@@ -61,7 +54,7 @@ teardown() {
   git -C "$MAIN" add -A
   git -C "$MAIN" commit -q -m init
 
-  run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN" --dry-run
+  run bash "$SCRIPT" --project-root "$MAIN" --dry-run
   [ "$status" -eq 0 ]
   # Compare against git's own --path-format=absolute rendering of MAIN, not the bash
   # variable itself: on Windows those differ (MSYS "/c/..." vs git.exe's "C:/..."), and
@@ -78,7 +71,7 @@ teardown() {
   [[ "$output" != *"GIT_CONFIG"* ]]
 }
 
-@test "the override's mount content is identical from MAIN_ROOT or from a worktree; only the worktree's GIT_* entries differ" {
+@test "a worktree's override mounts the same shared .git, plus its own GIT_* entries" {
   MAIN=$(mktemp -d)
   git -C "$MAIN" init -q -b main
   git -C "$MAIN" config user.email t@test
@@ -90,15 +83,17 @@ teardown() {
   WORK="${MAIN}-wt"
   git -C "$MAIN" worktree add -q -b feature "$WORK" HEAD
 
-  run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN" --dry-run
+  run bash "$SCRIPT" --project-root "$MAIN" --dry-run
   [ "$status" -eq 0 ]
   from_main="$output"
 
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --dry-run
+  run bash "$SCRIPT" --project-root "$WORK" --dry-run
   [ "$status" -eq 0 ]
   from_worktree="$output"
 
-  [ "$from_main" = "$(printf '%s\n' "$from_worktree" | grep -vE '^      - GIT_(COMMON_)?DIR=')" ]
+  mount="      - $(git -C "$MAIN" rev-parse --path-format=absolute --git-common-dir):/git-common:ro"
+  grep -qxF -- "$mount" <<<"$from_main"
+  grep -qxF -- "$mount" <<<"$from_worktree"
   [[ "$from_worktree" == *"      - GIT_COMMON_DIR=/git-common"* ]]
   [[ "$from_worktree" == *"      - GIT_DIR=/git-common/worktrees/$(basename "$WORK")"* ]]
 }
@@ -112,7 +107,7 @@ teardown() {
   git -C "$MAIN" add -A
   git -C "$MAIN" commit -q -m init
 
-  run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN" --dry-run
+  run bash "$SCRIPT" --project-root "$MAIN" --dry-run
   [ "$status" -eq 0 ]
   for suffix in git_info git_hooks; do
     volume_name=$(echo "$output" | grep -oE "wt_[A-Za-z0-9_]+_${suffix}" | head -1)
@@ -121,7 +116,7 @@ teardown() {
   done
 }
 
-@test "writing the override creates the overlay mount points in MAIN_ROOT's .git when missing" {
+@test "writing the override creates the overlay mount points in the shared .git when missing" {
   MAIN=$(mktemp -d)
   git -C "$MAIN" init -q -b main
   git -C "$MAIN" config user.email t@test
@@ -131,7 +126,7 @@ teardown() {
   git -C "$MAIN" commit -q -m init
   rm -r "$MAIN/.git/hooks" "$MAIN/.git/info"
 
-  run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN"
+  run bash "$SCRIPT" --project-root "$MAIN"
   [ "$status" -eq 0 ]
   [ -d "$MAIN/.git/hooks" ]
   [ -d "$MAIN/.git/info" ]
@@ -146,7 +141,7 @@ teardown() {
   git -C "$MAIN" add -A
   git -C "$MAIN" commit -q -m init
 
-  CREW_GIT_MOUNT=off run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN" --dry-run
+  CREW_GIT_MOUNT=off run bash "$SCRIPT" --project-root "$MAIN" --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" != *"/git-common"* ]]
 }
@@ -156,17 +151,16 @@ teardown() {
   WORK=$(mktemp -d)
   fixture_compose "$WORK"
 
-  CREW_GIT_MOUNT=bogus run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --dry-run
+  CREW_GIT_MOUNT=bogus run bash "$SCRIPT" --project-root "$WORK" --dry-run
   [ "$status" -ne 0 ]
   [[ "$output" == *"CREW_GIT_MOUNT"* ]]
 }
 
-@test "a MAIN_ROOT that is not a git checkout emits no git mount, by default" {
-  NG_MAIN=$(mktemp -d)
+@test "a checkout that is not a git repo emits no git mount, by default" {
   NG_WORK=$(mktemp -d)
   fixture_compose "$NG_WORK"
 
-  run bash "$SCRIPT" --project-root "$NG_WORK" --main-root "$NG_MAIN" --dry-run
+  run bash "$SCRIPT" --project-root "$NG_WORK" --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" != *"/git-common"* ]]
 }
@@ -180,16 +174,16 @@ teardown() {
   git -C "$MAIN" add -A
   git -C "$MAIN" commit -q -m init
 
-  run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN"
+  run bash "$SCRIPT" --project-root "$MAIN"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"git:       MAIN_ROOT's .git mounted read-only at /git-common"* ]]
+  [[ "$output" == *"git:       the shared .git mounted read-only at /git-common"* ]]
 }
 
-@test "a dry run reports no mount when MAIN_ROOT is not a git checkout" {
+@test "a dry run reports no mount when the checkout is not a git repo" {
   NG_MAIN=$(mktemp -d)
   fixture_compose "$NG_MAIN"
 
-  run bash "$SCRIPT" --project-root "$NG_MAIN" --main-root "$NG_MAIN" --dry-run
+  run bash "$SCRIPT" --project-root "$NG_MAIN" --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" != *"/git-common"* ]]
 }
@@ -198,7 +192,7 @@ teardown() {
   NG_MAIN=$(mktemp -d)
   fixture_compose "$NG_MAIN"
 
-  run bash "$SCRIPT" --project-root "$NG_MAIN" --main-root "$NG_MAIN"
+  run bash "$SCRIPT" --project-root "$NG_MAIN"
   [ "$status" -eq 1 ]
   [[ "$output" == *"not a git checkout"* ]]
   [ ! -e "$NG_MAIN/docker-compose.override.yml" ]
@@ -220,7 +214,7 @@ _git_fixture() {
   WORK="${MAIN}-wt"
   git -C "$MAIN" worktree add -q -b feature "$WORK" HEAD
 
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  run bash "$SCRIPT" --project-root "$WORK"
   [ "$status" -eq 0 ]
   gitdir="$(git -C "$WORK" rev-parse --path-format=absolute --git-dir)"
   [ -f "$gitdir/crew-compose.override.yml" ]
@@ -240,8 +234,8 @@ _git_fixture() {
   git -C "$MAIN" worktree add -q -b feature "$WORK" HEAD
   git -C "$MAIN" worktree add -q -b feature2 "$WORK2" HEAD
 
-  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" >/dev/null
-  bash "$SCRIPT" --project-root "$WORK2" --main-root "$MAIN" >/dev/null
+  bash "$SCRIPT" --project-root "$WORK" >/dev/null
+  bash "$SCRIPT" --project-root "$WORK2" >/dev/null
   grep -qx "      - GIT_DIR=/git-common/worktrees/$(basename "$WORK")" "$MAIN/.git/worktrees/$(basename "$WORK")/crew-compose.override.yml"
   grep -qx "      - GIT_DIR=/git-common/worktrees/$(basename "$WORK2")" "$MAIN/.git/worktrees/$(basename "$WORK2")/crew-compose.override.yml"
   git -C "$MAIN" worktree remove --force "$WORK2"
@@ -249,7 +243,7 @@ _git_fixture() {
 
 @test "the main checkout's override lands in .git/ and has no GIT_* entries" {
   _git_fixture
-  run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN"
+  run bash "$SCRIPT" --project-root "$MAIN"
   [ "$status" -eq 0 ]
   [ -f "$MAIN/.git/crew-compose.override.yml" ]
   ! grep -q 'GIT_' "$MAIN/.git/crew-compose.override.yml"
@@ -261,7 +255,7 @@ _git_fixture() {
   WORK="${MAIN}-wt"
   git -C "$MAIN" worktree add -q -b feature "$WORK" HEAD
 
-  CREW_GIT_MOUNT=off run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --dry-run
+  CREW_GIT_MOUNT=off run bash "$SCRIPT" --project-root "$WORK" --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" != *"GIT_"* ]]
 }
@@ -274,8 +268,8 @@ _git_fixture() {
   WORK="${MAIN}-wt"
   git -C "$MAIN" worktree add -q -b feature "$WORK" HEAD
 
-  bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN" >/dev/null
-  bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" >/dev/null
+  bash "$SCRIPT" --project-root "$MAIN" >/dev/null
+  bash "$SCRIPT" --project-root "$WORK" >/dev/null
   [ "$(cksum < "$MAIN/docker-compose.override.yml")" = "$before" ]
   [ "$(cksum < "$WORK/docker-compose.override.yml")" = "$before" ]
   [ ! -L "$WORK/docker-compose.override.yml" ]
@@ -283,9 +277,9 @@ _git_fixture() {
 
 @test "--query git-env and --link-only are unknown arguments" {
   _git_fixture
-  run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN" --query git-env
+  run bash "$SCRIPT" --project-root "$MAIN" --query git-env
   [ "$status" -eq 1 ]
-  run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN" --link-only
+  run bash "$SCRIPT" --project-root "$MAIN" --link-only
   [ "$status" -eq 1 ]
   [[ "$output" == *"unknown argument"* ]]
 }
