@@ -30,7 +30,7 @@ HOME/.coding-crew/lib/tracker/github.mjs exec=0
 HOME/.coding-crew/lib/tracker/index.mjs exec=0
 HOME/.coding-crew/lib/tracker/local.mjs exec=0
 HOME/.coding-crew/lib/tracker/tracker-config.mjs exec=0
-HOME/.coding-crew/manifest.json 556faff6bd254b4111aacb75285e412eb67e429d
+HOME/.coding-crew/manifest.json 60b1a6d37ebfc38ca8b180e04d916f984de40ed5
 CONFIG/skills/ /
 CONFIG/skills/add-tests/ /
 CONFIG/skills/add-tests/SKILL.md exec=0 unrendered=0
@@ -48,6 +48,15 @@ CONFIG/skills/configure-tracker/ /
 CONFIG/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 CONFIG/skills/configure-tracker/scripts/ /
 CONFIG/skills/configure-tracker/scripts/tracker link=HOME/.coding-crew/lib/tracker
+CONFIG/skills/crew-afk/ /
+CONFIG/skills/crew-afk/SKILL.md exec=0 unrendered=0
+CONFIG/skills/crew-afk/scripts/ /
+CONFIG/skills/crew-afk/scripts/crew-afk.sh exec=1
+CONFIG/skills/crew-afk/scripts/destinations/ /
+CONFIG/skills/crew-afk/scripts/destinations/herdr.sh exec=0
+CONFIG/skills/crew-afk/scripts/destinations/local.sh exec=0
+CONFIG/skills/crew-afk/scripts/destinations/orca.sh exec=0
+CONFIG/skills/crew-afk/scripts/tracker link=HOME/.coding-crew/lib/tracker
 CONFIG/skills/crew-brainstorm/ /
 CONFIG/skills/crew-brainstorm/SKILL.md exec=0 unrendered=0
 CONFIG/skills/crew-brainstorm/scripts/ /

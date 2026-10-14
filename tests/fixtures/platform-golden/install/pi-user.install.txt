@@ -30,7 +30,7 @@ HOME/.coding-crew/lib/tracker/github.mjs exec=0
 HOME/.coding-crew/lib/tracker/index.mjs exec=0
 HOME/.coding-crew/lib/tracker/local.mjs exec=0
 HOME/.coding-crew/lib/tracker/tracker-config.mjs exec=0
-HOME/.coding-crew/manifest.json f2e3bbcf88f9f9e31c38257b732a5df210ceebe4
+HOME/.coding-crew/manifest.json 944eb5579dddfb082d67cf11ae330be07aa7de45
 HOME/.pi/ /
 HOME/.pi/agent/ /
 HOME/.pi/agent/skills/ /
@@ -50,6 +50,15 @@ HOME/.pi/agent/skills/configure-tracker/ /
 HOME/.pi/agent/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/configure-tracker/scripts/ /
 HOME/.pi/agent/skills/configure-tracker/scripts/tracker link=HOME/.coding-crew/lib/tracker
+HOME/.pi/agent/skills/crew-afk/ /
+HOME/.pi/agent/skills/crew-afk/SKILL.md exec=0 unrendered=0
+HOME/.pi/agent/skills/crew-afk/scripts/ /
+HOME/.pi/agent/skills/crew-afk/scripts/crew-afk.sh exec=1
+HOME/.pi/agent/skills/crew-afk/scripts/destinations/ /
+HOME/.pi/agent/skills/crew-afk/scripts/destinations/herdr.sh exec=0
+HOME/.pi/agent/skills/crew-afk/scripts/destinations/local.sh exec=0
+HOME/.pi/agent/skills/crew-afk/scripts/destinations/orca.sh exec=0
+HOME/.pi/agent/skills/crew-afk/scripts/tracker link=HOME/.coding-crew/lib/tracker
 HOME/.pi/agent/skills/crew-brainstorm/ /
 HOME/.pi/agent/skills/crew-brainstorm/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/crew-brainstorm/scripts/ /

@@ -305,14 +305,14 @@ _libs_linked() {
   [ "$output" = "false" ]
 }
 
-@test "registry.json skill keys solve-feature and crew-grill are present; crew-afk, crew-address-findings and crew-plan are not" {
+@test "registry.json skill keys solve-feature, crew-afk and crew-grill are present; crew-address-findings and crew-plan are not" {
   cd "$SCRIPT_DIR"
 
   run jq -r '.skills | keys[]' registry.json
   [ "$status" -eq 0 ]
   echo "$output" | grep -qxF "solve-feature"
+  echo "$output" | grep -qxF "crew-afk"
   echo "$output" | grep -qxF "crew-grill"
-  ! echo "$output" | grep -qxF "crew-afk"
   ! echo "$output" | grep -qxF "crew-address-findings"
   # tdd must exist without crew- prefix
   [[ "$output" == *"tdd"* ]]
@@ -609,6 +609,18 @@ PROBE
 
 # ── the tracker library (.coding-crew/lib/tracker/) ───────────────────────────
 # Installed with any skill whose libs names it; mechanism, so always overwritten, and removed by uninstall.
+
+@test "crew-afk installs with its scripts and a tracker link, and its SKILL.md runs nothing outside <skill-dir>" {
+  local skill="$ALL/.claude/skills/crew-afk" d
+  [ -f "$skill/scripts/crew-afk.sh" ]
+  for d in local orca herdr; do [ -f "$skill/scripts/destinations/$d.sh" ] || { echo "no $d" >&2; return 1; }; done
+  [ "$(readlink "$skill/scripts/tracker")" = "../../../../.coding-crew/lib/tracker" ]
+  [ -f "$skill/scripts/tracker/cli.mjs" ]
+  [ -f "$ALL/.claude/skills/solve-feature/SKILL.md" ]
+  ! grep -nF -e '{{' -e '.coding-crew' -e '../' "$skill/SKILL.md"
+  # Every script path the body names is under <skill-dir>.
+  ! grep -nF 'scripts/' "$skill/SKILL.md" | grep -vF '<skill-dir>/scripts/'
+}
 
 @test "install of one skill ships the tracker CLI, which runs through the skill's link" {
   local dir; dir="$(shared_installed to-issues)"

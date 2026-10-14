@@ -15,6 +15,16 @@
         "tracker"
       ]
     },
+    "crew-afk": {
+      "source-dir": "crew-afk",
+      "description": "Start one feature's solve-feature run unattended in that feature's own worktree, locally (capped at $10/1h), in an orca terminal or a herdr pane, and say how each run ended.",
+      "deps": [
+        "solve-feature"
+      ],
+      "libs": [
+        "tracker"
+      ]
+    },
     "crew-review": {
       "source-dir": "crew-review",
       "description": "A fresh read-only subagent reviews a branch or PR against the spec its caller names, for what breaks and for the repo's documented rules, and writes one JSON report; it posts nothing and marks nothing ready.",

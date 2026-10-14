@@ -16,6 +16,15 @@ HOME/.claude/skills/configure-tracker/ /
 HOME/.claude/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/configure-tracker/scripts/ /
 HOME/.claude/skills/configure-tracker/scripts/tracker link=HOME/.coding-crew/lib/tracker
+HOME/.claude/skills/crew-afk/ /
+HOME/.claude/skills/crew-afk/SKILL.md exec=0 unrendered=0
+HOME/.claude/skills/crew-afk/scripts/ /
+HOME/.claude/skills/crew-afk/scripts/crew-afk.sh exec=1
+HOME/.claude/skills/crew-afk/scripts/destinations/ /
+HOME/.claude/skills/crew-afk/scripts/destinations/herdr.sh exec=0
+HOME/.claude/skills/crew-afk/scripts/destinations/local.sh exec=0
+HOME/.claude/skills/crew-afk/scripts/destinations/orca.sh exec=0
+HOME/.claude/skills/crew-afk/scripts/tracker link=HOME/.coding-crew/lib/tracker
 HOME/.claude/skills/crew-brainstorm/ /
 HOME/.claude/skills/crew-brainstorm/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/crew-brainstorm/scripts/ /
@@ -117,4 +126,4 @@ HOME/.coding-crew/lib/tracker/github.mjs exec=0
 HOME/.coding-crew/lib/tracker/index.mjs exec=0
 HOME/.coding-crew/lib/tracker/local.mjs exec=0
 HOME/.coding-crew/lib/tracker/tracker-config.mjs exec=0
-HOME/.coding-crew/manifest.json ba6f369d823ffeb329c402b0b3e706286a7816df
+HOME/.coding-crew/manifest.json dcda245714aa07e9bf8fb637a750fdc5c4c1635c

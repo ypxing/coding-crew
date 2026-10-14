@@ -16,6 +16,15 @@ REPO/.claude/skills/configure-tracker/ /
 REPO/.claude/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/configure-tracker/scripts/ /
 REPO/.claude/skills/configure-tracker/scripts/tracker link=../../../../.coding-crew/lib/tracker
+REPO/.claude/skills/crew-afk/ /
+REPO/.claude/skills/crew-afk/SKILL.md exec=0 unrendered=0
+REPO/.claude/skills/crew-afk/scripts/ /
+REPO/.claude/skills/crew-afk/scripts/crew-afk.sh exec=1
+REPO/.claude/skills/crew-afk/scripts/destinations/ /
+REPO/.claude/skills/crew-afk/scripts/destinations/herdr.sh exec=0
+REPO/.claude/skills/crew-afk/scripts/destinations/local.sh exec=0
+REPO/.claude/skills/crew-afk/scripts/destinations/orca.sh exec=0
+REPO/.claude/skills/crew-afk/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.claude/skills/crew-brainstorm/ /
 REPO/.claude/skills/crew-brainstorm/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/crew-brainstorm/scripts/ /
@@ -117,4 +126,4 @@ REPO/.coding-crew/lib/tracker/github.mjs exec=0
 REPO/.coding-crew/lib/tracker/index.mjs exec=0
 REPO/.coding-crew/lib/tracker/local.mjs exec=0
 REPO/.coding-crew/lib/tracker/tracker-config.mjs exec=0
-REPO/.coding-crew/manifest.json ba6f369d823ffeb329c402b0b3e706286a7816df
+REPO/.coding-crew/manifest.json dcda245714aa07e9bf8fb637a750fdc5c4c1635c

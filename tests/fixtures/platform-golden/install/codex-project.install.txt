@@ -16,6 +16,15 @@ REPO/.agents/skills/configure-tracker/ /
 REPO/.agents/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 REPO/.agents/skills/configure-tracker/scripts/ /
 REPO/.agents/skills/configure-tracker/scripts/tracker link=../../../../.coding-crew/lib/tracker
+REPO/.agents/skills/crew-afk/ /
+REPO/.agents/skills/crew-afk/SKILL.md exec=0 unrendered=0
+REPO/.agents/skills/crew-afk/scripts/ /
+REPO/.agents/skills/crew-afk/scripts/crew-afk.sh exec=1
+REPO/.agents/skills/crew-afk/scripts/destinations/ /
+REPO/.agents/skills/crew-afk/scripts/destinations/herdr.sh exec=0
+REPO/.agents/skills/crew-afk/scripts/destinations/local.sh exec=0
+REPO/.agents/skills/crew-afk/scripts/destinations/orca.sh exec=0
+REPO/.agents/skills/crew-afk/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.agents/skills/crew-brainstorm/ /
 REPO/.agents/skills/crew-brainstorm/SKILL.md exec=0 unrendered=0
 REPO/.agents/skills/crew-brainstorm/scripts/ /
@@ -117,4 +126,4 @@ REPO/.coding-crew/lib/tracker/github.mjs exec=0
 REPO/.coding-crew/lib/tracker/index.mjs exec=0
 REPO/.coding-crew/lib/tracker/local.mjs exec=0
 REPO/.coding-crew/lib/tracker/tracker-config.mjs exec=0
-REPO/.coding-crew/manifest.json e45f5431be7c84c18f086f18b80a19645a6a6c47
+REPO/.coding-crew/manifest.json 0f7c0fb11009f206993fe237ec07a1f121b7a2f6
