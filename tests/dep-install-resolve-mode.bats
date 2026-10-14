@@ -54,3 +54,18 @@ _cache() {
     [ "$status" -eq 2 ]
   done
 }
+
+@test "dep-install's recorded answer lands in the current checkout, keeps the discovered checks, and is what this reads" {
+  local write="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/git-workflow/write-commands-cache.sh"
+  git -C "$WORK" -c user.email=t@t -c user.name=T commit -q --allow-empty -m init
+  git -C "$WORK" worktree add -q "$TEMP_DIR/wt" -b wt
+  mkdir -p "$TEMP_DIR/wt/.coding-crew"
+  printf '{"test": "npm test", "lint": null}\n' > "$TEMP_DIR/wt/.coding-crew/dev-commands.json"
+  printf '{"install_mode": "docker", "docker_service": "web"}\n' > "$TEMP_DIR/answer.json"
+  (cd "$TEMP_DIR/wt" && bash "$write" --response-file "$TEMP_DIR/answer.json") >/dev/null
+  [ ! -e "$WORK/.coding-crew/dev-commands.json" ]
+  grep -q '"test": "npm test"' "$TEMP_DIR/wt/.coding-crew/dev-commands.json"
+  grep -q '"lint": null' "$TEMP_DIR/wt/.coding-crew/dev-commands.json"
+  run bash "$SCRIPT" --project-root "$TEMP_DIR/wt"
+  [ "$output" = $'INSTALL_MODE=docker\nDOCKER_SERVICE=web' ]
+}
