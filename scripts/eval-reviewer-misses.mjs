@@ -2,7 +2,7 @@
 // eval-reviewer-misses.mjs — replay eval: does the reviewer report bugs in unchanged code a change
 // affected? Base and head review each case; a judge checks outputs blind. Maintainer-only, costs API money.
 // Usage: node scripts/eval-reviewer-misses.mjs [--base <git ref>] [--head <git ref>|worktree]
-//   [--reviewer afk|review-pr] [--case <name>]... [--runs N] [--model opus] [--effort <level>] [--subagents]
+//   [--reviewer afk|crew-review] [--case <name>]... [--runs N] [--model opus] [--effort <level>] [--subagents]
 //   [--judge-model opus] [--parallel 4] [--dry-run] [--resume <out dir>]
 // Each ref builds its prompts from its own files; a reviewer or judge CLI failure is a failed run.
 
@@ -45,7 +45,7 @@ function parseArgs(argv) {
       default: throw new Error(`unknown argument: ${a}`);
     }
   }
-  if (!["afk", "review-pr"].includes(o.reviewer)) throw new Error("--reviewer must be afk or review-pr");
+  if (!["afk", "crew-review"].includes(o.reviewer)) throw new Error("--reviewer must be afk or crew-review");
   if (!(o.runs >= 1) || !(o.parallel >= 1)) throw new Error("--runs and --parallel must be >= 1");
   if (o.effort !== null && !["low", "medium", "high", "xhigh", "max"].includes(o.effort)) throw new Error("--effort must be low, medium, high, xhigh or max");
   return o;
