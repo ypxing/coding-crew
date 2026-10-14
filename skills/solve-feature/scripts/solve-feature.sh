@@ -105,10 +105,19 @@ start() {
   echo "pr=$PR_N"
 }
 
+nothing_left() { # exit 3; with no open PR on the branch, the run has nothing to review and stops here
+  BRANCH=$(git branch --show-current); pr_view
+  if [ -z "$PR_N" ]; then
+    echo "solve-feature: nothing landed: no ready issue for $SLUG and no open PR" >&2
+    outcome "stopped: nothing landed: no ready issue for $SLUG and no open PR"
+  fi
+  exit 3
+}
+
 next() {
   local rc=0 ref
   ref=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
-  case $rc in 0) ;; 3) exit 3 ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
+  case $rc in 0) ;; 3) nothing_left ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
   # Saved now, not in land: the local tracker's close moves the file, and fetch then exits 3. fetch runs the
   # backend's validateRef, so a ref it rejects stops here, before it reaches the coder's prompt.
   node "$CLI" fetch "$ref" >"$LOGS/${ref//\//_}.issue.md" || die "fetch $ref failed (see above)"

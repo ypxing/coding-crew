@@ -395,13 +395,22 @@ EOF
   [ "$output" = 2 ]
   [ "$(cat .solve-feature/2.issue.md)" = "$(cat "$STATE/2.md")" ]
   jq 'map(.state = "CLOSED")' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
-  run bash "$SCRIPT" next feat
+  PR_EXISTS=1 run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
   [ -z "$output" ]
-  [ ! -e .solve-feature/stopped ]
+  [ ! -e .solve-feature/outcome ]
   NEXT_PRINTS='2; rm -rf /' run bash "$SCRIPT" next feat
   [ "$status" -eq 1 ]
   [[ "$output" == *"fetch 2; rm -rf / failed"* ]]
+}
+
+@test "next with no ready issue and no open PR on the branch exits 3 and writes the nothing-landed stop" {
+  run bash "$SCRIPT" start feat
+  jq 'map(.state = "CLOSED")' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"nothing landed: no ready issue for feat and no open PR"* ]]
+  [ "$(cat .solve-feature/outcome)" = "stopped: nothing landed: no ready issue for feat and no open PR" ]
 }
 
 @test "issues run lowest number first, skipping closed and blocked-labelled issues and any whose blocker is neither CLOSED nor awaiting-merge" {
