@@ -2,7 +2,7 @@
 
 # scripts/render-skill.sh's shared fragments: a whole-line {{FRAGMENT:<key>}} expands to
 # skills/_shared/fragments/<key>.md, so a fragment used by several skills (e.g. the "Tracker
-# Configuration" preamble to-issues/to-prd/upgrade-deps/crew-address-findings all used to
+# Configuration" preamble to-issues/to-prd/upgrade-deps all used to
 # copy-paste independently) has exactly one source instead of one per skill.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
@@ -65,7 +65,7 @@ setup() {
   # place that says how; a skill whose rendered section differed would be saying it twice.
   local expected
   expected=$(cat "$REPO_ROOT/skills/_shared/fragments/tracker-configuration.md")
-  for skill in to-issues to-prd crew-address-findings upgrade-deps solve-issue; do
+  for skill in to-issues to-prd upgrade-deps solve-issue; do
     run bash "$RENDER" "$skill" claude
     [ "$status" -eq 0 ]
     local actual
@@ -79,8 +79,8 @@ setup() {
   done
 }
 
-@test "to-issues, to-prd, upgrade-deps and crew-address-findings all render the shared tracker-configuration fragment, for every platform" {
-  for skill in to-issues to-prd upgrade-deps crew-address-findings; do
+@test "to-issues, to-prd and upgrade-deps all render the shared tracker-configuration fragment, for every platform" {
+  for skill in to-issues to-prd upgrade-deps; do
     for p in "${PLATFORMS[@]}"; do
       run bash "$RENDER" "$skill" "$p"
       [ "$status" -eq 0 ] || { echo "$skill/$p failed to render: $output" >&2; return 1; }
