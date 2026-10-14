@@ -291,6 +291,19 @@ land_ready() {
   [ "$(git branch --show-current)" = feature/feat ]
 }
 
+@test "start with an unreachable origin, or a branch it cannot create, exits 1 and writes a stopped outcome" {
+  git remote set-url origin "$TEMP_DIR/missing.git"
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$(cat .solve-feature/outcome)" == "stopped: start failed: git fetch origin failed"* ]]
+  git remote set-url origin "$TEMP_DIR/origin.git"
+  chmod -w "$TEMP_DIR/origin.git/refs/heads"
+  run bash "$SCRIPT" start feat
+  chmod +w "$TEMP_DIR/origin.git/refs/heads"
+  [ "$status" -eq 1 ]
+  [[ "$(cat .solve-feature/outcome)" == "stopped: start failed: cannot check out or push feature/feat"* ]]
+}
+
 @test "start --branch naming the default branch exits 1 naming it" {
   git checkout -q -b topic
   run bash "$SCRIPT" start feat --branch main

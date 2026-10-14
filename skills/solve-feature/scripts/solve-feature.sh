@@ -83,7 +83,7 @@ start() {
   grep -qxF "$SLUG" <<<"$features" || die "no feature '$SLUG'; features: $(paste -sd' ' - <<<"$features")"
   # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase
   # an existing one: a re-run lands on it as the last run left it.
-  git fetch -q origin
+  git fetch -q origin || die "git fetch origin failed (see above)"
   local default cfg="$ROOT/.coding-crew/config.json"
   default=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
   default=${default:-main}
@@ -91,7 +91,8 @@ start() {
   BRANCH=${BRANCH:-feature/$SLUG}
   if git show-ref --verify -q "refs/heads/$BRANCH"; then git checkout -q "$BRANCH"
   elif git show-ref --verify -q "refs/remotes/origin/$BRANCH"; then git checkout -q -t "origin/$BRANCH"
-  else git checkout -q -b "$BRANCH" "origin/$default" && git push -q -u origin "$BRANCH"; fi
+  else git checkout -q -b "$BRANCH" "origin/$default" && git push -q -u origin "$BRANCH"
+  fi || die "cannot check out or push $BRANCH (see above)"
   write_spec
   pr_view
   echo "branch=$BRANCH"

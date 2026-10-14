@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature / solve-issue**: a run whose `git fetch`, branch checkout or first push fails at `start` now
+  writes `stopped: start failed: …` to `.solve-feature/outcome` instead of exiting with none, so `crew-afk status`
+  and a host waiting on the file see it end. In a crew-afk worktree, solve-issue's preflight finds the
+  `.scratch/…` issue in the main checkout again, so the coder gets the feature's PRD and the Blocked-by and
+  Requires checks run (#488).
 - **install / crew-afk**: `.coding-crew/manifest.json` records every platform installed into a root
   (`platforms`), and `install.sh --update` reinstalls for each, so updating a root that holds both a claude and
   a codex install no longer leaves only the last one. `crew-afk status` reports only worktrees it dispatched
