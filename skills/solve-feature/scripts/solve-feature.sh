@@ -136,7 +136,7 @@ pr_body() { # <ref> <ref-slug> <existing body> — the whole body, the block reb
   if [[ "$old" == *"$BEGIN"* && "$old" == *"$END"* ]]; then
     before=$(awk -v b="$BEGIN" '$0 == b {exit} {print}' <<<"$old")
     after=$(awk -v e="$END" 'f {print} $0 == e {f = 1}' <<<"$old")
-    old_sections=$(awk -v b="$BEGIN" '$0 == b {blk = 1} blk && /^<details><summary>Spec/ {d = 1} d && /^### / {s = 1} blk && /^<\/details>$/ {s = 0; d = 0; blk = 0} s' <<<"$old")
+    old_sections=$(awk -v b="$BEGIN" '$0 == b {blk = 1} blk && /^### / {s = 1} blk && /^<\/details>$/ {s = 0; blk = 0} s' <<<"$old")
   else before="$old" after=""; fi
   sections="$old_sections"
   if [ -n "$1" ] && [[ "$old_sections" != *"### $1 — "* ]]; then
