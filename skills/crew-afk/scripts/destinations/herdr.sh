@@ -12,7 +12,7 @@ prepare() { # <slug> <base-branch>
   echo "$wt"
 }
 
-launch() { # <worktree> <argv…>; argv[0] is the agent herdr starts
+launch() { # <worktree> <argv…>
   local wt="$1" out workspace pane
   shift
   # worktree open returns the workspace already open on it, so a re-run lands beside the last one.
@@ -22,5 +22,7 @@ launch() { # <worktree> <argv…>; argv[0] is the agent herdr starts
   out=$(herdr tab create --workspace "$workspace" --cwd "$wt" --label "$SLUG" --no-focus) || die "herdr tab create failed"
   pane=$(jq -r '.result.root_pane.pane_id // empty' <<<"$out")
   [ -n "$pane" ] || die "herdr tab create named no pane: $out"
-  herdr agent start "$SLUG" --kind "$1" --pane "$pane" -- "${@:2}" >/dev/null || die "herdr agent start failed"
+  # Typed into the pane's shell, as orca's --command is, so the argv goes in quoted: `herdr agent start` waits
+  # for an agent ready for input, and one given a prompt starts working instead, so it times out.
+  herdr pane run "$pane" "$(printf '%q ' "$@")" >/dev/null || die "herdr pane run failed"
 }

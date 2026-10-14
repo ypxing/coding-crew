@@ -236,7 +236,9 @@ SH
   [ "$(field worktree)" = "$WT" ]
   [ -z "$(field pid)" ] && [ -z "$(field session)" ]
   grep -qxF "worktree create --cwd $MAIN --branch crew-afk/report-cli --base main --path $WT --label report-cli --no-focus" "$T/herdr-calls"
-  grep -qxF "agent start report-cli --kind claude --pane p1 -- --dangerously-skip-permissions /solve-feature report-cli" "$T/herdr-calls"
+  # Typed into the pane's shell: `agent start` waits for an idle agent, which one given a prompt never is.
+  grep -qxF 'pane run p1 claude --dangerously-skip-permissions /solve-feature\ report-cli ' "$T/herdr-calls"
+  ! grep -q '^agent start' "$T/herdr-calls"
   [ ! -f "$T/timeout-argv" ]
   run bash "$SCRIPT" status report-cli
   [ "$output" = "report-cli: no outcome yet — herdr run, see its terminal" ]
