@@ -78,3 +78,46 @@ field() { sed -n "s/^$1=//p" <<<"$output"; }
   [ "$(cat "$WT/.solve-feature/run.dest")" = local ]
   [ -z "$(git -C "$WT" status --porcelain)" ]
 }
+
+wait_run() { # <worktree> — release the stub, then wait for the run's pid to exit
+  touch "$T/release"
+  local pid; pid=$(cat "$1/.solve-feature/run.pid")
+  for _ in $(seq 1 100); do kill -0 "$pid" 2>/dev/null || return 0; sleep 0.1; done
+  return 1
+}
+
+@test "a second dispatch for the slug reuses its worktree" {
+  bash "$SCRIPT" dispatch report-cli --agent claude >/dev/null
+  wait_run "$WT"
+  echo kept > "$WT/untracked.txt"
+  rm -f "$T/release"
+  run bash "$SCRIPT" dispatch report-cli --agent claude
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(field worktree)" = "$WT" ]
+  [ -f "$WT/untracked.txt" ]
+  [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 2 ]
+}
+
+@test "a dispatch while the slug's run is live exits 1 naming the pid and starts nothing" {
+  bash "$SCRIPT" dispatch report-cli --agent claude >/dev/null
+  pid=$(cat "$WT/.solve-feature/run.pid")
+  for _ in $(seq 1 50); do [ -f "$T/claude-argv" ] && break; sleep 0.1; done
+  rm -f "$T/claude-argv"
+  run bash "$SCRIPT" dispatch report-cli --agent claude
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"a run for report-cli is still going (pid $pid)"* ]]
+  [ "$(cat "$WT/.solve-feature/run.pid")" = "$pid" ]
+  sleep 0.3
+  [ ! -f "$T/claude-argv" ]
+}
+
+@test "an invalid slug, an unknown --agent or an unknown --to exits 2 and creates nothing" {
+  local args
+  for args in "../x --agent claude" "report-cli --agent nope" "report-cli --agent claude --to mars" "report-cli"; do
+    run bash "$SCRIPT" dispatch $args
+    [ "$status" -eq 2 ] || { echo "$args: $output"; return 1; }
+    [[ "$output" == *crew-afk:* ]]
+  done
+  [ ! -e "$T/app-worktrees" ]
+  [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 1 ]
+}
