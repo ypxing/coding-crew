@@ -86,9 +86,10 @@ review() {
 
 # --- prepare -------------------------------------------------------------------------------
 
-@test "prepare writes the spec, the diff and the prompt naming them, the questions and the report; prints prompt= and reviewer-model=" {
+@test "prepare writes the spec, the diff, the reviewed head and the prompt naming them, the questions and the report; prints prompt= and reviewer-model=" {
   run bash "$SCRIPT" prepare 9
   [ "$status" -eq 0 ]
+  [ "$(cat .solve-feature/pr-9.reviewed-head)" = "$HEAD_OID" ]
   [ "$output" = "$(printf 'prompt=%s\nreviewer-model=' "$WORK/.solve-feature/pr-9.prompt.md")" ]
   prompt=$(cat .solve-feature/pr-9.prompt.md)
   [ "$(head -1 <<<"$prompt")" = "Review PR #9 (https://github.com/o/r/pull/9), checked out at HEAD, against its spec." ]

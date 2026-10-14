@@ -493,7 +493,7 @@ branch forks from the local default branch, wherever the main checkout is.
 
 ### PR rework with GitHub Actions (optional)
 
-Not installed by default. Without it, run `/address-pr-comments` yourself on the PR. On a crew-afk PR it pushes its fix commit itself once `solve-issue`'s checks pass (a plain `git push`, never forced; a failing check stops it with the output, unpushed), and when the PR's `<!-- crew-afk:draft … -->` marker names only `findings` and every posted finding was handled, it ends with `once CI is green: gh pr ready <n>` — it never marks the PR ready or waits on CI itself. On a solve-feature PR it pushes the same way and ends with `next: /review-pr <n>`, since `review-pr` is what re-reviews the branch and marks the draft ready. On any other PR it does not push.
+Not installed by default. Without it, run `/address-pr-comments` yourself on the PR. On a crew-afk PR it pushes its fix commit itself once `solve-issue`'s checks pass (a plain `git push`, never forced; a failing check stops it with the output, unpushed), and when the PR's `<!-- crew-afk:draft … -->` marker names only `findings` and every posted finding was handled, it ends with `once CI is green: gh pr ready <n>` — it never marks the PR ready or waits on CI itself. On a solve-feature PR it pushes the same way and suggests no next step: the run already reviewed the PR, fixed its findings and, in its fix step, marked the draft ready unless something needs a person. On any other PR it does not push.
 
 With it, reviewers comment on a PR labelled `crew-rework` as usual; the `crew-rework` GitHub
 Action runs `/address-pr-comments --auto`, which fixes what is sensible, pushes, and replies on
@@ -539,10 +539,11 @@ label a feature's root issue `solve-feature` or run the workflow by hand with th
 header is the setup.
 
 The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all-tools
---no-color`; the Copilot CLI runs each coder and the reviewer as its own subagents. A stop exits the
-session without failing it, so the job's last step fails it unless `review-pr.sh post` wrote
-`.solve-feature/reviewed` at the end of the run: on any stop a script recorded (the reason is in
-`.solve-feature/stopped`), and on a session that ended before the review for any other reason.
+--no-color`; the Copilot CLI runs each coder, the reviewer and the fixer as its own subagents. A stop
+exits the session without failing it, so the job's last step fails it unless the run's fix step
+(`solve-feature.sh fix`) wrote `.solve-feature/reviewed` at the end of the run: on any stop a script
+recorded (the reason is in `.solve-feature/stopped`), and on a session that ended before the fix step
+for any other reason.
 
 ---
 
