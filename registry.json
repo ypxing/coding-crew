@@ -8,7 +8,8 @@
         "dep-install",
         "crew-review",
         "tdd",
-        "write-pr"
+        "write-pr",
+        "setup-coding-crew"
       ],
       "libs": [
         "checks",
@@ -135,6 +136,17 @@
       "source-dir": "configure-tracker",
       "description": "Choose where the project's issues live: local markdown files or GitHub Issues.",
       "libs": [
+        "tracker"
+      ]
+    },
+    "setup-coding-crew": {
+      "source-dir": "setup-coding-crew",
+      "description": "Take a repo from a fresh install to a working /solve-feature: the tracker (through configure-tracker), the check commands and, with the github tracker, the solve-feature Actions workflow and its label; then print the commit line.",
+      "deps": [
+        "configure-tracker"
+      ],
+      "libs": [
+        "checks",
         "tracker"
       ]
     },

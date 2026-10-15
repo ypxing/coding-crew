@@ -101,6 +101,7 @@ Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to t
 | `/add-tests`             | Find risky untested code and plan tests for it             |
 | `/upgrade-deps`          | Audit outdated packages and plan safe upgrades             |
 | `/write-pr`              | Write a PR description a reviewer can act on               |
+| `/setup-coding-crew`     | Set up tracker, checks and the optional Actions workflow   |
 | `/configure-tracker`     | Choose local markdown or GitHub Issues                     |
 
 ## Learn more

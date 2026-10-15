@@ -2,10 +2,10 @@ name: solve-feature
 
 # Runs one feature's issues unattended with the Copilot CLI, billed to GitHub Copilot: no API key.
 #
-# Setup: copy this file to .github/workflows/ in your repo (install.sh never writes there), then label the
-# feature's root issue `solve-feature`, or run the workflow by hand with the slug. Each run discovers the checks
-# and the install mode in its fresh clone; to pin them, copy a clone's .git/coding-crew/dev-commands.json to
-# .coding-crew/dev-commands.json and commit it.
+# Setup: run /setup-coding-crew, which copies this file to .github/workflows/solve-feature.yml (install.sh never
+# writes there), creates the `solve-feature` label and saves the check commands to .coding-crew/dev-commands.json;
+# commit what it lists. Then label the feature's root issue `solve-feature`, or run the workflow by hand with the
+# slug. A run whose fresh clone has no committed dev-commands.json discovers the checks itself.
 #
 # The slug for the label trigger is the root issue's `Feature: <slug>` line, which the GitHub
 # tracker writes on every root issue; labelling any other issue fails the slug step.

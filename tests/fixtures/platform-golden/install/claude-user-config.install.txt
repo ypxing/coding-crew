@@ -31,7 +31,7 @@ HOME/.coding-crew/lib/tracker/github.mjs exec=0
 HOME/.coding-crew/lib/tracker/index.mjs exec=0
 HOME/.coding-crew/lib/tracker/local.mjs exec=0
 HOME/.coding-crew/lib/tracker/tracker-config.mjs exec=0
-HOME/.coding-crew/manifest.json 0e946fcd1ec27c018adf40fedda045188f30a225
+HOME/.coding-crew/manifest.json 6dde66a176fa1ae41891723549ec00adc6d5ac1c
 CONFIG/skills/ /
 CONFIG/skills/add-tests/ /
 CONFIG/skills/add-tests/SKILL.md exec=0 unrendered=0
@@ -84,10 +84,15 @@ CONFIG/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 CONFIG/skills/domain-modeling/references/ /
 CONFIG/skills/domain-modeling/references/adr-format.md exec=0
 CONFIG/skills/domain-modeling/references/context-format.md exec=0
+CONFIG/skills/setup-coding-crew/ /
+CONFIG/skills/setup-coding-crew/SKILL.md exec=0 unrendered=0
+CONFIG/skills/setup-coding-crew/hosts/ /
+CONFIG/skills/setup-coding-crew/hosts/github-actions.yml exec=0
+CONFIG/skills/setup-coding-crew/scripts/ /
+CONFIG/skills/setup-coding-crew/scripts/checks link=HOME/.coding-crew/lib/checks
+CONFIG/skills/setup-coding-crew/scripts/tracker link=HOME/.coding-crew/lib/tracker
 CONFIG/skills/solve-feature/ /
 CONFIG/skills/solve-feature/SKILL.md exec=0 unrendered=0
-CONFIG/skills/solve-feature/hosts/ /
-CONFIG/skills/solve-feature/hosts/github-actions.yml exec=0
 CONFIG/skills/solve-feature/scripts/ /
 CONFIG/skills/solve-feature/scripts/checks link=HOME/.coding-crew/lib/checks
 CONFIG/skills/solve-feature/scripts/solve-feature.sh exec=0
