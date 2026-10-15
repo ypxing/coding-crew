@@ -31,8 +31,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   local tracker now writes `.scratch/.gitignore` (`*`) when it writes under `.scratch/`, so a consuming repo's tree
   stays clean after publishing; an existing one is left alone (#502).
 - **solve-issue / solve-feature / crew-review / tracker**: a coder that stops short (`partial`, or `blocked` with
-  changes) commits its work as `[WIP]` and leaves the tree clean, so solve-feature's `land` names its report
-  instead of stopping on "working tree left dirty"; `mark-done --force` is only for a descope a person approved,
+  changes) commits its work as `[WIP]`, so solve-feature's `land` names its report, and its "working tree left
+  dirty" stop names the report too when a check rewrote files the coder left for a person; `mark-done --force` is only for a descope a person approved,
   and the CLI's exit-4 message no longer suggests it. solve-issue finds `PROJECT_ROOT` itself when its caller
   sets none, commits there, and reads a GitHub issue's `PRD: #<n>`; its preflight stops when the checks library
   is not linked and no longer prints `DEP_SCRIPTS`. crew-review's report field `prd` is renamed `spec`

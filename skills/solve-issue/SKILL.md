@@ -31,8 +31,9 @@ the words, not the wire format:
   asks for (helpers, wiring, config) is still coding, and in scope. A `blocked` run that changed files
   commits them with a `[WIP]` marker too (Step 6).
 
-Every outcome but `complete` leaves the tree clean and the issue open: what a caller checks next is the
-branch's commits and the tracker, not your working directory.
+Every outcome but `complete` commits your own changes and leaves the issue open: what a caller checks next
+is the branch's commits and the tracker, not your working directory. The one exception is files a check
+rewrote that this change didn't touch (Step 5), left uncommitted for a human.
 
 When you stop on a blocker, always output:
 

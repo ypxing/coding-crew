@@ -451,6 +451,10 @@ stops_at() {
   run bash "$SCRIPT" land feat 2 feature/feat
   stops_at solve "working tree left dirty"
   [ ! -f "$STATE/checks.log" ]
+  # solve-issue's blocked on a check that rewrote untouched files leaves them for a human, and says why.
+  echo "blocked: lint: modified files: dirt.txt" > .solve-feature/coder.report.md
+  run bash "$SCRIPT" land feat 2 feature/feat
+  stops_at solve "working tree left dirty; why: $WORK/.solve-feature/coder.report.md"
 }
 
 @test "land after a coder committed [WIP] and left its issue open exits 1 'did not close' naming the coder's report, before the checks" {
