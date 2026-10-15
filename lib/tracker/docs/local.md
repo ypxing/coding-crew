@@ -101,7 +101,7 @@ The agents speak in terms of six canonical triage labels, each the `Status:` lin
 
 ## Workspace
 
-Each feature slug maps to a directory under `.scratch/`:
+Each feature slug maps to a directory under `.scratch/`. Whenever the tracker CLI writes there, it creates `.scratch/.gitignore` holding `*` if none exists, so issue files never dirty the repo's tree; an existing one is left as it is.
 
 ```
 .scratch/<feature-slug>/
