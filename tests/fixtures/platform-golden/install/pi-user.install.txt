@@ -31,7 +31,7 @@ HOME/.coding-crew/lib/tracker/github.mjs exec=0
 HOME/.coding-crew/lib/tracker/index.mjs exec=0
 HOME/.coding-crew/lib/tracker/local.mjs exec=0
 HOME/.coding-crew/lib/tracker/tracker-config.mjs exec=0
-HOME/.coding-crew/manifest.json f3b7f9343c4e2bb8000a56551281c81236caa74c
+HOME/.coding-crew/manifest.json b442894601905f6f07a0a430cd9ef42c6bfb9ad3
 HOME/.pi/ /
 HOME/.pi/agent/ /
 HOME/.pi/agent/skills/ /
@@ -86,10 +86,15 @@ HOME/.pi/agent/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/domain-modeling/references/ /
 HOME/.pi/agent/skills/domain-modeling/references/adr-format.md exec=0
 HOME/.pi/agent/skills/domain-modeling/references/context-format.md exec=0
+HOME/.pi/agent/skills/setup-coding-crew/ /
+HOME/.pi/agent/skills/setup-coding-crew/SKILL.md exec=0 unrendered=0
+HOME/.pi/agent/skills/setup-coding-crew/hosts/ /
+HOME/.pi/agent/skills/setup-coding-crew/hosts/github-actions.yml exec=0
+HOME/.pi/agent/skills/setup-coding-crew/scripts/ /
+HOME/.pi/agent/skills/setup-coding-crew/scripts/checks link=HOME/.coding-crew/lib/checks
+HOME/.pi/agent/skills/setup-coding-crew/scripts/tracker link=HOME/.coding-crew/lib/tracker
 HOME/.pi/agent/skills/solve-feature/ /
 HOME/.pi/agent/skills/solve-feature/SKILL.md exec=0 unrendered=0
-HOME/.pi/agent/skills/solve-feature/hosts/ /
-HOME/.pi/agent/skills/solve-feature/hosts/github-actions.yml exec=0
 HOME/.pi/agent/skills/solve-feature/scripts/ /
 HOME/.pi/agent/skills/solve-feature/scripts/checks link=HOME/.coding-crew/lib/checks
 HOME/.pi/agent/skills/solve-feature/scripts/solve-feature.sh exec=0

@@ -51,10 +51,15 @@ HOME/.claude/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/domain-modeling/references/ /
 HOME/.claude/skills/domain-modeling/references/adr-format.md exec=0
 HOME/.claude/skills/domain-modeling/references/context-format.md exec=0
+HOME/.claude/skills/setup-coding-crew/ /
+HOME/.claude/skills/setup-coding-crew/SKILL.md exec=0 unrendered=0
+HOME/.claude/skills/setup-coding-crew/hosts/ /
+HOME/.claude/skills/setup-coding-crew/hosts/github-actions.yml exec=0
+HOME/.claude/skills/setup-coding-crew/scripts/ /
+HOME/.claude/skills/setup-coding-crew/scripts/checks link=HOME/.coding-crew/lib/checks
+HOME/.claude/skills/setup-coding-crew/scripts/tracker link=HOME/.coding-crew/lib/tracker
 HOME/.claude/skills/solve-feature/ /
 HOME/.claude/skills/solve-feature/SKILL.md exec=0 unrendered=0
-HOME/.claude/skills/solve-feature/hosts/ /
-HOME/.claude/skills/solve-feature/hosts/github-actions.yml exec=0
 HOME/.claude/skills/solve-feature/scripts/ /
 HOME/.claude/skills/solve-feature/scripts/checks link=HOME/.coding-crew/lib/checks
 HOME/.claude/skills/solve-feature/scripts/solve-feature.sh exec=0
@@ -130,4 +135,4 @@ HOME/.coding-crew/lib/tracker/github.mjs exec=0
 HOME/.coding-crew/lib/tracker/index.mjs exec=0
 HOME/.coding-crew/lib/tracker/local.mjs exec=0
 HOME/.coding-crew/lib/tracker/tracker-config.mjs exec=0
-HOME/.coding-crew/manifest.json 0e946fcd1ec27c018adf40fedda045188f30a225
+HOME/.coding-crew/manifest.json 6dde66a176fa1ae41891723549ec00adc6d5ac1c

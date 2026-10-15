@@ -422,11 +422,12 @@ pushes as the App.
 ### solve-feature on GitHub Actions (optional)
 
 `/solve-feature` runs one feature from a terminal or a worktree pane. To run it on a GitHub runner
-instead, on the Copilot CLI and billed to GitHub Copilot (no API key), copy
-[`hosts/github-actions.yml`](../skills/solve-feature/hosts/github-actions.yml) — installed in
-the solve-feature skill's directory, e.g. `.claude/skills/solve-feature/hosts/github-actions.yml` — to `.github/workflows/` and commit it, then
-label a feature's root issue `solve-feature` or run the workflow by hand with the slug. The file's
-header is the setup.
+instead, on the Copilot CLI and billed to GitHub Copilot (no API key), run `/setup-coding-crew` with the
+github tracker and answer yes to its Actions step: it copies
+[`hosts/github-actions.yml`](../skills/setup-coding-crew/hosts/github-actions.yml) to
+`.github/workflows/solve-feature.yml`, creates the `solve-feature` label and prints the commit line for it.
+Commit, then label a feature's root issue `solve-feature` or run the workflow by hand with the slug. The
+file's header explains billing.
 
 The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all-tools
 --no-color`; the Copilot CLI runs each coder, the reviewer, the fixer and the PR's writer as its own subagents. A stop
@@ -470,9 +471,9 @@ command and its install mode (`install_mode`: `host` or `docker`, with `docker_s
 `/solve-issue` or `/solve-feature` coder discovers the checks and, in a repo with a compose file, the
 mode; `/dep-install` discovers the mode too, and shows you its answer to change first. They are
 written to `.git/coding-crew/dev-commands.json`: outside every working tree, shared by all worktrees
-of the clone, never committed. To share them with your team or CI, copy that file to
-`.coding-crew/dev-commands.json` and commit it: a tracked file there wins, and later discoveries update
-it. The installed tooling beside them (`lib/`, `manifest.json`) is what `install.sh` writes, not team
+of the clone, never committed. To share them with your team or CI, run `/setup-coding-crew`: it saves them to
+`.coding-crew/dev-commands.json` and prints the commit line. A tracked file there wins, and later discoveries
+update it. The installed tooling beside them (`lib/`, `manifest.json`) is what `install.sh` writes, not team
 state.
 
 ---

@@ -31,7 +31,7 @@ REPO/.coding-crew/lib/tracker/github.mjs exec=0
 REPO/.coding-crew/lib/tracker/index.mjs exec=0
 REPO/.coding-crew/lib/tracker/local.mjs exec=0
 REPO/.coding-crew/lib/tracker/tracker-config.mjs exec=0
-REPO/.coding-crew/manifest.json 57f1944e4780ee432cc317937da5415a19fe7d1e
+REPO/.coding-crew/manifest.json 974e7366bc1e06f025b067c15db89214f208915a
 REPO/.github/ /
 REPO/.github/skills/ /
 REPO/.github/skills/add-tests/ /
@@ -85,10 +85,15 @@ REPO/.github/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/domain-modeling/references/ /
 REPO/.github/skills/domain-modeling/references/adr-format.md exec=0
 REPO/.github/skills/domain-modeling/references/context-format.md exec=0
+REPO/.github/skills/setup-coding-crew/ /
+REPO/.github/skills/setup-coding-crew/SKILL.md exec=0 unrendered=0
+REPO/.github/skills/setup-coding-crew/hosts/ /
+REPO/.github/skills/setup-coding-crew/hosts/github-actions.yml exec=0
+REPO/.github/skills/setup-coding-crew/scripts/ /
+REPO/.github/skills/setup-coding-crew/scripts/checks link=../../../../.coding-crew/lib/checks
+REPO/.github/skills/setup-coding-crew/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.github/skills/solve-feature/ /
 REPO/.github/skills/solve-feature/SKILL.md exec=0 unrendered=0
-REPO/.github/skills/solve-feature/hosts/ /
-REPO/.github/skills/solve-feature/hosts/github-actions.yml exec=0
 REPO/.github/skills/solve-feature/scripts/ /
 REPO/.github/skills/solve-feature/scripts/checks link=../../../../.coding-crew/lib/checks
 REPO/.github/skills/solve-feature/scripts/solve-feature.sh exec=0

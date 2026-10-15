@@ -31,7 +31,7 @@ HOME/.coding-crew/lib/tracker/github.mjs exec=0
 HOME/.coding-crew/lib/tracker/index.mjs exec=0
 HOME/.coding-crew/lib/tracker/local.mjs exec=0
 HOME/.coding-crew/lib/tracker/tracker-config.mjs exec=0
-HOME/.coding-crew/manifest.json 57f1944e4780ee432cc317937da5415a19fe7d1e
+HOME/.coding-crew/manifest.json 974e7366bc1e06f025b067c15db89214f208915a
 HOME/.copilot/ /
 HOME/.copilot/skills/ /
 HOME/.copilot/skills/add-tests/ /
@@ -85,10 +85,15 @@ HOME/.copilot/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 HOME/.copilot/skills/domain-modeling/references/ /
 HOME/.copilot/skills/domain-modeling/references/adr-format.md exec=0
 HOME/.copilot/skills/domain-modeling/references/context-format.md exec=0
+HOME/.copilot/skills/setup-coding-crew/ /
+HOME/.copilot/skills/setup-coding-crew/SKILL.md exec=0 unrendered=0
+HOME/.copilot/skills/setup-coding-crew/hosts/ /
+HOME/.copilot/skills/setup-coding-crew/hosts/github-actions.yml exec=0
+HOME/.copilot/skills/setup-coding-crew/scripts/ /
+HOME/.copilot/skills/setup-coding-crew/scripts/checks link=HOME/.coding-crew/lib/checks
+HOME/.copilot/skills/setup-coding-crew/scripts/tracker link=HOME/.coding-crew/lib/tracker
 HOME/.copilot/skills/solve-feature/ /
 HOME/.copilot/skills/solve-feature/SKILL.md exec=0 unrendered=0
-HOME/.copilot/skills/solve-feature/hosts/ /
-HOME/.copilot/skills/solve-feature/hosts/github-actions.yml exec=0
 HOME/.copilot/skills/solve-feature/scripts/ /
 HOME/.copilot/skills/solve-feature/scripts/checks link=HOME/.coding-crew/lib/checks
 HOME/.copilot/skills/solve-feature/scripts/solve-feature.sh exec=0
