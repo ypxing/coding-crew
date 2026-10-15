@@ -11,7 +11,8 @@
 #                                   open the draft PR if the branch has none; prints pr=<n>
 #   fix <slug> <pr> <branch>        the review report is there and the checks pass on the fixer's tree: commit it,
 #                                   push, and write what needs a person to pr-<pr>.attention.md; last stdout line
-#                                   `FIX: findings=<k> needs-attention=<a>`
+#                                   `FIX: findings=<k> needs-attention=<a> review-again=yes|no`, yes when a
+#                                   CRITICAL/HIGH/MEDIUM finding was there and HEAD moved past the PR's head
 #   describe <slug> <pr>            write the PR's whole body and title, mark the draft ready when nothing needs a
 #                                   person, then write the outcome
 # .solve-feature/outcome holds the run's result in one line: `ready pr=<n>`, `needs-attention pr=<n>` or
@@ -169,7 +170,7 @@ land() {
 # The fixer's edits are staged before the checks and committed after, so the push carries exactly what was gated.
 fix() {
   local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.md" clog="$LOGS/pr-$PR.checks.log"
-  local head_oid prd rc=0 total attention=""
+  local head_oid prd rc=0 total severe moved=no again=no attention=""
   checks_lib
   head_oid=$(gh pr view "$PR" --json headRefOid | jq -r '.headRefOid // empty') || die "gh pr view $PR failed"
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop fix "branch changed to '$(git branch --show-current)'"
@@ -177,6 +178,8 @@ fix() {
   prd=$(jq -r '.prd // empty' "$report" 2>/dev/null) || stop fix "unreadable review report $report"
   jq -e '.gaps // [] | type == "array"' "$report" >/dev/null || stop fix "the review report's gaps is not a list: $report"
   total=$(jq '.findings // [] | length' "$report")
+  # crew-review's own severity field; a missing or unknown one is not severe.
+  severe=$(jq '[.findings // [] | .[]? | select(.severity? | IN("CRITICAL", "HIGH", "MEDIUM"))] | length' "$report")
   # Staged before the checks, so run-checks.sh's modified-files test also sees a check rewrite a file the fixer changed.
   git add -A
   bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
@@ -185,17 +188,20 @@ fix() {
   git diff --cached --quiet || git commit -q -m "Fix the review's findings on PR #$PR"
   git push -q -u origin "$BRANCH" || stop fix "git push failed; once it can push, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
 
+  # "Changed nothing" is HEAD still at the PR's head, which is why the stops say to commit, not push, before a re-run.
+  [ "$(git rev-parse HEAD)" = "$head_oid" ] || moved=yes
   # Needs a person: the reviewer's gaps, an unmet spec, each line the fixer left in unfixed.md, and a fixer that
-  # changed nothing without saying why (it crashed or gave up). "Changed nothing" is HEAD still at the PR's head,
-  # which is why the stops say to commit, not push, before a re-run.
+  # changed nothing without saying why (it crashed or gave up).
   attention=$(jq -r '.gaps // [] | .[] | tostring' "$report")
   [ "$prd" = met ] || attention+=$'\n'"the reviewer found the spec unmet"
   [ ! -f "$unfixed" ] || attention+=$'\n'"$(cat "$unfixed")"
-  [ "$total" = 0 ] || [ "$(git rev-parse HEAD)" != "$head_oid" ] || [ -s "$unfixed" ] || attention+=$'\n'"the fixer changed nothing"
+  [ "$total" = 0 ] || [ "$moved" = yes ] || [ -s "$unfixed" ] || attention+=$'\n'"the fixer changed nothing"
+  # Fixes to a CRITICAL/HIGH/MEDIUM finding are worth reviewing again; SKILL.md caps that at one re-review.
+  [ "$severe" = 0 ] || [ "$moved" = no ] || again=yes
   rm -f "$unfixed"
   # describe reads it: an empty file is a review with nothing needing a person.
   grep -v '^[[:space:]]*$' <<<"$attention" >"$LOGS/pr-$PR.attention.md" || true
-  echo "FIX: findings=$total needs-attention=$(grep -c . "$LOGS/pr-$PR.attention.md" || true)"
+  echo "FIX: findings=$total needs-attention=$(grep -c . "$LOGS/pr-$PR.attention.md" || true) review-again=$again"
 }
 
 # The whole body, written once at the end. Readiness and the outcome come after it, so a failed write never leaves a

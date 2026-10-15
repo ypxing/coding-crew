@@ -73,7 +73,7 @@ field() { sed -n "s/^$1=//p" <<<"$output"; }
   [ -L "$WT/node_modules" ] && [ "$(readlink "$WT/node_modules")" = "$MAIN/node_modules" ]
   [ -f "$WT/.env" ] && [ ! -L "$WT/.env" ]
   for _ in $(seq 1 50); do [ -f "$T/claude-argv" ] && break; sleep 0.1; done
-  [ "$(cat "$T/timeout-argv")" = "1h claude -p /solve-feature report-cli --output-format json --session-id $session --max-budget-usd 10 --dangerously-skip-permissions" ]
+  [ "$(cat "$T/timeout-argv")" = "1h claude -p /solve-feature report-cli --output-format json --session-id $session --dangerously-skip-permissions" ]
   [ "$(cat "$T/claude-cwd")" = "$WT" ]
   [ "$(cat "$WT/.solve-feature/run.session")" = "$session" ]
   [ "$(cat "$WT/.solve-feature/run.dest")" = local ]
@@ -85,7 +85,7 @@ field() { sed -n "s/^$1=//p" <<<"$output"; }
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   session=$(field session)
   for _ in $(seq 1 50); do [ -f "$T/claude-argv" ] && break; sleep 0.1; done
-  [ "$(cat "$T/timeout-argv")" = "1h claude -p /solve-feature report-cli --branch feature/SPK-12-report-cli --output-format json --session-id $session --max-budget-usd 10 --dangerously-skip-permissions" ]
+  [ "$(cat "$T/timeout-argv")" = "1h claude -p /solve-feature report-cli --branch feature/SPK-12-report-cli --output-format json --session-id $session --dangerously-skip-permissions" ]
   wait_run "$WT"
   run bash "$SCRIPT" status report-cli
   [[ "${lines[0]}" == *"re-run /crew-afk report-cli --branch feature/SPK-12-report-cli to continue" ]]
@@ -281,4 +281,10 @@ SH
     [ "$(env -i PATH="$PATH" bash --norc -c 'source "$1"; declare -F' _ "$f" | awk '{print $3}' | sort | paste -sd' ' -)" = "launch prepare" ] || { echo "$f"; return 1; }
     [[ "$(env -i PATH="$PATH" bash --norc -c 'source "$1"; echo "$MODE"' _ "$f")" =~ ^(headless|interactive)$ ]] || { echo "$f"; return 1; }
   done
+}
+
+@test "no cost cap on any agent: crew-afk's SKILL.md, script, registry entry and the guide's local row name no budget" {
+  ! grep -niE 'budget|\$10' "$REPO_ROOT/skills/crew-afk/SKILL.md" "$REPO_ROOT/skills/crew-afk/scripts/crew-afk.sh" || false
+  ! jq -r '.skills."crew-afk".description' "$REPO_ROOT/registry.json" | grep -iE 'budget|\$10' || false
+  ! grep -E '^\| `local`' "$REPO_ROOT/docs/guide.md" | grep -iE 'budget|\$10' || false
 }

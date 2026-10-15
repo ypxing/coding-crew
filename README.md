@@ -49,7 +49,7 @@ flowchart LR
     subgraph away ["🤖 /crew-afk · while you're away"]
         coder["🧪 <b>Fresh coder per issue</b><br/>test-first"] --> gate{"🚦 <b>Your checks</b>"}
         gate -- "next issue" --> coder
-        gate -- "all issues pass" --> review["🔍 <b>Review the whole feature</b><br/>one fix round"]
+        gate -- "all issues pass" --> review["🔍 <b>Review the whole feature</b><br/>at most two fix rounds"]
     end
     review -- "nothing needs you" --> ready(["✅ <b>PR marked ready</b>"])
     review -- "something does" --> needs(["🙋 <b>PR lists what needs you</b>"])
@@ -62,7 +62,8 @@ flowchart LR
    It hands each issue, in order, to a fresh coder on one branch. Each one has to pass
    your own checks and meet its acceptance criteria before it lands in the feature's draft PR.
 3. **Review.** A reviewer reads the whole feature against the plan and catches what no single issue
-   shows. The crew fixes the findings once, gated by your checks, and the run stops.
+   shows. The crew fixes the findings, gated by your checks, and reviews once more only when it fixed a
+   critical, high or medium one; after that second round the run stops.
 4. **Ship.** The PR is marked ready when nothing needs a person; otherwise it lists what does. You
    review one PR.
 
@@ -86,7 +87,7 @@ Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to t
 - ✅ **Test-first, always.** Every coder works red, green, refactor.
 - 🚦 **Nothing red merges.** Your own checks are the gate, not the model's opinion of its own work.
 - 🔍 **A reviewer that sees the whole feature.** It reviews against the plan, not one diff at a time.
-- 🔁 **Fixes itself without looping.** One fix round, gated by your checks, then it stops.
+- 🔁 **Fixes itself, within bounds.** At most two review rounds, the second only after it fixed a critical, high or medium finding, each fix gated by your checks; then it stops.
 - 🙋 **Only what needs you.** A PR it could not finish lists what needs a person; one it could is marked ready.
 - 🧩 **Agent-agnostic.** Plain skills any skills-capable coding CLI can run; Claude Code, Copilot CLI, Codex CLI and [pi](https://github.com/badlogic/pi-mono) are supported today. Issues stay as local markdown or in GitHub Issues.
 

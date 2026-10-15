@@ -2,7 +2,7 @@
 name: crew-afk
 description: >
   Starts one feature's /solve-feature run unattended in that feature's own worktree and returns at
-  once: locally as a detached headless agent capped at 1 hour (and $10 on claude), or as an interactive agent in
+  once: locally as a detached headless agent capped at 1 hour, or as an interactive agent in
   an orca terminal or a herdr pane. Reports how each run ended. Use when a feature's issues are ready
   and it should be built without anyone watching. Trigger with /crew-afk <feature> [--to local|orca|herdr] [--branch <name>],
   or /crew-afk status [<feature>].
