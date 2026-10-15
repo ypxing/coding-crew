@@ -38,6 +38,16 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   is not linked and no longer prints `DEP_SCRIPTS`. crew-review's report field `prd` is renamed `spec`
   (`met|unmet|none`) — update any script that reads a standalone `/crew-review` report. Every solve-feature stop
   line reads `stopped: <what> failed: <reason>`, a run with nothing landed included (#501).
+- **repo**: this repo runs solve-feature on GitHub Actions: `.github/workflows/solve-feature.yml` is the
+  setup-coding-crew template, so labelling a feature's root issue `solve-feature` (or dispatching the workflow with its
+  slug) builds it on a runner (#509).
+- **copilot-instructions** (this repo's dev guide for Copilot): lists all 17 skills, points the issue-tracker section at
+  the configured tracker and its CLI instead of hand-editing issue files, adds `source-dir` to the registry schema,
+  and summarises CLAUDE.md's working rules (tests, CHANGELOG, comments, layer ownership) (#508).
+- **setup-coding-crew**: the Actions workflow's billing comments say who pays with `github.token`: an
+  organisation-owned repo bills the organisation (under its "billed to the organization" policy), a personal repo
+  bills the owner's Copilot seat; a `COPILOT_GITHUB_TOKEN` PAT bills its owner's seat, and the old "Unverified" note
+  is gone (#507).
 - **solve-feature / crew-afk**: a run reviews its PR at most twice: `fix` ends `review-again=yes` when the review had
   a CRITICAL, HIGH or MEDIUM finding and the fixer changed something, and the run then reviews and fixes once more.
   crew-afk's local claude run drops its `$10` cap (`--max-budget-usd`), so every agent gets the same 1h limit (#497).
