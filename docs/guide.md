@@ -349,7 +349,8 @@ checks pass. Then it reviews the whole feature and fixes the findings, at most t
 only after fixing a CRITICAL, HIGH or MEDIUM finding. It writes the PR body and marks the draft PR ready
 when nothing needs a person. Run it where an unattended agent may change the
 checkout — a worktree or a container, not the one you work in. A stop names the step and how to
-recover; a re-run skips the issues already done and reuses the branch and the PR.
+recover; a re-run skips the issues already done and reuses the branch and the PR, merging the default
+branch into it first (a conflict stops the run for you to merge by hand).
 
 | Setting | Effect |
 | --- | --- |
