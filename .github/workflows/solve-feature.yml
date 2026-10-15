@@ -1,0 +1,136 @@
+name: solve-feature
+
+# Runs one feature's issues unattended with the Copilot CLI, billed to GitHub Copilot: no API key.
+#
+# Setup: run /setup-coding-crew, which copies this file to .github/workflows/solve-feature.yml (install.sh never
+# writes there), creates the `solve-feature` label and saves the check commands to .coding-crew/dev-commands.json;
+# commit what it lists. Then label the feature's root issue `solve-feature`, or run the workflow by hand with the
+# slug. A run whose fresh clone has no committed dev-commands.json discovers the checks itself.
+#
+# The slug for the label trigger is the root issue's `Feature: <slug>` line, which the GitHub
+# tracker writes on every root issue; labelling any other issue fails the slug step.
+# The label is not removed afterwards: the concurrency group makes a re-label wait for the run in
+# flight rather than start a second one on the same branch.
+#
+# The Copilot CLI runs the solve-feature skill, which runs each coder, the reviewer, the fixer and the
+# PR's writer as its own subagents. The review runs inside the same job, from the skill: a PR opened or marked ready
+# with the workflow's own GITHUB_TOKEN triggers no other workflow, so a `pull_request` job would never
+# fire. The session's exit code does not carry a stop, so the last step reads the run's one-line
+# .solve-feature/outcome and fails the job on anything but `ready pr=<n>`: `needs-attention pr=<n>`,
+# `stopped: <reason>`, or no file at all (the session ended before the run finished).
+#
+# Billing: with `github.token`, a repo owned by an organisation bills the organisation (its budgets,
+# not any user's), which needs the organisation policy "Allow use of Copilot CLI billed to the
+# organization" (on by default where the Copilot CLI policy is on); a repo owned by a personal
+# account bills the owner's Copilot seat. See
+# https://docs.github.com/en/copilot/concepts/agents/copilot-cli/copilot-cli-in-github-actions. To
+# bill a person instead, or when the organisation policy is off, see the commented
+# COPILOT_GITHUB_TOKEN block on the last step.
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: The feature slug (the root issue's `Feature:` line)
+        required: true
+        type: string
+  # Uncomment to retry stopped features on a timer; the dispatch slug has to come from elsewhere then.
+  # schedule:
+  #   - cron: "0 6 * * 1-5"
+
+env:
+  # The coding-crew ref the runner installs. Pin it to the first tag cut after solve-feature's
+  # hosts shipped (no tag before that has crew-review); `main` until then.
+  CODING_CREW_REF: main
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  copilot-requests: write
+
+jobs:
+  # The slug is a job of its own because a concurrency group can only read a job's outputs, never
+  # a step's: the group below needs the slug, and the label trigger has it only in the issue body.
+  slug:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'solve-feature'
+    outputs:
+      slug: ${{ steps.slug.outputs.slug }}
+    steps:
+      - name: Read the slug
+        id: slug
+        env:
+          INPUT_SLUG: ${{ inputs.slug }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        # The body goes through a file: interpolated into the shell line it could run as code.
+        run: |
+          if [ -n "$INPUT_SLUG" ]; then
+            slug="$INPUT_SLUG"
+          else
+            printf '%s\n' "$ISSUE_BODY" > "$RUNNER_TEMP/issue-body.md"
+            slug="$(grep -m1 '^Feature:' "$RUNNER_TEMP/issue-body.md" | awk '{print $2}')"
+          fi
+          if [ -z "$slug" ]; then
+            echo "::error::no 'Feature: <slug>' line in the issue body: label the feature's root issue"
+            exit 1
+          fi
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+
+  solve:
+    needs: slug
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    # One run per feature at a time (the loop takes no lock); a second trigger waits, never cancels.
+    concurrency:
+      group: solve-feature-${{ needs.slug.outputs.slug }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the Copilot CLI
+        run: npm install -g @github/copilot
+
+      # User-level ($HOME), never into $GITHUB_WORKSPACE: a project-level install leaves
+      # .github/skills/, .coding-crew/manifest.json and the asset trees untracked, and solve-feature
+      # refuses a dirty tree. The tracker CLI lookup falls back to $HOME/.coding-crew, and copilot
+      # reads its user skills, scripts included, from $HOME/.copilot/skills.
+      - name: Install coding-crew (user-level, copilot)
+        run: |
+          git clone --depth 1 --branch "$CODING_CREW_REF" https://github.com/ypxing/coding-crew /tmp/coding-crew
+          TARGET_REPO="$HOME" bash /tmp/coding-crew/install.sh copilot --skills solve-feature,crew-review
+
+      - name: Git identity for the runner
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Run solve-feature
+        env:
+          SLUG: ${{ needs.slug.outputs.slug }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          # To bill a person rather than the organisation, or when the organisation policy is off,
+          # store a fine-grained PAT with the "Copilot Requests" permission as a repo secret and pass
+          # it here: the run bills the Copilot seat of the PAT's owner.
+          # COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+        run: copilot -p "Use the solve-feature skill on $SLUG" --allow-all-tools --no-color
+
+      - name: Fail the job unless solve-feature marked the PR ready
+        run: |
+          if [ ! -f .solve-feature/outcome ]; then
+            echo "::error::solve-feature never finished: the session ended early (see the step above)"; exit 1
+          fi
+          line=$(cat .solve-feature/outcome)
+          case "$line" in
+            ready*) echo "solve-feature: $line" ;;
+            *) echo "::error::solve-feature: $line"; exit 1 ;;
+          esac
