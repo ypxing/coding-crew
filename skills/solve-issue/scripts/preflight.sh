@@ -2,19 +2,19 @@
 # preflight.sh — every fact solve-issue needs before it reads any code, resolved in one call.
 #
 # Usage:
-#   bash scripts/preflight.sh --project-root <path> [--issue <path>]
+#   bash scripts/preflight.sh --project-root <path> [--issue <issue-ref>]
 #
 # Prints, exit 0:
 #   OK
-#   ISSUE_SLUG=<issue file name without .md>
-#   PRD=<absolute path, or empty when there is none — normal>
-#   DEP_SCRIPTS=<dir>      the checks library (run.sh, run-checks.sh), <skill-dir>/scripts/checks; empty if not linked
+#   ISSUE_SLUG=<the ref's base name without .md: a file's name, or a tracker number>
+#   PRD=<absolute path of a file PRD, or empty when there is none — normal>
 #
 # Or one line and exit 1 — stop, report it verbatim:
 #   BLOCKED: on default branch (<name>) — create or switch to a feature branch first
 #   BLOCKED: depends on <file> which is not yet done
 #   BLOCKED: requires: <cmd>          then check-requires.sh's output tail
-# --issue is optional: an issue handed over inline has no Blocked by or PRD to resolve. A PRD path is
+#   BLOCKED: checks library not linked — re-run install.sh
+# --issue is optional: an issue handed over inline has no Blocked by or PRD to resolve, and no slug. A PRD path is
 # resolved against the checkout that holds the issue's .scratch/, then against --project-root.
 
 set -uo pipefail
@@ -117,10 +117,10 @@ if [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
   fi
 fi
 
-# The checks library, linked into this skill's scripts/ by install.sh.
-DEP_SCRIPTS=""
-if [ -f "$SELF_DIR/checks/run-checks.sh" ] && [ -f "$SELF_DIR/checks/run.sh" ]; then
-  DEP_SCRIPTS="$(cd "$SELF_DIR/checks" && pwd)"
+# The checks library, linked into this skill's scripts/ by install.sh: Steps 2, 4 and 5 run through it.
+if [ ! -f "$SELF_DIR/checks/run-checks.sh" ] || [ ! -f "$SELF_DIR/checks/run.sh" ]; then
+  echo "BLOCKED: checks library not linked — re-run install.sh"
+  exit 1
 fi
 
 ISSUE_SLUG=""
@@ -129,4 +129,3 @@ ISSUE_SLUG=""
 echo "OK"
 echo "ISSUE_SLUG=$ISSUE_SLUG"
 echo "PRD=$PRD"
-echo "DEP_SCRIPTS=$DEP_SCRIPTS"

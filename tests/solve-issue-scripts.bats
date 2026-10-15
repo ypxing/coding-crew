@@ -104,17 +104,18 @@ _preflight() {
   [[ "$output" == *"PRD=$WORK/.scratch/feat/PRD.md"* ]]
   rm "$WORK/.scratch/feat/PRD.md"
   _preflight
-  [[ "$output" == *$'\nPRD=\n'* ]]
+  [[ "$output" == *$'\nPRD=' ]]
 }
 
-@test "preflight: finds the checks library through its scripts/checks link, and reports the slug" {
+@test "preflight: reports the slug and PRD only, and stops when the checks library is not linked into scripts/checks" {
   _issue "" "None"
   _preflight
-  [[ "$output" == *"ISSUE_SLUG=02-second"* ]]
-  [ "${lines[${#lines[@]}-1]}" = "DEP_SCRIPTS=$TEMP_DIR/skill/scripts/checks" ]
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'OK\nISSUE_SLUG=02-second\nPRD=')" ]
   rm "$TEMP_DIR/skill/scripts/checks"
   _preflight
-  [ "${lines[${#lines[@]}-1]}" = "DEP_SCRIPTS=" ]
+  [ "$status" -eq 1 ]
+  [ "$output" = "BLOCKED: checks library not linked — re-run install.sh" ]
 }
 
 # ─── run-checks.sh ───────────────────────────────────────────────────────────
