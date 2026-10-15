@@ -21,7 +21,7 @@ plan together, then it builds the feature **test-first, one issue at a time, eac
 It lands only what passes your checks, reviews the whole feature, fixes what the review found, and you
 get one PR at the end.
 
-## Get going in two commands
+## Get going
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
@@ -33,6 +33,7 @@ inside the repo with `| bash -s -- --project` (or `./install.sh <platform> --pro
 Then, inside your coding agent:
 
 ```bash
+/setup-coding-crew                                # once per repo: tracker + your check commands
 /crew-grill add rate limiting to the public API   # 👤 plan it together → PRD + issues
 /crew-afk rate-limit                              # 🤖 the crew builds it in its own worktree while you're away
 /crew-afk status                                  # which PRs are ready for you
@@ -50,7 +51,8 @@ flowchart LR
         gate -- "next issue" --> coder
         gate -- "all issues pass" --> review["🔍 <b>Review the whole feature</b><br/>one fix round"]
     end
-    review --> pr(["✅ <b>One PR for you</b>"])
+    review -- "nothing needs you" --> ready(["✅ <b>PR marked ready</b>"])
+    review -- "something does" --> needs(["🙋 <b>PR lists what needs you</b>"])
 ```
 
 1. **Plan.** `/crew-grill` questions your idea until the edge cases are decided, then splits the work
@@ -66,15 +68,16 @@ flowchart LR
 
 ## What people use it for
 
-| You want to…                              | Run                                                         |
-| ----------------------------------------- | ----------------------------------------------------------- |
-| 🚀 **Ship a feature overnight**           | `/crew-grill <idea>` → `/crew-afk <slug>`                   |
-| 🐛 **Burn down a bug backlog**            | `/to-issues <the bugs>` → `/crew-afk <slug>`                |
-| 🧪 **Cover risky untested code**          | `/add-tests` → `/solve-feature`                             |
-| 📦 **Upgrade dependencies safely**        | `/upgrade-deps` → `/solve-feature`                          |
-| 🔀 **Build several features in parallel** | one `/crew-afk <slug>` per feature, each in its own worktree |
-| 💬 **Clear a PR's review comments**       | `/address-pr-comments`                                      |
-| 🎯 **Pair on a single issue yourself**    | `/solve-issue <issue>`                                      |
+| You want to…                              | Run                                                          |
+| ----------------------------------------- | ------------------------------------------------------------ |
+| 🚀 **Ship a feature overnight**           | `/crew-grill <idea>` → `/crew-afk <slug>`                    |
+| 🌫️ **Start from a fuzzy idea**            | `/crew-brainstorm <idea>` → `/crew-afk <slug>`               |
+| 🐛 **Burn down a bug backlog**            | `/to-issues <the bugs>` → `/crew-afk <slug>`                 |
+| 🧪 **Cover risky untested code**          | `/add-tests` → `/crew-afk <slug>`                            |
+| 📦 **Upgrade dependencies safely**        | `/upgrade-deps` → `/crew-afk <slug>`                         |
+| 🔀 **Build several features in parallel** | one `/crew-afk <slug>` per feature, then `/crew-afk status`  |
+| 💬 **Clear a PR's review comments**       | `/address-pr-comments`                                       |
+| 🎯 **Pair on a single issue yourself**    | `/solve-issue <issue>`                                       |
 
 Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to the issue writer.
 
@@ -88,6 +91,9 @@ Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to t
 - 🧩 **Agent-agnostic.** Plain skills any skills-capable coding CLI can run; Claude Code, Copilot CLI, Codex CLI and [pi](https://github.com/badlogic/pi-mono) are supported today. Issues stay as local markdown or in GitHub Issues.
 
 ## The toolkit
+
+<details>
+<summary>All commands</summary>
 
 | Command                  | What it does                                               |
 | ------------------------ | ---------------------------------------------------------- |
@@ -103,6 +109,8 @@ Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to t
 | `/write-pr`              | Write a PR description a reviewer can act on               |
 | `/setup-coding-crew`     | Set up tracker, checks and the optional Actions workflow   |
 | `/configure-tracker`     | Choose local markdown or GitHub Issues                     |
+
+</details>
 
 ## Learn more
 
