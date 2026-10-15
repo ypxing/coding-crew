@@ -2,7 +2,8 @@
 # ci-run-bats.sh [--log-dir <dir>] <file>... — run each bats file as its own process, several
 # at once and heaviest first, then print every file's output in the order given and exit non-zero if any failed.
 # bats' own --jobs needs GNU parallel, which not every runner has; xargs -P is in every base image.
-# BATS names the bats binary (default: bats); CI_BATS_JOBS the concurrency (default: CPUs).
+# BATS names the bats binary (default: bats, else the pinned bats-core below); CI_BATS_JOBS the concurrency
+# (default: CPUs); CI_BATS_REPO where that bats-core is cloned from (default: GitHub).
 set -uo pipefail
 
 usage() { echo "Usage: ci-run-bats.sh [--log-dir <dir>] <file>..." >&2; exit 2; }
@@ -18,6 +19,22 @@ if [[ -z "$LOG_DIR" ]]; then
 fi
 mkdir -p "$LOG_DIR"
 
+# A machine with no bats (the solve-feature workflow's runner installs none) gets the bats-core ci.yml pins,
+# cloned outside the checkout: a check must leave the tree as it found it.
+BATS_REF=v1.13.0
+if [[ -z "${BATS:-}" ]] && ! command -v bats >/dev/null 2>&1; then
+  bats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/coding-crew/bats-core-$BATS_REF"
+  if [[ ! -x "$bats_dir/bin/bats" ]]; then
+    rm -rf "$bats_dir"
+    if ! out="$(git -c advice.detachedHead=false clone -q --depth 1 --branch "$BATS_REF" \
+      "${CI_BATS_REPO:-https://github.com/bats-core/bats-core.git}" "$bats_dir" 2>&1)"; then
+      printf '%s\n' "$out" >&2
+      echo "ci-run-bats.sh: no bats on PATH, and cloning bats-core $BATS_REF failed" >&2
+      exit 1
+    fi
+  fi
+  BATS="$bats_dir/bin/bats"
+fi
 BATS="${BATS:-bats}"
 jobs="${CI_BATS_JOBS:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || jobs=2
