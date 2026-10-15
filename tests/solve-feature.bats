@@ -658,7 +658,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   pushed
   [ "$(git rev-parse HEAD~1)" = "$TIP" ]
-  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
 }
 
 @test "the checks see the fixer's edits staged, so run-checks.sh's own modified-files test catches a check that rewrites one" {
@@ -682,7 +682,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(attention)" = "the fixer changed nothing" ]
-  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
   # A fixer that said why it changed nothing is listed for what it said, as it wrote it, not twice.
   printf -- '- a:1 needs a design call\n\nb:2 too\n' > .solve-feature/pr-10.unfixed.md
   run bash "$SCRIPT" fix feat 10 feature/feat
@@ -699,7 +699,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   [ "$(git diff --name-only HEAD~1 HEAD | sort | tr '\n' ' ')" = "fixed.txt more.txt " ]
   [ -z "$(git status --porcelain)" ]
   pushed
-  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
   [ -f .solve-feature/pr-10.attention.md ]
   [ -z "$(attention)" ]
   ! grep -q '^pr ready' "$STATE/gh.log" || false
@@ -715,7 +715,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(git rev-parse HEAD)" = "$TIP" ]
-  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=0 needs-attention=0" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=0 needs-attention=0 review-again=no" ]
 }
 
 @test "fix pushes the fixer's own commits as they are" {
@@ -736,13 +736,60 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(attention)" = "$(printf 'no logout endpoint\nthe reviewer found the spec unmet\n#2: race on the lock: needs a design call')" ]
   [ ! -e .solve-feature/pr-10.unfixed.md ]
-  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=3" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=3 review-again=yes" ]
 
   # The spec unmet with no gap named still needs a person.
   report '{"prd":"unmet","gaps":[],"findings":[]}'
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]
   [ "$(attention)" = "the reviewer found the spec unmet" ]
+}
+
+@test "fix asks for a re-review after a CRITICAL, HIGH or MEDIUM finding when the fixer left a change, committed by fix or by the fixer" {
+  fix_ready
+  for sev in CRITICAL HIGH MEDIUM; do
+    report "{\"prd\":\"met\",\"gaps\":[],\"findings\":[{\"severity\":\"LOW\",\"location\":\"b:2\",\"issue\":\"j\",\"fix\":\"g\"},{\"severity\":\"$sev\",\"location\":\"a:1\",\"issue\":\"i\",\"fix\":\"f\"}]}"
+    echo "$sev" > fixed.txt
+    run bash "$SCRIPT" fix feat 10 feature/feat
+    [ "$status" -eq 0 ] || { echo "$sev: $output"; return 1; }
+    [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ] || { echo "$sev: $output"; return 1; }
+  done
+  # The fixer's own commit, with nothing left for fix to commit.
+  report '{"prd":"met","gaps":[],"findings":[{"severity":"MEDIUM","location":"a:1","issue":"i","fix":"f"}]}'
+  echo again > fixed.txt && git add fixed.txt && git commit -q -m "fixer's commit"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=1 needs-attention=0 review-again=yes" ]
+}
+
+@test "fix asks for no re-review after only LOW findings, no findings, a severity it does not know, or a fixer that changed nothing" {
+  fix_ready '{"prd":"met","gaps":[],"findings":[{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=1 needs-attention=0 review-again=no" ]
+  report '{"prd":"met","gaps":[],"findings":[]}'
+  echo more > fixed.txt
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=0 needs-attention=0 review-again=no" ]
+  report '{"prd":"met","gaps":[],"findings":[{"location":"a:1","issue":"i","fix":"f"},{"severity":"high","location":"b:2","issue":"j","fix":"g"},"a string"]}'
+  echo again > fixed.txt
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=3 needs-attention=0 review-again=no" ]
+  report '{"prd":"met","gaps":[],"findings":[{"severity":"CRITICAL","location":"a:1","issue":"i","fix":"f"}]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=1 needs-attention=1 review-again=no" ]
+}
+
+@test "a second fix after a re-review leaves only its own gaps and unfixed lines needing attention" {
+  fix_ready '{"prd":"met","gaps":["first gap"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
+  echo 'first unfixed' > .solve-feature/pr-10.unfixed.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$(attention)" = "$(printf 'first gap\nfirst unfixed')" ]
+  report '{"prd":"met","gaps":["second gap"],"findings":[{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
+  echo 'second unfixed' > .solve-feature/pr-10.unfixed.md
+  echo second > fixed.txt
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(attention)" = "$(printf 'second gap\nsecond unfixed')" ]
 }
 
 @test "fix posts nothing on the PR" {
