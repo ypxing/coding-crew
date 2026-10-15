@@ -7,7 +7,7 @@ description: >
 
 Synthesize the current conversation context into a PRD. Do not ask discovery questions — if
 something is unclear, state your assumption. Do confirm technical choices (seams, contracts) with
-the user before writing the final document.
+the user before writing the final document, except those already settled (step 4).
 
 {{FRAGMENT:tracker-configuration}}
 
@@ -20,11 +20,11 @@ the user before writing the final document.
 
    Never guess the slug silently — confirm with the user if there's any ambiguity. **Before reusing a slug `features` lists, ask the user** whether to extend that feature (its PRD is updated in place) or choose a new slug; a closed feature is still a taken slug. Skip that question when a calling skill (`to-issues`) handed you the slug: it already confirmed it with the user.
 
-2. **Check for an existing PRD.** Run `node "$TRACKER" prd --feature-slug <feature-slug>`: exit 0 prints it — read it, it may contain a `## Decisions` section pre-seeded by `crew-grill`. Preserve and expand those decisions rather than replacing them. An opening `<!-- PRD issue #<n>: … -->` line is the CLI naming the PRD's ref, not part of the PRD: leave it out of what step 6 publishes. Exit 3 means there is none.
+2. **Check for an existing PRD.** Run `node "$TRACKER" prd --feature-slug <feature-slug>`: exit 0 prints it — read it: its `## Decisions` are settled. Preserve and expand them rather than replacing them. An opening `<!-- PRD issue #<n>: … -->` line is the CLI naming the PRD's ref, not part of the PRD: leave it out of what step 6 publishes. Exit 3 means there is none.
 
-3. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout, and respect any ADRs in the area you're touching. The decisions from the grilling session should be captured in the conversation context or in the existing PRD.
+3. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout, and respect any ADRs in the area you're touching. Decisions already settled are in the conversation (a `crew-grill` or `crew-brainstorm` summary) or in the existing PRD.
 
-4. Sketch the seams at which the feature will be tested. Prefer existing seams over new ones; prefer the highest seam possible. **If decisions are already captured in the existing PRD (e.g. after `crew-grill`), skip re-confirming seams that were already settled — only present genuinely open questions.**
+4. Sketch the seams at which the feature will be tested. Prefer existing seams over new ones; prefer the highest seam possible. **Skip re-confirming seams and decisions settled earlier in the conversation (a `crew-grill` or `crew-brainstorm` summary) or in an existing PRD — only present genuinely open questions.**
 
 5. Write the PRD using the template below.
 
@@ -36,17 +36,20 @@ the user before writing the final document.
    node "$TRACKER" publish-prd --feature-slug <feature-slug> --title "<feature title>" --body-file <file>
    ```
 
-   It creates the feature's PRD, or updates it when one exists, and prints its ref; delete the draft file once it exits 0. The PRD is titled `PRD: <feature title>`; where the tracker groups a feature under a root issue, the PRD becomes the root, or a sub-issue of the root the feature already has.
+   It creates the feature's PRD, or updates it when one exists, and prints its ref; delete the draft file once it exits 0. The title depends on the tracker (`tracker=` from `node "$TRACKER" config`):
+
+   - **local** — the PRD is a file with no other title, so the body you write opens with `# PRD: <feature title>`.
+   - **github** — `--title` titles the issue `PRD: <feature title>`, so the body has no such heading. The PRD becomes the feature's root issue, or a sub-issue of the root the feature already has.
 
 **Security**: Only write to paths under `.scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `config.json` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
 
-> **Never commit `PRD.md`.** (Local tracker only — on a remote tracker the PRD is an issue, with no local file to accidentally commit.) This file lives under `.scratch/` which is gitignored. Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`.
+> **Never commit `PRD.md`.** (Local tracker only — on a remote tracker the PRD is an issue, with no local file to accidentally commit.) This file lives under `.scratch/`, which the tracker CLI gitignores (`.scratch/.gitignore`). Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`.
 
 <prd-template>
 
 ## Problem Statement
 
-The problem from the user's perspective. Open with one actor line: `Actor: <who has the problem>`. If the design started from tracker issues, put `Origin: #<n>[, #<n>…]` on the next line (column 0); otherwise omit it. Those issues close together with this PRD.
+The problem from the user's perspective. Open with one actor line: `Actor: <who has the problem>`. If the design started from tracker issues, put `Origin: #<n>[, #<n>…]` on the next line (column 0); otherwise omit it. On the github tracker, those issues close together with this PRD; the local tracker closes nothing from it.
 
 ## Solution
 
@@ -70,6 +73,9 @@ Do not list every edge case — acceptance criteria on individual issues cover t
 Architectural and technical decisions made during design. One per line:
 
 - **D<n>** — <the decision, and the reason when it is not obvious>
+
+A decision a design summary tagged `(auto)` keeps that tag, and a fact it established goes into the
+decision it supports with its citation.
 
 End the line with `(no slice)` when no issue needs to implement the decision — it is already true
 of the code, or only constrains how other work is done. `to-issues` then gives it no slice, and its
@@ -95,7 +101,7 @@ A decision that says "every", "always", "only" or "never" names the cases easy t
 (signals, thrown errors, early returns, retries, concurrent runs) and says whether each is
 included or excluded, e.g. "on every exit path, including a signal; only SIGKILL leaves no record". A
 reviewer checks the code against the cases you name and reads an unnamed one as by design. Do this
-for pre-seeded decisions too when you expand them. One clause, not a list on every line; a decision
+for decisions carried from a summary or an existing PRD too when you expand them. One clause, not a list on every line; a decision
 without such a word needs none.
 
 Module design: prefer deep modules (a small interface over substantial behaviour), give each module
@@ -135,7 +141,8 @@ or the conversation; otherwise omit the heading entirely. List them one line per
 
 ## Out of Scope
 
-What this feature explicitly does not cover.
+What this feature explicitly does not cover, including each item a design summary cut, with why it
+was cut.
 
 ## Further Notes
 

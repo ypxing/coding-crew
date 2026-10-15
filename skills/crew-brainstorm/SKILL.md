@@ -1,13 +1,15 @@
 ---
 name: crew-brainstorm
 description: >
-  Runs a thorough design pipeline before implementation: explores intent, proposes approaches, builds a full
-  technical spec, then hands off to to-issues. Use when starting a complex or exploratory feature.
+  Agrees a design with the user collaboratively before implementation: explores intent one question at a
+  time, proposes 2-3 approaches, and gets the design approved section by section, then hands off to
+  to-issues. Use when starting a complex or exploratory feature from a fuzzy idea; to stress-test a plan you
+  already have adversarially, use crew-grill.
 ---
 
 # Brainstorming Ideas Into Designs
 
-Help turn ideas into fully formed designs and specs through natural collaborative dialogue.
+Help turn ideas into fully formed designs through natural collaborative dialogue.
 
 Start by understanding the current project context. If the source already passes the four light-path checks, hand it to `to-issues`; otherwise ask questions one at a time to refine the idea, and once you understand what you're building, present the design and get user approval.
 
@@ -60,12 +62,11 @@ digraph brainstorming {
 
 ## The Process
 
-**Understanding the idea:**
-
-- Check out the current project state first (files, docs, recent commits)
-
 {{FRAGMENT:light-path}}
 
+### Understanding the idea
+
+- Check out the current project state first (files, docs, recent commits)
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
 - If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own pass through `to-issues`.
 - For appropriately-scoped projects, ask questions one at a time to refine the idea
@@ -74,7 +75,7 @@ digraph brainstorming {
 - Focus on understanding: purpose, constraints, success criteria
 - Size the problem before any solution: how often it happens, what the manual workaround costs today, and what goes wrong if nothing is done. Look these up (git history, the tracker, the code) before asking. Solutions the user arrives with are inputs, not the menu.
 
-**Exploring approaches:**
+### Exploring approaches
 
 - Propose 2-3 different approaches with trade-offs. One is always the **do-least option** — the smallest change, down to "do it by hand" or "leave it" — with its cost in terms of the problem size
 
@@ -86,7 +87,7 @@ digraph brainstorming {
 - Present options conversationally with your recommendation and reasoning
 - Lead with your recommended option and explain why
 
-**Presenting the design:**
+### Presenting the design
 
 - Once you believe you understand what you're building, present the design
 - Scale each section to its complexity: a few sentences if straightforward, up to 200-300 words if nuanced
@@ -100,14 +101,14 @@ digraph brainstorming {
 
 - Then ask for final approval of the whole design, showing what you cut and every correction the verification pass made
 
-**Design for isolation and clarity:**
+### Design for isolation and clarity
 
 - Break the system into smaller units that each have one clear purpose, communicate through well-defined interfaces, and can be understood and tested independently
 - For each unit, you should be able to answer: what does it do, how do you use it, and what does it depend on?
 - Can someone understand what a unit does without reading its internals? Can you change the internals without breaking consumers? If not, the boundaries need work.
 - Smaller, well-bounded units are also easier for you to work with - you reason better about code you can hold in context at once, and your edits are more reliable when files are focused. When a file grows large, that's often a signal that it's doing too much.
 
-**Working in existing codebases:**
+### Working in existing codebases
 
 - Explore the current structure before proposing changes. Follow existing patterns.
 - Where existing code has problems that affect the work (e.g., a file that's grown too large, unclear boundaries, tangled responsibilities), include targeted improvements as part of the design - the way a good developer improves code they're working in.

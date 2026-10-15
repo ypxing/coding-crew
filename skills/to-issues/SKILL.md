@@ -20,7 +20,13 @@ Work from whatever is already in the conversation context. If the user passes an
 
 When the plan references an issue, read its full body and its comments, not just the title: `node "$TRACKER" fetch <ref> --comments`.
 
-**An existing issue as the source.** `/to-issues <ref>` on an existing issue is how it moves from `needs-triage` to `ready-for-agent`: it goes through steps 3–5 like any plan. If it is still one slice after step 4, step 6 rewrites that issue in place; if it splits into several slices, each becomes a new child issue with `## Parent` naming it. An issue with a column-0 `Source:` line outside a code fence (`Source: review (<branch>)` or `Source: <report> (<branch>)`, anywhere in the body) was promoted from review findings already judged: it is not checked against the design standard.
+**A design summary as the source.** When `crew-grill` or `crew-brainstorm` hands over its summary, each part of it holds what nothing else does, and each has one home in what you write:
+
+- **`(auto)` lines** — decisions made on the user's behalf, never put to them: each becomes a `D<n>` line tagged `(auto)`, in the PRD's Decisions or, with no PRD, the issue's `## Decisions`, so a reviewer can still catch it.
+- **Established facts** — each goes into the Decisions it supports, with its citation (`path:line`, doc or spec), so the coder does not re-derive it.
+- **The cut list** — each item, with why it was cut, goes to the PRD's Out of Scope or, with no PRD, the issue's `## Out of Scope`, so the coder does not re-add it.
+
+**An existing issue as the source.** `/to-issues <ref>` on an existing issue is how it moves from `needs-triage` to `ready-for-agent`: it goes through steps 2–5 like any plan. If it is still one slice after step 4, step 6 rewrites that issue in place; if it splits into several slices, each becomes a new child issue with `## Parent` naming it. An issue with a column-0 `Source:` line outside a code fence (`Source: review (<branch>)` or `Source: <report> (<branch>)`, anywhere in the body) was promoted from review findings already judged: it is not checked against the design standard.
 
 Determine the **feature slug** (the root issue or directory the issues are filed under):
 
@@ -30,13 +36,13 @@ Determine the **feature slug** (the root issue or directory the issues are filed
 
 Never guess the slug silently — confirm with the user if there's any ambiguity. **Before using a slug `features` lists, ask the user** whether to extend that feature or choose a new slug; a closed feature is still a taken slug. `to-prd` relies on this question and does not ask it again.
 
-**One slice, no PRD:** the slug needs no question. Use, in order: a github issue ref's own `Feature: <slug>` line, when its body has one; a local issue ref's feature (`rewrite` writes in place); otherwise one derived from the title (kebab-case, short). Step 5's quiz shows it for the user to override. With two or more slices the slug is confirmed as above.
+**One slice and at most one origin issue, no PRD:** the slug needs no question. Use, in order: a github issue ref's own `Feature: <slug>` line, when its body has one; a local issue ref's feature (`rewrite` writes in place); otherwise one derived from the title (kebab-case, short). Step 5's quiz shows it for the user to override. With two or more slices, or two or more origin issues, the slug is confirmed as above.
 
 ### 2. Check for a PRD
 
 Run `node "$TRACKER" prd --feature-slug <feature-slug>`. Exit 0 prints the PRD: use it as the primary source material for decomposition, and save that output to `.scratch/<feature-slug>/.drafts/PRD.md` for step 6's lint. Note the PRD's ref — step 6 cites it in each work issue: `#<n>` when the output opens with `<!-- PRD issue #<n>: … -->`, else `.scratch/<feature-slug>/PRD.md`. Exit 3 means there is none.
 
-With no PRD, work from the conversation context; step 4's slice count decides whether one is needed. One slice publishes without a PRD (its issue carries its own `## Decisions`). Two or more slices, or two or more origin issues named in the source, invoke `to-prd` with the feature slug (so its own slug question is never reached) before publishing, then resume with the PRD it wrote: run `node "$TRACKER" prd --feature-slug <feature-slug>` again and save its output to `.scratch/<feature-slug>/.drafts/PRD.md` before step 6, so the lint's `--prd` and the builder check receive it on this path too. Origin issues count because only a PRD's `Origin:` line closes them.
+With no PRD, work from the conversation context; step 4's slice count decides whether one is needed, and step 4's last paragraph writes it. One slice publishes without a PRD (its issue carries its own `## Decisions`).
 
 ### 3. Explore the codebase
 
@@ -52,31 +58,30 @@ Not optional. If you have not already explored the code each slice will touch, d
 
 While exploring, look for **prefactoring opportunities** — changes that would make the feature implementation significantly easier. "Make the change easy, then make the easy change." Prefactoring is sequenced first (at the start of the slice, or as its own first slice when the work is split) so the feature work builds on a clean foundation.
 
-Also note any **shared surfaces**: a schema/table, a shared type, or an existing function/module that more than one slice would need to modify. This is a narrower thing than "touches the same file": two slices adding code to separate parts of a file merge cleanly, while a shared surface is where two slices would plausibly change the *same specific behavior*. Carry any you find into step 4, and apply its edge rule to each one.
+Also note any **shared surfaces**: a schema/table, a shared type, or an existing function/module that more than one slice would need to modify. This is a narrower thing than "touches the same file": two slices adding code to separate parts of a file do not interact, while a shared surface is where two slices would plausibly change the *same specific behavior*. Carry any you find into step 4, and apply its edge rule to each one.
 
 ### 4. Draft vertical slices
 
 Start from **one slice for the whole PRD**. Split it only for one of these reasons, and name the reason on every split:
 
-1. **Context budget** — one coder cannot hold it in one fresh session. The reference size: the `crew-afk-review` slices (#148–#160: 7–44 files, ~100–1600 lines each) each landed in one coder session and were judged well sized. There is no line limit; judge against that reference and an estimate of the slice's peak context: the bytes of the files it reads or edits ÷ ~3.5 tokens, plus the measured fixed context every coder dispatch loads (the coder protocol, the skills it follows, `CLAUDE.md` or `AGENTS.md`, the PRD, the issue — measure their bytes the same way), plus a margin for test runs and edits. Compare the estimate with the coder model's context window.
+1. **Context budget** — one coder cannot hold it in one fresh session. The reference size: slices of 7–44 files and ~100–1600 lines each have landed in one coder session and were judged well sized. There is no line limit; judge against that reference and an estimate of the slice's peak context: the bytes of the files it reads or edits ÷ ~3.5 tokens, plus the measured fixed context every coder dispatch loads (the solve-issue skill, the skills it follows, `CLAUDE.md` or `AGENTS.md`, the PRD, the issue — measure their bytes the same way), plus a margin for test runs and edits. Compare the estimate with the coder model's context window.
 2. **Human boundary** — part is HITL, the rest AFK.
-3. **Parallelism worth having** — both halves are large and independent; a half of a few criteria does not qualify.
-4. **Expand–contract order** — steps from the PRD's `## Compatibility & Migration` (or `references/expand-contract.md`) that must land in sequence.
+3. **Expand–contract order** — steps from the PRD's `## Compatibility & Migration` (or `<skill-dir>/references/expand-contract.md`) that must land in sequence.
 
 Unrelated modules or test seams are not a reason on their own: they only cost the coder context, which reason 1 covers. One slice may deliver several behaviours.
 
 Each issue is a **tracer bullet**: a vertical slice that cuts through every integration layer its behaviour needs end-to-end, NOT a horizontal slice of one layer.
 
-Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an architectural decision or a design review. AFK slices can be implemented and merged without human interaction. Prefer AFK over HITL where possible.
+Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an architectural decision or a design review. AFK slices can be implemented and landed without human interaction. Prefer AFK over HITL where possible.
 
-Every slice costs fixed overhead before and after its code: a worktree, a deps install, a coder dispatch, verify, review and merge. Every `Blocked by` edge also adds a serial round: the dependent cannot start until its blocker has merged, so it pays the blocker's whole run in wall-clock time before its own. A split is worth making only when its reason outweighs both.
+solve-feature runs a feature's issues one after another on one branch, so every slice costs a fixed overhead on top of its code: a coder dispatch, which loads the fixed context again, plus a run of the project's checks. A `Blocked by` edge only orders that sequence. A split is worth making only when its reason outweighs that overhead.
 
 **Edge rule.** Between slices that remain split, add `Blocked by` only when one of these rows matches:
 
 1. One slice consumes what the other produces (a signature, shape or output) → `Blocked by`.
 2. The two change the same meaning (the same behaviour, function or rule) → `Blocked by`.
 
-Otherwise split slices stay parallel: edits to separate parts of a file merge cleanly, and a needless edge serializes work. Same-meaning edits are sequenced because a conflict is retried only for the conflict, run one at a time, and each retry is spent from the retry cap. A split for parallelism worth having (reason 3) never yields an edge; an edge appears only under reasons 1, 2 or 4.
+Otherwise add no edge: edits to separate parts of a file do not interact, and a needless edge only constrains the order for nothing. Same-meaning edits are ordered so the later slice builds on what the earlier one settled instead of guessing at it. An edge can follow any of the three split reasons; only these rows decide it.
 
 <vertical-slice-rules>
 - Each behaviour a slice delivers is externally observable, verified at the highest existing seam (the outermost place a test can already exercise it: a CLI invocation, an HTTP call, a script's exit code and output). "Schema / API / UI" is only an example of the layers such a behaviour may cut through, not a required shape — a slice touches whichever layers its behaviours need
@@ -88,9 +93,11 @@ Otherwise split slices stay parallel: edits to separate parts of a file merge cl
 - Any prefactoring is sequenced first: at the start of the slice, or as the first slice when the work is split
 </vertical-slice-rules>
 
-**Wide refactor?** One mechanical change — rename a column, retype a shared symbol — whose blast radius fans across the whole codebase, so no vertical slice can land green on its own: read `references/expand-contract.md` before slicing it.
+**Wide refactor?** One mechanical change — rename a column, retype a shared symbol — whose blast radius fans across the whole codebase, so no vertical slice can land green on its own: read `<skill-dir>/references/expand-contract.md` before slicing it.
 
 **Expand–contract sequencing** is drawn from the PRD's `## Compatibility & Migration` when it exists: each expand, migrate and contract step it names becomes a slice (or part of one) sequenced in that order, with the contract step blocked by every migrate step. Without that section, do not invent a migration sequence.
+
+**PRD for a split.** After step 4, with two or more slices (or two or more origin issues named in the source) and no PRD from step 2, invoke `to-prd` with the feature slug (so its own slug question is never reached). Then save the PRD it wrote, `node "$TRACKER" prd --feature-slug <feature-slug>`, to `.scratch/<feature-slug>/.drafts/PRD.md`, so the lint's `--prd` and the builder check receive it, and note its ref as step 2 does. Then do step 4.5 against it. Origin issues count because only a PRD's `Origin:` line closes them.
 
 ### 4.5. Trace PRD IDs to slices
 
@@ -113,10 +120,10 @@ Show the coverage table from step 4.5 (when there is one), then ask only what ne
 3. **The PRD's `## Assumptions`** — each one the slices lean on, for the user to confirm or correct. With no PRD, show instead the one slice's drafted acceptance criteria, its `## Decisions`, the assumptions you filled in beyond the source, and the slug: this is the single review on the light path.
 4. **PRD IDs no slice covers** — the empty rows of the coverage table: add a slice, fold the ID into one, or confirm it is out of scope.
 5. **Slices over 10 criteria or ~200k tokens** — any slice that would carry more than 10 acceptance criteria, or whose estimated peak context is over ~200k tokens (or the coder model's window when smaller), as a context-budget check: does it fit one coder session? Keep it, or split it for the context-budget reason — a flag, never on its own a rule to split.
-6. **Splits and edges** — one line per split naming its reason from step 4 (context budget, human boundary, parallelism worth having, expand–contract order), and one line per `Blocked by` edge naming the edge-rule row that produced it, each naming its slices, for the user to override. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
+6. **Splits and edges** — one line per split naming its reason from step 4 (context budget, human boundary, expand–contract order), and one line per `Blocked by` edge naming the edge-rule row that produced it, each naming its slices, for the user to override. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
 7. **HITL choices** — each slice marked HITL, and why a human is needed (that reason becomes the block's `### Why a person`); the rest are AFK.
 
-Then one approve/adjust prompt: approve the breakdown as shown, or say what to adjust. Iterate until the user approves. Do not ask generic questions about granularity, blocking edges, merging or HITL/AFK — a breakdown with nothing to list above needs only the approve/adjust prompt.
+Then one approve/adjust prompt: approve the breakdown as shown, or say what to adjust. Iterate until the user approves. Do not ask generic questions about granularity, blocking edges, combining slices or HITL/AFK — a breakdown with nothing to list above needs only the approve/adjust prompt.
 
 A return from step 6's builder check asks only the questions it marked yours, in one message ranked by importance, then goes back to step 6 to re-render and re-lint.
 
@@ -126,7 +133,7 @@ Before writing issues, read the PRD's `## Decisions` and `## Testing Decisions` 
 
 ### 6. Write the issues
 
-**Drafts.** Render every approved slice as a draft in `.scratch/<feature-slug>/.drafts/` — the same files whatever the tracker is: `NN-<slug>.md`, numbered from `01` in dependency order (blockers first), opening with a `# <title>` line and a `Status:` line (`Status: ready-for-agent` unless the user specifies otherwise), then the issue body template below. `## Blocked by` names another draft by its filename, or an issue that already exists by the filename `known` gives it; beside the drafts goes `deps.json` (step 7). The CLI turns each draft filename into the ref its issue is created under.
+**Drafts.** Render every approved slice as a draft in `.scratch/<feature-slug>/.drafts/` — the same files whatever the tracker is: `NN-<slug>.md`, numbered from `01` in dependency order (blockers first), opening with a `# <title>` line and a `Status:` line (`Status: ready-for-agent` unless the user specifies otherwise), then the issue body template below. `## Blocked by` names another draft by its filename, or an issue that already exists by the filename `known` gives it; beside the drafts goes `deps.json` (below). The CLI turns each draft filename into the ref its issue is created under.
 
 **Known issues.** Write the feature's existing issues beside the drafts:
 
@@ -135,6 +142,18 @@ node "$TRACKER" known --feature-slug <feature-slug> --out .scratch/<feature-slug
 ```
 
 One file per issue already in the feature, named by the ref a `## Blocked by` entry uses for it.
+
+**Dependency map.** Write `.scratch/<feature-slug>/.drafts/deps.json` with the drafts, before the lint below (its `--deps` compares the map with the `## Blocked by` prose) — a flat map from each draft's filename to the filenames of the drafts blocking it, e.g.:
+
+```json
+{
+  "01-first.md": [],
+  "02-second.md": ["01-first.md"],
+  "03-third.md": ["01-first.md", "02-second.md"]
+}
+```
+
+Source it from the same blocking edges the user confirmed in the quiz step — do not re-derive it from the `## Blocked by` prose. `publish-issues` creates the issues in this map's order and records the same edges, under the issues' final refs, where `next` reads them to decide whether an issue is ready to dispatch. Include every draft, even ones with no blockers (`[]`); an edge to an issue that already exists lives only in the draft's `## Blocked by`.
 
 **Lint before publishing.** Run, from the project root:
 
@@ -188,9 +207,9 @@ where `<status>` is the slice's status (`ready-for-agent`, or `ready-for-human`)
 
 {{FRAGMENT:human-issue}}
 
-**Acceptance criteria describe this slice's behaviour, not repo-wide hygiene.** A rule every change must follow that a check already enforces — a version bump, a changelog entry, lint — is not a criterion: the verify gate holds it, and as a per-issue criterion two parallel issues satisfy it with the same edit, which then merges away on one of them.
+**Acceptance criteria describe this slice's behaviour, not repo-wide hygiene.** A rule every change must follow that a check already enforces — a version bump, a changelog entry, lint — is not a criterion: the verify gate holds it, and as a per-issue criterion each issue on the branch repeats it (a second version bump, a duplicate changelog entry).
 
-A criterion that needs a paid run, a manual measurement or a person is not an acceptance criterion: no unattended coder can meet it, so the reviewer finds it unmet on every retry. It goes to the PRD's human steps or a `ready-for-human` issue.
+A criterion that needs a paid run, a manual measurement or a person is not an acceptance criterion: no unattended coder can meet it, so it stays unmet and the issue never lands. It goes to the PRD's human steps or a `ready-for-human` issue.
 
 **Acceptance-criteria rubric.** The reviewer gates on these, so each criterion is:
 
@@ -233,6 +252,12 @@ This section may cite grounded paths and signatures (confirmed in step 3). If a 
 
 - **D<n>** — <decision, reason, `path:line` facts>
 
+## Out of Scope
+
+> **Optional — only include this section when no PRD exists and the source cut something (a design summary's cut list). Omit it otherwise.**
+
+- <what was cut> — <why>
+
 ## Implements
 
 The PRD IDs this issue carries (with no PRD, the IDs of its own `## Decisions`) (e.g. `D3, B2`), plus the seam it is verified at (the highest existing test seam that exercises it).
@@ -269,27 +294,13 @@ Or "None - can start immediately" if no blockers.
 
 ### Consumes:
 
-Exact signatures, types, or contracts expected from the blocking issues listed above. Be precise enough that a parallel agent implementing a blocker knows what shape to expose. Omit when this issue consumes nothing.
+Exact signatures, types, or contracts expected from the blocking issues listed above. Be precise enough that the agent implementing a blocker knows what shape to expose. Omit when this issue consumes nothing.
 
 ### Exposes:
 
 Exact signatures, types, or contracts this issue produces for any downstream issues that depend on it. A root issue (no blockers) that another issue consumes from has `### Exposes:`.
 
 </issue-template>
-
-### 7. Write the machine-readable dependency map
-
-Write `.scratch/<feature-slug>/.drafts/deps.json` with the drafts, before the step 6 lint run (the linter's `--deps` compares it with the `## Blocked by` prose) — a flat map from each draft's filename to the filenames of the drafts blocking it, e.g.:
-
-```json
-{
-  "01-first.md": [],
-  "02-second.md": ["01-first.md"],
-  "03-third.md": ["01-first.md", "02-second.md"]
-}
-```
-
-Source it from the same blocking edges the user confirmed in the quiz step — do not re-derive it from the `## Blocked by` prose. `publish-issues` creates the issues in this map's order and records the same edges, under the issues' final refs, where `next` reads them to decide whether an issue is ready to dispatch. Include every draft, even ones with no blockers (`[]`); an edge to an issue that already exists lives only in the draft's `## Blocked by`.
 
 Do NOT close or modify any parent issue. A single-slice source rewritten in place is not a parent: it gets only the in-place `rewrite` step 6 describes — its body and its status.
 

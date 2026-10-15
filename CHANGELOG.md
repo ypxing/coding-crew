@@ -6,6 +6,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **to-issues / to-prd / crew-grill / crew-brainstorm / tracker**: to-issues prices a split as one more coder
+  dispatch and checks run on solve-feature's single branch (no more parallelism split reason or retry/merge costs),
+  writes the PRD with to-prd right after drafting slices and before tracing PRD IDs, and carries a design
+  summary's `(auto)` lines, cited facts and cut list into the PRD or the issue's new `## Out of Scope`. to-prd no
+  longer re-confirms decisions settled earlier, and a local PRD opens with `# PRD: <title>`. crew-grill hands off
+  to to-issues once, and both design skills' descriptions say how they differ (adversarial vs collaborative). The
+  local tracker now writes `.scratch/.gitignore` (`*`) when it writes under `.scratch/`, so a consuming repo's tree
+  stays clean after publishing; an existing one is left alone (#502).
 - **solve-issue / solve-feature / crew-review / tracker**: a coder that stops short (`partial`, or `blocked` with
   changes) commits its work as `[WIP]` and leaves the tree clean, so solve-feature's `land` names its report
   instead of stopping on "working tree left dirty"; `mark-done --force` is only for a descope a person approved,

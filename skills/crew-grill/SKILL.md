@@ -1,9 +1,10 @@
 ---
 name: crew-grill
 description: >
-  Runs the full design pipeline: grills the user about a plan (lite by default; "with docs" also updates
-  CONTEXT.md and ADRs via domain-modeling), then hands the result to to-issues, which writes a PRD only when
-  the work splits. Use when starting a new feature from scratch.
+  Runs the full design pipeline adversarially: grills the user about a plan they bring, researching every
+  fact itself and asking only the decisions the user owns, then hands the result to to-issues, which writes a
+  PRD only when the work splits. "with docs" also updates CONTEXT.md and ADRs via domain-modeling. Use when
+  starting a new feature from a plan to stress-test; to shape a fuzzy idea collaboratively, use crew-brainstorm.
 ---
 
 Run the full design pipeline in two phases. Pause for user feedback within each phase, but do not ask the user to manually invoke the next skill — transition automatically.
@@ -14,13 +15,13 @@ Run the full design pipeline in two phases. Pause for user feedback within each 
 
 Interview the user relentlessly until you reach shared understanding. Map the plan as a **design tree**: every decision branches into the decisions that hang off it.
 
+{{FRAGMENT:light-path}}
+
 ### Root: size the problem before any solution
 
 The tree's root is the problem, not the solutions on offer. Before any solution node, establish the **problem size**: how often it happens, what the manual workaround costs today, and what goes wrong if nothing is done. These are mostly facts (git history, the tracker, the code), so Gate 1 applies — look them up (`git log`, merged PRs, the issue list), cite them, and ask only what no source holds. Never ask the user how often something happens when the history can count it. Candidate solutions the user brings with them are inputs to this tree, not its frontier: the smallest change that removes the cost you measured is the baseline every larger option has to beat.
 
 {{FRAGMENT:design-standard}}
-
-{{FRAGMENT:light-path}}
 
 ### Rounds and gates
 
@@ -41,7 +42,7 @@ They'd be embarrassed to ask anything that is:
 - **Testable** — settled by a read-only experiment: run the test, grep the tree, check what the API actually does.
 - **Conventional** — settled by a dominant ecosystem convention, or by one clear in-repo precedent.
 - **Analysis** — "will this scale?", "which is faster?", "is this safe?" The user's answer would be a guess; the reasoning is yours to do.
-- **Deferrable** — not needed to write the PRD, surfaces naturally at implementation time, and cheap to reverse then.
+- **Deferrable** — not needed to write the issues, surfaces naturally at implementation time, and cheap to reverse then.
 - **Rubber-stamp** — you recommend X, X is plainly right, and you are asking permission rather than asking for a decision.
 
 Ignorance of anything outside the repo is not a reason to ask — it is a reason to go read. Before any question that turns on third-party behaviour (a library's API, a service's limits, a format's spec), look it up; that answer is never the user's to give. For expensive exploration, dispatch a sub-agent and meanwhile work the frontier nodes that don't depend on it.
@@ -81,7 +82,7 @@ Ask only the Ask lane, and only as many questions as the frontier genuinely bloc
 ➡️ <your recommended answer>
 ```
 
-Every question that decides how much to build — not a fact only the user holds — includes the **do-least option** — the smallest change, down to "do it by hand" or "leave it" — with its cost in the terms of the problem size. Recommending anything larger needs evidence that the do-least option falls short — on the measured problem, or because it would leave what is built worse structured (see the Root section); "it doesn't cover every case" is not that evidence unless the uncovered case is costly. When an option drags in follow-on components or decisions, its body names them ("(b) brings a workflow, a selector and a label protocol"): the Silent decisions it spawns are part of its price, and the user never sees them one by one.
+Every question that decides how much to build — not a fact only the user holds — includes the **do-least option** — the smallest change, down to "do it by hand" or "leave it" — with its cost in the terms of the problem size. Recommending anything larger needs evidence that the do-least option falls short — on the measured problem, or because it would leave what is built worse structured (the design standard's last paragraph, under Root); "it doesn't cover every case" is not that evidence unless the uncovered case is costly. When an option drags in follow-on components or decisions, its body names them ("(b) brings a workflow, a selector and a label protocol"): the Silent decisions it spawns are part of its price, and the user never sees them one by one.
 
 **Sizing and the do-least option never replace asking.** Good questions are the point of the grill: ask every question only the user can answer and that would change the design — who it is for, what is at stake, which constraint is real, which of two live patterns wins. The do-least option is one choice *inside* a question, there to make the price of the larger options visible; it is not a reason to skip the question, and it is not a verdict. What the user stated as a requirement is a given: price it, never relitigate it, and do not recommend against it without new evidence from the repo. Challenge a stated requirement only with a question ("is X enough, or do you need Y?"), never by quietly deciding for them.
 
@@ -101,7 +102,7 @@ Phase 1 ends when the frontier is empty: every branch of the design tree visited
 
 If the user's invocation included "with docs" or "with documents", also invoke the `domain-modeling` skill inline as decisions crystallise: update `CONTEXT.md` when terms are resolved, and offer ADRs when decisions meet the ADR threshold (hard to reverse, surprising without context, result of a real trade-off).
 
-Before the summary, run a **subtraction pass** over what the design contains: for each decision and component, name the part of the measured problem, or the structural property of what is built now (see the Root section), that breaks if it is removed. "Another component needs it" is not an answer — follow the chain to its root and judge the root against the problem size; when a chain's root only saves what the do-least option covers cheaply, show the chain with its total price and ask once whether to keep it, even if the user approved the root earlier. "Nothing breaks" is a claim of fact: check it like one (Gate 1) and cite it, or keep the item. If nothing breaks, propose cutting it. Show the cut list in the summary, so the user can restore anything they want back; what stays cut goes to the PRD's Out of Scope, with the reason. Alternatives never proposed are not cuts — they go straight to Out of Scope.
+Before the summary, run a **subtraction pass** over what the design contains: for each decision and component, name the part of the measured problem, or the structural property of what is built now (the design standard's last paragraph, under Root), that breaks if it is removed. "Another component needs it" is not an answer — follow the chain to its root and judge the root against the problem size; when a chain's root only saves what the do-least option covers cheaply, show the chain with its total price and ask once whether to keep it, even if the user approved the root earlier. "Nothing breaks" is a claim of fact: check it like one (Gate 1) and cite it, or keep the item. If nothing breaks, propose cutting it. Show the cut list in the summary, so the user can restore anything they want back; what stays cut goes to Out of Scope through `to-issues`, with the reason. Alternatives never proposed are not cuts — they go straight to Out of Scope.
 
 {{FRAGMENT:verification-pass}}
 
@@ -109,8 +110,9 @@ Then:
 
 1. Summarize all implementation decisions (not glossary terms) including the rationale for each — why that option was chosen over alternatives. Include the Silent and Notify decisions you made on the user's behalf, one compact line each, tagged `(auto)`. This is the audit point for everything you did not ask about.
 2. List the **facts you established** at Gate 1 that the design now rests on — the ones the verification pass re-checked — each with its citation (`path:line`, doc, or spec). These cost real research and an implementing agent would otherwise re-derive them — or worse, re-ask them. A fact the user contradicts here is cheaper to fix now than a decision built on it later.
-3. Hand off: run the `to-issues` skill, passing this summary (decisions, `(auto)` lines, facts, cut list). `to-issues` alone decides whether a PRD is written, and its issues or PRD must keep what only this summary holds: carry the `(auto)` decisions through, since they were never put to the user and a reviewer can catch them only there; carry the established facts and their citations through as well; the cut list goes to Out of Scope, each item with why it was cut, so an implementer does not re-add it. Do not ask the user for the next step.
+
+Then go straight to Phase 2; do not ask the user for the next step.
 
 ## Phase 2 — Issues
 
-Run the `to-issues` skill with the Phase 1 summary as its source. Complete its issue quiz and let it publish the approved issues.
+Run the `to-issues` skill with the Phase 1 summary as its source: decisions, `(auto)` lines, facts and cut list. `to-issues` alone decides whether a PRD is written, and carries each part of the summary into its issues or PRD (its step 1). Complete its issue quiz and let it publish the approved issues.

@@ -28,6 +28,7 @@ is what the CLI already uses. How the tracker works — its refs, statuses and l
 `<skill-dir>/scripts/tracker/docs/<kind>.md`.
 
 Exit codes, every op: 0 ok; 1 the op failed — stderr carries the tracker's own error, verbatim;
-2 a usage error or an invalid ref; 3 not found. On 1 or 2, report the stderr to the user and
+2 a usage error or an invalid ref; 3 not found (`publish-issues` adds 4 and 5, described where it
+runs). On 1 or 2, report the stderr to the user and
 fix its cause (an input, auth, the network), then re-run the op —
 never perform the operation with the tracker's own tool instead.
