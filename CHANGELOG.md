@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature / crew-afk**: a run reviews its PR at most twice: `fix` ends `review-again=yes` when the review had
+  a CRITICAL, HIGH or MEDIUM finding and the fixer changed something, and the run then reviews and fixes once more.
+  crew-afk's local claude run drops its `$10` cap (`--max-budget-usd`), so every agent gets the same 1h limit (#497).
 - **README**: the quickstart runs `/setup-coding-crew` once before the first `/crew-grill`, the diagram shows
   both ways a run ends (PR marked ready, or PR lists what needs you), every multi-issue use case ends in
   `/crew-afk <slug>`, and the full command table is collapsed (#496).

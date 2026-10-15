@@ -45,7 +45,8 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" fix <slug> <n> <branch>` — always, whatever the subagents
      reported. It gates the fixes with the checks, commits and pushes them, and records what needs a person.
-     Report its last line, `FIX: findings=<k> needs-attention=<a>`.
+     Report its last line, `FIX: findings=<k> needs-attention=<a> review-again=yes|no`. After the first review,
+     `review-again=yes` means run 3.1–3.3 once more; after the second review, go on to 3.4 whatever it prints.
    4. Run a **fresh subagent** — none of this conversation, the repo's working directory — with exactly
      this prompt: `Use the write-pr skill on PR #<n>; its intent is the spec in <repo>/.solve-feature/spec.md
      and its checks passed (<repo>/.solve-feature/pr-<n>.checks.log). Write it to

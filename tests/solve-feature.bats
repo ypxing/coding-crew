@@ -909,6 +909,12 @@ EOF
   ! grep -qF 'review-pr' "$skill" || false
 }
 
+@test "SKILL.md reviews once more only on review-again=yes after the first review, then goes on to the PR body" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
+  grep -qF 'FIX: findings=<k> needs-attention=<a> review-again=yes|no' "$skill"
+  grep -qF '`review-again=yes` means run 3.1–3.3 once more; after the second review, go on to 3.4 whatever it prints' "$skill"
+}
+
 @test "install.sh claude --skill solve-feature ships the script, crew-review and setup-coding-crew, and no Actions host" {
   local target="$TEMP_DIR/target"
   mkdir -p "$target" && git -C "$target" init -q -b main

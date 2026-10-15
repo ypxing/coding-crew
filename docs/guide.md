@@ -92,12 +92,14 @@ There are no agents. No per-platform agent file is written under `.claude/agents
 
 ### The feature review
 
-`/solve-feature` reviews its PR once, after every ready issue has landed: a fresh read-only subagent
+`/solve-feature` reviews its PR at most twice, after every ready issue has landed: a fresh read-only subagent
 uses `crew-review` on the branch against `.solve-feature/spec.md` (the PRD, then each issue's
 acceptance criteria) and writes one JSON report. It asks what the spec asks for that the code lacks,
 what a real run breaks, and which documented rule the diff breaks. A fresh subagent fixes every
-finding with `tdd`; `solve-feature.sh fix` gates the fixes with the project's checks, and what was
-not fixed is listed under `Needs attention` in the PR body, which keeps the PR a draft.
+finding with `tdd`; `solve-feature.sh fix` gates the fixes with the project's checks. When the first
+review had a CRITICAL, HIGH or MEDIUM finding and the fixer changed something, `fix` prints
+`review-again=yes` and the run reviews and fixes once more; the second fix is not reviewed again. What
+the last round did not fix is listed under `Needs attention` in the PR body, which keeps the PR a draft.
 
 ---
 
@@ -283,7 +285,8 @@ Other platforms get the same skills under their own skill dir (see the README's 
 │  2. land: the project's checks pass → push; else stop       │
 │  3. repeat until no ready issue is left                     │
 │  4. crew-review reads the whole feature against the spec    │
-│  5. a fresh subagent fixes the findings, gated by checks    │
+│  5. a fresh subagent fixes the findings, gated by checks;   │
+│     after a CRITICAL/HIGH/MEDIUM fix, 4–5 run once more     │
 │  6. write-pr writes the body; ready when nothing needs you  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -342,8 +345,9 @@ Use `/to-prd` → `/to-issues` to generate these from a feature description auto
 
 It runs the feature's `ready-for-agent` issues in order on one branch (`feature/<slug>` unless you
 pass `--branch <name>`), each by a fresh coder subagent, and lands each one only when the project's
-checks pass. Then it reviews the whole feature, fixes the findings, writes the PR body and marks the
-draft PR ready when nothing needs a person. Run it where an unattended agent may change the
+checks pass. Then it reviews the whole feature and fixes the findings, at most twice: it reviews again
+only after fixing a CRITICAL, HIGH or MEDIUM finding. It writes the PR body and marks the draft PR ready
+when nothing needs a person. Run it where an unattended agent may change the
 checkout — a worktree or a container, not the one you work in. A stop names the step and how to
 recover; a re-run skips the issues already done and reuses the branch and the PR.
 
