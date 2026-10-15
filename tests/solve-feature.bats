@@ -296,7 +296,7 @@ land_ready() {
   [ "$(git branch --show-current)" = feature/feat ]
 }
 
-@test "start with an unreachable origin, or a branch it cannot create, exits 1 and writes a stopped outcome" {
+@test "start with an unreachable origin, or a branch it cannot push, exits 1 and writes a stopped outcome; a re-run pushes it" {
   git remote set-url origin "$TEMP_DIR/missing.git"
   run bash "$SCRIPT" start feat
   [ "$status" -eq 1 ]
@@ -306,7 +306,12 @@ land_ready() {
   run bash "$SCRIPT" start feat
   chmod +w "$TEMP_DIR/origin.git/refs/heads"
   [ "$status" -eq 1 ]
-  [[ "$(cat .solve-feature/outcome)" == "stopped: start failed: cannot check out or push feature/feat"* ]]
+  [[ "$(cat .solve-feature/outcome)" == "stopped: start failed: cannot push feature/feat"* ]]
+  # The refused push left the local branch behind; a re-run pushes it rather than reuse it unpushed.
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  [ "$(git rev-parse --abbrev-ref '@{u}')" = origin/feature/feat ]
 }
 
 @test "start --branch naming the default branch exits 1 naming it" {

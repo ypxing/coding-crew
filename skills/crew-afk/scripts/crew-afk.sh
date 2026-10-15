@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # crew-afk.sh dispatch|status — start one /solve-feature run in a feature's own worktree, and say how each run ended.
-#   dispatch <slug> [--to local|orca|herdr]
-#       prepares (or reuses) the slug's worktree, starts the run there with the agent CLI that ran this script, and
-#       returns; prints worktree=, and log= and pid= for a local run, session= on claude
+#   dispatch <slug> [--to local|orca|herdr] [--branch <name>]
+#       prepares (or reuses) the slug's worktree, starts the run there with the agent CLI that ran this script
+#       (passing --branch on to solve-feature), and returns; prints worktree=, and log= and pid= for a local run, session= on claude
 #   status [<slug>]
 #       one line per worktree crew-afk dispatched to: the run's outcome line, or why there is none
 # A destination is scripts/destinations/<name>.sh: MODE=headless|interactive, the agent's mode there; `prepare
@@ -13,7 +13,7 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 die() { echo "crew-afk: $*" >&2; exit 1; }
 usage() {
   [ -z "${1:-}" ] || echo "crew-afk: $1" >&2
-  echo "usage: crew-afk.sh dispatch <slug> [--to local|orca|herdr] | status [<slug>]" >&2
+  echo "usage: crew-afk.sh dispatch <slug> [--to local|orca|herdr] [--branch <name>] | status [<slug>]" >&2
   exit 2
 }
 
@@ -29,22 +29,23 @@ agent() {
   return 1
 }
 
-# launch_argv <agent> <headless|interactive> <slug> — sets ARGV, and SESSION for a headless claude run; returns 1
-# for an agent with no case here. The $10 cap is claude's own flag; the local destination adds the 1h one.
+# launch_argv <agent> <headless|interactive> <run-args> — sets ARGV, and SESSION for a headless claude run; returns
+# 1 for an agent with no case here. <run-args> is solve-feature's: `<slug> [--branch <name>]`. The $10 cap is
+# claude's own flag; the local destination adds the 1h one.
 launch_argv() {
-  local agent="$1" mode="$2" slug="$3" prompt="Use the solve-feature skill on $3"
+  local agent="$1" mode="$2" args="$3" prompt="Use the solve-feature skill on $3"
   SESSION=""
   case "$agent:$mode" in
     claude:headless)
       SESSION=$(node -e 'console.log(require("crypto").randomUUID())') || die "node not found: it makes the session id"
-      ARGV=(claude -p "/solve-feature $slug" --output-format json --session-id "$SESSION" --max-budget-usd 10 --dangerously-skip-permissions) ;;
-    claude:interactive) ARGV=(claude --dangerously-skip-permissions "/solve-feature $slug") ;;
+      ARGV=(claude -p "/solve-feature $args" --output-format json --session-id "$SESSION" --max-budget-usd 10 --dangerously-skip-permissions) ;;
+    claude:interactive) ARGV=(claude --dangerously-skip-permissions "/solve-feature $args") ;;
     copilot:headless) ARGV=(copilot -p "$prompt" --allow-all-tools) ;;
     copilot:interactive) ARGV=(copilot -i "$prompt" --allow-all-tools) ;;
     codex:headless) ARGV=(codex exec --dangerously-bypass-approvals-and-sandbox "$prompt") ;;
     codex:interactive) ARGV=(codex --dangerously-bypass-approvals-and-sandbox "$prompt") ;;
-    pi:headless) ARGV=(pi -p "/skill:solve-feature $slug") ;;
-    pi:interactive) ARGV=(pi "/skill:solve-feature $slug") ;;
+    pi:headless) ARGV=(pi -p "/skill:solve-feature $args") ;;
+    pi:interactive) ARGV=(pi "/skill:solve-feature $args") ;;
     *) return 1 ;;
   esac
 }
@@ -72,19 +73,23 @@ live_pid() { # <logs-dir> — prints the run's pid while it is alive
 }
 
 dispatch() {
-  local to=local agent slug="" base wt logs pid
+  local to=local branch="" agent slug="" base wt logs pid
   while [ $# -gt 0 ]; do case "$1" in
     --to) [ $# -ge 2 ] || usage "--to needs a value"; to="$2"; shift 2 ;;
+    --branch) [ $# -ge 2 ] || usage "--branch needs a value"; branch="$2"; shift 2 ;;
     -*) usage "unknown flag: $1" ;;
     *) [ -z "$slug" ] || usage "unexpected argument: $1"; slug="$1"; shift ;;
   esac; done
   # The tracker's own slug rule: the slug reaches a path and an argv, so nothing else gets through.
   [[ "$slug" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || usage "invalid feature slug: '$slug'"
+  # A repo's branch-name rule (a ticket key, say) can refuse solve-feature's default; the branch reaches a prompt.
+  [ -z "$branch" ] || { [[ "$branch" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] && git check-ref-format --branch "$branch" >/dev/null 2>&1; } ||
+    usage "invalid --branch: '$branch'"
   [[ "$to" =~ ^[a-z]+$ && -f "$SELF/destinations/$to.sh" ]] || usage "unknown --to '$to': one of $(cd "$SELF/destinations" && ls | sed 's/\.sh$//' | paste -sd' ' -)"
   # shellcheck source=/dev/null
   source "$SELF/destinations/$to.sh"
   agent=$(agent) || die "no agent CLI (claude, copilot, codex or pi) among this script's parent processes: run /crew-afk from one, or set CREW_AFK_AGENT"
-  launch_argv "$agent" "$MODE" "$slug" || die "unknown agent '$agent': one of claude copilot codex pi"
+  launch_argv "$agent" "$MODE" "$slug${branch:+ --branch $branch}" || die "unknown agent '$agent': one of claude copilot codex pi"
 
   # git refuses a branch checked out twice, but a detached second run would race the first on one checkout.
   pid=$(live_pid "$WORKTREES/$slug/.solve-feature") && die "a run for $slug is still going (pid $pid)"
@@ -94,10 +99,11 @@ dispatch() {
   logs="$wt/.solve-feature"
   mkdir -p "$logs" && echo '*' >"$logs/.gitignore"
   # A stale outcome would read as this run's result until solve-feature's start clears it.
-  rm -f "$logs/outcome" "$logs/run.pid" "$logs/run.session" "$logs/run.log"
+  rm -f "$logs/outcome" "$logs/run.pid" "$logs/run.session" "$logs/run.log" "$logs/run.branch"
   echo "$to" >"$logs/run.dest"
   echo "$slug" >"$logs/run.slug"
   [ -z "$SESSION" ] || echo "$SESSION" >"$logs/run.session"
+  [ -z "$branch" ] || echo "$branch" >"$logs/run.branch"
   launch "$slug" "$wt" "${ARGV[@]}"
   echo "worktree=$wt"
   if [ -f "$logs/run.pid" ]; then echo "log=$logs/run.log"; echo "pid=$(cat "$logs/run.pid")"; fi
@@ -105,7 +111,7 @@ dispatch() {
 }
 
 status() {
-  local filter="${1:-}" wt slug logs pid found=0
+  local filter="${1:-}" wt slug logs pid branch found=0
   [ $# -le 1 ] || usage
   while IFS= read -r wt; do
     logs="$wt/.solve-feature"
@@ -119,7 +125,8 @@ status() {
     elif [ ! -f "$logs/run.pid" ]; then echo "$slug: no outcome yet — $(cat "$logs/run.dest") run, see its terminal"
     else
       # Capped or crashed alike: solve-feature skips the issues it closed and reuses the branch and PR.
-      echo "$slug: ended without an outcome — log: $logs/run.log; re-run /crew-afk $slug to continue"
+      branch=$(cat "$logs/run.branch" 2>/dev/null || true)
+      echo "$slug: ended without an outcome — log: $logs/run.log; re-run /crew-afk $slug${branch:+ --branch $branch} to continue"
       [ ! -s "$logs/run.session" ] || echo "  resume: cd $wt && claude --resume $(cat "$logs/run.session")"
     fi
   done < <(git -C "$MAIN" worktree list --porcelain | sed -n 's/^worktree //p')

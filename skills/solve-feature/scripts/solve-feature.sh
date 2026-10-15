@@ -89,8 +89,10 @@ start() {
   BRANCH=${BRANCH:-feature/$SLUG}
   if git show-ref --verify -q "refs/heads/$BRANCH"; then git checkout -q "$BRANCH"
   elif git show-ref --verify -q "refs/remotes/origin/$BRANCH"; then git checkout -q -t "origin/$BRANCH"
-  else git checkout -q -b "$BRANCH" "origin/$default" && git push -q -u origin "$BRANCH"
-  fi || die "cannot check out or push $BRANCH (see above)"
+  else git checkout -q -b "$BRANCH" "origin/$default"
+  fi || die "cannot check out $BRANCH (see above)"
+  # A branch origin lacks is new, or one whose first push was refused: a re-run pushes it before any coder runs.
+  git show-ref --verify -q "refs/remotes/origin/$BRANCH" || git push -q -u origin "$BRANCH" || die "cannot push $BRANCH (see above)"
   write_spec
   pr_view
   echo "branch=$BRANCH"

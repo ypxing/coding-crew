@@ -4,9 +4,9 @@ description: >
   Starts one feature's /solve-feature run unattended in that feature's own worktree and returns at
   once: locally as a detached headless agent capped at 1 hour (and $10 on claude), or as an interactive agent in
   an orca terminal or a herdr pane. Reports how each run ended. Use when a feature's issues are ready
-  and it should be built without anyone watching. Trigger with /crew-afk <feature> [--to local|orca|herdr],
+  and it should be built without anyone watching. Trigger with /crew-afk <feature> [--to local|orca|herdr] [--branch <name>],
   or /crew-afk status [<feature>].
-argument-hint: "<feature> [--to local|orca|herdr] | status [<feature>]"
+argument-hint: "<feature> [--to local|orca|herdr] [--branch <name>] | status [<feature>]"
 allowed-tools: Bash
 ---
 
@@ -30,11 +30,12 @@ review, fix or close nothing**: each run is its own top-level session in its own
    say what you inferred. Several: ask which. None: start nothing, and point the user at
    `crew-grill`, `crew-brainstorm` or `to-issues` to plan the feature first. Never guess: a wrong
    slug spends a run on the wrong work. One call starts one feature; for several, run this once each.
-2. **Dispatch**, with `--to` only when the user named a destination (default `local`). The run uses
+2. **Dispatch**, with `--to` only when the user named a destination (default `local`), and `--branch`
+   only when the user named a branch (default: solve-feature's, named after the slug). The run uses
    the same agent CLI you are:
 
    ```bash
-   bash "<skill-dir>/scripts/crew-afk.sh" dispatch <slug> [--to local|orca|herdr]
+   bash "<skill-dir>/scripts/crew-afk.sh" dispatch <slug> [--to local|orca|herdr] [--branch <name>]
    ```
 
    Relay what it prints and stop: the run goes on without you, so do not wait for it, read its log or

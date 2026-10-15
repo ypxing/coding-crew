@@ -80,6 +80,17 @@ field() { sed -n "s/^$1=//p" <<<"$output"; }
   [ -z "$(git -C "$WT" status --porcelain)" ]
 }
 
+@test "dispatch --branch passes the branch on to solve-feature, and status names it in the re-run" {
+  run bash "$SCRIPT" dispatch report-cli --branch feature/SPK-12-report-cli
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  session=$(field session)
+  for _ in $(seq 1 50); do [ -f "$T/claude-argv" ] && break; sleep 0.1; done
+  [ "$(cat "$T/timeout-argv")" = "1h claude -p /solve-feature report-cli --branch feature/SPK-12-report-cli --output-format json --session-id $session --max-budget-usd 10 --dangerously-skip-permissions" ]
+  wait_run "$WT"
+  run bash "$SCRIPT" status report-cli
+  [[ "${lines[0]}" == *"re-run /crew-afk report-cli --branch feature/SPK-12-report-cli to continue" ]]
+}
+
 @test "a .worktreeinclude directory the repo ignores with a trailing slash leaves the worktree clean" {
   printf '.venv/\n' >> "$MAIN/.gitignore"
   git -C "$MAIN" commit -qam 'ignore .venv/' && git -C "$MAIN" push -q origin main
@@ -125,7 +136,7 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
 
 @test "an invalid slug, an unknown flag or an unknown --to exits 2, an unknown agent exits 1, and neither creates anything" {
   local args
-  for args in "../x" "report-cli --agent claude" "report-cli --to mars"; do
+  for args in "../x" "report-cli --agent claude" "report-cli --to mars" "report-cli --branch a;b" "report-cli --branch x..y"; do
     run bash "$SCRIPT" dispatch $args
     [ "$status" -eq 2 ] || { echo "$args: $output"; return 1; }
     [[ "$output" == *crew-afk:* ]]

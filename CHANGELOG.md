@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **crew-afk / solve-feature**: `/crew-afk <feature> --branch <name>` passes the branch on to solve-feature, so a
+  repo whose branch-name rule refuses `feature/<slug>` (a ticket key, say) can be dispatched to. A solve-feature
+  re-run after a refused first push now pushes the branch at start, before any coder runs, rather than at the
+  first issue's land (#488).
 - **solve-feature / solve-issue / dep-install**: the dev commands file (checks, install command, install mode)
   no longer needs committing, and nobody has to be asked for the install mode. Discovered checks and mode are
   written to `.git/coding-crew/dev-commands.json`, outside every working tree and shared by all worktrees of the
