@@ -368,7 +368,7 @@ worktree per feature beside your checkout, at `<repo>/../<repo-name>-worktrees/<
 
 | `--to` | Where the run goes |
 | --- | --- |
-| `local` (default) | A detached headless agent, capped at 1 hour (and at $10 on claude, its `--max-budget-usd`); it logs to `<worktree>/.solve-feature/run.log` (needs `timeout`, on macOS `brew install coreutils`) |
+| `local` (default) | A detached headless agent, capped at 1 hour; it logs to `<worktree>/.solve-feature/run.log` (needs `timeout`, on macOS `brew install coreutils`) |
 | `orca` | An orca-managed worktree and an interactive agent in an orca terminal, uncapped: you watch and steer it |
 | `herdr` | An interactive agent in a new herdr pane on the worktree, uncapped |
 

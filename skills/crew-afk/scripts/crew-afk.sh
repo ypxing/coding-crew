@@ -30,15 +30,15 @@ agent() {
 }
 
 # launch_argv <agent> <headless|interactive> <run-args> — sets ARGV, and SESSION for a headless claude run; returns
-# 1 for an agent with no case here. <run-args> is solve-feature's: `<slug> [--branch <name>]`. The $10 cap is
-# claude's own flag; the local destination adds the 1h one.
+# 1 for an agent with no case here. <run-args> is solve-feature's: `<slug> [--branch <name>]`. The local destination
+# adds the 1h cap.
 launch_argv() {
   local agent="$1" mode="$2" args="$3" prompt="Use the solve-feature skill on $3"
   SESSION=""
   case "$agent:$mode" in
     claude:headless)
       SESSION=$(node -e 'console.log(require("crypto").randomUUID())') || die "node not found: it makes the session id"
-      ARGV=(claude -p "/solve-feature $args" --output-format json --session-id "$SESSION" --max-budget-usd 10 --dangerously-skip-permissions) ;;
+      ARGV=(claude -p "/solve-feature $args" --output-format json --session-id "$SESSION" --dangerously-skip-permissions) ;;
     claude:interactive) ARGV=(claude --dangerously-skip-permissions "/solve-feature $args") ;;
     copilot:headless) ARGV=(copilot -p "$prompt" --allow-all-tools) ;;
     copilot:interactive) ARGV=(copilot -i "$prompt" --allow-all-tools) ;;
