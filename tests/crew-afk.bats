@@ -228,6 +228,22 @@ SH
   [ "$(cat "$T/wait-out")" = "report-cli: ready pr=9" ]
 }
 
+@test "wait follows the slug's latest dispatch, not an older orca run that never wrote an outcome" {
+  export CREW_AFK_WAIT_INTERVAL=0.1
+  stub_orca
+  bash "$SCRIPT" dispatch report-cli --to orca >/dev/null
+  touch -t 202001010000 "$T/orca-wt/app-report-cli/.solve-feature/run.slug"
+  bash "$SCRIPT" dispatch report-cli >/dev/null
+  bash "$SCRIPT" wait report-cli >"$T/wait-out" &
+  waiter=$!
+  sleep 0.5
+  kill -0 "$waiter"
+  echo 'ready pr=7' > "$WT/.solve-feature/outcome"
+  for _ in $(seq 1 30); do kill -0 "$waiter" 2>/dev/null || break; sleep 0.1; done
+  ! kill -0 "$waiter" 2>/dev/null || { kill "$waiter"; echo "wait did not return"; return 1; }
+  [ "$(cat "$T/wait-out")" = "report-cli: ready pr=7" ]
+}
+
 @test "wait with no run for the slug exits at once with status's line; a missing slug is a usage error" {
   run bash "$SCRIPT" wait nothing
   [ "$status" -eq 0 ]
