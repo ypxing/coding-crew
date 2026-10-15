@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# crew-afk.sh dispatch|status — start one /solve-feature run in a feature's own worktree, and say how each run ended.
+# crew-afk.sh dispatch|status|wait — start one /solve-feature run in a feature's own worktree, and say how each run ended.
 #   dispatch <slug> [--to local|orca|herdr] [--branch <name>]
 #       prepares (or reuses) the slug's worktree, starts the run there with the agent CLI that ran this script
 #       (passing --branch on to solve-feature), and returns; prints worktree=, and log= and pid= for a local run, session= on claude
 #   status [<slug>]
 #       one line per worktree crew-afk dispatched to: the run's outcome line, or why there is none
+#   wait <slug>
+#       blocks until the slug's run has ended (an outcome written, or a local process gone), then prints what status prints
 # A destination is scripts/destinations/<name>.sh: MODE=headless|interactive, the agent's mode there; `prepare
 # <slug> <base-branch>` prints the worktree path; `launch <slug> <worktree> <argv…>` starts the run there, and a
 # headless one writes its pid to <worktree>/.solve-feature/run.pid. Exit: 0 ok; 1 a stop; 2 a usage error.
@@ -13,7 +15,7 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 die() { echo "crew-afk: $*" >&2; exit 1; }
 usage() {
   [ -z "${1:-}" ] || echo "crew-afk: $1" >&2
-  echo "usage: crew-afk.sh dispatch <slug> [--to local|orca|herdr] [--branch <name>] | status [<slug>]" >&2
+  echo "usage: crew-afk.sh dispatch <slug> [--to local|orca|herdr] [--branch <name>] | status [<slug>] | wait <slug>" >&2
   exit 2
 }
 
@@ -135,10 +137,21 @@ status() {
   [ "$found" -eq 1 ] || echo "no crew-afk run${filter:+ for $filter}"
 }
 
+wait_for() {
+  local slug="${1:-}" out
+  [ $# -eq 1 ] || usage "wait needs a slug"
+  # status is the one reader of the outcome and run.pid: keep asking it until the run is neither live nor
+  # waiting on a terminal.
+  while out=$(status "$slug"); do
+    case "$out" in *": running (pid "* | *": no outcome yet — "*) sleep "${CREW_AFK_WAIT_INTERVAL:-5}" ;; *) break ;; esac
+  done
+  echo "$out"
+}
+
 CMD="${1:-}"; [ $# -eq 0 ] || shift
-case "$CMD" in dispatch | status) ;; *) usage ;; esac
+case "$CMD" in dispatch | status | wait) ;; *) usage ;; esac
 COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a git repository"
 MAIN=$(dirname "$COMMON")
 # One worktree per slug, beside the main checkout: never inside it, where the user's own tools would scan it.
 WORKTREES="$(dirname "$MAIN")/$(basename "$MAIN")-worktrees"
-"$CMD" "$@"
+if [ "$CMD" = wait ]; then wait_for "$@"; else "$CMD" "$@"; fi

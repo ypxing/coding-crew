@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **crew-afk**: `crew-afk.sh wait <slug>` blocks until the run has ended and prints its `status` line, and `/crew-afk`
+  runs it in the background when the agent can, so the session that dispatched a run reports how it ended (#510).
 - **setup-coding-crew / crew-afk**: the Actions workflow and crew-afk's copilot launches run Copilot with `--allow-all`
   instead of `--allow-all-tools`, so a run no longer stops at its first step: the skill's scripts sit under
   `$HOME/.copilot/skills`, outside the checkout, and Copilot's path check denied them with no one to approve. Re-run
