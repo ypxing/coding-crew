@@ -8,12 +8,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 - **solve-feature / tracker**: a failed check after an issue's coder closed it no longer strands the work: `land` reopens
   the issue (the tracker CLI's new `reopen` op) and pushes its commits before it stops, so a plain re-run's coder
-  picks the issue up from that work, on an Actions runner too, where the checkout goes with the job.
+  picks the issue up from that work, on an Actions runner too, where the checkout goes with the job (#512).
 - **setup-coding-crew**: the Actions workflow runs Claude Code as well as Copilot, picked by the repo variable
   `CREW_AGENT` (`claude` needs an `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` secret), and uploads
   `.solve-feature/` as an artifact on every run, so the checks log a stop names outlives the runner. Re-run
   `/setup-coding-crew redo actions` to update an installed workflow. crew-afk's `CREW_AFK_AGENT` is now `CREW_AGENT`
-  too: one name for the agent CLI a launcher runs solve-feature with.
+  too: one name for the agent CLI a launcher runs solve-feature with (#512).
 - **setup-coding-crew / crew-afk**: the Actions workflow and crew-afk's copilot launches run Copilot with `--allow-all`
   instead of `--allow-all-tools`, so a run no longer stops at its first step: the skill's scripts sit under
   `$HOME/.copilot/skills`, outside the checkout, and Copilot's path check denied them with no one to approve. Re-run
