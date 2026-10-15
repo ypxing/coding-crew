@@ -8,7 +8,8 @@
 #   next <slug>                     the next ready issue, saved for land; prints its ref. The coder writes its
 #                                   report to .solve-feature/coder.report.md, which land's solve stop names
 #   land <slug> <ref> <branch>      the coder left <branch> clean with <ref> closed and the checks pass: push, and
-#                                   open the draft PR if the branch has none; prints pr=<n>
+#                                   open the draft PR if the branch has none; prints pr=<n>. Failed checks reopen
+#                                   <ref> and push its work before the stop, so a plain re-run picks it up again
 #   fix <slug> <pr> <branch>        the review report is there and the checks pass on the fixer's tree: commit it,
 #                                   push, and write what needs a person to pr-<pr>.attention.md; last stdout line
 #                                   `FIX: findings=<k> needs-attention=<a> review-again=yes|no`, yes when a
@@ -138,6 +139,23 @@ pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the spec
 }
 checks_lib() { [ -f "$CHECKS/run-checks.sh" ] || die "checks library not found ($CHECKS): run install.sh --skill solve-feature"; }
 
+# hand_back <reason> <recovery> <log> — the checks failed on a closed issue: reopen it and push its work, then stop.
+# Pushed, the work outlives this checkout (an Actions runner's goes with its job); reopened, a plain re-run's coder
+# starts from that work instead of skipping the issue. The PR stays a draft until describe, so nothing reads as ready.
+hand_back() {
+  local before changed
+  before=$(git status --porcelain -uall)
+  node "$CLI" reopen "$REF" >/dev/null || stop checks "$1; reopen $REF failed (see above): once fixed and committed, run land $SLUG $REF $BRANCH before a re-run" "$3"
+  # A file tracker's reopen moves a tracked issue file; only that is committed, never what the checks left.
+  changed=$(comm -13 <(sort <<<"$before") <(git status --porcelain -uall | sort) | cut -c4-)
+  if [ -n "$changed" ]; then
+    xargs git add -A -- <<<"$changed" && git commit -q -m "Reopen $REF: its checks failed" ||
+      stop checks "$1; $REF is ready again but committing its reopen failed (see above): commit it, then re-run" "$3"
+  fi
+  git push -q -u origin "$BRANCH" || stop checks "$1; $REF is ready again but git push failed: once it can push, $2" "$3"
+  stop checks "$1; $REF is ready again with its work pushed to $BRANCH: $2" "$3"
+}
+
 land() {
   local rs="${REF//\//_}" rc=0 again clog="$LOGS/${REF//\//_}.checks.log" f url
   [ -f "$LOGS/$rs.issue.md" ] || die "no saved issue for $REF: run next first"
@@ -152,9 +170,8 @@ land() {
     stop solve "coder ran but did not close $REF; why: $LOGS/coder.report.md"
   fi
   rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
-  # $REF is closed and committed but not pushed, so a plain re-run would skip it.
-  [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): the coder discovered none; run /setup-coding-crew and commit .coding-crew/dev-commands.json, then run land $SLUG $REF $BRANCH before a re-run" "$clog"
-  [ "$rc" = 0 ] || stop checks "run-checks.sh exit $rc; once fixed and committed, run land $SLUG $REF $BRANCH before a re-run" "$clog"
+  [ "$rc" != 3 ] || hand_back "no check commands known (DISCOVER): the coder discovered none" "run /setup-coding-crew and commit .coding-crew/dev-commands.json, then re-run" "$clog"
+  [ "$rc" = 0 ] || hand_back "run-checks.sh exit $rc" "fix the cause, then re-run" "$clog"
   git push -q -u origin "$BRANCH" || stop push "git push failed; once it can push, run land $SLUG $REF $BRANCH before a re-run"
   pr_view
   if [ -z "$PR_N" ]; then
