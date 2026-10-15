@@ -106,3 +106,15 @@ carry on to Step 4: the workflow file is written. Then point the user to the wor
 `solve-feature`, or run the workflow by hand with the slug.
 
 ## Step 4 — Commit hint
+
+Always, even after a step failed or was skipped. solve-feature needs these files committed: its start refuses a
+dirty tree, and an Actions runner's fresh checkout has only what is committed. List every setup file git shows
+as changed or untracked, whether or not this run wrote it:
+
+```bash
+FILES=$(git status --porcelain --untracked-files=all -- .coding-crew/config.json .coding-crew/dev-commands.json .github/workflows/solve-feature.yml | cut -c4- | LC_ALL=C sort | paste -sd' ' -)
+if [ -n "$FILES" ]; then echo "To finish, run: git add $FILES && git commit -m \"Set up coding-crew\""
+else echo "Setup files are all committed: nothing to commit."; fi
+```
+
+Print its line as it is; do not run it.
