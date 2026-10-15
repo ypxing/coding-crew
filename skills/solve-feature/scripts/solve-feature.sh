@@ -151,7 +151,7 @@ land() {
     stop solve "coder ran but did not close $REF; why: $LOGS/coder.report.md"
   fi
   rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
-  [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): the coder discovered none; run /solve-issue once by hand in this clone" "$clog"
+  [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): the coder discovered none; run /setup-coding-crew and commit .coding-crew/dev-commands.json" "$clog"
   # $REF is closed and committed but not pushed, so a plain re-run would skip it.
   [ "$rc" = 0 ] || stop checks "run-checks.sh exit $rc; once fixed and committed, run land $SLUG $REF $BRANCH before a re-run" "$clog"
   git push -q -u origin "$BRANCH" || stop push "git push failed; once it can push, run land $SLUG $REF $BRANCH before a re-run"
@@ -180,7 +180,7 @@ fix() {
   # Staged before the checks, so run-checks.sh's modified-files test also sees a check rewrite a file the fixer changed.
   git add -A
   bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
-  [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /solve-issue once by hand in this clone" "$clog"
+  [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /setup-coding-crew and commit .coding-crew/dev-commands.json" "$clog"
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed (not pushed), run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings on PR #$PR"
   git push -q -u origin "$BRANCH" || stop fix "git push failed; once it can push, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"

@@ -466,14 +466,14 @@ stops_at() {
   stops_at solve "coder ran but did not close 2; why: $WORK/.solve-feature/coder.report.md"
 }
 
-@test "land runs run-checks.sh once; exit 1 or 3 stops at checks naming the log, 3 saying to discover the checks by hand" {
+@test "land runs run-checks.sh once; exit 1 or 3 stops at checks naming the log, 3 sending the user to /setup-coding-crew" {
   land_ready
   CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
   stops_at checks "run-checks.sh exit 1; once fixed and committed, run land feat 2 feature/feat before a re-run"
   [[ "$output" == *"$WORK/.solve-feature/2.checks.log"* ]]
   [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
   CHECKS_RC=3 run bash "$SCRIPT" land feat 2 feature/feat
-  stops_at checks "no check commands known (DISCOVER): the coder discovered none; run /solve-issue once by hand in this clone"
+  stops_at checks "no check commands known (DISCOVER): the coder discovered none; run /setup-coding-crew and commit .coding-crew/dev-commands.json"
   # The recovery the stop names: land again once the checks pass, and the issue's commits are pushed.
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ]
@@ -640,7 +640,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   [ "$(wc -l < "$STATE/checks.log")" -eq "$checks" ]
 }
 
-@test "fix with failing checks stops naming the log, leaving the tree and commits; a second fix once committed completes" {
+@test "fix with failing checks stops naming the log, leaving the tree and commits, or with none known sends the user to /setup-coding-crew; a second fix once committed completes" {
   fix_ready
   TIP=$(git rev-parse HEAD)
   : > "$STATE/checks.log"
@@ -650,6 +650,8 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
   [ "$(git rev-parse HEAD)" = "$TIP" ]
   [ "$(git status --porcelain)" = 'A  fixed.txt' ]
+  CHECKS_RC=3 run bash "$SCRIPT" fix feat 10 feature/feat
+  fix_stops "no check commands known (DISCOVER): run /setup-coding-crew and commit .coding-crew/dev-commands.json"
 
   git add fixed.txt && git commit -q -m "fix by hand"
   run bash "$SCRIPT" fix feat 10 feature/feat
@@ -860,7 +862,7 @@ EOF
   ! grep -qF 'review-pr' "$skill" || false
 }
 
-@test "install.sh claude --skill solve-feature ships the script, crew-review and the Actions host" {
+@test "install.sh claude --skill solve-feature ships the script and crew-review, and no Actions host" {
   local target="$TEMP_DIR/target"
   mkdir -p "$target" && git -C "$target" init -q -b main
   run bash "$REPO_ROOT/install.sh" claude --skill solve-feature --project "$target"
@@ -868,7 +870,7 @@ EOF
   [ -f "$target/.claude/skills/solve-feature/scripts/solve-feature.sh" ]
   [ ! -e "$target/.claude/skills/review-pr" ]
   [ ! -e "$target/.coding-crew/solve-feature" ]
-  [ -f "$target/.claude/skills/solve-feature/hosts/github-actions.yml" ]
+  [ ! -e "$target/.claude/skills/solve-feature/hosts" ]
   [ -f "$target/.claude/skills/solve-feature/SKILL.md" ]
   [ -f "$target/.claude/skills/crew-review/SKILL.md" ]
   [ -f "$target/.claude/skills/solve-feature/scripts/checks/run-checks.sh" ]
@@ -891,8 +893,8 @@ yaml_to_json() {
   fi
 }
 
-@test "hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, four write permissions, a slug concurrency group, the skill launched by copilot -p, then a step reading the outcome" {
-  local wf="$REPO_ROOT/skills/solve-feature/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
+@test "setup-coding-crew's hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, four write permissions, a slug concurrency group, the skill launched by copilot -p, then a step reading the outcome" {
+  local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
   run yaml_to_json "$wf" "$json"
   [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
   [ "$status" -eq 0 ]
