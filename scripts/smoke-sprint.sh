@@ -22,7 +22,7 @@ PLATFORM="${1:-}"
 
 RECORD=0 WT="" PR=""
 # One results row once the run was dispatched: its cost from the claude JSON result that ends the log, and its
-# finding count from the review solve-feature saved.
+# finding count from the last review solve-feature saved (a re-review after fixes overwrites the first one's report).
 record() {
   [[ $RECORD -eq 1 ]] || return 0
   RECORD=0
