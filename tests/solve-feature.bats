@@ -1118,6 +1118,19 @@ SH
   [[ "$output" == *"stopped: 2 checks failed: run-checks.sh exit 1"* ]]
   grep -qxF 'report of the last coder' "$GITHUB_STEP_SUMMARY"
   grep -qxF 'FAIL: test_x' "$GITHUB_STEP_SUMMARY"
+  # Each stop shows the files of the step it names: a coder's stop not an earlier issue's passing checks log, a
+  # fix stop the PR's checks log and no coder's report.
+  echo 'stopped: 3 solve failed: coder ran but did not close 3; why: x' > .solve-feature/outcome
+  : > "$GITHUB_STEP_SUMMARY"
+  run bash -e "$TEMP_DIR/last-step.sh"
+  grep -qxF 'report of the last coder' "$GITHUB_STEP_SUMMARY"
+  ! grep -q 'FAIL: test_x' "$GITHUB_STEP_SUMMARY" || false
+  echo 'stopped:  fix failed: run-checks.sh exit 1; once fixed' > .solve-feature/outcome
+  echo 'FAIL: test_after_fix' > .solve-feature/pr-10.checks.log
+  : > "$GITHUB_STEP_SUMMARY"
+  run bash -e "$TEMP_DIR/last-step.sh"
+  grep -qxF 'FAIL: test_after_fix' "$GITHUB_STEP_SUMMARY"
+  ! grep -q 'report of the last coder' "$GITHUB_STEP_SUMMARY" || false
   echo 'ready pr=10' > .solve-feature/outcome
   : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"

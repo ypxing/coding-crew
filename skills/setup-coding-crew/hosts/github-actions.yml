@@ -155,10 +155,8 @@ jobs:
             claude)
               [ -n "${ANTHROPIC_API_KEY:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ] ||
                 { echo "::error::Claude Code needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1; }
-              # Plain -p prints only the session's last message, at its end. The stream is kept whole for the
-              # artifact, and the log gets one line per step as it happens: the model, the agent's text, each
-              # command, subagent and failed tool (a subagent's indented), then the session's totals. tee -p keeps
-              # the session going should the filter die.
+              # Plain -p prints only the session's last message, at its end; tee -p keeps the session going should
+              # the filter die.
               mkdir -p .solve-feature && echo '*' > .solve-feature/.gitignore
               claude -p "/solve-feature $SLUG" --dangerously-skip-permissions "${model[@]}" --output-format stream-json --verbose |
                 tee -p .solve-feature/session.jsonl | jq --unbuffered -Rr '
@@ -197,16 +195,19 @@ jobs:
         run: |
           logs=.solve-feature
           line=$(cat "$logs/outcome" 2>/dev/null) ||
-            line="never finished: the session ended early (see the Run solve-feature step)"
+            line="never finished: the session ended early or never started (see the first failed step)"
           model=$(jq -r 'select(.type == "system" and .subtype == "init") | .model' "$logs/session.jsonl" 2>/dev/null | head -n 1)
           pr=$(sed -n 's/.*pr=\([0-9][0-9]*\).*/\1/p' <<<"$line")
           {
             echo "### solve-feature $SLUG: \`$line\`"
             [ -z "$pr" ] || echo "- PR: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr"
             echo "- Agent: $CREW_AGENT, model ${model:-${CREW_MODEL:-unpinned (the CLI default)}}"
-            # What a person reads next: a stop's coder report and its checks log, a needs-attention's list.
+            ref=${line#stopped: }
             case "$line" in
-              stopped:*) files="$logs/coder.report.md $(ls -t "$logs"/*.checks.log 2>/dev/null | head -n 1)" ;;
+              "stopped: "*" solve failed: "*) files="$logs/coder.report.md" ;;
+              "stopped: "*" checks failed: "*)
+                ref=${ref%% checks failed: *}; files="$logs/coder.report.md $logs/${ref//\//_}.checks.log" ;;
+              "stopped: "*" fix failed: "*) files=$(ls -t "$logs"/pr-*.checks.log 2>/dev/null | head -n 1) ;;
               needs-attention*) files="$logs/pr-$pr.attention.md" ;;
               *) files="" ;;
             esac
