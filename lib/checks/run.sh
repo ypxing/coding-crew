@@ -4,7 +4,7 @@
 # Usage:
 #   bash scripts/run.sh --project-root <path> -- <command>
 #
-# The mode is the checkout's .coding-crew/dev-commands.json "install_mode" (resolve-mode.sh): host,
+# The mode is the checkout's dev commands file's "install_mode" (resolve-mode.sh): host,
 # or docker, where <command> runs as `docker compose run --rm <service> sh -c 'cd <src> && <command>'`
 # through the docker shim, which adds this checkout's override (its dependency volumes). With no
 # override yet, docker-install.sh generates it and installs first; a failed install stops here with

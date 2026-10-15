@@ -2,8 +2,8 @@
 set -uo pipefail
 
 # write-commands-cache.sh --response-file <path> — merges a model's discovery response, or dep-install's
-# confirmed install_mode/docker_service, into this checkout's .coding-crew/dev-commands.json, which is
-# committed. No recognisable field is a failed discovery: exit 1, cache untouched.
+# confirmed install_mode/docker_service, into the checkout's dev commands file (commands-file.sh beside it says
+# which). No recognisable field is a failed discovery: exit 1, cache untouched.
 # A field the response omits keeps its value, and one never written stays absent. Absent means
 # "nobody asked yet"; null means "a model looked and found none", which is never re-asked, so a
 # caller must not name a field it did not check.
@@ -66,7 +66,9 @@ if [ "$ANY_FOUND" -eq 0 ]; then
 fi
 
 ROOT=$(git rev-parse --show-toplevel) || exit 1
-CACHE_FILE="$ROOT/.coding-crew/dev-commands.json"
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/commands-file.sh"
+CACHE_FILE=$(commands_file "$ROOT")
 
 OLD_TEXT=""
 [ -f "$CACHE_FILE" ] && OLD_TEXT=$(cat "$CACHE_FILE")
@@ -89,7 +91,7 @@ for f in "${FIELDS[@]}"; do
   fi
 done
 
-mkdir -p "$ROOT/.coding-crew"
+mkdir -p "$(dirname "$CACHE_FILE")"
 
 JSON_BODY=""
 for f in "${FIELDS[@]}"; do
@@ -99,11 +101,11 @@ for f in "${FIELDS[@]}"; do
 done
 
 # Atomic write: a reader (discover-commands.sh, run-checks.sh) must never observe a half-written file.
-TMP_FILE=$(mktemp "$ROOT/.coding-crew/dev-commands.json.XXXXXX")
+TMP_FILE=$(mktemp "$CACHE_FILE.XXXXXX")
 printf '{%s}\n' "$JSON_BODY" > "$TMP_FILE"
 mv "$TMP_FILE" "$CACHE_FILE"
 
-echo "Command cache written: .coding-crew/dev-commands.json"
+echo "Command cache written: $CACHE_FILE"
 for f in "${FIELDS[@]}"; do
   if [ "${HAVE_VAL[$f]}" -eq 1 ]; then
     echo "  $f: ${FINAL_VAL[$f]}"

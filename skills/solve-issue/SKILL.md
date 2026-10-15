@@ -88,8 +88,8 @@ decisions and constraints the issue assumes. No PRD is normal.
 
 If `DEP_SCRIPTS` is empty, stop and report `BLOCKED: checks library not linked — re-run install.sh`.
 
-Do not install pre-emptively. The install mode is `.coding-crew/dev-commands.json`'s
-`install_mode` (absent means host), and Step 4's `run.sh` acts on it: in docker mode its first call
+Do not install pre-emptively. The install mode is the dev commands file's `install_mode`
+(absent means host), and Step 4's `run.sh` acts on it: in docker mode its first call
 installs into this checkout's compose project, and a failed install stops with the service, the
 step and its log — report that `blocked` with its output. In host mode a worktree usually inherits
 `node_modules`/`.venv` through `.worktreeinclude`, and many repos have no dependency step.
@@ -187,7 +187,7 @@ This is the one full-suite run:
 bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT"
 ```
 
-It runs every `.coding-crew/dev-commands.json` check — `typecheck`, `lint`, `test`, then every other
+It runs every check in the dev commands file (`scripts/checks/commands-file.sh` names it) — `typecheck`, `lint`, `test`, then every other
 key with a command (coverage, integration) — each through `run.sh`, and reports each. `NOT RUN: no
 command found` means no local command exists: report it, do not re-check CLAUDE.md/Makefile.
 
@@ -203,7 +203,7 @@ command found` means no local command exists: report it, do not re-check CLAUDE.
   cat > "$PROJECT_ROOT/.discovered-commands.json" <<'JSON'
   {"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>"}
   JSON
-  bash "<skill-dir>/scripts/git-workflow/write-commands-cache.sh" --response-file "$PROJECT_ROOT/.discovered-commands.json"
+  bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file "$PROJECT_ROOT/.discovered-commands.json"
   rm -f "$PROJECT_ROOT/.discovered-commands.json"
   ```
 
@@ -233,7 +233,8 @@ Example: `[01-auth-logout] Add user logout endpoint`. Do not push.
 
 ### 6.5. Reminder: dev-commands.json
 
-Nothing here commits a `.coding-crew/dev-commands.json` that Step 5's `DISCOVER` created:
+Where the repo tracks `.coding-crew/dev-commands.json`, Step 5's `DISCOVER` updates it, and nothing here
+commits it:
 
 ```bash
 if [ -n "$(git -C "$PROJECT_ROOT" status --porcelain -- .coding-crew/dev-commands.json 2>/dev/null)" ]; then

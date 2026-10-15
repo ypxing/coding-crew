@@ -77,8 +77,15 @@ write_spec() {
 
 start() {
   [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
-  # DISCOVER needs an agent and a human once; run-checks.sh's own exit 3 guards a file that names no usable command.
-  [ -f "$ROOT/.coding-crew/dev-commands.json" ] || die "no .coding-crew/dev-commands.json: run /solve-issue or dep-install once by hand and commit it"
+  checks_lib
+  # The first coder discovers the checks; only the install mode needs a person, and unattended it would be host.
+  local f
+  for f in docker-compose.yml docker-compose.yaml compose.yml; do
+    [ -f "$ROOT/$f" ] || continue
+    grep -q '"install_mode"' "$(bash "$CHECKS/commands-file.sh" --project-root "$ROOT")" 2>/dev/null ||
+      die "$f but no install mode recorded: run /dep-install once in this clone to choose host or docker, then re-run"
+    break
+  done
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
   grep -qxF "$SLUG" <<<"$features" || die "no feature '$SLUG'; features: $(paste -sd' ' - <<<"$features")"
   # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase
@@ -145,7 +152,7 @@ land() {
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
   [ "$again" != "$REF" ] || stop solve "coder ran but did not close $REF (its report says why)"
   rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
-  [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand and commit .coding-crew/dev-commands.json" "$clog"
+  [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): the coder discovered none; run /solve-issue once by hand in this clone" "$clog"
   # $REF is closed and committed but not pushed, so a plain re-run would skip it.
   [ "$rc" = 0 ] || stop checks "run-checks.sh exit $rc; once fixed and committed, run land $SLUG $REF $BRANCH before a re-run" "$clog"
   git push -q -u origin "$BRANCH" || stop push "git push failed; once it can push, run land $SLUG $REF $BRANCH before a re-run"
@@ -174,7 +181,7 @@ fix() {
   # Staged before the checks, so run-checks.sh's modified-files test also sees a check rewrite a file the fixer changed.
   git add -A
   bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
-  [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand and commit .coding-crew/dev-commands.json" "$clog"
+  [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /solve-issue once by hand in this clone" "$clog"
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed (not pushed), run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings on PR #$PR"
   git push -q -u origin "$BRANCH" || stop fix "git push failed; once it can push, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"

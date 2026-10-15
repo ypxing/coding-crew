@@ -6,6 +6,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature / solve-issue / dep-install**: the dev commands file (checks, install command, install mode)
+  no longer needs committing. Discovered checks and dep-install's mode are written to
+  `.git/coding-crew/dev-commands.json`, outside every working tree and shared by all worktrees of the clone; a
+  tracked `.coding-crew/dev-commands.json` still wins and is updated in place. `solve-feature` no longer stops at
+  start without the file: its first coder discovers the checks. It stops only for a compose project with no
+  recorded install mode (run `/dep-install` once). `discover-commands.sh` and `write-commands-cache.sh` move to
+  the checks library beside the new `commands-file.sh`; add-tests, upgrade-deps and dep-install link `checks`
+  instead of `git-workflow` (#488).
 - **solve-feature / solve-issue**: a run whose `git fetch`, branch checkout or first push fails at `start` now
   writes `stopped: start failed: …` to `.solve-feature/outcome` instead of exiting with none, so `crew-afk status`
   and a host waiting on the file see it end. In a crew-afk worktree, solve-issue's preflight finds the

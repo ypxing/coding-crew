@@ -25,12 +25,13 @@ Before running any package-manager command (`outdated`, `audit`, `ls`/`why`, or 
 reinstall), use the `dep-install` skill first to detect and lock the session's install mode.
 Every command in this skill — not just install — must then run in that mode: if the project
 is docker-mode, `outdated`/`audit`/`ls`/`why` run inside the container via the same
-mechanism as `test`/`lint`/`typecheck` in `dev-commands.json`, never against the host's
+mechanism as `test`/`lint`/`typecheck` in the dev commands file, never against the host's
 `node_modules`, which may not even exist there.
 
-Also resolve the `typecheck` field from `.coding-crew/dev-commands.json` now, using the same
+Also resolve the `typecheck` field from the dev commands file (`bash
+"<skill-dir>/scripts/checks/commands-file.sh" --project-root <repo>` prints its path) now, using the same
 discovery/cache mechanism `add-tests` uses for its own fields (`bash
-"<skill-dir>/scripts/git-workflow/discover-commands.sh"`, then `write-commands-cache.sh` beside it if it prompts). Step 6 needs
+"<skill-dir>/scripts/checks/discover-commands.sh"`, then `write-commands-cache.sh` beside it if it prompts). Step 6 needs
 this to get a mechanical breaking-change signal on major bumps; if it resolves to `null`, that
 step falls back to changelog review alone for every major bump — say so when it happens rather
 than silently skipping the signal.
@@ -46,7 +47,7 @@ reuse it (adding more packages to the same batch) or start a fresh dated slug
 ### 2. Inventory outdated dependencies, per workspace
 
 First check whether the project already has its own wrapper for this — a Makefile target
-(`make outdated`, `make audit`) or a script cached in `dev-commands.json` alongside
+(`make outdated`, `make audit`) or a script cached in the dev commands file alongside
 `test`/`lint`/`typecheck`. If one exists, use it: it already encodes the project's chosen
 flags (severity level, workspace scoping, docker routing) — don't invent a raw
 package-manager invocation that bypasses it.

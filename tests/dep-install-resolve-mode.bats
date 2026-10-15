@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 
-# resolve-mode.sh — the install mode run.sh and run-checks.sh act on: the checkout's committed
-# .coding-crew/dev-commands.json, and nothing else.
+# resolve-mode.sh — the install mode run.sh and run-checks.sh act on: the checkout's dev commands file
+# (commands-file.sh), and nothing else.
 
 SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks/resolve-mode.sh"
 
@@ -55,8 +55,8 @@ _cache() {
   done
 }
 
-@test "dep-install's recorded answer lands in the current checkout, keeps the discovered checks, and is what this reads" {
-  local write="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/git-workflow/write-commands-cache.sh"
+@test "dep-install's recorded answer lands in a tracked file in the current checkout, keeps the discovered checks, and is what this reads" {
+  local write="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks/write-commands-cache.sh"
   git -C "$WORK" -c user.email=t@t -c user.name=T commit -q --allow-empty -m init
   git -C "$WORK" worktree add -q "$TEMP_DIR/wt" -b wt
   mkdir -p "$TEMP_DIR/wt/.coding-crew"

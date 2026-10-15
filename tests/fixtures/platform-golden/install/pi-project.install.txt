@@ -1,8 +1,10 @@
 REPO/.coding-crew/ /
 REPO/.coding-crew/lib/ /
 REPO/.coding-crew/lib/checks/ /
+REPO/.coding-crew/lib/checks/commands-file.sh exec=1
 REPO/.coding-crew/lib/checks/detect-docker-nesting.sh exec=1
 REPO/.coding-crew/lib/checks/detect-mode.sh exec=1
+REPO/.coding-crew/lib/checks/discover-commands.sh exec=1
 REPO/.coding-crew/lib/checks/docker-install.sh exec=1
 REPO/.coding-crew/lib/checks/ensure-env.sh exec=1
 REPO/.coding-crew/lib/checks/gen-override.sh exec=1
@@ -14,12 +16,11 @@ REPO/.coding-crew/lib/checks/run-checks.sh exec=1
 REPO/.coding-crew/lib/checks/run.sh exec=1
 REPO/.coding-crew/lib/checks/shim/ /
 REPO/.coding-crew/lib/checks/shim/docker exec=1
+REPO/.coding-crew/lib/checks/write-commands-cache.sh exec=1
 REPO/.coding-crew/lib/git-workflow/ /
 REPO/.coding-crew/lib/git-workflow/README.md exec=0
 REPO/.coding-crew/lib/git-workflow/branch-safety-check.sh exec=1
 REPO/.coding-crew/lib/git-workflow/commit-changes.sh exec=1
-REPO/.coding-crew/lib/git-workflow/discover-commands.sh exec=1
-REPO/.coding-crew/lib/git-workflow/write-commands-cache.sh exec=1
 REPO/.coding-crew/lib/tracker/ /
 REPO/.coding-crew/lib/tracker/body-format.mjs exec=0
 REPO/.coding-crew/lib/tracker/cli.mjs exec=0
@@ -36,7 +37,7 @@ REPO/.pi/skills/ /
 REPO/.pi/skills/add-tests/ /
 REPO/.pi/skills/add-tests/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/add-tests/scripts/ /
-REPO/.pi/skills/add-tests/scripts/git-workflow link=../../../../.coding-crew/lib/git-workflow
+REPO/.pi/skills/add-tests/scripts/checks link=../../../../.coding-crew/lib/checks
 REPO/.pi/skills/address-pr-comments/ /
 REPO/.pi/skills/address-pr-comments/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/address-pr-comments/scripts/ /
@@ -77,7 +78,6 @@ REPO/.pi/skills/dep-install/references/docker-install.md exec=0
 REPO/.pi/skills/dep-install/references/host-install.md exec=0
 REPO/.pi/skills/dep-install/scripts/ /
 REPO/.pi/skills/dep-install/scripts/checks link=../../../../.coding-crew/lib/checks
-REPO/.pi/skills/dep-install/scripts/git-workflow link=../../../../.coding-crew/lib/git-workflow
 REPO/.pi/skills/domain-modeling/ /
 REPO/.pi/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/domain-modeling/references/ /
@@ -123,7 +123,7 @@ REPO/.pi/skills/to-prd/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.pi/skills/upgrade-deps/ /
 REPO/.pi/skills/upgrade-deps/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/upgrade-deps/scripts/ /
-REPO/.pi/skills/upgrade-deps/scripts/git-workflow link=../../../../.coding-crew/lib/git-workflow
+REPO/.pi/skills/upgrade-deps/scripts/checks link=../../../../.coding-crew/lib/checks
 REPO/.pi/skills/upgrade-deps/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.pi/skills/write-pr/ /
 REPO/.pi/skills/write-pr/SKILL.md exec=0 unrendered=0

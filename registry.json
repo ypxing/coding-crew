@@ -41,8 +41,7 @@
       "source-dir": "dep-install",
       "description": "Install the project's dependencies once, on the host or in docker.",
       "libs": [
-        "checks",
-        "git-workflow"
+        "checks"
       ]
     },
     "solve-issue": {
@@ -118,7 +117,7 @@
         "dep-install"
       ],
       "libs": [
-        "git-workflow"
+        "checks"
       ]
     },
     "upgrade-deps": {
@@ -128,7 +127,7 @@
         "dep-install"
       ],
       "libs": [
-        "git-workflow",
+        "checks",
         "tracker"
       ]
     },

@@ -2,12 +2,14 @@
 # Ensure .env exists and generate credential config files (steps 0b-c of docker-install).
 # Never reads the contents of .env* or credential files. Never blocks: exit 0, or 1 on an argument error.
 # Usage: ensure-env.sh --project-root <path> [--credential-target <command>]
-# A missing .env is generated in PROJECT_ROOT: dev-commands.json's "env" command, then a Makefile env
+# A missing .env is generated in PROJECT_ROOT: the dev commands file's "env" command, then a Makefile env
 # target, then .env.example-or-empty; a broken override falls through.
 
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+. "$SELF_DIR/commands-file.sh"
 
 PROJECT_ROOT=""
 CREDENTIAL_TARGET=""
@@ -44,7 +46,7 @@ _generate_env_at() {
 }
 
 _cached_env_command() {
-  local cache="$1/.coding-crew/dev-commands.json"
+  local cache; cache=$(commands_file "$1")
   [[ -f "$cache" ]] || return 0
   grep -o '"env"[[:space:]]*:[[:space:]]*"[^"]*"' "$cache" 2>/dev/null \
     | head -1 \

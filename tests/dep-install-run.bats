@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 
 # run.sh and run-checks.sh — "run this where this checkout's checks run". The mode is the checkout's
-# committed .coding-crew/dev-commands.json; docker mode runs in the checkout's own compose project,
+# dev commands file (commands-file.sh); docker mode runs in the checkout's own compose project,
 # installs first when it has no override yet, and never falls back to the host. `docker` is stubbed
 # on PATH and never reaches a daemon; run.sh puts the crew shim in front of the stub, so the stub
 # logs what the shim finally passed on.

@@ -7,7 +7,7 @@
 #     [--service <name>] [--install-cmd <cmd>] [--credential-target <command>] \
 #     [--timeout <sec, default 1800>] [--force]
 # The service, the install command and the credential target default to the checkout's
-# .coding-crew/dev-commands.json ("docker_service", "install", "credential_target"); with no
+# dev commands file ("docker_service", "install", "credential_target"; commands-file.sh); with no
 # docker_service, the compose file's first service. Generates this checkout's override, then installs
 # only when the root dependency volume (named by lockfile hash) lacks a .crew-stamp; --force deletes
 # the stamp first. A failed install removes the override again, so the next run.sh call retries it.
@@ -19,6 +19,8 @@
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+. "$SELF_DIR/commands-file.sh"
 
 PROJECT_ROOT=""
 SERVICE=""
@@ -73,7 +75,7 @@ _fail() {
 }
 
 _cached() {
-  local cache="$PROJECT_ROOT/.coding-crew/dev-commands.json"
+  local cache; cache=$(commands_file "$PROJECT_ROOT")
   [[ -f "$cache" ]] || return 0
   grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$cache" 2>/dev/null \
     | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/' || true
@@ -93,7 +95,7 @@ CONTAINER_SRC="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query con
 
 if [[ -n "$INSTALL_CMD" ]]; then
   if bash "$SELF_DIR/detect-docker-nesting.sh" --dir "$PROJECT_ROOT" --cmd "$INSTALL_CMD"; then
-    _fail 5 "install command" "Install command '$INSTALL_CMD' runs docker itself, and the service's container has no docker to run it with. Name a container-side install command (e.g. 'pnpm install') as \"install\" in .coding-crew/dev-commands.json."
+    _fail 5 "install command" "Install command '$INSTALL_CMD' runs docker itself, and the service's container has no docker to run it with. Name a container-side install command (e.g. 'pnpm install') as \"install\" in $(commands_file "$PROJECT_ROOT")."
   fi
   CONTAINER_CMD="cd $CONTAINER_SRC && $INSTALL_CMD"
 else

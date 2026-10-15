@@ -26,8 +26,8 @@ THIS REPO (source)
 │   └── ...
 ├── lib/                    ← libraries the skills share, linked into each skill that uses one
 │   ├── tracker/            ← tracker CLI and backends; docs/{local,github}.md
-│   ├── checks/             ← run-checks.sh and dep-install's install/run scripts
-│   └── git-workflow/       ← commit-changes, branch-safety-check, discover/write-commands-cache
+│   ├── checks/             ← run-checks.sh, the dev commands file (discover/write-commands-cache) and dep-install's install/run scripts
+│   └── git-workflow/       ← commit-changes, branch-safety-check
 └── docs/
     └── templates/
         └── workflows/      ← optional GitHub Actions workflows
@@ -354,8 +354,8 @@ recover; a re-run skips the issues already done and reuses the branch and the PR
 
 **Checks that modify files.** A check that leaves the tree modified fails. An auto-fixing lint
 (`make lint` running `--write`) can stay configured: run it once, commit what it rewrote, and re-run.
-Only a check that rewrites files on every run needs a non-mutating command in
-`.coding-crew/dev-commands.json`.
+Only a check that rewrites files on every run needs a non-mutating command in the dev commands file
+(below).
 
 **Per-issue requirements.** An issue can list what its checks need that the install doesn't
 guarantee under `## Requires`, one backticked command per bullet (exit 0 = satisfied); `/solve-issue`
@@ -462,9 +462,17 @@ Edit these files after install — they override the defaults on the next run:
 | ---------------------------------------------- | ----------------------------------------------- |
 | `.coding-crew/config.json` (`tracker` section) | Where issues live: `{"tracker": {"kind": "github"}}` (default `local`) |
 
-Commit `.coding-crew/config.json` and `.coding-crew/dev-commands.json`: they are team state — the
-tracker choice, solve-feature's models and the project's check commands — that everyone using the
-repo needs, so do not add them to `.gitignore`. The installed tooling beside them (`lib/`,
+Commit `.coding-crew/config.json`: it is team state — the tracker choice and solve-feature's models —
+that everyone using the repo needs, so do not add it to `.gitignore`.
+
+**The dev commands file** holds the project's checks (`test`, `lint`, `typecheck`, …), its install
+command and its install mode (`install_mode`: `host` or `docker`, with `docker_service`). The first
+`/solve-issue` or `/solve-feature` coder discovers the checks, and `/dep-install` asks you for the mode
+once. They are written to `.git/coding-crew/dev-commands.json`: outside every working tree, shared by
+all worktrees of the clone, never committed. To share them with your team or CI, copy that file to
+`.coding-crew/dev-commands.json` and commit it: a tracked file there wins, and later discoveries update
+it. `solve-feature` stops at start in a repo with a compose file and no recorded install mode, since
+unattended it would run every check on the host. The installed tooling beside them (`lib/`,
 `manifest.json`) is what `install.sh` writes, not team state.
 
 ---
@@ -488,7 +496,7 @@ repo needs, so do not add them to `.gitignore`. The installed tooling beside the
 | `/solve-feature` finds no ready issue immediately | No issue with the correct status                 | Under `local`, check `.scratch/*/issues/` — status must be exactly `ready-for-agent` |
 | The coder reports `blocked`                       | Ambiguous spec or missing dependency             | Read its `BLOCKED:` line; resolve and re-run                                        |
 | `install.sh`: "unsafe path in registry"           | `registry.json` path contains `..` or `/` prefix | Fix `registry.json`                                                                 |
-| `dep-install` picks wrong mode                    | `install_mode` in `.coding-crew/dev-commands.json` | Set `"install_mode": "host"` (or `"docker"` with `"docker_service"`) there and commit it |
+| `dep-install` picks wrong mode                    | `install_mode` in the dev commands file          | Set `"install_mode": "host"` (or `"docker"` with `"docker_service"`) in `.coding-crew/dev-commands.json` if the repo tracks one, else `.git/coding-crew/dev-commands.json` |
 | `address-pr-comments` fails with opaque error     | `gh` CLI missing or not authenticated            | Run `gh auth login` first                                                           |
 
 ---

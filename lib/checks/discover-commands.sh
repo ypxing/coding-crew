@@ -16,7 +16,9 @@ while [ $# -gt 0 ]; do
 done
 
 ROOT=$(git rev-parse --show-toplevel)
-CACHE_FILE="$ROOT/.coding-crew/dev-commands.json"
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/commands-file.sh"
+CACHE_FILE=$(commands_file "$ROOT")
 
 # A key is "already discovered" once present with any value; JSON `null` means a model looked and
 # found none. Other fields (install_mode, credential_target) share the file, so the file existing proves nothing.
@@ -79,7 +81,7 @@ for key in "${CACHE_FIELDS[@]}"; do
 done
 
 if [ "${#ASK_FIELDS[@]}" -eq 0 ]; then
-  echo "Command discovery: skipped (already cached at .coding-crew/dev-commands.json)"
+  echo "Command discovery: skipped (already cached at $CACHE_FILE)"
   exit 0
 fi
 

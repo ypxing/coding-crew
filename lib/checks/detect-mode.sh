@@ -7,7 +7,7 @@
 #
 # A Makefile install/deps/setup/... target whose `make -n` recipe invokes docker compose/run/exec →
 # docker, anything else → host. A heuristic for dep-install's setup step, which confirms it with a
-# person and records it as dev-commands.json's "install_mode"; nothing reads it at run time.
+# person and records it as the dev commands file's "install_mode"; nothing reads it at run time.
 
 set -euo pipefail
 

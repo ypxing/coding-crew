@@ -3,7 +3,7 @@ HOME/.agents/skills/ /
 HOME/.agents/skills/add-tests/ /
 HOME/.agents/skills/add-tests/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/add-tests/scripts/ /
-HOME/.agents/skills/add-tests/scripts/git-workflow link=HOME/.coding-crew/lib/git-workflow
+HOME/.agents/skills/add-tests/scripts/checks link=HOME/.coding-crew/lib/checks
 HOME/.agents/skills/address-pr-comments/ /
 HOME/.agents/skills/address-pr-comments/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/address-pr-comments/scripts/ /
@@ -44,7 +44,6 @@ HOME/.agents/skills/dep-install/references/docker-install.md exec=0
 HOME/.agents/skills/dep-install/references/host-install.md exec=0
 HOME/.agents/skills/dep-install/scripts/ /
 HOME/.agents/skills/dep-install/scripts/checks link=HOME/.coding-crew/lib/checks
-HOME/.agents/skills/dep-install/scripts/git-workflow link=HOME/.coding-crew/lib/git-workflow
 HOME/.agents/skills/domain-modeling/ /
 HOME/.agents/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/domain-modeling/references/ /
@@ -90,15 +89,17 @@ HOME/.agents/skills/to-prd/scripts/tracker link=HOME/.coding-crew/lib/tracker
 HOME/.agents/skills/upgrade-deps/ /
 HOME/.agents/skills/upgrade-deps/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/upgrade-deps/scripts/ /
-HOME/.agents/skills/upgrade-deps/scripts/git-workflow link=HOME/.coding-crew/lib/git-workflow
+HOME/.agents/skills/upgrade-deps/scripts/checks link=HOME/.coding-crew/lib/checks
 HOME/.agents/skills/upgrade-deps/scripts/tracker link=HOME/.coding-crew/lib/tracker
 HOME/.agents/skills/write-pr/ /
 HOME/.agents/skills/write-pr/SKILL.md exec=0 unrendered=0
 HOME/.coding-crew/ /
 HOME/.coding-crew/lib/ /
 HOME/.coding-crew/lib/checks/ /
+HOME/.coding-crew/lib/checks/commands-file.sh exec=1
 HOME/.coding-crew/lib/checks/detect-docker-nesting.sh exec=1
 HOME/.coding-crew/lib/checks/detect-mode.sh exec=1
+HOME/.coding-crew/lib/checks/discover-commands.sh exec=1
 HOME/.coding-crew/lib/checks/docker-install.sh exec=1
 HOME/.coding-crew/lib/checks/ensure-env.sh exec=1
 HOME/.coding-crew/lib/checks/gen-override.sh exec=1
@@ -110,12 +111,11 @@ HOME/.coding-crew/lib/checks/run-checks.sh exec=1
 HOME/.coding-crew/lib/checks/run.sh exec=1
 HOME/.coding-crew/lib/checks/shim/ /
 HOME/.coding-crew/lib/checks/shim/docker exec=1
+HOME/.coding-crew/lib/checks/write-commands-cache.sh exec=1
 HOME/.coding-crew/lib/git-workflow/ /
 HOME/.coding-crew/lib/git-workflow/README.md exec=0
 HOME/.coding-crew/lib/git-workflow/branch-safety-check.sh exec=1
 HOME/.coding-crew/lib/git-workflow/commit-changes.sh exec=1
-HOME/.coding-crew/lib/git-workflow/discover-commands.sh exec=1
-HOME/.coding-crew/lib/git-workflow/write-commands-cache.sh exec=1
 HOME/.coding-crew/lib/tracker/ /
 HOME/.coding-crew/lib/tracker/body-format.mjs exec=0
 HOME/.coding-crew/lib/tracker/cli.mjs exec=0

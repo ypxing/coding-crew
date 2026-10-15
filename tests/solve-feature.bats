@@ -27,6 +27,7 @@ setup() {
   mkdir -p "$HOME/skill"
   cp -R "$REPO_ROOT/skills/solve-feature/scripts" "$INSTALL"
   mkdir -p "$INSTALL/tracker" "$INSTALL/checks"
+  cp "$REPO_ROOT/lib/checks/commands-file.sh" "$INSTALL/checks/"
   : > "$INSTALL/tracker/cli.mjs"
   SCRIPT="$INSTALL/solve-feature.sh"
 
@@ -194,7 +195,7 @@ land_ready() {
   [ ! -e "$WORK/.solve-feature/outcome" ]
 }
 
-@test "start: a missing tool, an invalid slug, no tracker CLI, a dirty tree or no dev-commands.json exits 1 before any checkout or gh call" {
+@test "start: a missing tool, an invalid slug, no tracker CLI or a dirty tree exits 1 before any checkout or gh call" {
   local tool
   for tool in gh jq; do
     local bin="$TEMP_DIR/bin-$tool"
@@ -218,12 +219,6 @@ land_ready() {
   [[ "$output" == *"tracker CLI not found"* ]]
   mv "$TEMP_DIR/cli.mjs" "$INSTALL/tracker/cli.mjs"
 
-  git rm -q .coding-crew/dev-commands.json && git commit -q -m "no commands"
-  run bash "$SCRIPT" start feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *".coding-crew/dev-commands.json"* ]]
-  git revert --no-edit HEAD >/dev/null
-
   echo dirt > dirt.txt
   run bash "$SCRIPT" start feat
   [ "$status" -eq 1 ]
@@ -241,6 +236,37 @@ land_ready() {
   ! git show-ref --verify -q refs/heads/feature/feta || false
   [ "$(git ls-remote --heads origin | grep -c .)" -eq 1 ]
   [ "$(cat .solve-feature/outcome)" = "stopped: start failed: no feature 'feta'; features: feat other" ]
+}
+
+# --- start: the dev commands file -----------------------------------------------------
+
+@test "start with no dev commands file starts: the first coder discovers the checks" {
+  git rm -q .coding-crew/dev-commands.json && git commit -q -m "no commands"
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out branch)" = feature/feat ]
+}
+
+@test "start with a compose file and no install mode stops before the branch; one recorded in the clone, or tracked, starts" {
+  printf 'services:\n  app:\n    image: node\n' > compose.yml
+  git add compose.yml && git commit -q -m compose
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"compose.yml but no install mode recorded: run /dep-install once"* ]]
+  [ "$(git branch --show-current)" = main ]
+  grep -q '^stopped: start failed: compose.yml but no install mode' .solve-feature/outcome
+
+  # Recorded in the clone's git dir, where dep-install writes when the repo tracks no file.
+  git rm -q .coding-crew/dev-commands.json && git commit -q -m untracked
+  mkdir -p .git/coding-crew && echo '{"install_mode": "host"}' > .git/coding-crew/dev-commands.json
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+
+  git checkout -q main && rm .git/coding-crew/dev-commands.json
+  echo '{"test":"make test","install_mode":"docker","docker_service":"app"}' > .coding-crew/dev-commands.json
+  git add -A && git commit -q -m tracked
+  run bash "$SCRIPT" start feat --branch other
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 # --- start: the branch ---------------------------------------------------------------
@@ -459,7 +485,7 @@ stops_at() {
   [[ "$output" == *"$WORK/.solve-feature/2.checks.log"* ]]
   [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
   CHECKS_RC=3 run bash "$SCRIPT" land feat 2 feature/feat
-  stops_at checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand"
+  stops_at checks "no check commands known (DISCOVER): the coder discovered none; run /solve-issue once by hand in this clone"
   # The recovery the stop names: land again once the checks pass, and the issue's commits are pushed.
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ]

@@ -199,8 +199,8 @@ _libs_linked() {
 
 @test "a skill reaches a library only through its own scripts/<lib> link, and the libraries are not in skills/" {
   _libs_linked "$ALL/.claude/skills"
-  [ -f "$ALL/.claude/skills/solve-issue/scripts/git-workflow/write-commands-cache.sh" ]
-  [ -f "$ALL/.claude/skills/add-tests/scripts/git-workflow/discover-commands.sh" ]
+  [ -f "$ALL/.claude/skills/solve-issue/scripts/checks/write-commands-cache.sh" ]
+  [ -f "$ALL/.claude/skills/add-tests/scripts/checks/discover-commands.sh" ]
   # One source per library, under lib/: none is copied by hand into a skill's source-dir.
   [ ! -e "$SCRIPT_DIR/skills/solve-issue/scripts/run-checks.sh" ]
   [ ! -e "$SCRIPT_DIR/skills/dep-install/scripts" ]

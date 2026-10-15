@@ -107,41 +107,6 @@ bash scripts/git-workflow/commit-changes.sh \
 
 ---
 
-### `discover-commands.sh`
-
-**Purpose**: Mechanically decide whether a one-time command-discovery model call is needed, and if so, build its prompt (why this exists: CLAUDE.md/Makefile discovery by regex breaks on real-world tables and prose; a model reads the same files instead, once per repo, cached).
-
-**Usage**:
-```bash
-bash scripts/git-workflow/discover-commands.sh [--refresh]
-```
-
-**Behavior**: Prints either a skip message (nothing to read, or `.coding-crew/dev-commands.json` already exists) or the full discovery prompt, ready to hand to a model as-is. Bootstrap-only: once the cache file exists it is trusted as-is, indefinitely, until a human clears it or passes `--refresh` (or `CREW_COMMANDS_REFRESH=1`) — there is no staleness re-check against source-doc content. The prompt asks for five fields, not three: `test`/`lint`/`typecheck`, plus `install` — a documented install command, reported only when the source explicitly states one, so dep-install can use it in place of its own mechanical Makefile-target/lockfile guess — and `env` — a documented `.env`-bootstrap command, reported the same way, so `ensure-env.sh` can use it in place of its own mechanical `.env.example`-or-empty convention.
-
-**Used by**:
-- `add-tests`
-
-Not used by `solve-issue`: its own agent turn already *is* the model, so there is no separate
-dispatch to build a prompt for — solve-issue's Step 5 inlines the equivalent bootstrap check
-directly and reads `.coding-crew/dev-commands.json` itself when it is usable.
-
----
-
-### `write-commands-cache.sh`
-
-**Purpose**: Turn a model's discovery response into `.coding-crew/dev-commands.json` — a committed, human-editable file, so there is no staleness stamp to compute; once it exists, `discover-commands.sh` trusts it as-is.
-
-**Usage**:
-```bash
-bash scripts/git-workflow/write-commands-cache.sh --response-file <path>
-```
-
-**Behavior**: Extracts `test`/`lint`/`typecheck`/`install`/`env`/`credential_target`/`coverage`/`integration` from the response, and `install_mode`/`docker_service` from dep-install's confirmed answer (tolerant of surrounding prose or a markdown code fence), and merges them into the current checkout's `.coding-crew/dev-commands.json`. A response with none of the fields recognisable fails without touching any existing cache.
-
-**Used by**: the same two callers as `discover-commands.sh`, immediately after the model call it requested.
-
----
-
 ## Benefits
 
 - **Consistency**: Same git workflow logic across all skills

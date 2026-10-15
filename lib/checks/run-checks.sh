@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-checks.sh — run every check the checkout's .coding-crew/dev-commands.json names, each through
+# run-checks.sh — run every check the checkout's dev commands file (commands-file.sh) names, each through
 # run.sh beside it, and report each one.
 #
 # Usage:
@@ -37,7 +37,9 @@ if [ -z "$PROJECT_ROOT" ] || [ ! -d "$PROJECT_ROOT" ]; then
   echo "Error: --project-root <existing dir> is required" >&2
   exit 2
 fi
-CACHE="$PROJECT_ROOT/.coding-crew/dev-commands.json"
+# shellcheck source=/dev/null
+. "$SELF_DIR/commands-file.sh"
+CACHE=$(commands_file "$PROJECT_ROOT")
 
 if [ ! -f "$CACHE" ] || ! grep -q '"test"' "$CACHE" 2>/dev/null; then
   echo "DISCOVER"
@@ -106,7 +108,7 @@ for key in "${KEYS[@]}"; do
   [ "$before" = "$after" ] || changed="$(_changed_files "$before" "$after")"
   tail -n "$TAIL_LINES" "$log"
   if [ -n "$changed" ]; then
-    echo "$key: modified files: $changed — the check rewrote them: run it, commit the result, and re-run (a check that rewrites files on every run needs a non-mutating command in .coding-crew/dev-commands.json)"
+    echo "$key: modified files: $changed — the check rewrote them: run it, commit the result, and re-run (a check that rewrites files on every run needs a non-mutating command in $CACHE)"
     echo "$key: fail (exit $rc, modified files)"
     OVERALL=1
   elif [ "$rc" -eq 0 ]; then

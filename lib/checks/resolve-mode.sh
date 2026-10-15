@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# resolve-mode.sh — this checkout's install mode, as its committed dev-commands.json records it.
+# resolve-mode.sh — this checkout's install mode, as its dev commands file records it.
 #
 # Usage:
 #   bash scripts/resolve-mode.sh --project-root <path>
 #
 # Prints INSTALL_MODE=docker|host and DOCKER_SERVICE=<name> (may be empty), exit 0. The mode is
-# <project-root>/.coding-crew/dev-commands.json's "install_mode"; absent or any other value is host.
+# "install_mode" of the dev commands file commands-file.sh names; absent or any other value is host.
 # Deciding it is dep-install's setup step (detect-mode.sh, confirmed by a person), never this script's.
 
 set -uo pipefail
@@ -29,7 +29,9 @@ done
 
 [ -n "$PROJECT_ROOT" ] || PROJECT_ROOT="$(pwd)"
 if [ ! -d "$PROJECT_ROOT" ]; then echo "Error: directory does not exist: $PROJECT_ROOT" >&2; exit 2; fi
-CACHE="$PROJECT_ROOT/.coding-crew/dev-commands.json"
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/commands-file.sh"
+CACHE=$(commands_file "$PROJECT_ROOT")
 
 _cached() {
   [ -f "$CACHE" ] || return 0

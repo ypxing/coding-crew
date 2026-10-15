@@ -1,6 +1,6 @@
 # Docker Install
 
-Use this when `.coding-crew/dev-commands.json`'s `install_mode` is `docker`.
+Use this when the dev commands file's `install_mode` is `docker`.
 Do **not** run any command on the host — everything runs inside the container.
 
 `PROJECT_ROOT` is established at session startup by the caller. Each bash tool call runs in a fresh shell — variables do not persist between calls. At the top of every bash call, assign it to its literal value from session startup:
@@ -27,13 +27,13 @@ error: a package installed into the volume since the stamp was written (an in-co
 foo`) is not in the lockfile, and `--force` reinstalls.
 
 `docker-install.sh` reads `docker_service`, `install` and `credential_target` from
-`$PROJECT_ROOT/.coding-crew/dev-commands.json` itself. Steps 0 and 1 fill in the last two when nobody
+the dev commands file itself (`scripts/checks/commands-file.sh` names it). Steps 0 and 1 fill in the last two when nobody
 has looked yet.
 
 ### 0. Credential target — only when the cache has none
 
 ```bash
-CACHE="$PROJECT_ROOT/.coding-crew/dev-commands.json"
+CACHE=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT")
 RAW=""
 [ -f "$CACHE" ] && RAW=$(grep -o '"credential_target"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$CACHE" | head -1)
 ```
@@ -54,7 +54,7 @@ name), or a confident `null`:
 cat > "$PROJECT_ROOT/.credential-target-discovery.json" <<'JSON'
 {"credential_target": "<the command you found, e.g. \"make _registry\", or null if you checked and found none>"}
 JSON
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/git-workflow/write-commands-cache.sh" --response-file .credential-target-discovery.json)
+(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .credential-target-discovery.json)
 rm -f "$PROJECT_ROOT/.credential-target-discovery.json"
 ```
 
@@ -76,7 +76,7 @@ every subdirectory that has a named volume, not just the root. Persist that targ
 cat > "$PROJECT_ROOT/.install-discovery.json" <<'JSON'
 {"install": "<the command you found, or null>"}
 JSON
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/git-workflow/write-commands-cache.sh" --response-file .install-discovery.json)
+(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .install-discovery.json)
 rm -f "$PROJECT_ROOT/.install-discovery.json"
 ```
 
@@ -100,7 +100,7 @@ dependency volume's `.crew-stamp` says it already ran. Handle its exit code:
 - **3** — the install command failed inside the container (no stamp was written). Report `BLOCKED`
   with the tail of output it prints to stderr.
 - **5** — the cached `install` command runs docker itself, which the container has none of. Report
-  `BLOCKED` with its message — the fix is a container-side command in `.coding-crew/dev-commands.json`'s
+  `BLOCKED` with its message — the fix is a container-side command in the dev commands file's
   `install`, not in this session.
 
 Every failure ends with `docker-install: failed — service <s>, step <step>, exit <n>` and removes the

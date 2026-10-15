@@ -1,8 +1,8 @@
 ---
 name: dep-install
 description: >
-  Decides a project's install mode (host or docker) once with the person, records it in the committed
-  .coding-crew/dev-commands.json, and installs dependencies. Use when setting up a project, or when a command
+  Decides a project's install mode (host or docker) once with the person, records it in the clone's dev
+  commands file, and installs dependencies. Use when setting up a project, or when a command
   failed for a missing dependency; used by solve-issue, address-pr-comments, add-tests and upgrade-deps.
 ---
 
@@ -14,7 +14,7 @@ needed: read the mode, then install.
 
 Every project command — an ad-hoc one, and a one-off `docker compose` call, included — runs through
 `bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"`. It reads the
-mode from this checkout's `.coding-crew/dev-commands.json` and runs the command on the host, or inside
+mode from this checkout's dev commands file and runs the command on the host, or inside
 docker in this checkout's own compose project, with its override added by the `docker` shim. In
 docker mode, with no override yet, it installs first, and a failed install stops it with the service,
 the step and its log: docker mode never runs a command on the host, except one that runs docker itself.
@@ -39,8 +39,8 @@ the step and its log: docker mode never runs a command on the host, except one t
 bash "<skill-dir>/scripts/checks/resolve-mode.sh" --project-root "$PROJECT_ROOT"
 ```
 
-It prints `INSTALL_MODE=docker` or `INSTALL_MODE=host`, and `DOCKER_SERVICE`: the committed
-`.coding-crew/dev-commands.json`'s `install_mode` and `docker_service`. No `install_mode` means host.
+It prints `INSTALL_MODE=docker` or `INSTALL_MODE=host`, and `DOCKER_SERVICE`: the dev commands file's
+`install_mode` and `docker_service`. No `install_mode` means host.
 Do not re-derive the mode yourself.
 
 **No `install_mode` yet, and the project has a compose file** (`docker-compose.yml`,
@@ -56,14 +56,14 @@ bash "<skill-dir>/scripts/checks/gen-override.sh" --project-root "$PROJECT_ROOT"
 `detect-mode.sh` reads the Makefile (`USE_DOCKER` when an install-like target runs docker compose);
 the second lists the compose services. Ask the person whether the checks run in docker or on the
 host, suggesting that verdict, and — for docker — in which service, suggesting the one the Makefile's
-recipes use, else the first. Record the answer, and tell them to commit
-`.coding-crew/dev-commands.json`:
+recipes use, else the first. Record the answer; every worktree of this clone reads it, and nothing
+needs committing unless the repo tracks `.coding-crew/dev-commands.json`, which it then updates:
 
 ```bash
 cat > "$PROJECT_ROOT/.install-mode.json" <<'JSON'
 {"install_mode": "<docker or host>", "docker_service": "<service, or omit the key for host>"}
 JSON
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/git-workflow/write-commands-cache.sh" --response-file .install-mode.json)
+(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .install-mode.json)
 rm -f "$PROJECT_ROOT/.install-mode.json"
 ```
 

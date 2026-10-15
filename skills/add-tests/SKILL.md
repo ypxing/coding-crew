@@ -18,21 +18,22 @@ directly — no special-casing needed on either downstream path.
 Use the same discovery/cache mechanism `solve-issue` already uses:
 
 ```bash
-bash "<skill-dir>/scripts/git-workflow/discover-commands.sh"
+bash "<skill-dir>/scripts/checks/discover-commands.sh"
 ```
 
 This prints either a skip message (the cache already has both fields) or a discovery prompt —
 hand that prompt to a model, then persist its response:
 
 ```bash
-bash "<skill-dir>/scripts/git-workflow/write-commands-cache.sh" --response-file <path>
+bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file <path>
 ```
 
-Then read the two fields this skill needs from `.coding-crew/dev-commands.json`:
+Then read the two fields this skill needs from the dev commands file:
 
 ```bash
-grep -o '"coverage"[[:space:]]*:[[:space:]]*"[^"]*"' .coding-crew/dev-commands.json
-grep -o '"integration"[[:space:]]*:[[:space:]]*"[^"]*"' .coding-crew/dev-commands.json
+CACHE=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$(git rev-parse --show-toplevel)")
+grep -o '"coverage"[[:space:]]*:[[:space:]]*"[^"]*"' "$CACHE"
+grep -o '"integration"[[:space:]]*:[[:space:]]*"[^"]*"' "$CACHE"
 ```
 
 **If `coverage` resolves to `null`** (a model already looked and confirmed no coverage command
@@ -54,7 +55,7 @@ Makefile/lockfile heuristic — it exists so a documented `make deps`-style targ
 of a guessed package-manager command. Never substitute your own guess (`npm install`,
 `pnpm install`, …) for it.
 
-Check docker mode first — `.coding-crew/dev-commands.json`'s `install_mode`. `docker` → invoke
+Check docker mode first — `install_mode` in `$CACHE`. `docker` → invoke
 the `dep-install` skill now, unconditionally, before running coverage. Absent or `host` → don't
 install pre-emptively; run coverage in step 3 first, and only invoke
 `dep-install` if it fails for a missing-dependency reason (module-not-found, import error, test
