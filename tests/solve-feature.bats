@@ -453,11 +453,12 @@ stops_at() {
   [ ! -f "$STATE/checks.log" ]
 }
 
-@test "land with the issue still first in next exits 1 'did not close' naming the coder's report, before the checks" {
+@test "land after a coder committed [WIP] and left its issue open exits 1 'did not close' naming the coder's report, before the checks" {
   run bash "$SCRIPT" start feat
   echo "stale" > .solve-feature/coder.report.md
   run bash "$SCRIPT" next feat
-  git commit -q --allow-empty -m "partial"
+  # solve-issue's partial: the work committed with a [WIP] marker, the tree clean, the issue not closed.
+  echo half > half.txt && git add half.txt && git commit -q -m "[2][WIP] half the work"
   run bash "$SCRIPT" land feat 2 feature/feat
   stops_at solve "coder ran but did not close 2 and left no report at $WORK/.solve-feature/coder.report.md"
   [ ! -f "$STATE/checks.log" ]
