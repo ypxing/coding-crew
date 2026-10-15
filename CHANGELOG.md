@@ -8,7 +8,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 - **repo**: this repo runs solve-feature on GitHub Actions: `.github/workflows/solve-feature.yml` is the
   setup-coding-crew template, so labelling a feature's root issue `solve-feature` (or dispatching the workflow with its
-  slug) builds it on a runner.
+  slug) builds it on a runner (#509).
 - **setup-coding-crew**: the Actions workflow's billing comments say who pays with `github.token`: an
   organisation-owned repo bills the organisation (under its "billed to the organization" policy), a personal repo
   bills the owner's Copilot seat; a `COPILOT_GITHUB_TOKEN` PAT bills its owner's seat, and the old "Unverified" note
