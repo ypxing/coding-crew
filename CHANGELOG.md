@@ -9,7 +9,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - **setup-coding-crew**: the solve-feature Actions workflow streams a Claude run's steps into the job log as they
   happen (the model, each command and subagent, a failed tool) and keeps the stream in the artifact; its summary
   page shows the outcome, the PR, the model and, on a stop, the coder's report and checks log; the repo variable
-  `CREW_MODEL` pins the model. A re-run of `/setup-coding-crew` offers the new file.
+  `CREW_MODEL` pins the model. A re-run of `/setup-coding-crew` offers the new file (#518).
 - **repo**: `.gitattributes` merges `CHANGELOG.md` with git's `union` driver, so two branches' `[Unreleased]` entries
   no longer conflict, and solve-feature's re-run on this repo's feature branches does not stop on them (#516).
 - **solve-feature / solve-issue**: a re-run on an existing branch merges the default branch in first, so its checks
