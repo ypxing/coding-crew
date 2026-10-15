@@ -5,7 +5,8 @@
 #   start <slug> [--branch <name>]  preconditions, the slug among the tracker's features, the branch (--branch, else
 #                                   feature/<slug>), .solve-feature/spec.md; prints branch=, coder-model=,
 #                                   reviewer-model= (.coding-crew/config.json solveFeature.models) and pr=
-#   next <slug>                     the next ready issue, saved for land; prints its ref
+#   next <slug>                     the next ready issue, saved for land; prints its ref. The coder writes its
+#                                   report to .solve-feature/coder.report.md, which land's solve stop names
 #   land <slug> <ref> <branch>      the coder left <branch> clean with <ref> closed and the checks pass: push, and
 #                                   open the draft PR if the branch has none; prints pr=<n>
 #   fix <slug> <pr> <branch>        the review report is there and the checks pass on the fixer's tree: commit it,
@@ -117,6 +118,8 @@ next() {
   # Saved now, not in land: the local tracker's close moves the file, and fetch then exits 3. fetch runs the
   # backend's validateRef, so a ref it rejects stops here, before it reaches the coder's prompt.
   node "$CLI" fetch "$ref" >"$LOGS/${ref//\//_}.issue.md" || die "fetch $ref failed (see above)"
+  # One coder at a time writes its report here; an earlier one's would read as this coder's at land's solve stop.
+  rm -f "$LOGS/coder.report.md"
   echo "$ref"
 }
 
@@ -143,7 +146,10 @@ land() {
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
-  [ "$again" != "$REF" ] || stop solve "coder ran but did not close $REF (its report says why)"
+  if [ "$again" = "$REF" ]; then
+    [ -s "$LOGS/coder.report.md" ] || stop solve "coder ran but did not close $REF and left no report at $LOGS/coder.report.md"
+    stop solve "coder ran but did not close $REF; why: $LOGS/coder.report.md"
+  fi
   rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
   [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): the coder discovered none; run /solve-issue once by hand in this clone" "$clog"
   # $REF is closed and committed but not pushed, so a plain re-run would skip it.

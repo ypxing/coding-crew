@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature / crew-afk**: when a coder doesn't close its issue, the stop (and so `/crew-afk status`) now
+  names the file holding the coder's own report, `.solve-feature/coder.report.md`, or says it left none. Before,
+  the reason lived only in the run's conversation, out of reach of an orca or herdr run's status.
 - **add-tests / upgrade-deps**: run only when a person invokes them (`/add-tests`, `/upgrade-deps`); an agent
   no longer starts them on its own (`disable-model-invocation`; for Codex, `agents/openai.yaml`). Neither names
   the skills that pick up its issues any more.
