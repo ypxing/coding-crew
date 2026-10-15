@@ -20,10 +20,10 @@ usage() {
 }
 
 # agent — the CLI that ran this script: the nearest parent process that is claude, copilot, codex or pi, run
-# directly or by an interpreter (`node …/copilot`). CREW_AFK_AGENT names it where no agent is a parent (the smoke run).
+# directly or by an interpreter (`node …/copilot`); CREW_AGENT, when set, names it instead (the smoke run sets it).
 agent() {
   local pid=$PPID line a0 a1 a
-  [ -z "${CREW_AFK_AGENT:-}" ] || { echo "$CREW_AFK_AGENT"; return; }
+  [ -z "${CREW_AGENT:-}" ] || { echo "$CREW_AGENT"; return; }
   while [ "$pid" -gt 1 ] 2>/dev/null && line=$(ps -o ppid= -o args= -p "$pid"); do
     read -r pid a0 a1 _ <<<"$line"
     for a in "${a0##*/}" "${a1##*/}"; do case "$a" in claude | copilot | codex | pi) echo "$a"; return ;; esac; done
@@ -92,7 +92,7 @@ dispatch() {
   [[ "$to" =~ ^[a-z]+$ && -f "$SELF/destinations/$to.sh" ]] || usage "unknown --to '$to': one of $(cd "$SELF/destinations" && ls | sed 's/\.sh$//' | paste -sd' ' -)"
   # shellcheck source=/dev/null
   source "$SELF/destinations/$to.sh"
-  agent=$(agent) || die "no agent CLI (claude, copilot, codex or pi) among this script's parent processes: run /crew-afk from one, or set CREW_AFK_AGENT"
+  agent=$(agent) || die "no agent CLI (claude, copilot, codex or pi) among this script's parent processes: run /crew-afk from one, or set CREW_AGENT"
   launch_argv "$agent" "$MODE" "$slug${branch:+ --branch $branch}" || die "unknown agent '$agent': one of claude copilot codex pi"
 
   # git refuses a branch checked out twice, but a detached second run would race the first on one checkout.

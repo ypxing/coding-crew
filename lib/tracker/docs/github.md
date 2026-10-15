@@ -38,6 +38,7 @@ node "$TRACKER" rewrite <number> --body-file <file> --status <status> --feature-
 node "$TRACKER" tick <number>                             # check every criterion off, in the live body
 node "$TRACKER" write-section <number> --heading <h> --body-file <file>   # a `## <h>` comment on the issue
 node "$TRACKER" mark-done <number> [--force]
+node "$TRACKER" reopen <number>                           # undo mark-done: ready-for-agent again
 node "$TRACKER" feature-issues --feature-slug <slug> [--state open|all]   # the feature's issues as JSON
 node "$TRACKER" closing-refs --feature-slug <slug>       # the feature PR's `Closes #n` lines
 ```
@@ -117,14 +118,16 @@ does not trigger the keyword — close those by hand.)
 
 ## Reopen an issue
 
-To undo `mark-done` (or put a finished issue back in a human's hands), swap the labels:
+To undo `mark-done` and hand the issue to an agent again, `node "$TRACKER" reopen <number>`: it swaps
+`awaiting-merge` for `ready-for-agent`, reopening an issue its merged PR already closed first, and leaves
+its ticked criteria ticked. solve-feature runs it when an issue's checks fail after its coder closed it.
+
+To put a finished issue in a human's hands instead, swap the labels yourself (`gh issue reopen <number>`
+first if it is closed):
 
 ```bash
 gh issue edit <number> --remove-label awaiting-merge --add-label ready-for-human
 ```
-
-Use `ready-for-agent` instead of `ready-for-human` to hand it to an agent again. An issue already
-closed by its merged PR is reopened first: `gh issue reopen <number>`.
 
 ## Labels
 

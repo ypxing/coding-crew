@@ -625,6 +625,45 @@ test("mark-done exits 4 while a criterion is unchecked in a fresh read, on both 
   assert.equal(exec.find("issue edit 12").length, 1);
 });
 
+// --- reopen ----------------------------------------------------------------------------
+
+test("reopen (local) moves a done issue back to open/ as ready-for-agent, by either path; exits 3 when neither exists", async () => {
+  const dir = root();
+  const path = localIssue(dir);
+  await cli(dir, ["mark-done", path]);
+  const r = await cli(dir, ["reopen", path]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /^REOPENED: 01-t\.md → /);
+  assert.equal(existsSync(join(dir, ".scratch/feat/issues/done/01-t.md")), false);
+  assert.match(readFileSync(path, "utf8"), /^Status: ready-for-agent$/m);
+  assert.match(readFileSync(path, "utf8"), /- \[x\] one/);
+
+  await cli(dir, ["mark-done", path]);
+  assert.equal((await cli(dir, ["reopen", join(dir, ".scratch/feat/issues/done/01-t.md")])).code, 0);
+  assert.equal(existsSync(path), true);
+  assert.equal((await cli(dir, ["reopen", path])).code, 0, "an issue already open is made ready in place");
+  assert.equal((await cli(dir, ["reopen", join(dir, ".scratch/feat/issues/open/nope.md")])).code, 3);
+  assert.equal((await cli(dir, ["reopen"])).code, 2);
+});
+
+test("reopen (github) swaps awaiting-merge for ready-for-agent, reopening a closed issue first; exits 3 for none", async () => {
+  const dir = root({ github: true });
+  const open = fakeGh({ "issue view 12": { stdout: '{"state":"OPEN","labels":[{"name":"awaiting-merge"}]}' }, "issue edit 12": {} });
+  const r = await cli(dir, ["reopen", "12"], open);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "REOPENED: issue #12 labelled ready-for-agent\n");
+  assert.deepEqual(open.find("issue edit")[0][0], ["gh", "issue", "edit", "12", "--add-label", "ready-for-agent", "--remove-label", "awaiting-merge"]);
+  assert.equal(open.find("issue reopen").length, 0);
+
+  const closed = fakeGh({ "issue view 12": { stdout: '{"state":"CLOSED","labels":[]}' }, "issue reopen 12": {}, "issue edit 12": {} });
+  assert.equal((await cli(dir, ["reopen", "12"], closed)).code, 0);
+  assert.deepEqual(closed.calls.map((c) => c[2]), ["view", "reopen", "edit"]);
+  assert.deepEqual(closed.find("issue edit")[0][0], ["gh", "issue", "edit", "12", "--add-label", "ready-for-agent"]);
+
+  const gone = fakeGh({ "issue view 99": { code: 1, stderr: "could not resolve to an Issue" } });
+  assert.equal((await cli(dir, ["reopen", "99"], gone)).code, 3);
+});
+
 const NO_SECTION = "# T\n\nStatus: ready-for-agent\n\n## What to build\n\nA.\n";
 
 // --- tick / write-section ----------------------------------------------------------------

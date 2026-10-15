@@ -1,32 +1,37 @@
 name: solve-feature
 
-# Runs one feature's issues unattended with the Copilot CLI, billed to GitHub Copilot: no API key.
+# Runs one feature's issues unattended with an agent CLI: the Copilot CLI by default, billed to GitHub Copilot with
+# no secret, or Claude Code when the repo variable CREW_AGENT is `claude` (see Billing).
 #
 # Setup: run /setup-coding-crew, which copies this file to .github/workflows/solve-feature.yml (install.sh never
-# writes there), creates the `solve-feature` label and saves the check commands to .coding-crew/dev-commands.json;
-# commit what it lists. Then label the feature's root issue `solve-feature`, or run the workflow by hand with the
-# slug. A run whose fresh clone has no committed dev-commands.json discovers the checks itself.
+# writes there), creates the `solve-feature` label, sets CREW_AGENT and saves the check commands to
+# .coding-crew/dev-commands.json; commit what it lists. Then label the feature's root issue `solve-feature`, or run
+# the workflow by hand with the slug. A run whose fresh clone has no committed dev-commands.json discovers the
+# checks itself.
 #
 # The slug for the label trigger is the root issue's `Feature: <slug>` line, which the GitHub
 # tracker writes on every root issue; labelling any other issue fails the slug step.
 # The label is not removed afterwards: the concurrency group makes a re-label wait for the run in
 # flight rather than start a second one on the same branch.
 #
-# The Copilot CLI runs the solve-feature skill, which runs each coder, the reviewer, the fixer and the
+# The agent runs the solve-feature skill, which runs each coder, the reviewer, the fixer and the
 # PR's writer as its own subagents. The review runs inside the same job, from the skill: a PR opened or marked ready
 # with the workflow's own GITHUB_TOKEN triggers no other workflow, so a `pull_request` job would never
 # fire. The session's exit code does not carry a stop, so the last step reads the run's one-line
 # .solve-feature/outcome and fails the job on anything but `ready pr=<n>`: `needs-attention pr=<n>`,
-# `stopped: <reason>`, or no file at all (the session ended before the run finished).
+# `stopped: <reason>`, or no file at all (the session ended before the run finished). The step before it
+# uploads .solve-feature/ (the checks logs a stop names, the coder's report) as the run's artifact. A stop at an
+# issue's checks has already pushed its work and made the issue ready again, so a re-run picks it up there.
 #
-# Billing: with `github.token`, a repo owned by an organisation bills the organisation (its budgets,
+# Billing, Copilot: with `github.token`, a repo owned by an organisation bills the organisation (its budgets,
 # not any user's), which needs the organisation policy "Allow use of Copilot CLI billed to the
 # organization" (on by default where the Copilot CLI policy is on); a repo owned by a personal
 # account bills the owner's Copilot seat. See
 # https://docs.github.com/en/copilot/concepts/agents/copilot-cli/copilot-cli-in-github-actions. To
 # bill a person instead, or when the organisation policy is off, see the commented
-# COPILOT_GITHUB_TOKEN block on the last step.
-
+# COPILOT_GITHUB_TOKEN line on the run step.
+# Billing, Claude Code: the repo secret ANTHROPIC_API_KEY bills its Anthropic Console organisation;
+# CLAUDE_CODE_OAUTH_TOKEN (printed by `claude setup-token`) bills the Claude subscription of whoever made it.
 on:
   issues:
     types: [labeled]
@@ -87,6 +92,8 @@ jobs:
     concurrency:
       group: solve-feature-${{ needs.slug.outputs.slug }}
       cancel-in-progress: false
+    env:
+      CREW_AGENT: ${{ vars.CREW_AGENT || 'copilot' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -96,17 +103,22 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install the Copilot CLI
-        run: npm install -g @github/copilot
+      - name: Install the agent CLI
+        run: |
+          case "$CREW_AGENT" in
+            copilot) npm install -g @github/copilot ;;
+            claude) npm install -g @anthropic-ai/claude-code ;;
+            *) echo "::error::repo variable CREW_AGENT is '$CREW_AGENT': copilot or claude"; exit 1 ;;
+          esac
 
-      # User-level ($HOME), never into $GITHUB_WORKSPACE: a project-level install leaves
-      # .github/skills/, .coding-crew/manifest.json and the asset trees untracked, and solve-feature
-      # refuses a dirty tree. The tracker CLI lookup falls back to $HOME/.coding-crew, and copilot
-      # reads its user skills, scripts included, from $HOME/.copilot/skills.
-      - name: Install coding-crew (user-level, copilot)
+      # User-level ($HOME), never into $GITHUB_WORKSPACE: a project-level install leaves the skill
+      # directory, .coding-crew/manifest.json and the asset trees untracked, and solve-feature
+      # refuses a dirty tree. The tracker CLI lookup falls back to $HOME/.coding-crew, and the agent
+      # reads its user skills, scripts included, from $HOME (~/.copilot/skills, ~/.claude/skills).
+      - name: Install coding-crew (user-level)
         run: |
           git clone --depth 1 --branch "$CODING_CREW_REF" https://github.com/ypxing/coding-crew /tmp/coding-crew
-          TARGET_REPO="$HOME" bash /tmp/coding-crew/install.sh copilot --skills solve-feature,crew-review
+          TARGET_REPO="$HOME" bash /tmp/coding-crew/install.sh "$CREW_AGENT" --skills solve-feature,crew-review
 
       - name: Git identity for the runner
         run: |
@@ -122,14 +134,33 @@ jobs:
           # store a fine-grained PAT with the "Copilot Requests" permission as a repo secret and pass
           # it here: the run bills the Copilot seat of the PAT's owner.
           # COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
-        # --allow-all, not --allow-all-tools: the skill's scripts live under $HOME/.copilot/skills,
-        # outside the checkout, and a path check with no one to approve it denies every one of them.
-        run: copilot -p "Use the solve-feature skill on $SLUG" --allow-all --no-color
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        # An unset secret arrives as an empty variable, which Claude Code would read as a credential.
+        run: |
+          [ -n "$ANTHROPIC_API_KEY" ] || unset ANTHROPIC_API_KEY
+          [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || unset CLAUDE_CODE_OAUTH_TOKEN
+          case "$CREW_AGENT" in
+            copilot) copilot -p "Use the solve-feature skill on $SLUG" --allow-all --no-color ;;
+            claude)
+              [ -n "${ANTHROPIC_API_KEY:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ] ||
+                { echo "::error::Claude Code needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1; }
+              claude -p "/solve-feature $SLUG" --dangerously-skip-permissions ;;
+          esac
+
+      - name: Keep the run's logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: solve-feature-${{ needs.slug.outputs.slug }}-${{ github.run_attempt }}
+          path: .solve-feature/
+          include-hidden-files: true
+          if-no-files-found: ignore
 
       - name: Fail the job unless solve-feature marked the PR ready
         run: |
           if [ ! -f .solve-feature/outcome ]; then
-            echo "::error::solve-feature never finished: the session ended early (see the step above)"; exit 1
+            echo "::error::solve-feature never finished: the session ended early (see the Run solve-feature step)"; exit 1
           fi
           line=$(cat .solve-feature/outcome)
           case "$line" in

@@ -92,7 +92,7 @@ echo "SMOKE: repo ready at $DIR ($PLATFORM)"
 
 DISPATCH=(bash "$SKILLS/crew-afk/scripts/crew-afk.sh")
 [[ -n "${CREW_SMOKE_DISPATCH:-}" ]] && DISPATCH=("$CREW_SMOKE_DISPATCH")
-OUT=$(CREW_AFK_AGENT="$PLATFORM" "${DISPATCH[@]}" dispatch "$SLUG" --to local) || fail "crew-afk dispatch exited $?: $OUT"
+OUT=$(CREW_AGENT="$PLATFORM" "${DISPATCH[@]}" dispatch "$SLUG" --to local) || fail "crew-afk dispatch exited $?: $OUT"
 echo "$OUT"
 WT=$(sed -n 's/^worktree=//p' <<<"$OUT") PID=$(sed -n 's/^pid=//p' <<<"$OUT")
 [[ -n "$WT" && -n "$PID" ]] || fail "crew-afk dispatch printed no worktree= or pid="
