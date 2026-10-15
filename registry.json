@@ -8,7 +8,8 @@
         "dep-install",
         "crew-review",
         "tdd",
-        "write-pr"
+        "write-pr",
+        "setup-coding-crew"
       ],
       "libs": [
         "checks",

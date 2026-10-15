@@ -473,7 +473,7 @@ stops_at() {
   [[ "$output" == *"$WORK/.solve-feature/2.checks.log"* ]]
   [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
   CHECKS_RC=3 run bash "$SCRIPT" land feat 2 feature/feat
-  stops_at checks "no check commands known (DISCOVER): the coder discovered none; run /setup-coding-crew and commit .coding-crew/dev-commands.json"
+  stops_at checks "no check commands known (DISCOVER): the coder discovered none; run /setup-coding-crew and commit .coding-crew/dev-commands.json, then run land feat 2 feature/feat before a re-run"
   # The recovery the stop names: land again once the checks pass, and the issue's commits are pushed.
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ]
@@ -862,7 +862,7 @@ EOF
   ! grep -qF 'review-pr' "$skill" || false
 }
 
-@test "install.sh claude --skill solve-feature ships the script and crew-review, and no Actions host" {
+@test "install.sh claude --skill solve-feature ships the script, crew-review and setup-coding-crew, and no Actions host" {
   local target="$TEMP_DIR/target"
   mkdir -p "$target" && git -C "$target" init -q -b main
   run bash "$REPO_ROOT/install.sh" claude --skill solve-feature --project "$target"
@@ -873,10 +873,12 @@ EOF
   [ ! -e "$target/.claude/skills/solve-feature/hosts" ]
   [ -f "$target/.claude/skills/solve-feature/SKILL.md" ]
   [ -f "$target/.claude/skills/crew-review/SKILL.md" ]
+  # solve-feature's DISCOVER stops send the user to /setup-coding-crew, so it ships alongside.
+  [ -f "$target/.claude/skills/setup-coding-crew/SKILL.md" ]
   [ -f "$target/.claude/skills/solve-feature/scripts/checks/run-checks.sh" ]
   [ -f "$target/.claude/skills/solve-feature/scripts/checks/run.sh" ]
   [ -f "$target/.claude/skills/solve-feature/scripts/tracker/cli.mjs" ]
-  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install","crew-review","tdd","write-pr"]' ]
+  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install","crew-review","tdd","write-pr","setup-coding-crew"]' ]
 }
 
 # --- hosts -------------------------------------------------------------------------------

@@ -12,7 +12,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   `solve-feature` label, then prints the `git add … && git commit` line for the setup files; it never commits. A
   re-run shows what is in place and redoes a step only when you name it. The Actions template moved from
   `solve-feature/hosts/github-actions.yml` to `setup-coding-crew/hosts/github-actions.yml`, and solve-feature's
-  "no check commands known" stops now say to run `/setup-coding-crew` (#492).
+  "no check commands known" stops now say to run `/setup-coding-crew` (installed with solve-feature) (#492).
 - **tracker (local) / solve-feature**: `next` prints the issue's absolute path in the main checkout, not a
   `.scratch/…` path relative to it. In a worktree, where the gitignored `.scratch/` is absent, a coder couldn't find
   the relative path, used the `.solve-feature/issues/` copy instead, and the tracker rejected that as an invalid

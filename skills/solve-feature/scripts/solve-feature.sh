@@ -151,8 +151,8 @@ land() {
     stop solve "coder ran but did not close $REF; why: $LOGS/coder.report.md"
   fi
   rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
-  [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): the coder discovered none; run /setup-coding-crew and commit .coding-crew/dev-commands.json" "$clog"
   # $REF is closed and committed but not pushed, so a plain re-run would skip it.
+  [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): the coder discovered none; run /setup-coding-crew and commit .coding-crew/dev-commands.json, then run land $SLUG $REF $BRANCH before a re-run" "$clog"
   [ "$rc" = 0 ] || stop checks "run-checks.sh exit $rc; once fixed and committed, run land $SLUG $REF $BRANCH before a re-run" "$clog"
   git push -q -u origin "$BRANCH" || stop push "git push failed; once it can push, run land $SLUG $REF $BRANCH before a re-run"
   pr_view

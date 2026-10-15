@@ -101,7 +101,9 @@ gh label create solve-feature --force
 ```
 
 When `gh label create` fails, show gh's error as it printed it (it says what to fix, e.g. `gh auth login`) and
-carry on to Step 4: the workflow file is written. Then point the user to the workflow's header comment
+carry on to Step 4: the workflow file is written. Tell the user that once gh's error is fixed, they re-run
+`/setup-coding-crew redo actions` (or run `gh label create solve-feature` themselves): a plain re-run finds the
+workflow `identical` and does not create the label. Then point the user to the workflow's header comment
 (`# Billing:`) for who pays for the runs, and say how a run starts: label a feature's root issue
 `solve-feature`, or run the workflow by hand with the slug.
 
