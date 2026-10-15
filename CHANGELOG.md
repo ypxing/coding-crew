@@ -7,7 +7,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 ## [Unreleased]
 
 - **repo**: `.gitattributes` merges `CHANGELOG.md` with git's `union` driver, so two branches' `[Unreleased]` entries
-  no longer conflict, and solve-feature's re-run on this repo's feature branches does not stop on them.
+  no longer conflict, and solve-feature's re-run on this repo's feature branches does not stop on them (#516).
 - **solve-feature / solve-issue**: a re-run on an existing branch merges the default branch in first, so its checks
   run main's later fixes (a conflict stops it, naming the files); a resumed coder whose issue's work is already
   committed still runs the checks and marks it done, instead of stopping the run with the issue open (#515).
