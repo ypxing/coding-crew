@@ -58,7 +58,8 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
 **Any other non-zero exit stops the run.** Relay the script's message as it printed it (a stop names
 the step, the reason and, for the checks, its log; a `solve` stop, the coder's report) — and end; do
 not retry, fix or close anything.
-Once the cause is fixed, a re-run skips the issues already done and reuses the branch and the PR. A `checks`
+Once the cause is fixed, a re-run skips the issues already done and reuses the branch and the PR, which `start`
+brings up to date with the default branch first. A `checks`
 stop has already reopened its issue and pushed its work, so the re-run's coder starts from that work; a stop
 after a push failed or a review was fixed names its own recovery.
 
