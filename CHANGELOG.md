@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **tracker (local) / solve-feature**: `next` prints the issue's absolute path in the main checkout, not a
+  `.scratch/…` path relative to it. In a worktree, where the gitignored `.scratch/` is absent, a coder couldn't find
+  the relative path, used the `.solve-feature/issues/` copy instead, and the tracker rejected that as an invalid
+  ref, so the issue was never closed.
 - **solve-feature / crew-afk**: when a coder doesn't close its issue, the stop (and so `/crew-afk status`) now
   names the file holding the coder's own report, `.solve-feature/coder.report.md`, or says it left none. Before,
   the reason lived only in the run's conversation, out of reach of an orca or herdr run's status.

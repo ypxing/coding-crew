@@ -500,17 +500,18 @@ test("next (local) prints the first ready file whose blockers are all in done/, 
   const before = snapshot();
   const r = await cli(dir, ["next", "--feature-slug", "feat"]);
   assert.equal(r.code, 0, r.stderr);
-  assert.equal(r.stdout, ".scratch/feat/issues/open/01-a.md\n");
+  // Absolute: the ref names the main checkout's file from any cwd, a worktree without .scratch/ too.
+  assert.equal(r.stdout, `${join(dir, ".scratch/feat/issues/open/01-a.md")}\n`);
   assert.deepEqual(snapshot(), before);
   const fetched = await cli(dir, ["fetch", r.stdout.trim()]);
   assert.equal(fetched.code, 0, fetched.stderr);
   assert.match(fetched.stdout, /^# 01-a\.md\n/);
 
   renameSync(join(dir, ".scratch/feat/issues/open/01-a.md"), join(dir, ".scratch/feat/issues/done/01-a.md"));
-  assert.equal((await cli(dir, ["next", "--feature-slug", "feat"])).stdout, ".scratch/feat/issues/open/02-b.md\n");
+  assert.equal((await cli(dir, ["next", "--feature-slug", "feat"])).stdout, `${join(dir, ".scratch/feat/issues/open/02-b.md")}\n`);
 
   writeFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), JSON.stringify({ "02-b.md": ["03-c.md"], "04-d.md": [] }));
-  assert.equal((await cli(dir, ["next", "--feature-slug", "feat"])).stdout, ".scratch/feat/issues/open/04-d.md\n");
+  assert.equal((await cli(dir, ["next", "--feature-slug", "feat"])).stdout, `${join(dir, ".scratch/feat/issues/open/04-d.md")}\n`);
 });
 
 test("next (github) prints a one-slice feature's ready root; exits 3 with empty stdout when nothing is dispatchable or no root exists", async () => {
