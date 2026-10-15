@@ -2,10 +2,8 @@
   "skills": {
     "solve-feature": {
       "source-dir": "solve-feature",
-      "description": "Run one feature's ready-for-agent issues in order on one branch, each by a fresh coder subagent gated by the project's checks, in a draft PR; at the end it is reviewed by crew-review, its findings fixed, its body written and marked ready when nothing needs a person.",
       "deps": [
         "solve-issue",
-        "dep-install",
         "crew-review",
         "tdd",
         "write-pr",
@@ -18,7 +16,6 @@
     },
     "crew-afk": {
       "source-dir": "crew-afk",
-      "description": "Start one feature's solve-feature run unattended in that feature's own worktree, locally (capped at 1h), in an orca terminal or a herdr pane, and say how each run ended.",
       "deps": [
         "solve-feature"
       ],
@@ -28,29 +25,26 @@
     },
     "crew-review": {
       "source-dir": "crew-review",
-      "description": "A fresh read-only subagent reviews a branch or PR against the spec its caller names, for what breaks and for the repo's documented rules, and writes one JSON report; it posts nothing and marks nothing ready.",
       "libs": [
         "tracker"
       ]
     },
     "tdd": {
       "source-dir": "tdd",
-      "description": "Test-driven development with red-green-refactor loop, vertical slices.",
       "source": "mattpocock/skills"
     },
     "dep-install": {
       "source-dir": "dep-install",
-      "description": "Install the project's dependencies once, on the host or in docker.",
       "libs": [
         "checks"
       ]
     },
     "solve-issue": {
       "source-dir": "solve-issue",
-      "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "deps": [
         "dep-install",
-        "tdd"
+        "tdd",
+        "configure-tracker"
       ],
       "libs": [
         "checks",
@@ -60,10 +54,8 @@
     },
     "address-pr-comments": {
       "source-dir": "address-pr-comments",
-      "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "deps": [
         "dep-install",
-        "solve-issue",
         "tdd"
       ],
       "libs": [
@@ -73,25 +65,28 @@
     },
     "to-issues": {
       "source-dir": "to-issues",
-      "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
+      "deps": [
+        "to-prd",
+        "configure-tracker"
+      ],
       "libs": [
         "tracker"
       ]
     },
     "to-prd": {
       "source-dir": "to-prd",
-      "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
       "source": "mattpocock/skills",
+      "deps": [
+        "configure-tracker"
+      ],
       "libs": [
         "tracker"
       ]
     },
     "crew-brainstorm": {
       "source-dir": "crew-brainstorm",
-      "description": "Collaborative design pipeline: explore intent, propose approaches, build a spec, then hand off to to-issues.",
       "deps": [
-        "to-prd",
         "to-issues"
       ],
       "libs": [
@@ -100,10 +95,8 @@
     },
     "crew-grill": {
       "source-dir": "crew-grill",
-      "description": "Adversarial design pipeline: stress-test every assumption, capture decisions, then hand off to to-issues.",
       "deps": [
         "domain-modeling",
-        "to-prd",
         "to-issues"
       ],
       "libs": [
@@ -112,7 +105,6 @@
     },
     "add-tests": {
       "source-dir": "add-tests",
-      "description": "Discover the project's coverage command, rank under-covered files by risk, resolve a mocking convention per ecosystem, and hand findings to to-issues as ready-for-agent issues.",
       "deps": [
         "to-issues",
         "dep-install"
@@ -123,9 +115,9 @@
     },
     "upgrade-deps": {
       "source-dir": "upgrade-deps",
-      "description": "Audit outdated npm/yarn/pnpm dependencies and plan safe upgrades as issues.",
       "deps": [
-        "dep-install"
+        "dep-install",
+        "to-issues"
       ],
       "libs": [
         "checks",
@@ -134,14 +126,12 @@
     },
     "configure-tracker": {
       "source-dir": "configure-tracker",
-      "description": "Choose where the project's issues live: local markdown files or GitHub Issues.",
       "libs": [
         "tracker"
       ]
     },
     "setup-coding-crew": {
       "source-dir": "setup-coding-crew",
-      "description": "Take a repo from a fresh install to a working /solve-feature: the tracker (through configure-tracker), the check commands and, with the github tracker, the solve-feature Actions workflow and its label; then print the commit line.",
       "deps": [
         "configure-tracker"
       ],
@@ -151,12 +141,10 @@
       ]
     },
     "domain-modeling": {
-      "source-dir": "domain-modeling",
-      "description": "Updates CONTEXT.md glossary and creates ADRs inline as design decisions crystallise."
+      "source-dir": "domain-modeling"
     },
     "write-pr": {
       "source-dir": "write-pr",
-      "description": "Write a short PR body for a human reviewer: Why, What changes, Risk and Tested.",
       "source": "mattpocock/skills"
     }
   }

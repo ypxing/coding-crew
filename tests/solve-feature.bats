@@ -941,7 +941,7 @@ EOF
   [ -f "$target/.claude/skills/solve-feature/scripts/checks/run-checks.sh" ]
   [ -f "$target/.claude/skills/solve-feature/scripts/checks/run.sh" ]
   [ -f "$target/.claude/skills/solve-feature/scripts/tracker/cli.mjs" ]
-  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install","crew-review","tdd","write-pr","setup-coding-crew"]' ]
+  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","crew-review","tdd","write-pr","setup-coding-crew"]' ]
 }
 
 # --- hosts -------------------------------------------------------------------------------

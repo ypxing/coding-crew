@@ -283,8 +283,7 @@ SH
   done
 }
 
-@test "no cost cap on any agent: crew-afk's SKILL.md, script, registry entry and the guide's local row name no budget" {
+@test "no cost cap on any agent: crew-afk's SKILL.md, script and the guide's local row name no budget" {
   ! grep -niE 'budget|\$10' "$REPO_ROOT/skills/crew-afk/SKILL.md" "$REPO_ROOT/skills/crew-afk/scripts/crew-afk.sh" || false
-  ! jq -r '.skills."crew-afk".description' "$REPO_ROOT/registry.json" | grep -iE 'budget|\$10' || false
   ! grep -E '^\| `local`' "$REPO_ROOT/docs/guide.md" | grep -iE 'budget|\$10' || false
 }

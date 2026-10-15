@@ -9,6 +9,7 @@ load helpers/shared-install
 setup_file() {
   shared_install all
   shared_install to-issues claude --skill to-issues
+  shared_install upgrade-deps claude --skill upgrade-deps
   bg_wait
 }
 
@@ -29,6 +30,18 @@ teardown() {
   [ "$(jq -c '.skills' "$m")" = "$(jq -c '.skills | keys' "$SCRIPT_DIR/registry.json")" ]
   [ "$(jq -c '.libs' "$m")" = '["checks","git-workflow","tracker"]' ]
   ! grep -q '"version"' "$m"
+}
+
+@test "a skill installed alone brings the skills it invokes: to-issues brings to-prd and configure-tracker, upgrade-deps brings to-issues" {
+  local dir s
+  dir="$(shared_installed to-issues)"
+  for s in to-issues to-prd configure-tracker; do
+    [ -f "$dir/.claude/skills/$s/SKILL.md" ] || { echo "to-issues: no $s"; return 1; }
+  done
+  dir="$(shared_installed upgrade-deps)"
+  for s in upgrade-deps to-issues dep-install; do
+    [ -f "$dir/.claude/skills/$s/SKILL.md" ] || { echo "upgrade-deps: no $s"; return 1; }
+  done
 }
 
 @test "to-issues installs references/ beside SKILL.md for every platform" {
