@@ -19,10 +19,13 @@ name: solve-feature
 # .solve-feature/outcome and fails the job on anything but `ready pr=<n>`: `needs-attention pr=<n>`,
 # `stopped: <reason>`, or no file at all (the session ended before the run finished).
 #
-# Billing: with `github.token` the Copilot CLI bills under the organisation policy "Allow use of
-# Copilot CLI billed to the organization" (on by default where the CLI is enabled), see
-# https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli-in-actions. To bill a
-# person instead, see the commented COPILOT_GITHUB_TOKEN block on the last step.
+# Billing: with `github.token`, a repo owned by an organisation bills the organisation (its budgets,
+# not any user's), which needs the organisation policy "Allow use of Copilot CLI billed to the
+# organization" (on by default where the Copilot CLI policy is on); a repo owned by a personal
+# account bills the owner's Copilot seat. See
+# https://docs.github.com/en/copilot/concepts/agents/copilot-cli/copilot-cli-in-github-actions. To
+# bill a person instead, or when the organisation policy is off, see the commented
+# COPILOT_GITHUB_TOKEN block on the last step.
 
 on:
   issues:
@@ -115,10 +118,9 @@ jobs:
           SLUG: ${{ needs.slug.outputs.slug }}
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
-          # To bill a person rather than the organisation, store a fine-grained PAT with the
-          # "Copilot Requests" permission as a repo secret and pass it here. Unverified: that this
-          # is the variable name the CLI reads in Actions, and that a personal (non-organisation)
-          # account can bill an Actions run at all.
+          # To bill a person rather than the organisation, or when the organisation policy is off,
+          # store a fine-grained PAT with the "Copilot Requests" permission as a repo secret and pass
+          # it here: the run bills the Copilot seat of the PAT's owner.
           # COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
         run: copilot -p "Use the solve-feature skill on $SLUG" --allow-all-tools --no-color
 
