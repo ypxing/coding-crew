@@ -2,6 +2,8 @@ HOME/.agents/ /
 HOME/.agents/skills/ /
 HOME/.agents/skills/add-tests/ /
 HOME/.agents/skills/add-tests/SKILL.md exec=0 unrendered=0
+HOME/.agents/skills/add-tests/agents/ /
+HOME/.agents/skills/add-tests/agents/openai.yaml exec=0
 HOME/.agents/skills/add-tests/scripts/ /
 HOME/.agents/skills/add-tests/scripts/checks link=HOME/.coding-crew/lib/checks
 HOME/.agents/skills/address-pr-comments/ /
@@ -88,6 +90,8 @@ HOME/.agents/skills/to-prd/scripts/ /
 HOME/.agents/skills/to-prd/scripts/tracker link=HOME/.coding-crew/lib/tracker
 HOME/.agents/skills/upgrade-deps/ /
 HOME/.agents/skills/upgrade-deps/SKILL.md exec=0 unrendered=0
+HOME/.agents/skills/upgrade-deps/agents/ /
+HOME/.agents/skills/upgrade-deps/agents/openai.yaml exec=0
 HOME/.agents/skills/upgrade-deps/scripts/ /
 HOME/.agents/skills/upgrade-deps/scripts/checks link=HOME/.coding-crew/lib/checks
 HOME/.agents/skills/upgrade-deps/scripts/tracker link=HOME/.coding-crew/lib/tracker

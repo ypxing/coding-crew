@@ -4,12 +4,12 @@ description: >
   Discovers the project's coverage command, ranks under-covered files by risk, resolves a mocking convention
   per ecosystem, and hands the findings to to-issues as ready-for-agent issues. Use when the user wants to
   close testing-coverage gaps or asks where test coverage is weakest.
+disable-model-invocation: true
 ---
 
 # Add Tests
 
-Turn a coverage gap into `ready-for-agent` issues that `/solve-feature` or `/solve-issue` can pick up
-directly — no special-casing needed on either downstream path.
+Turn a coverage gap into `ready-for-agent` issues.
 
 ## Process
 
@@ -149,7 +149,7 @@ by name from `test-conventions.md`), and tier routing — to a transient file,
 prompt for one, e.g. `add-tests-<short-topic>`). It is not a PRD: write no `PRD.md`.
 
 Every gap-fix finding's acceptance criteria must cite the resolved mock convention by name, so
-`crew-coder`/`solve-issue` don't each invent a different mocking style for the same issue.
+each coder doesn't invent a different mocking style for the same issue.
 
 Each finding also carries two criteria that stop coverage work from producing tests that prove
 nothing:

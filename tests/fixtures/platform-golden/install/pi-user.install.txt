@@ -37,6 +37,8 @@ HOME/.pi/agent/ /
 HOME/.pi/agent/skills/ /
 HOME/.pi/agent/skills/add-tests/ /
 HOME/.pi/agent/skills/add-tests/SKILL.md exec=0 unrendered=0
+HOME/.pi/agent/skills/add-tests/agents/ /
+HOME/.pi/agent/skills/add-tests/agents/openai.yaml exec=0
 HOME/.pi/agent/skills/add-tests/scripts/ /
 HOME/.pi/agent/skills/add-tests/scripts/checks link=HOME/.coding-crew/lib/checks
 HOME/.pi/agent/skills/address-pr-comments/ /
@@ -123,6 +125,8 @@ HOME/.pi/agent/skills/to-prd/scripts/ /
 HOME/.pi/agent/skills/to-prd/scripts/tracker link=HOME/.coding-crew/lib/tracker
 HOME/.pi/agent/skills/upgrade-deps/ /
 HOME/.pi/agent/skills/upgrade-deps/SKILL.md exec=0 unrendered=0
+HOME/.pi/agent/skills/upgrade-deps/agents/ /
+HOME/.pi/agent/skills/upgrade-deps/agents/openai.yaml exec=0
 HOME/.pi/agent/skills/upgrade-deps/scripts/ /
 HOME/.pi/agent/skills/upgrade-deps/scripts/checks link=HOME/.coding-crew/lib/checks
 HOME/.pi/agent/skills/upgrade-deps/scripts/tracker link=HOME/.coding-crew/lib/tracker

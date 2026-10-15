@@ -2,6 +2,8 @@ REPO/.claude/ /
 REPO/.claude/skills/ /
 REPO/.claude/skills/add-tests/ /
 REPO/.claude/skills/add-tests/SKILL.md exec=0 unrendered=0
+REPO/.claude/skills/add-tests/agents/ /
+REPO/.claude/skills/add-tests/agents/openai.yaml exec=0
 REPO/.claude/skills/add-tests/scripts/ /
 REPO/.claude/skills/add-tests/scripts/checks link=../../../../.coding-crew/lib/checks
 REPO/.claude/skills/address-pr-comments/ /
@@ -88,6 +90,8 @@ REPO/.claude/skills/to-prd/scripts/ /
 REPO/.claude/skills/to-prd/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.claude/skills/upgrade-deps/ /
 REPO/.claude/skills/upgrade-deps/SKILL.md exec=0 unrendered=0
+REPO/.claude/skills/upgrade-deps/agents/ /
+REPO/.claude/skills/upgrade-deps/agents/openai.yaml exec=0
 REPO/.claude/skills/upgrade-deps/scripts/ /
 REPO/.claude/skills/upgrade-deps/scripts/checks link=../../../../.coding-crew/lib/checks
 REPO/.claude/skills/upgrade-deps/scripts/tracker link=../../../../.coding-crew/lib/tracker

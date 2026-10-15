@@ -1,0 +1,5 @@
+interface:
+  display_name: "Add Tests"
+  short_description: "Plan tests for risky untested code"
+policy:
+  allow_implicit_invocation: false

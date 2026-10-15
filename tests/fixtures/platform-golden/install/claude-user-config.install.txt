@@ -35,6 +35,8 @@ HOME/.coding-crew/manifest.json 0e946fcd1ec27c018adf40fedda045188f30a225
 CONFIG/skills/ /
 CONFIG/skills/add-tests/ /
 CONFIG/skills/add-tests/SKILL.md exec=0 unrendered=0
+CONFIG/skills/add-tests/agents/ /
+CONFIG/skills/add-tests/agents/openai.yaml exec=0
 CONFIG/skills/add-tests/scripts/ /
 CONFIG/skills/add-tests/scripts/checks link=HOME/.coding-crew/lib/checks
 CONFIG/skills/address-pr-comments/ /
@@ -121,6 +123,8 @@ CONFIG/skills/to-prd/scripts/ /
 CONFIG/skills/to-prd/scripts/tracker link=HOME/.coding-crew/lib/tracker
 CONFIG/skills/upgrade-deps/ /
 CONFIG/skills/upgrade-deps/SKILL.md exec=0 unrendered=0
+CONFIG/skills/upgrade-deps/agents/ /
+CONFIG/skills/upgrade-deps/agents/openai.yaml exec=0
 CONFIG/skills/upgrade-deps/scripts/ /
 CONFIG/skills/upgrade-deps/scripts/checks link=HOME/.coding-crew/lib/checks
 CONFIG/skills/upgrade-deps/scripts/tracker link=HOME/.coding-crew/lib/tracker

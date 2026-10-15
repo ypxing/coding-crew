@@ -1,0 +1,5 @@
+interface:
+  display_name: "Upgrade Deps"
+  short_description: "Audit outdated packages and plan safe upgrades"
+policy:
+  allow_implicit_invocation: false

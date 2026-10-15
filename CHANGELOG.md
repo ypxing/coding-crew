@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **add-tests / upgrade-deps**: run only when a person invokes them (`/add-tests`, `/upgrade-deps`); an agent
+  no longer starts them on its own (`disable-model-invocation`; for Codex, `agents/openai.yaml`). Neither names
+  the skills that pick up its issues any more.
 - **crew-afk / solve-feature**: `/crew-afk <feature> --branch <name>` passes the branch on to solve-feature, so a
   repo whose branch-name rule refuses `feature/<slug>` (a ticket key, say) can be dispatched to. A solve-feature
   re-run after a refused first push now pushes the branch at start, before any coder runs, rather than at the

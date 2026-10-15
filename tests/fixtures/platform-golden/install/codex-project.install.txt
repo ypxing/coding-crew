@@ -2,6 +2,8 @@ REPO/.agents/ /
 REPO/.agents/skills/ /
 REPO/.agents/skills/add-tests/ /
 REPO/.agents/skills/add-tests/SKILL.md exec=0 unrendered=0
+REPO/.agents/skills/add-tests/agents/ /
+REPO/.agents/skills/add-tests/agents/openai.yaml exec=0
 REPO/.agents/skills/add-tests/scripts/ /
 REPO/.agents/skills/add-tests/scripts/checks link=../../../../.coding-crew/lib/checks
 REPO/.agents/skills/address-pr-comments/ /
@@ -88,6 +90,8 @@ REPO/.agents/skills/to-prd/scripts/ /
 REPO/.agents/skills/to-prd/scripts/tracker link=../../../../.coding-crew/lib/tracker
 REPO/.agents/skills/upgrade-deps/ /
 REPO/.agents/skills/upgrade-deps/SKILL.md exec=0 unrendered=0
+REPO/.agents/skills/upgrade-deps/agents/ /
+REPO/.agents/skills/upgrade-deps/agents/openai.yaml exec=0
 REPO/.agents/skills/upgrade-deps/scripts/ /
 REPO/.agents/skills/upgrade-deps/scripts/checks link=../../../../.coding-crew/lib/checks
 REPO/.agents/skills/upgrade-deps/scripts/tracker link=../../../../.coding-crew/lib/tracker

@@ -36,6 +36,8 @@ HOME/.copilot/ /
 HOME/.copilot/skills/ /
 HOME/.copilot/skills/add-tests/ /
 HOME/.copilot/skills/add-tests/SKILL.md exec=0 unrendered=0
+HOME/.copilot/skills/add-tests/agents/ /
+HOME/.copilot/skills/add-tests/agents/openai.yaml exec=0
 HOME/.copilot/skills/add-tests/scripts/ /
 HOME/.copilot/skills/add-tests/scripts/checks link=HOME/.coding-crew/lib/checks
 HOME/.copilot/skills/address-pr-comments/ /
@@ -122,6 +124,8 @@ HOME/.copilot/skills/to-prd/scripts/ /
 HOME/.copilot/skills/to-prd/scripts/tracker link=HOME/.coding-crew/lib/tracker
 HOME/.copilot/skills/upgrade-deps/ /
 HOME/.copilot/skills/upgrade-deps/SKILL.md exec=0 unrendered=0
+HOME/.copilot/skills/upgrade-deps/agents/ /
+HOME/.copilot/skills/upgrade-deps/agents/openai.yaml exec=0
 HOME/.copilot/skills/upgrade-deps/scripts/ /
 HOME/.copilot/skills/upgrade-deps/scripts/checks link=HOME/.coding-crew/lib/checks
 HOME/.copilot/skills/upgrade-deps/scripts/tracker link=HOME/.coding-crew/lib/tracker

@@ -5,16 +5,16 @@ description: >
   conflicts, real call-site usage, and targeted changelog review for major bumps — then publishes issues
   (batched for trivial in-range bumps, one per package or coupled group otherwise; every major-version bump
   defaults to ready-for-human, minor/patch range-edits stay ready-for-agent unless a conflict or advisory
-  can't be resolved cleanly) with required test additions and a safety checklist, for solve-feature or
-  solve-issue to execute. Use when the user wants to upgrade dependencies, audit outdated packages, or plan a
-  safe dependency bump. Does not perform the upgrade itself.
+  can't be resolved cleanly) with required test additions and a safety checklist. Use when the user wants to
+  upgrade dependencies, audit outdated packages, or plan a safe dependency bump. Does not perform the upgrade
+  itself.
+disable-model-invocation: true
 ---
 
 # Upgrade Deps
 
 Plan safe dependency upgrades and hand them off as issues. This skill never edits
-`package.json`/lockfiles or runs the upgrade itself — it analyzes, then files work for
-`solve-issue` / `solve-feature` to execute.
+`package.json`/lockfiles or runs the upgrade itself — it analyzes, then files issues.
 
 Ecosystem support: npm, yarn, pnpm (Node.js). If the repo uses another package manager,
 stop and ask the user before proceeding.
@@ -330,8 +330,8 @@ Print a short table: package(s), current → target, risk (low/med/high), status
 ## Never
 
 - Never modify `package.json`, lockfiles, or `node_modules` in the working tree or on any
-  real branch — this skill only plans and files issues; execution belongs to `solve-issue` /
-  `solve-feature`. The one exception is the disposable git worktree from step 6d: created, bumped,
+  real branch — this skill only plans and files issues; whoever picks them up executes
+  them. The one exception is the disposable git worktree from step 6d: created, bumped,
   and deleted entirely within that sub-step, never merged and never left behind. Step 6a/6b's
   tarball diffing downloads to a scratch temp dir and never touches a worktree at all.
 - Never mark a range-edit issue `ready-for-agent` when the status-decision criteria in step 7

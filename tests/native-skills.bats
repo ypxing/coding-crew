@@ -3,7 +3,7 @@
 # CLAUDE.md's native rule: a skill uses another skill by name, and reaches code shared between skills
 # only through the library linked into its own scripts/ directory (<skill-dir>/scripts/<lib>/), so an
 # installed skill can be read and run on its own. And every SKILL.md's frontmatter follows the
-# Agent Skills spec, plus argument-hint, which Claude Code reads.
+# Agent Skills spec, plus argument-hint and disable-model-invocation, which Claude Code reads.
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
@@ -78,10 +78,22 @@ frontmatter() {
           [ "${#value}" -le 1024 ] || fails+="$dir: description is ${#value} characters"$'\n'
           [[ "$value" == *"Use when"* ]] || fails+="$dir: description does not say when to use it"$'\n' ;;
         allowed-tools) [[ "$value" != *,* ]] || fails+="$dir: allowed-tools is not space-delimited"$'\n' ;;
-        license | compatibility | metadata | argument-hint) ;;
+        license | compatibility | metadata | argument-hint | disable-model-invocation) ;;
         *) fails+="$dir: frontmatter key '$key' is not in the spec"$'\n' ;;
       esac
     done < <(frontmatter "$f")
+  done
+  [ -z "$fails" ] || { printf '%s' "$fails"; return 1; }
+}
+
+# Codex ignores disable-model-invocation and reads agents/openai.yaml's policy instead.
+@test "add-tests and upgrade-deps run only when a person invokes them, on every platform" {
+  local dir fails=""
+  for dir in add-tests upgrade-deps; do
+    frontmatter "$REPO_ROOT/skills/$dir/SKILL.md" | grep -qx $'disable-model-invocation\ttrue' \
+      || fails+="$dir: no disable-model-invocation: true"$'\n'
+    grep -qE '^[[:space:]]+allow_implicit_invocation: false$' "$REPO_ROOT/skills/$dir/agents/openai.yaml" 2>/dev/null \
+      || fails+="$dir: agents/openai.yaml does not set allow_implicit_invocation: false"$'\n'
   done
   [ -z "$fails" ] || { printf '%s' "$fails"; return 1; }
 }
