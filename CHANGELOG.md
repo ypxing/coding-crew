@@ -8,7 +8,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 - **README**: the quickstart runs `/setup-coding-crew` once before the first `/crew-grill`, the diagram shows
   both ways a run ends (PR marked ready, or PR lists what needs you), every multi-issue use case ends in
-  `/crew-afk <slug>`, and the full command table is collapsed.
+  `/crew-afk <slug>`, and the full command table is collapsed (#496).
 - **setup-coding-crew** (new): `/setup-coding-crew` takes a repo from a fresh install to a working `/solve-feature`
   in one run: it chooses the tracker (through configure-tracker), discovers and saves the check commands to
   `.coding-crew/dev-commands.json`, with the github tracker offers the solve-feature Actions workflow and its
