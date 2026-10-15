@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **registry / to-issues / to-prd / upgrade-deps / solve-issue**: installing to-issues alone now brings to-prd and
+  configure-tracker, upgrade-deps brings to-issues, and every skill that offers configure-tracker reaches it;
+  deps no skill invokes are gone (solve-feature → dep-install, address-pr-comments → solve-issue, crew-grill and
+  crew-brainstorm → to-prd, which still arrives through to-issues). `registry.json` drops its unread `description`
+  fields, and `tests/skill-deps.bats` fails when deps and skill text drift. The release smoke is now
+  `scripts/smoke-crew-afk.sh` (#504).
 - **dep-install / add-tests / upgrade-deps / address-pr-comments / configure-tracker / tdd / setup-coding-crew**:
   the install mode's confirm-and-save rule now comes from `discover-mode.sh`'s prompt, so solve-issue and
   dep-install decide it the same way, and `discover-commands.sh` alone discovers the `install` command (the host and

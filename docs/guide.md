@@ -71,7 +71,7 @@ There are no agents. No per-platform agent file is written under `.claude/agents
 {
   "skills": {
     "<name>": {
-      "description": "...",
+      "source": "...", // optional attribution for a skill adapted from elsewhere
       // installs to <projectSkills|userSkills>/<name> from platforms.json
       "deps": ["tdd", "dep-install"], // other skills, installed recursively
       "libs": ["tracker", "checks"], // lib/<lib>, linked as <skill-dir>/scripts/<lib>
@@ -87,6 +87,7 @@ There are no agents. No per-platform agent file is written under `.claude/agents
   `<skill-dir>/scripts/<lib>/<file>`; its own `scripts/` holds no file named like a library.
 - Skill and library names must match `[a-zA-Z0-9_.-]+` — used as filesystem path components.
 - Skills listed under another skill's `deps` are installed with it. A skill no installed skill depends on is only installed by name or by a full install (`./install.sh [platform]`).
+- `deps` match what the skill's text invokes: every skill its rendered SKILL.md or `references/` names is reachable through its `deps`, and every direct dep is named in its SKILL.md, `references/` or `scripts/`. `tests/skill-deps.bats` checks both; a mention that only points a person at another skill goes on its allowlist with a reason.
 
 ---
 
