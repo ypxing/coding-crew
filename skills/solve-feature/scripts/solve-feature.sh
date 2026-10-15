@@ -170,12 +170,12 @@ land() {
 # The fixer's edits are staged before the checks and committed after, so the push carries exactly what was gated.
 fix() {
   local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.md" clog="$LOGS/pr-$PR.checks.log"
-  local head_oid prd rc=0 total severe moved=no again=no attention=""
+  local head_oid spec rc=0 total severe moved=no again=no attention=""
   checks_lib
   head_oid=$(gh pr view "$PR" --json headRefOid | jq -r '.headRefOid // empty') || die "gh pr view $PR failed"
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop fix "branch changed to '$(git branch --show-current)'"
   [ -f "$report" ] || stop fix "no review report at $report"
-  prd=$(jq -r '.prd // empty' "$report" 2>/dev/null) || stop fix "unreadable review report $report"
+  spec=$(jq -r '.spec // empty' "$report" 2>/dev/null) || stop fix "unreadable review report $report"
   jq -e '.gaps // [] | type == "array"' "$report" >/dev/null || stop fix "the review report's gaps is not a list: $report"
   total=$(jq '.findings // [] | length' "$report")
   # crew-review's own severity field; a missing or unknown one is not severe.
@@ -193,7 +193,7 @@ fix() {
   # Needs a person: the reviewer's gaps, an unmet spec, each line the fixer left in unfixed.md, and a fixer that
   # changed nothing without saying why (it crashed or gave up).
   attention=$(jq -r '.gaps // [] | .[] | tostring' "$report")
-  [ "$prd" = met ] || attention+=$'\n'"the reviewer found the spec unmet"
+  [ "$spec" = met ] || attention+=$'\n'"the reviewer found the spec unmet"
   [ ! -f "$unfixed" ] || attention+=$'\n'"$(cat "$unfixed")"
   [ "$total" = 0 ] || [ "$moved" = yes ] || [ -s "$unfixed" ] || attention+=$'\n'"the fixer changed nothing"
   # Fixes to a CRITICAL/HIGH/MEDIUM finding are worth reviewing again; SKILL.md caps that at one re-review.
