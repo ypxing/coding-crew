@@ -408,7 +408,7 @@ EOF
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
   [[ "$output" == *"nothing landed: no ready issue for feat and no open PR"* ]]
-  [ "$(cat .solve-feature/outcome)" = "stopped: nothing landed: no ready issue for feat and no open PR" ]
+  [ "$(cat .solve-feature/outcome)" = "stopped: next failed: nothing landed: no ready issue for feat and no open PR" ]
 }
 
 @test "issues run lowest number first, skipping closed and blocked-labelled issues and any whose blocker is neither CLOSED nor awaiting-merge" {

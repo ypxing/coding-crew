@@ -107,7 +107,7 @@ nothing_left() { # exit 3; with no open PR on the branch, the run has nothing to
   BRANCH=$(git branch --show-current); pr_view
   if [ -z "$PR_N" ]; then
     echo "solve-feature: nothing landed: no ready issue for $SLUG and no open PR" >&2
-    outcome "stopped: nothing landed: no ready issue for $SLUG and no open PR"
+    outcome "stopped: next failed: nothing landed: no ready issue for $SLUG and no open PR"
   fi
   exit 3
 }
