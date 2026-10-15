@@ -64,11 +64,11 @@ Also note any **shared surfaces**: a schema/table, a shared type, or an existing
 
 Start from **one slice for the whole PRD**. Split it only for one of these reasons, and name the reason on every split:
 
-1. **Context budget** — one coder cannot hold it in one fresh session. The reference size: slices of 7–44 files and ~100–1600 lines each have landed in one coder session and were judged well sized. There is no line limit; judge against that reference and an estimate of the slice's peak context: the bytes of the files it reads or edits ÷ ~3.5 tokens, plus the measured fixed context every coder dispatch loads (the solve-issue skill, the skills it follows, `CLAUDE.md` or `AGENTS.md`, the PRD, the issue — measure their bytes the same way), plus a margin for test runs and edits. Compare the estimate with the coder model's context window.
+1. **Context budget** — one coder cannot hold it in one fresh session. Estimate the slice's peak context: the bytes of the files it reads or edits ÷ ~3.5 tokens, times two (the coder reads each file, and its re-reads, diffs and test output add about as much again), plus the fixed context every coder dispatch loads once (the solve-issue skill, the skills it follows, `CLAUDE.md` or `AGENTS.md`, the PRD, the issue), measured the same way. Split when the estimate is over ~120k tokens, or over 60% of the coder model's context window if that is smaller, into the fewest slices that each come under it. For scale, slices of 7–44 files and ~100–1600 changed lines have each landed in one coder session.
 2. **Human boundary** — part is HITL, the rest AFK.
 3. **Expand–contract order** — steps from the PRD's `## Compatibility & Migration` (or `<skill-dir>/references/expand-contract.md`) that must land in sequence.
 
-Unrelated modules or test seams are not a reason on their own: they only cost the coder context, which reason 1 covers. One slice may deliver several behaviours.
+Unrelated modules or test seams are not a reason on their own: they only cost the coder context, which reason 1 covers. One slice may deliver several behaviours. A context-budget split needs the slice it splits to be over the threshold; otherwise merge it back.
 
 Each issue is a **tracer bullet**: a vertical slice that cuts through every integration layer its behaviour needs end-to-end, NOT a horizontal slice of one layer.
 
@@ -89,7 +89,7 @@ Otherwise add no edge: edits to separate parts of a file do not interact, and a 
 - If the work is split, the first slice is the thinnest end-to-end path: the narrowest behaviour that proves the layers connect. Later slices widen it
 - A completed slice is demoable or verifiable on its own
 - Each slice is sized to fit in a single fresh context window — the context-budget reason above is the only size rule
-- A slice with more than 10 acceptance criteria is a context-budget check (does it still fit one coder session against the reference size?), never on its own a rule to split
+- A slice with more than 10 acceptance criteria is flagged for the user (step 5), never on its own a rule to split
 - Any prefactoring is sequenced first: at the start of the slice, or as the first slice when the work is split
 </vertical-slice-rules>
 
@@ -119,8 +119,8 @@ Show the coverage table from step 4.5 (when there is one), then ask only what ne
 2. **Design-standard failures** — each slice that fails a criterion of the design standard (step 3): the criterion, its evidence at `file:line`, and the reshape you propose.
 3. **The PRD's `## Assumptions`** — each one the slices lean on, for the user to confirm or correct. With no PRD, show instead the one slice's drafted acceptance criteria, its `## Decisions`, the assumptions you filled in beyond the source, and the slug: this is the single review on the light path.
 4. **PRD IDs no slice covers** — the empty rows of the coverage table: add a slice, fold the ID into one, or confirm it is out of scope.
-5. **Slices over 10 criteria or ~200k tokens** — any slice that would carry more than 10 acceptance criteria, or whose estimated peak context is over ~200k tokens (or the coder model's window when smaller), as a context-budget check: does it fit one coder session? Keep it, or split it for the context-budget reason — a flag, never on its own a rule to split.
-6. **Splits and edges** — one line per split naming its reason from step 4 (context budget, human boundary, expand–contract order), and one line per `Blocked by` edge naming the edge-rule row that produced it, each naming its slices, for the user to override. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
+5. **Slices near the budget or over 10 criteria** — each slice whose estimate is within ~20% of step 4's threshold, or that carries more than 10 acceptance criteria, with its estimate, for the user to confirm it fits one coder session. Neither is a reason to split.
+6. **Splits and edges** — one line per split naming its reason from step 4 (context budget with the merged slice's estimate, human boundary, expand–contract order), and one line per `Blocked by` edge naming the edge-rule row that produced it, each naming its slices, for the user to override. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
 7. **HITL choices** — each slice marked HITL, and why a human is needed (that reason becomes the block's `### Why a person`); the rest are AFK.
 
 Then one approve/adjust prompt: approve the breakdown as shown, or say what to adjust. Iterate until the user approves. Do not ask generic questions about granularity, blocking edges, combining slices or HITL/AFK — a breakdown with nothing to list above needs only the approve/adjust prompt.
