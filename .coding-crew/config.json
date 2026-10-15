@@ -1,3 +1,4 @@
 {
-  "tracker": { "kind": "github" }
+  "tracker": { "kind": "github" },
+  "solveFeature": { "models": { "coder": "opus", "reviewer": "opus" } }
 }
