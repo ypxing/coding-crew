@@ -29,7 +29,7 @@ TRACKER="$HOME/.coding-crew/lib/tracker/cli.mjs"   # a project-level install: .c
 node "$TRACKER" fetch <ref> [--comments]                  # print one issue; <ref> is its path under .scratch/
 node "$TRACKER" features                                  # list the features: <slug>, open|closed, count of issues that can start now
 node "$TRACKER" prd --feature-slug <slug>                 # print the feature's PRD.md
-node "$TRACKER" next --feature-slug <slug>                # the path of the next issue to run, or exit 3
+node "$TRACKER" next --feature-slug <slug>                # the absolute path of the next issue to run, or exit 3
 node "$TRACKER" closing-refs --feature-slug <slug>        # prints nothing: a local issue has no PR to close it
 node "$TRACKER" known --feature-slug <slug> --out <dir>   # copy the feature's issues, open and done, into <dir>
 node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace]
