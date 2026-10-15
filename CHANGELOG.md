@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **crew-afk**: `crew-afk.sh wait <slug>` blocks until the run has ended and prints its `status` line, and `/crew-afk`
+  runs it in the background when the agent can, so the session that dispatched a run reports how it ended (#510).
 - **repo**: `.gitattributes` merges `CHANGELOG.md` with git's `union` driver, so two branches' `[Unreleased]` entries
   no longer conflict, and solve-feature's re-run on this repo's feature branches does not stop on them (#516).
 - **solve-feature / solve-issue**: a re-run on an existing branch merges the default branch in first, so its checks

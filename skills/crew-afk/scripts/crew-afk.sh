@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# crew-afk.sh dispatch|status — start one /solve-feature run in a feature's own worktree, and say how each run ended.
+# crew-afk.sh dispatch|status|wait — start one /solve-feature run in a feature's own worktree, and say how each run ended.
 #   dispatch <slug> [--to local|orca|herdr] [--branch <name>]
 #       prepares (or reuses) the slug's worktree, starts the run there with the agent CLI that ran this script
 #       (passing --branch on to solve-feature), and returns; prints worktree=, and log= and pid= for a local run, session= on claude
 #   status [<slug>]
 #       one line per worktree crew-afk dispatched to: the run's outcome line, or why there is none
+#   wait <slug>
+#       blocks until the slug's latest run has ended (an outcome written, or a local process gone), then prints what
+#       status prints for it
 # A destination is scripts/destinations/<name>.sh: MODE=headless|interactive, the agent's mode there; `prepare
 # <slug> <base-branch>` prints the worktree path; `launch <slug> <worktree> <argv…>` starts the run there, and a
 # headless one writes its pid to <worktree>/.solve-feature/run.pid. Exit: 0 ok; 1 a stop; 2 a usage error.
@@ -13,7 +16,7 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 die() { echo "crew-afk: $*" >&2; exit 1; }
 usage() {
   [ -z "${1:-}" ] || echo "crew-afk: $1" >&2
-  echo "usage: crew-afk.sh dispatch <slug> [--to local|orca|herdr] [--branch <name>] | status [<slug>]" >&2
+  echo "usage: crew-afk.sh dispatch <slug> [--to local|orca|herdr] [--branch <name>] | status [<slug>] | wait <slug>" >&2
   exit 2
 }
 
@@ -112,33 +115,59 @@ dispatch() {
   [ -z "$SESSION" ] || echo "session=$SESSION"
 }
 
+# report <worktree> <slug> — what status prints for one worktree's run: its outcome line, or why there is none
+report() {
+  local wt="$1" slug="$2" logs="$1/.solve-feature" pid branch
+  if [ -s "$logs/outcome" ]; then echo "$slug: $(head -n 1 "$logs/outcome")"
+  elif pid=$(live_pid "$logs"); then echo "$slug: running (pid $pid)"
+  elif [ ! -f "$logs/run.pid" ]; then echo "$slug: no outcome yet — $(cat "$logs/run.dest") run, see its terminal"
+  else
+    # Capped or crashed alike: solve-feature skips the issues it closed and reuses the branch and PR.
+    branch=$(cat "$logs/run.branch" 2>/dev/null || true)
+    echo "$slug: ended without an outcome — log: $logs/run.log; re-run /crew-afk $slug${branch:+ --branch $branch} to continue"
+    [ ! -s "$logs/run.session" ] || echo "  resume: cd $wt && claude --resume $(cat "$logs/run.session")"
+  fi
+}
+
+worktrees() { git -C "$MAIN" worktree list --porcelain | sed -n 's/^worktree //p'; }
+
 status() {
-  local filter="${1:-}" wt slug logs pid branch found=0
+  local filter="${1:-}" wt slug found=0
   [ $# -le 1 ] || usage
   while IFS= read -r wt; do
-    logs="$wt/.solve-feature"
     # dispatch writes run.slug on every run: without it, the worktree's run is not crew-afk's to report. The
     # slug comes from it, not the directory: orca names its worktree after the repo too.
-    [ "$wt" != "$MAIN" ] && slug=$(cat "$logs/run.slug" 2>/dev/null) || continue
+    [ "$wt" != "$MAIN" ] && slug=$(cat "$wt/.solve-feature/run.slug" 2>/dev/null) || continue
     [ -z "$filter" ] || [ "$slug" = "$filter" ] || continue
     found=1
-    if [ -s "$logs/outcome" ]; then echo "$slug: $(head -n 1 "$logs/outcome")"
-    elif pid=$(live_pid "$logs"); then echo "$slug: running (pid $pid)"
-    elif [ ! -f "$logs/run.pid" ]; then echo "$slug: no outcome yet — $(cat "$logs/run.dest") run, see its terminal"
-    else
-      # Capped or crashed alike: solve-feature skips the issues it closed and reuses the branch and PR.
-      branch=$(cat "$logs/run.branch" 2>/dev/null || true)
-      echo "$slug: ended without an outcome — log: $logs/run.log; re-run /crew-afk $slug${branch:+ --branch $branch} to continue"
-      [ ! -s "$logs/run.session" ] || echo "  resume: cd $wt && claude --resume $(cat "$logs/run.session")"
-    fi
-  done < <(git -C "$MAIN" worktree list --porcelain | sed -n 's/^worktree //p')
+    report "$wt" "$slug"
+  done < <(worktrees)
   [ "$found" -eq 1 ] || echo "no crew-afk run${filter:+ for $filter}"
 }
 
+wait_for() {
+  local slug="${1:-}" wt run="" out
+  [ $# -eq 1 ] || usage "wait needs a slug"
+  # Only the slug's latest dispatch, the newest run.slug: an older worktree's run whose terminal closed with no
+  # outcome stays `no outcome yet` for good, and would keep the wait from ever seeing this run end.
+  while IFS= read -r wt; do
+    [ "$wt" != "$MAIN" ] && [ "$(cat "$wt/.solve-feature/run.slug" 2>/dev/null)" = "$slug" ] || continue
+    [ -z "$run" ] || [ "$wt/.solve-feature/run.slug" -nt "$run/.solve-feature/run.slug" ] || continue
+    run=$wt
+  done < <(worktrees)
+  [ -n "$run" ] || { echo "no crew-afk run for $slug"; return; }
+  # report reads the outcome and run.pid as status does: keep asking until the run is neither live nor waiting
+  # on a terminal.
+  while out=$(report "$run" "$slug"); do
+    case "$out" in *": running (pid "* | *": no outcome yet — "*) sleep "${CREW_AFK_WAIT_INTERVAL:-5}" ;; *) break ;; esac
+  done
+  echo "$out"
+}
+
 CMD="${1:-}"; [ $# -eq 0 ] || shift
-case "$CMD" in dispatch | status) ;; *) usage ;; esac
+case "$CMD" in dispatch | status | wait) ;; *) usage ;; esac
 COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a git repository"
 MAIN=$(dirname "$COMMON")
 # One worktree per slug, beside the main checkout: never inside it, where the user's own tools would scan it.
 WORKTREES="$(dirname "$MAIN")/$(basename "$MAIN")-worktrees"
-"$CMD" "$@"
+if [ "$CMD" = wait ]; then wait_for "$@"; else "$CMD" "$@"; fi
