@@ -16,7 +16,7 @@
 #   describe <slug> <pr>            write the PR's whole body and title, mark the draft ready when nothing needs a
 #                                   person, then write the outcome
 # .solve-feature/outcome holds the run's result in one line: `ready pr=<n>`, `needs-attention pr=<n>` or
-# `stopped: <step> failed: <reason>`.
+# `stopped: <what> failed: <reason>`, <what> the subcommand (die, nothing_left) or `<ref> <step>` (stop).
 # Exit: 0 ok; 1 a stop; 2 a usage error; 3 from next when no ready issue is left.
 set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

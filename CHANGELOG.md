@@ -6,6 +6,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-issue / solve-feature / crew-review / tracker**: a coder that stops short (`partial`, or `blocked` with
+  changes) commits its work as `[WIP]` and leaves the tree clean, so solve-feature's `land` names its report
+  instead of stopping on "working tree left dirty"; `mark-done --force` is only for a descope a person approved,
+  and the CLI's exit-4 message no longer suggests it. solve-issue finds `PROJECT_ROOT` itself when its caller
+  sets none, commits there, and reads a GitHub issue's `PRD: #<n>`; its preflight stops when the checks library
+  is not linked and no longer prints `DEP_SCRIPTS`. crew-review's report field `prd` is renamed `spec`
+  (`met|unmet|none`) — update any script that reads a standalone `/crew-review` report. Every solve-feature stop
+  line reads `stopped: <what> failed: <reason>`, a run with nothing landed included (#501).
 - **solve-feature / crew-afk**: a run reviews its PR at most twice: `fix` ends `review-again=yes` when the review had
   a CRITICAL, HIGH or MEDIUM finding and the fixer changed something, and the run then reviews and fixes once more.
   crew-afk's local claude run drops its `$10` cap (`--max-budget-usd`), so every agent gets the same 1h limit (#497).

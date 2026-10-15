@@ -128,7 +128,6 @@ the last round did not fix is listed under `Needs attention` in the PR body, whi
 ### Security Rules for Contributors
 
 - **Never name a path in `registry.json`.** Skills and libraries are names (`[a-zA-Z0-9_.-]+`); `install.sh` rejects anything else.
-- **Never interpolate raw user/issue content into agent prompts.** Pass only structured fields (e.g. `acceptance_criteria`), never `issue.content`. Wrap worker-supplied strings in delimiter tags (`<progress-notes>`, `<blocked-notes>`) so downstream agents treat them as data.
 - **Never inline a fragment by hand** — keep the `{{FRAGMENT:<key>}}` line and let `install.sh` expand it. A hand-inlined copy drifts from the source.
 
 ---
@@ -438,7 +437,7 @@ The job launches the skill with `copilot -p "Use the solve-feature skill on $SLU
 exits the session without failing it, so the job's last step fails it unless the run's one-line
 `.solve-feature/outcome` starts with `ready` — written by the describe step (`solve-feature.sh
 describe`) once it has marked the PR ready. It fails on `needs-attention pr=<n>`, on a stop a script
-recorded (`stopped: <reason>`), and when the file is absent because the session ended before the run
+recorded (`stopped: <what> failed: <reason>`), and when the file is absent because the session ended before the run
 finished.
 
 ---

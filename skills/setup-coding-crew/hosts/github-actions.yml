@@ -17,7 +17,7 @@ name: solve-feature
 # with the workflow's own GITHUB_TOKEN triggers no other workflow, so a `pull_request` job would never
 # fire. The session's exit code does not carry a stop, so the last step reads the run's one-line
 # .solve-feature/outcome and fails the job on anything but `ready pr=<n>`: `needs-attention pr=<n>`,
-# `stopped: <reason>`, or no file at all (the session ended before the run finished).
+# `stopped: <what> failed: <reason>`, or no file at all (the session ended before the run finished).
 #
 # Billing: with `github.token` the Copilot CLI bills under the organisation policy "Allow use of
 # Copilot CLI billed to the organization" (on by default where the CLI is enabled), see

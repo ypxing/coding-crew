@@ -15,7 +15,8 @@ You drive the loop; a script guards every step. **You do not implement, check, r
 or close anything yourself** — each issue's coder, the reviewer, the fixer and the PR's writer are fresh subagents,
 and the script decides whether their work lands and when the PR is ready.
 
-A bare word the user gave is the slug: pass it as is; `start` stops on a slug the tracker does not list. `<repo>` is the repo's absolute top level.
+A bare word the user gave is the slug: pass it as is; `start` stops on a slug the tracker does not list. `<repo>` is the repo's absolute top level;
+`<skill-dir>` is the directory you read this file from.
 
 1. **Start.** `bash "<skill-dir>/scripts/solve-feature.sh" start <slug> [--branch <name>]`. It prints `branch=`,
    `coder-model=`, `reviewer-model=` and `pr=`; keep them.
@@ -65,7 +66,9 @@ Run it where an unattended agent may change the checkout — a worktree or a con
 the user works in. Nothing takes a lock: never start a second run on a slug whose run is still going.
 
 Every run ends with one line in `<repo>/.solve-feature/outcome` — `ready pr=<n>`, `needs-attention pr=<n>` or
-`stopped: <step> failed: <reason>` — for a host to read; no file means the run never finished.
+`stopped: <what> failed: <reason>` — for a host to read; no file means the run never finished. `<what>` is the
+subcommand that stopped (`start failed: …`, `next failed: nothing landed: …`), or the issue ref or `review` and
+the step (`2 checks failed: …`, `review fix failed: …`).
 
 | Setting                                         | Effect                                                         |
 | ----------------------------------------------- | -------------------------------------------------------------- |
