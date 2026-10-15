@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature / solve-issue**: a re-run on an existing branch merges the default branch in first, so its checks
+  run main's later fixes (a conflict stops it, naming the files); a resumed coder whose issue's work is already
+  committed still runs the checks and marks it done, instead of stopping the run with the issue open.
 - **scripts**: `ci-run-bats.sh` clones the bats-core ci.yml pins (v1.13.0) into `~/.cache/coding-crew/` when no `bats`
   is on PATH, so this repo's own solve-feature Actions runs, whose runner installs no bats, can run their checks (#513).
 - **solve-feature / tracker**: a failed check after an issue's coder closed it no longer strands the work: `land` reopens

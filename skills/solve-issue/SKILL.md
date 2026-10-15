@@ -17,8 +17,8 @@ Implement a single issue. One issue in, committed code out.
 Every run ends as exactly one of these. Report it in whatever form your caller asked for — these are
 the words, not the wire format:
 
-- **`complete`** — every acceptance criterion is met, every check passes, and the work is committed
-  (or there was none: Step 3's already met).
+- **`complete`** — every acceptance criterion is met, every check passes, the work is committed
+  (or there was none: Step 3's already met), and Step 7 has marked the issue done.
 - **`partial`** — meaningful progress, but a check fails or a criterion is unmet. Commit the work with
   a `[WIP]` marker so the branch preserves it, and say what remains. A later round resumes here.
 - **`blocked`** — cannot proceed without human input or an environment fix. Not a way to avoid
@@ -131,11 +131,12 @@ behavior the issue names, find the `file:line` that confirms or contradicts it. 
 - **Drift, same intent** (a renamed file, a moved function): build against what exists; record
   `<issue's name> → <file:line>` in Step 6's `DETAILS`.
 - **Already met** — the code satisfies a criterion before this branch touches it (a bug already
-  fixed is this case; `[$ISSUE_SLUG]` commits on this branch are a resumed run, not this): write no
-  code for it. Pin it with a test if none exists — for a bug, the regression test; when the
-  criterion is docs or prompt text, none (tdd's exemption: a grep pins wording) — and report it
-  met with its `file:line`. Every criterion already met and tested leaves nothing to commit: that
-  is still `complete`.
+  fixed is this case): write no code for it. Pin it with a test if none exists — for a bug, the
+  regression test; when the criterion is docs or prompt text, none (tdd's exemption: a grep pins
+  wording) — and report it met with its `file:line`. Every criterion already met and tested leaves
+  nothing to commit: that is still `complete`.
+- **Resumed run** — `[$ISSUE_SLUG]` commits already on this branch are an earlier round's work, not
+  already met: build on them. Steps 5–7 still run in full, even when nothing is left to commit.
 - **Wrong assumption** — the issue's picture of the code is wrong in a way reading cannot recover:
   a named thing has no counterpart, the described bug's code path does not exist, or a criterion
   conflicts with the PRD, an ADR or another criterion. Report `blocked` before writing code, with

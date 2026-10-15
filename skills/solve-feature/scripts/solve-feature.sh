@@ -3,7 +3,8 @@
 # runs each issue's coder (between `next` and `land`), the review's reviewer and fixer (before `fix`) and the PR's
 # writer (before `describe`) as subagents of the host agent; every guard is an exit code here.
 #   start <slug> [--branch <name>]  preconditions, the slug among the tracker's features, the branch (--branch, else
-#                                   feature/<slug>), .solve-feature/spec.md; prints branch=, coder-model=,
+#                                   feature/<slug>; an existing one gets origin's default branch merged in and
+#                                   pushed), .solve-feature/spec.md; prints branch=, coder-model=,
 #                                   reviewer-model= (.coding-crew/config.json solveFeature.models) and pr=
 #   next <slug>                     the next ready issue, saved for land; prints its ref. The coder writes its
 #                                   report to .solve-feature/coder.report.md, which land's solve stop names
@@ -83,7 +84,7 @@ start() {
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
   grep -qxF "$SLUG" <<<"$features" || die "no feature '$SLUG'; features: $(paste -sd' ' - <<<"$features")"
   # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase
-  # an existing one: a re-run lands on it as the last run left it.
+  # an existing one: a re-run lands on it as the last run left it, with the default branch merged in.
   git fetch -q origin || die "git fetch origin failed (see above)"
   local default cfg="$ROOT/.coding-crew/config.json"
   default=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
@@ -96,6 +97,16 @@ start() {
   fi || die "cannot check out $BRANCH (see above)"
   # A branch origin lacks is new, or one whose first push was refused: a re-run pushes it before any coder runs.
   git show-ref --verify -q "refs/remotes/origin/$BRANCH" || git push -q -u origin "$BRANCH" || die "cannot push $BRANCH (see above)"
+  # The checks run the branch's own files, so a branch an earlier run left takes the default branch's fixes first.
+  if ! git merge-base --is-ancestor "origin/$default" HEAD; then
+    if ! git merge -q --no-edit "origin/$default" >&2; then
+      local conflicts; conflicts=$(git diff --name-only --diff-filter=U | paste -sd' ' -)
+      git merge --abort 2>/dev/null || true
+      [ -n "$conflicts" ] || die "merging origin/$default into $BRANCH failed (see above)"
+      die "merging origin/$default into $BRANCH conflicts in $conflicts: merge it by hand, push $BRANCH, then re-run"
+    fi
+    git push -q origin "$BRANCH" || die "cannot push $BRANCH after merging origin/$default into it (see above)"
+  fi
   write_spec
   pr_view
   echo "branch=$BRANCH"

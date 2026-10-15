@@ -284,6 +284,41 @@ land_ready() {
   [ "$(git rev-parse --abbrev-ref '@{upstream}')" = origin/remote-only ]
 }
 
+# main_moves <file> <text> — a commit on origin's main after the branch was made
+main_moves() {
+  git checkout -q main && echo "$2" > "$1" && git add "$1" && git commit -q -m "main: $1" && git push -q origin main
+}
+
+@test "start merges origin's default branch into an existing branch and pushes the merge" {
+  git checkout -q -b mine origin/main && echo mine > mine.txt && git add mine.txt && git commit -q -m "earlier run"
+  git push -q -u origin mine
+  local tip; tip=$(git rev-parse mine)
+  main_moves fix.txt "a fix on main"
+  run bash "$SCRIPT" start feat --branch mine
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  git merge-base --is-ancestor "$tip" HEAD
+  git merge-base --is-ancestor origin/main HEAD
+  [ "$(git ls-remote origin mine | cut -f1)" = "$(git rev-parse HEAD)" ]
+  # Already up to date: no new commit.
+  local merged; merged=$(git rev-parse HEAD)
+  run bash "$SCRIPT" start feat --branch mine
+  [ "$status" -eq 0 ]
+  [ "$(git rev-parse HEAD)" = "$merged" ]
+}
+
+@test "start whose merge of the default branch conflicts exits 1 naming the files, with the branch as it was" {
+  git checkout -q -b mine origin/main && echo mine > shared.txt && git add shared.txt && git commit -q -m "earlier run"
+  git push -q -u origin mine
+  local tip; tip=$(git rev-parse mine)
+  main_moves shared.txt "main's version"
+  run bash "$SCRIPT" start feat --branch mine
+  [ "$status" -eq 1 ]
+  [ "$(cat .solve-feature/outcome)" = "stopped: start failed: merging origin/main into mine conflicts in shared.txt: merge it by hand, push mine, then re-run" ]
+  [ "$(git rev-parse HEAD)" = "$tip" ]
+  [ -z "$(git status --porcelain)" ]
+  [ "$(git ls-remote origin mine | cut -f1)" = "$tip" ]
+}
+
 @test "start from another branch or a detached HEAD switches to --branch, else feature/<slug>" {
   git checkout -q -b topic
   run bash "$SCRIPT" start feat --branch other
