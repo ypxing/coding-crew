@@ -20,7 +20,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   commands through the checks library's `run.sh` and invoke dep-install only after a missing-dependency failure.
   add-tests' no-coverage stop names a fix that works (set `"coverage"` or rerun discovery with `--refresh`).
   upgrade-deps publishes by invoking to-issues with its drafts and checks existing features through the tracker
-  CLI. address-pr-comments handles `DISCOVER` before pushing and skips resolved threads by GraphQL `isResolved`.
+  CLI; it and add-tests delete their drafts or findings file once to-issues has published. address-pr-comments handles `DISCOVER` before pushing and skips resolved threads by GraphQL `isResolved`.
   configure-tracker creates labels with `gh label create`, treating "already exists" as success (#503).
 - **to-issues / to-prd / crew-grill / crew-brainstorm / tracker**: to-issues prices a split as one more coder
   dispatch and checks run on solve-feature's single branch (no more parallelism split reason or retry/merge costs),

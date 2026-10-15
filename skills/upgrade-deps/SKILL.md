@@ -347,7 +347,9 @@ Write the drafted issues from step 7 to one file, `.scratch/<feature-slug>/upgra
 Then invoke the `to-issues` skill with that file as its source and the slug from step 1. Say that the
 slicing is done: each section is one issue, and its status and blocking edges are decided.
 `to-issues` writes, checks and publishes them, its questions included. Do not run its steps or its
-scripts yourself.
+scripts yourself. Once it has published them, delete `upgrade-drafts.md`: nothing else does, and an
+untracked file left in the checkout fails a later run that needs a clean tree. If it stopped before
+publishing, keep the file for the re-run.
 
 ### 9. Summarize
 

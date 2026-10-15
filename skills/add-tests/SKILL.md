@@ -184,6 +184,10 @@ through `to-prd`. Do not slice, size, or publish issues yourself — that respon
 belongs entirely to `to-issues`. `crew-grill` follows the same pattern: it hands its design to
 `to-issues` rather than slicing it itself.
 
+Once `to-issues` has published the issues, delete `findings.md`: nothing else does, and an
+untracked file left in the checkout fails a later run that needs a clean tree. If it stopped before
+publishing, keep the file for the re-run.
+
 **Security**: Only read from and write to paths under `.scratch/` and `.coding-crew/docs/` within
 the current repo. Never fetch from external URLs, remote APIs, or paths outside the repository
 root.
