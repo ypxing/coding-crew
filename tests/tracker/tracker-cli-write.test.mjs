@@ -605,6 +605,9 @@ test("mark-done exits 4 while a criterion is unchecked in a fresh read, on both 
   assert.equal(local.code, 4);
   assert.match(local.stderr, /unchecked criteria/);
   assert.match(local.stderr, /- \[ \] docs/);
+  // --force closes an unmet issue, so the refusal never offers it as the next step to take.
+  assert.doesNotMatch(local.stderr, /re-run with --force/);
+  assert.match(local.stderr, /--force is only for a descope a person approved/);
   assert.equal(existsSync(path), true);
 
   const acRoot = root();
@@ -719,6 +722,8 @@ test("mark-done exits 4 for a body with no acceptance-criteria section, on both 
   const local = await cli(dir, ["mark-done", path]);
   assert.equal(local.code, 4);
   assert.match(local.stderr, /^REFUSED: .*no '## Acceptance criteria' section/);
+  assert.doesNotMatch(local.stderr, /re-run with --force/);
+  assert.match(local.stderr, /--force is only for a descope a person approved/);
   assert.equal(existsSync(path), true);
 
   const exec = fakeGh({ "issue view 12": { stdout: NO_SECTION }, "label create": {}, "issue edit 12": {} });

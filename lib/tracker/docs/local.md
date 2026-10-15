@@ -71,7 +71,7 @@ exit `4` while criteria are still unchecked: do not move the file; add a `## Unm
 saying what is missing and why (descoped, blocked, split out), then stop. It also exits `4` for an
 issue with no `## Acceptance criteria` section at all, unless `--force`.
 
-Pass `--force` only for a criterion deliberately recorded as descoped. On success it sets `Status: done` and moves the file to
+Pass `--force` only for a descope a person approved. On success it sets `Status: done` and moves the file to
 `issues/done/` (sibling of `issues/open/`); an issue already in `done/` exits 0.
 
 `done` means implemented and merged into the feature branch, not shipped — for this tracker
