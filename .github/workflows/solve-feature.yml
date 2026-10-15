@@ -122,7 +122,9 @@ jobs:
           # store a fine-grained PAT with the "Copilot Requests" permission as a repo secret and pass
           # it here: the run bills the Copilot seat of the PAT's owner.
           # COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
-        run: copilot -p "Use the solve-feature skill on $SLUG" --allow-all-tools --no-color
+        # --allow-all, not --allow-all-tools: the skill's scripts live under $HOME/.copilot/skills,
+        # outside the checkout, and a path check with no one to approve it denies every one of them.
+        run: copilot -p "Use the solve-feature skill on $SLUG" --allow-all --no-color
 
       - name: Fail the job unless solve-feature marked the PR ready
         run: |
