@@ -138,6 +138,17 @@
         "tracker"
       ]
     },
+    "setup-coding-crew": {
+      "source-dir": "setup-coding-crew",
+      "description": "Take a repo from a fresh install to a working /solve-feature: the tracker (through configure-tracker), the check commands and, with the github tracker, the solve-feature Actions workflow and its label; then print the commit line.",
+      "deps": [
+        "configure-tracker"
+      ],
+      "libs": [
+        "checks",
+        "tracker"
+      ]
+    },
     "domain-modeling": {
       "source-dir": "domain-modeling",
       "description": "Updates CONTEXT.md glossary and creates ADRs inline as design decisions crystallise."
