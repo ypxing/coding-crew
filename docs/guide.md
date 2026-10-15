@@ -467,13 +467,13 @@ that everyone using the repo needs, so do not add it to `.gitignore`.
 
 **The dev commands file** holds the project's checks (`test`, `lint`, `typecheck`, …), its install
 command and its install mode (`install_mode`: `host` or `docker`, with `docker_service`). The first
-`/solve-issue` or `/solve-feature` coder discovers the checks, and `/dep-install` asks you for the mode
-once. They are written to `.git/coding-crew/dev-commands.json`: outside every working tree, shared by
-all worktrees of the clone, never committed. To share them with your team or CI, copy that file to
+`/solve-issue` or `/solve-feature` coder discovers the checks and, in a repo with a compose file, the
+mode; `/dep-install` discovers the mode too, and shows you its answer to change first. They are
+written to `.git/coding-crew/dev-commands.json`: outside every working tree, shared by all worktrees
+of the clone, never committed. To share them with your team or CI, copy that file to
 `.coding-crew/dev-commands.json` and commit it: a tracked file there wins, and later discoveries update
-it. `solve-feature` stops at start in a repo with a compose file and no recorded install mode, since
-unattended it would run every check on the host. The installed tooling beside them (`lib/`,
-`manifest.json`) is what `install.sh` writes, not team state.
+it. The installed tooling beside them (`lib/`, `manifest.json`) is what `install.sh` writes, not team
+state.
 
 ---
 
@@ -496,7 +496,7 @@ unattended it would run every check on the host. The installed tooling beside th
 | `/solve-feature` finds no ready issue immediately | No issue with the correct status                 | Under `local`, check `.scratch/*/issues/` — status must be exactly `ready-for-agent` |
 | The coder reports `blocked`                       | Ambiguous spec or missing dependency             | Read its `BLOCKED:` line; resolve and re-run                                        |
 | `install.sh`: "unsafe path in registry"           | `registry.json` path contains `..` or `/` prefix | Fix `registry.json`                                                                 |
-| `dep-install` picks wrong mode                    | `install_mode` in the dev commands file          | Set `"install_mode": "host"` (or `"docker"` with `"docker_service"`) in `.coding-crew/dev-commands.json` if the repo tracks one, else `.git/coding-crew/dev-commands.json` |
+| Checks run in the wrong mode (host or docker)     | `install_mode` in the dev commands file          | Set `"install_mode": "host"` (or `"docker"` with `"docker_service"`) in `.coding-crew/dev-commands.json` if the repo tracks one, else `.git/coding-crew/dev-commands.json` |
 | `address-pr-comments` fails with opaque error     | `gh` CLI missing or not authenticated            | Run `gh auth login` first                                                           |
 
 ---

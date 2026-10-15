@@ -98,8 +98,8 @@ REPO/.coding-crew/lib/ /
 REPO/.coding-crew/lib/checks/ /
 REPO/.coding-crew/lib/checks/commands-file.sh exec=1
 REPO/.coding-crew/lib/checks/detect-docker-nesting.sh exec=1
-REPO/.coding-crew/lib/checks/detect-mode.sh exec=1
 REPO/.coding-crew/lib/checks/discover-commands.sh exec=1
+REPO/.coding-crew/lib/checks/discover-mode.sh exec=1
 REPO/.coding-crew/lib/checks/docker-install.sh exec=1
 REPO/.coding-crew/lib/checks/ensure-env.sh exec=1
 REPO/.coding-crew/lib/checks/gen-override.sh exec=1

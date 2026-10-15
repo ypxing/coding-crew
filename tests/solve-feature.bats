@@ -240,33 +240,12 @@ land_ready() {
 
 # --- start: the dev commands file -----------------------------------------------------
 
-@test "start with no dev commands file starts: the first coder discovers the checks" {
-  git rm -q .coding-crew/dev-commands.json && git commit -q -m "no commands"
+@test "start with no dev commands file, even beside a compose file, starts: the first coder discovers checks and mode" {
+  printf 'services:\n  app:\n    image: node\n' > compose.yml
+  git rm -q .coding-crew/dev-commands.json && git add compose.yml && git commit -q -m "no commands"
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(out branch)" = feature/feat ]
-}
-
-@test "start with a compose file and no install mode stops before the branch; one recorded in the clone, or tracked, starts" {
-  printf 'services:\n  app:\n    image: node\n' > compose.yml
-  git add compose.yml && git commit -q -m compose
-  run bash "$SCRIPT" start feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"compose.yml but no install mode recorded: run /dep-install once"* ]]
-  [ "$(git branch --show-current)" = main ]
-  grep -q '^stopped: start failed: compose.yml but no install mode' .solve-feature/outcome
-
-  # Recorded in the clone's git dir, where dep-install writes when the repo tracks no file.
-  git rm -q .coding-crew/dev-commands.json && git commit -q -m untracked
-  mkdir -p .git/coding-crew && echo '{"install_mode": "host"}' > .git/coding-crew/dev-commands.json
-  run bash "$SCRIPT" start feat
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-
-  git checkout -q main && rm .git/coding-crew/dev-commands.json
-  echo '{"test":"make test","install_mode":"docker","docker_service":"app"}' > .coding-crew/dev-commands.json
-  git add -A && git commit -q -m tracked
-  run bash "$SCRIPT" start feat --branch other
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 # --- start: the branch ---------------------------------------------------------------

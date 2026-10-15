@@ -77,15 +77,6 @@ write_spec() {
 
 start() {
   [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
-  checks_lib
-  # The first coder discovers the checks; only the install mode needs a person, and unattended it would be host.
-  local f
-  for f in docker-compose.yml docker-compose.yaml compose.yml; do
-    [ -f "$ROOT/$f" ] || continue
-    grep -q '"install_mode"' "$(bash "$CHECKS/commands-file.sh" --project-root "$ROOT")" 2>/dev/null ||
-      die "$f but no install mode recorded: run /dep-install once in this clone to choose host or docker, then re-run"
-    break
-  done
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
   grep -qxF "$SLUG" <<<"$features" || die "no feature '$SLUG'; features: $(paste -sd' ' - <<<"$features")"
   # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase

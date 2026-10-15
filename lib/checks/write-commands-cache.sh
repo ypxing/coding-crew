@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# write-commands-cache.sh --response-file <path> — merges a model's discovery response, or dep-install's
-# confirmed install_mode/docker_service, into the checkout's dev commands file (commands-file.sh beside it says
-# which). No recognisable field is a failed discovery: exit 1, cache untouched.
+# write-commands-cache.sh --response-file <path> — merges a model's answer to discover-commands.sh or
+# discover-mode.sh into the checkout's dev commands file (commands-file.sh beside it says which). No recognisable field is a failed discovery: exit 1, cache untouched.
 # A field the response omits keeps its value, and one never written stays absent. Absent means
 # "nobody asked yet"; null means "a model looked and found none", which is never re-asked, so a
 # caller must not name a field it did not check.

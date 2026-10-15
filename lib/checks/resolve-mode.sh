@@ -6,7 +6,7 @@
 #
 # Prints INSTALL_MODE=docker|host and DOCKER_SERVICE=<name> (may be empty), exit 0. The mode is
 # "install_mode" of the dev commands file commands-file.sh names; absent or any other value is host.
-# Deciding it is dep-install's setup step (detect-mode.sh, confirmed by a person), never this script's.
+# Deciding it is discover-mode.sh's job (a model's answer, persisted by write-commands-cache.sh), never this script's.
 
 set -uo pipefail
 

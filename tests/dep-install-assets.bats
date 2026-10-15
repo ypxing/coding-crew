@@ -26,11 +26,11 @@ LIB=".coding-crew/lib/checks"
   done
 }
 
-@test "install ships detect-mode.sh, host-install.sh, docker-install.sh, manifest-fingerprint.sh and run-checks.sh, all executable" {
+@test "install ships discover-mode.sh, host-install.sh, docker-install.sh, manifest-fingerprint.sh and run-checks.sh, all executable" {
   local target f; target=$(fresh_target target-lib)
   run bash "$REPO_ROOT/install.sh" pi --skill dep-install --project "$target"
   [ "$status" -eq 0 ]
-  for f in detect-mode.sh host-install.sh docker-install.sh manifest-fingerprint.sh run-checks.sh; do
+  for f in discover-mode.sh host-install.sh docker-install.sh manifest-fingerprint.sh run-checks.sh; do
     [ -x "$target/$LIB/$f" ] || { echo "$f missing or not executable" >&2; return 1; }
   done
 }
@@ -39,7 +39,7 @@ LIB=".coding-crew/lib/checks"
   local target d; target=$(fresh_target target-all)
   run bash "$REPO_ROOT/install.sh" all --skill dep-install --project "$target"
   [ "$status" -eq 0 ]
-  run bash -c "find '$target' -name 'detect-mode.sh' | wc -l"
+  run bash -c "find '$target' -name 'discover-mode.sh' | wc -l"
   [ "$(echo "$output" | tr -d ' ')" = "1" ]
   for d in .claude/skills/dep-install .pi/skills/dep-install .agents/skills/dep-install .github/skills/dep-install; do
     [ -f "$target/$d/SKILL.md" ] || { echo "missing $d/SKILL.md" >&2; return 1; }
@@ -47,24 +47,24 @@ LIB=".coding-crew/lib/checks"
     [ -f "$target/$d/scripts/checks/host-install.sh" ] || { echo "$d: the link does not resolve" >&2; return 1; }
   done
   # The path the skill text names is a runnable program, not a stub.
-  run bash "$target/.pi/skills/dep-install/scripts/checks/detect-mode.sh" --project-root "$target"
+  run bash "$target/.pi/skills/dep-install/scripts/checks/discover-mode.sh" --project-root "$target"
   [ "$status" -eq 0 ]
-  [[ "$output" == "USE_HOST" || "$output" == "USE_DOCKER" ]]
+  [[ "$output" == "Mode discovery: skipped (no compose file: host)" ]]
 }
 
 @test "a stale library copy is overwritten on re-install" {
   local target; target=$(fresh_target target-stale)
   mkdir -p "$target/$LIB"
-  echo "stale" > "$target/$LIB/detect-mode.sh"
+  echo "stale" > "$target/$LIB/discover-mode.sh"
   run bash "$REPO_ROOT/install.sh" pi --skill dep-install --project "$target"
   [ "$status" -eq 0 ]
-  ! grep -q '^stale$' "$target/$LIB/detect-mode.sh"
+  ! grep -q '^stale$' "$target/$LIB/discover-mode.sh"
 }
 
 @test "uninstall --skill dep-install removes the library no remaining skill uses" {
   local target; target=$(fresh_target target-uninstall)
   bash "$REPO_ROOT/install.sh" pi --skill dep-install --project "$target" >/dev/null
-  [ -f "$target/$LIB/detect-mode.sh" ]
+  [ -f "$target/$LIB/discover-mode.sh" ]
   run bash "$REPO_ROOT/uninstall.sh" --skill dep-install --project "$target"
   [ "$status" -eq 0 ]
   [ ! -d "$target/$LIB" ]

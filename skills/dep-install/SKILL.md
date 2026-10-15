@@ -1,8 +1,8 @@
 ---
 name: dep-install
 description: >
-  Decides a project's install mode (host or docker) once with the person, records it in the clone's dev
-  commands file, and installs dependencies. Use when setting up a project, or when a command
+  Decides a project's install mode (host or docker) once, records it in the clone's dev commands
+  file, and installs dependencies. Use when setting up a project, or when a command
   failed for a missing dependency; used by solve-issue, address-pr-comments, add-tests and upgrade-deps.
 ---
 
@@ -43,29 +43,27 @@ It prints `INSTALL_MODE=docker` or `INSTALL_MODE=host`, and `DOCKER_SERVICE`: th
 `install_mode` and `docker_service`. No `install_mode` means host.
 Do not re-derive the mode yourself.
 
-**No `install_mode` yet, and the project has a compose file** (`docker-compose.yml`,
-`docker-compose.yaml` or `compose.yml`): the mode has never been decided. On a non-interactive run (a
-headless/`-p` invocation or a subagent), never write `install_mode` or `docker_service`: continue in
-host mode. On an interactive run, decide it with the person once:
+**No `install_mode` yet, and the project has a compose file**: the mode has never been decided.
+Decide it the way the checks are discovered:
 
 ```bash
-bash "<skill-dir>/scripts/checks/detect-mode.sh" --project-root "$PROJECT_ROOT"
-bash "<skill-dir>/scripts/checks/gen-override.sh" --project-root "$PROJECT_ROOT" --query services
+bash "<skill-dir>/scripts/checks/discover-mode.sh" --project-root "$PROJECT_ROOT"
 ```
 
-`detect-mode.sh` reads the Makefile (`USE_DOCKER` when an install-like target runs docker compose);
-the second lists the compose services. Ask the person whether the checks run in docker or on the
-host, suggesting that verdict, and — for docker — in which service, suggesting the one the Makefile's
-recipes use, else the first. Record the answer; every worktree of this clone reads it, and nothing
-needs committing unless the repo tracks `.coding-crew/dev-commands.json`, which it then updates:
+It prints `skipped` (nothing to decide) or a prompt: answer it by reading the files it lists. On an
+interactive run, show the person your answer — the mode, the service, and the line that decided it —
+and let them change it before you record it. Record it; every worktree of this clone reads it, and
+nothing needs committing unless the repo tracks `.coding-crew/dev-commands.json`, which it then updates:
 
 ```bash
 cat > "$PROJECT_ROOT/.install-mode.json" <<'JSON'
-{"install_mode": "<docker or host>", "docker_service": "<service, or omit the key for host>"}
+{"install_mode": "<docker or host>", "docker_service": "<service, or null for host>"}
 JSON
 (cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .install-mode.json)
 rm -f "$PROJECT_ROOT/.install-mode.json"
 ```
+
+Then run `resolve-mode.sh` again and continue with what it prints.
 
 ## Step 2 — Follow the install guide
 

@@ -88,6 +88,23 @@ decisions and constraints the issue assumes. No PRD is normal.
 
 If `DEP_SCRIPTS` is empty, stop and report `BLOCKED: checks library not linked — re-run install.sh`.
 
+First settle where commands run — before Step 4's first one:
+
+```bash
+bash "$DEP_SCRIPTS/discover-mode.sh" --project-root "$PROJECT_ROOT"
+```
+
+`skipped` means it is settled. Otherwise it prints a prompt: answer it yourself, by reading the files
+it lists, and persist the answer as Step 5 persists discovered checks:
+
+```bash
+cat > "$PROJECT_ROOT/.discovered-mode.json" <<'JSON'
+{"install_mode": "<docker or host>", "docker_service": "<service or null>"}
+JSON
+(cd "$PROJECT_ROOT" && bash "$DEP_SCRIPTS/write-commands-cache.sh" --response-file .discovered-mode.json)
+rm -f "$PROJECT_ROOT/.discovered-mode.json"
+```
+
 Do not install pre-emptively. The install mode is the dev commands file's `install_mode`
 (absent means host), and Step 4's `run.sh` acts on it: in docker mode its first call
 installs into this checkout's compose project, and a failed install stops with the service, the
