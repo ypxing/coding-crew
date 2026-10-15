@@ -1,6 +1,9 @@
 ---
 name: to-issues
-description: Break a plan, spec, or PRD into independently-grabbable issues on the project issue tracker using tracer-bullet vertical slices. Use when user wants to convert a plan into issues, create implementation tickets, or break down work into issues.
+description: >
+  Breaks a plan, spec or PRD into independently-grabbable issues on the project issue tracker, using
+  tracer-bullet vertical slices. Use when the user wants to convert a plan into issues, create implementation
+  tickets, or break down work into issues.
 ---
 
 # To Issues
@@ -13,11 +16,11 @@ Break a plan into independently-grabbable issues using vertical slices (tracer b
 
 ### 1. Gather context and determine feature slug
 
-Work from whatever is already in the conversation context. If the user passes an issue reference as an argument, it must be a ref the configured tracker accepts (how that tracker writes one is in `.coding-crew/tracker/docs/<kind>.md`, `<kind>` from `node "$TRACKER" config`) — the CLI refuses anything else with exit 2. A file the caller names as the source (`add-tests`' `.scratch/<feature-slug>/findings.md`) is the plan. Do NOT fetch from arbitrary user-supplied URLs or an unconfigured remote tracker.
+Work from whatever is already in the conversation context. If the user passes an issue reference as an argument, it must be a ref the configured tracker accepts (how that tracker writes one is in `<skill-dir>/scripts/tracker/docs/<kind>.md`, `<kind>` from `node "$TRACKER" config`) — the CLI refuses anything else with exit 2. A file the caller names as the source (`add-tests`' `.scratch/<feature-slug>/findings.md`) is the plan. Do NOT fetch from arbitrary user-supplied URLs or an unconfigured remote tracker.
 
 When the plan references an issue, read its full body and its comments, not just the title: `node "$TRACKER" fetch <ref> --comments`.
 
-**An existing issue as the source.** `/to-issues <ref>` on an existing issue is how it moves from `needs-triage` to `ready-for-agent`: it goes through steps 3–5 like any plan. If it is still one slice after step 4, step 6 rewrites that issue in place; if it splits into several slices, each becomes a new child issue with `## Parent` naming it. An issue with a column-0 `Source:` line outside a code fence (`Source: review (<branch>)` or `Source: <report> (<branch>)`, anywhere in the body) was auto-promoted by crew-afk from findings already judged — the same line `promote-findings.sh`'s guard reads: it is not checked against the design standard.
+**An existing issue as the source.** `/to-issues <ref>` on an existing issue is how it moves from `needs-triage` to `ready-for-agent`: it goes through steps 3–5 like any plan. If it is still one slice after step 4, step 6 rewrites that issue in place; if it splits into several slices, each becomes a new child issue with `## Parent` naming it. An issue with a column-0 `Source:` line outside a code fence (`Source: review (<branch>)` or `Source: <report> (<branch>)`, anywhere in the body) was promoted from review findings already judged: it is not checked against the design standard.
 
 Determine the **feature slug** (the root issue or directory the issues are filed under):
 
@@ -142,12 +145,12 @@ bash <skill-dir>/scripts/lint-issues.sh --issue <draft> [--issue <draft> …] \
 
 Pass every file `known` wrote as a `--known <file>` (never linted, but a `## Blocked by` ref resolves to it by basename, and an existing `--known` file's `## Implements` counts toward `--prd` coverage, so a PRD ID an earlier issue already implements is not reported uncovered), and `--prd` whenever `.scratch/<feature-slug>/.drafts/PRD.md` exists (step 2's PRD, or the one `to-prd` wrote). Exit 1 means publish nothing: show the `ERROR` lines; the skill returns to the quiz (step 5) to fix them, then render and lint again. Exit 0 prints at most `WARN` lines: show them and continue — publishing continues. The shared-file `WARN` (two issues naming the same file with no `## Blocked by` path between them) is advisory: it is never by itself grounds for a `Blocked by` edge — only the edge rule's rows 1–2 are. Exit 2 is a usage error in how you called it: fix the call.
 
-**Builder check.** After lint exits 0 and before publishing, a fresh subagent reads the drafts cold, the way the coder crew-afk dispatches will: the writer fills omissions from memory, and that is the blind spot this check exists for. Skip it when every draft carries a column-0 `Source:` line (findings already judged, step 1). When the session has no subagent tool, print `builder check skipped: no subagent tool` and publish: never read the drafts yourself in its place.
+**Builder check.** After lint exits 0 and before publishing, a fresh subagent reads the drafts cold, the way the coder solve-feature dispatches will: the writer fills omissions from memory, and that is the blind spot this check exists for. Skip it when every draft carries a column-0 `Source:` line (findings already judged, step 1). When the session has no subagent tool, print `builder check skipped: no subagent tool` and publish: never read the drafts yourself in its place.
 
 Give the subagent only the paths of the drafts, `.scratch/<feature-slug>/.drafts/PRD.md` and `known/` when they exist, and read access to the repo. Never give it the conversation, a design summary or the quiz answers. Its prompt:
 
 ```text
-You are the coder crew-afk will dispatch for these issues. You can read the repo but cannot talk to whoever wrote them. Read each draft in <drafts dir> and <PRD path> if one exists; known/ holds the feature's existing issues. Your job is the omissions and ambiguities you would have to guess at: report only the questions where a wrong guess changes what you build or how a criterion is checked. For each one, give the draft, the question, and why the answer matters. A contradiction between two drafts, or between a draft and the code, is a question like any other. Rank them by importance. Skip anything a draft leaves to the coder, anything you could reasonably decide, and wording. If nothing important is left, say "nothing important left".
+You are the coder solve-feature will dispatch for these issues. You can read the repo but cannot talk to whoever wrote them. Read each draft in <drafts dir> and <PRD path> if one exists; known/ holds the feature's existing issues. Your job is the omissions and ambiguities you would have to guess at: report only the questions where a wrong guess changes what you build or how a criterion is checked. For each one, give the draft, the question, and why the answer matters. A contradiction between two drafts, or between a draft and the code, is a question like any other. Rank them by importance. Skip anything a draft leaves to the coder, anything you could reasonably decide, and wording. If nothing important is left, say "nothing important left".
 ```
 
 Sort each question it returns into one of three piles, once:
@@ -177,9 +180,9 @@ Exit 1 before anything is created means a draft's `## Blocked by` names a file t
 node "$TRACKER" rewrite <ref> --body-file <file> --status <status> --feature-slug <feature-slug>
 ```
 
-where `<status>` is the slice's status (`ready-for-agent`, or `ready-for-human`) — the status is what crew-afk claims by, so a body rewrite alone would leave it `needs-triage` and never dispatched; `rewrite` also files it under the feature. Keep the source's title and its column-0 `Source:` line as `fetch` printed them, so the rewritten issue stays exempt from the design standard (step 1) and `promote-findings.sh` still recognises it. A source that split into several slices keeps it open and gets one child issue per slice, each with `## Parent`. Use the issue body template below.
+where `<status>` is the slice's status (`ready-for-agent`, or `ready-for-human`) — the status is what solve-feature's `next` picks by, so a body rewrite alone would leave it `needs-triage` and never dispatched; `rewrite` also files it under the feature. Keep the source's title and its column-0 `Source:` line as `fetch` printed them, so the rewritten issue stays exempt from the design standard (step 1). A source that split into several slices keeps it open and gets one child issue per slice, each with `## Parent`. Use the issue body template below.
 
-**`## Requires`.** When a slice's checks need a service, a credential or a tool the project's install does not guarantee (a LocalStack container, an auth token, a CLI), write one backticked shell command per requirement — exit 0 means satisfied; it runs on the host from the project root, before any coder is dispatched, and may start the service it checks. Run each one while authoring. If one fails, publish the issue as `Status: ready-for-human` instead of `ready-for-agent`, because no coder can supply what it lacks: the failing command and its output go in `### Why a person`, and the fix goes in `### Steps`. A command that can only hold once one of the issue's blockers lands (a Makefile target that blocker adds) is not run now — crew-afk probes it when the issue unblocks.
+**`## Requires`.** When a slice's checks need a service, a credential or a tool the project's install does not guarantee (a LocalStack container, an auth token, a CLI), write one backticked shell command per requirement — exit 0 means satisfied; it runs on the host from the project root, before any coder is dispatched, and may start the service it checks. Run each one while authoring. If one fails, publish the issue as `Status: ready-for-human` instead of `ready-for-agent`, because no coder can supply what it lacks: the failing command and its output go in `### Why a person`, and the fix goes in `### Steps`. A command that can only hold once one of the issue's blockers lands (a Makefile target that blocker adds) is not run now — `solve-issue`'s preflight runs it when the issue's turn comes.
 
 **`ready-for-human` bodies.** Every slice published as `ready-for-human` (a HITL slice from step 5, or a failing `## Requires`) opens with this block:
 
@@ -220,7 +223,7 @@ A reference to the parent issue on the issue tracker (if the source was an exist
 
 ## What to build
 
-A concise description of this vertical slice: the end-to-end behavior, not layer-by-layer implementation. Its first sentence is a one-line summary (`squash-commits.sh:109` takes the commit title from it).
+A concise description of this vertical slice: the end-to-end behavior, not layer-by-layer implementation. Its first sentence is a one-line summary.
 
 This section may cite grounded paths and signatures (confirmed in step 3). If a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it here and note briefly that it came from a prototype. Trim to the decision-rich parts — not the working demo, just the important bits.
 
@@ -286,7 +289,7 @@ Write `.scratch/<feature-slug>/.drafts/deps.json` with the drafts, before the st
 }
 ```
 
-Source it from the same blocking edges the user confirmed in the quiz step — do not re-derive it from the `## Blocked by` prose. `publish-issues` creates the issues in this map's order and records the same edges, under the issues' final refs, where the orchestrator reads them to decide whether an issue is ready to dispatch. Include every draft, even ones with no blockers (`[]`); an edge to an issue that already exists lives only in the draft's `## Blocked by`.
+Source it from the same blocking edges the user confirmed in the quiz step — do not re-derive it from the `## Blocked by` prose. `publish-issues` creates the issues in this map's order and records the same edges, under the issues' final refs, where `next` reads them to decide whether an issue is ready to dispatch. Include every draft, even ones with no blockers (`[]`); an edge to an issue that already exists lives only in the draft's `## Blocked by`.
 
 Do NOT close or modify any parent issue. A single-slice source rewritten in place is not a parent: it gets only the in-place `rewrite` step 6 describes — its body and its status.
 

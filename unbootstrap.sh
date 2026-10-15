@@ -19,8 +19,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-USER_FLAG="--user"
-[[ -n "$PROJECT" ]] && USER_FLAG=""
+# User level ($HOME) is uninstall.sh's default; --project uninstalls from the current repo.
+LEVEL=()
+[[ -z "$PROJECT" ]] || LEVEL=(--project)
 
 TMP_DIR="$(mktemp -d)"
 cleanup() { rm -rf "$TMP_DIR"; }
@@ -34,7 +35,7 @@ UNINSTALL="$TMP_DIR/uninstall.sh"
 chmod +x "$UNINSTALL"
 
 if [[ -n "$SKILLS" ]]; then
-  exec "$UNINSTALL" $USER_FLAG --skills "$SKILLS"
+  exec "$UNINSTALL" "${LEVEL[@]+"${LEVEL[@]}"}" --skills "$SKILLS"
 else
-  exec "$UNINSTALL" $USER_FLAG
+  exec "$UNINSTALL" "${LEVEL[@]+"${LEVEL[@]}"}"
 fi

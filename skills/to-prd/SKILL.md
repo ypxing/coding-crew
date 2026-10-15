@@ -1,6 +1,8 @@
 ---
 name: to-prd
-description: Turn the current conversation context into a PRD and publish it to the project issue tracker. Use when user wants to create a PRD from the current context.
+description: >
+  Turns the current conversation context into a PRD and publishes it to the project issue tracker. Use when
+  the user wants to create a PRD from the current context.
 ---
 
 Synthesize the current conversation context into a PRD. Do not ask discovery questions — if
@@ -59,7 +61,7 @@ The solution from the user's perspective.
 `<seam>` is where a test observes it (a command, a function, an endpoint, a rendered file).
 Example:
 
-- **B1** — given three ready issues, `/crew-afk` runs, all three are implemented in parallel worktrees, at the crew-afk CLI
+- **B1** — given three ready issues, `/solve-feature` runs, all three are implemented in order on one branch, at `solve-feature.sh`
 
 Do not list every edge case — acceptance criteria on individual issues cover those.
 

@@ -21,14 +21,10 @@ while [[ $# -gt 0 ]]; do
     --skills) SKILLS="${2:-}"; shift 2 ;;
     --update) UPDATE=1; shift ;;
     -*) echo "Unknown argument: $1" >&2; exit 1 ;;
-    # Any other word is the platform; install.sh validates it against orchestrator/platforms.json.
+    # Any other word is the platform; install.sh validates it against platforms.json.
     *) PLATFORM="$1"; shift ;;
   esac
 done
-
-if [[ -z "$PROJECT" ]]; then
-  export TARGET_REPO="$HOME"
-fi
 
 TMP_DIR="$(mktemp -d)"
 cleanup() { rm -rf "$TMP_DIR"; }
@@ -41,10 +37,14 @@ curl -fsSL "$REPO/archive/refs/heads/$BRANCH.tar.gz" \
 INSTALL="$TMP_DIR/install.sh"
 chmod +x "$INSTALL"
 
+# User level ($HOME) is install.sh's default; --project installs into the current repo.
+LEVEL=()
+[[ -z "$PROJECT" ]] || LEVEL=(--project)
+
 if [[ -n "$UPDATE" ]]; then
-  exec "$INSTALL" --update
+  exec "$INSTALL" --update "${LEVEL[@]+"${LEVEL[@]}"}"
 elif [[ -n "$SKILLS" ]]; then
-  exec "$INSTALL" "$PLATFORM" --skills "$SKILLS"
+  exec "$INSTALL" "$PLATFORM" --skills "$SKILLS" "${LEVEL[@]+"${LEVEL[@]}"}"
 else
-  exec "$INSTALL" "$PLATFORM"
+  exec "$INSTALL" "$PLATFORM" "${LEVEL[@]+"${LEVEL[@]}"}"
 fi

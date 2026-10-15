@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# address-pr-comments records each comment it fixes on a crew-afk PR as a defect crew-afk missed
+# address-pr-comments records each comment it fixes on a solve-feature PR as a defect its review missed
 # (.scratch/<slug>/reviews/escaped.md), and the reviewer eval has a template for replaying one.
 
 setup() {
@@ -25,6 +25,6 @@ setup() {
   ! grep -lx 'mode: branch' "$d"/cases/*.md
 }
 
-@test "address-pr-comments reads a crew-afk PR's slug from its body, so Step 1 does not fetch the head branch" {
+@test "address-pr-comments reads a solve-feature PR's slug from its body, so Step 1 does not fetch the head branch" {
   ! grep -n 'headRefName' "$REPO_ROOT/skills/address-pr-comments/SKILL.md"
 }

@@ -1,77 +1,51 @@
 ---
 name: crew-afk
 description: >
-  Implements all ready-for-agent issues by dispatching each to a separate coding-agent CLI process
-  in its own worktree, then housekeeping the result. Loops until no issues remain or all stall;
-  reviews every branch before merge. Trigger with /crew-afk. Optional: --model <alias|inherit>;
-  --fix-findings actionable|critical|high|medium|none.
-allowed-tools: Bash, shell
+  Starts one feature's /solve-feature run unattended in that feature's own worktree and returns at
+  once: locally as a detached headless agent capped at 1 hour (and $10 on claude), or as an interactive agent in
+  an orca terminal or a herdr pane. Reports how each run ended. Use when a feature's issues are ready
+  and it should be built without anyone watching. Trigger with /crew-afk <feature> [--to local|orca|herdr] [--branch <name>],
+  or /crew-afk status [<feature>].
+argument-hint: "<feature> [--to local|orca|herdr] [--branch <name>] | status [<feature>]"
+allowed-tools: Bash
 ---
 
-# AFK Issue Sprint
+# crew-afk
+
+You start runs and say how they ended. **You do not run /solve-feature yourself, and you implement,
+review, fix or close nothing**: each run is its own top-level session in its own worktree.
 
 {{FRAGMENT:tracker-configuration}}
 
-The sprint is a program, not a prompt: launch it, stream its output, report what it
-printed. **You do not orchestrate, implement, review, merge or close anything
-yourself.**
+## Start a run
+
+1. **Resolve the feature.** List what exists:
+
+   ```bash
+   node "$TRACKER" features   # <slug>, open|closed, count of issues that can start now — one line per feature
+   ```
+
+   Match the user's word against those slugs: exactly, then as a likely typo, then by issue content
+   (`node "$TRACKER" known --feature-slug <slug> --out <dir>` for a candidate). One match: use it and
+   say what you inferred. Several: ask which. None: start nothing, and point the user at
+   `crew-grill`, `crew-brainstorm` or `to-issues` to plan the feature first. Never guess: a wrong
+   slug spends a run on the wrong work. One call starts one feature; for several, run this once each.
+2. **Dispatch**, with `--to` only when the user named a destination (default `local`), and `--branch`
+   only when the user named a branch (default: solve-feature's, named after the slug). The run uses
+   the same agent CLI you are:
+
+   ```bash
+   bash "<skill-dir>/scripts/crew-afk.sh" dispatch <slug> [--to local|orca|herdr] [--branch <name>]
+   ```
+
+   Relay what it prints and stop: the run goes on without you, so do not wait for it, read its log or
+   check on it. On a non-zero exit, relay the message as printed. Only a local run is refused while it
+   is still going: a second dispatch to orca or herdr starts a second agent beside the first.
+
+## Status
 
 ```bash
-CREW_AFK="$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/main.mjs"
-# a linked worktree (the feature agent's `_feature`) may lack .coding-crew/: the main checkout's copy
-[ -f "$CREW_AFK" ] || CREW_AFK="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.coding-crew/crew-afk/main.mjs"
-[ -f "$CREW_AFK" ] || CREW_AFK="$HOME/.coding-crew/crew-afk/main.mjs"
-node "$CREW_AFK" run --platform {{PLATFORM}} "$@"
+bash "<skill-dir>/scripts/crew-afk.sh" status [<slug>]
 ```
 
-Pass CLI-looking arguments through — `--model`, `--fix-findings`,
-`--max-parallel N`, `--jira TICKET-123`, a `.scratch/<feature-slug>/…` path — never rewrite
-those (`--fix-findings medium` keeps LOW findings out of fix issues). A bare word, typo, or phrase is resolved first, below.
-
-## Resolving the sprint target
-
-If the trailing arguments aren't CLI syntax, look up what exists first:
-
-```bash
-node "$TRACKER" features   # <slug>, open|closed, count of issues that can start now — one line per feature
-```
-
-Match against those slugs (exact, fuzzy/typo, then issue content: `node "$TRACKER" known --feature-slug <slug> --out <dir>` for a candidate). One match →
-`--feature-slug <slug>`, say what you inferred, then run. No match → don't run; point at
-`crew-grill`, `crew-brainstorm`, or `to-issues`. Multiple matches → ask which. Never guess
-or create a `.scratch/<slug>` directory: a wrong resolution merges and closes real work.
-
-It owns the whole loop: a worktree and coder per issue, then verify → review → merge → close,
-promotion, the opt-in squash, cleanup and the summary — until no issues remain or every
-remaining one is blocked.
-Workers are separate `{{PLATFORM}}` CLI processes, not in-session subagents, so a hung one
-times out without hanging the sprint. The CLI must be on `PATH` and authenticated — if it is
-not, stop rather than implementing issues yourself.
-
-A dead run's feature lease needs `--reclaim`.
-
-## Your part
-
-1. Resolve the target first if needed, then launch **in the background** — a dispatch can
-   run up to 60 minutes — with `--dry-run` first only if the user asked what it would do.
-   Use your tool's own background tracking (Claude Code: `run_in_background: true`), not a
-   shell `&`/`disown` — that bypasses the completion notification, so no summary reaches you.
-2. **Don't poll and don't relay.** Wait for the completion notification, however the run
-   was started: every line you read or echo costs tokens, and the human watches
-   `orchestrator.log` (or the sprint's feature agent, when the run has one). If asked for
-   progress, answer in one sentence from the latest `[STEP]` lines on **stderr** — never echo
-   them. On exit, print the stdout as-is — it is the report (or, with a feature agent, one line
-   pointing at it); don't rewrite it. The summary is saved to `.scratch/<feature-slug>/traces/summary-<run-id>.md`.
-3. If asked, the log is `.scratch/<feature-slug>/traces/orchestrator.log`.
-4. Report the exit code and stop: `0` finished, `2` stalled or capped (needs a human), `3` no
-   ready issues, `1` setup problem — print its stderr verbatim.
-
-## Failure handling
-
-- `node: command not found` → needs Node ≥ 20, and stop.
-- `cannot find crew-afk's scripts/ dir` or `protocol … not found` → not installed here or in
-  `$HOME`; install: `TARGET_REPO=$HOME ./install.sh {{PLATFORM}} --skill crew-afk`.
-  `node "$CREW_AFK" doctor --platform {{PLATFORM}}` names what's absent.
-- Any other non-zero exit → print its output and stop. Never finish the sprint by hand: a
-  merge or close outside the pipeline skips the receipt gates keeping an unverified branch
-  out of the feature branch.
+Relay its lines as printed.

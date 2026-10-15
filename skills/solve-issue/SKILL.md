@@ -1,8 +1,10 @@
 ---
 name: solve-issue
 description: >
-  Implement a single issue end-to-end: read it, explore context, install deps, build with TDD,
-  verify checks, and commit. Platform-agnostic — works in worktrees or branches.
+  Implements a single issue end-to-end: reads it, explores the code, installs dependencies when missing,
+  builds with TDD, verifies the project's checks and commits. Works in a worktree or on a branch, on any
+  platform. Use when one issue — a tracker ref, an issue file or inline content — should be implemented and
+  committed.
 argument-hint: "Path to issue file (e.g. .scratch/auth/issues/01-add-logout.md)"
 ---
 
@@ -42,9 +44,8 @@ Do not attempt workarounds.
 
 The caller provides a **file path** or tracker ref to read the issue from, or the issue content inline.
 
-`PROJECT_ROOT` (where code lives and all commands run) and `MAIN_ROOT` (the main checkout, where
-`.scratch/` and gitignored files live) are **inherited from the caller** — use the values already
-established and do not re-derive them.
+`PROJECT_ROOT` (the checkout where code lives and all commands run) is **inherited from the
+caller** — use the value already established and do not re-derive it.
 
 {{FRAGMENT:tracker-configuration}}
 
@@ -58,20 +59,19 @@ the caller named — a path, or the tracker's issue number.
 Every fact the run needs before it reads code comes from one call — run it first:
 
 ```bash
-bash "<skill-dir>/scripts/preflight.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
+bash "<skill-dir>/scripts/preflight.sh" --project-root "$PROJECT_ROOT" \
   --issue "$ISSUE_PATH"   # omit --issue when the caller handed the issue over inline
 ```
 
 A `BLOCKED:` line (exit 1) ends the run: report it verbatim and do not proceed. It is
 `BLOCKED: on default branch` (`DEFAULT_BRANCH`: `origin/HEAD`, else `main`), `BLOCKED: depends on
 <file>` for a `## Blocked by` file not yet in the sibling `done/`, or `BLOCKED: requires: <cmd>` for
-a failing `## Requires` command. Otherwise it prints `OK` and four values; each bash call is a fresh
+a failing `## Requires` command. Otherwise it prints `OK` and three values; each bash call is a fresh
 shell, so carry them as literals for the rest of the run:
 
 - `ISSUE_SLUG` — the commit prefix (Steps 4 and 6)
 - `PRD` — the PRD path, or empty (Step 1.5)
-- `ORCHESTRATED` — who closes the issue (Step 7)
-- `DEP_SCRIPTS` — dep-install's scripts (Steps 2, 4 and 5)
+- `DEP_SCRIPTS` — the checks library, `<skill-dir>/scripts/checks` (Steps 2, 4 and 5)
 
 ### 1. Understand the issue
 
@@ -86,27 +86,33 @@ decisions and constraints the issue assumes. No PRD is normal.
 
 ### 2. Dependencies — only when something is missing
 
-If `DEP_SCRIPTS` is empty, stop and report `BLOCKED: dep-install skill not installed`. Otherwise
-run this — even when your prompt already states `INSTALL_MODE=` or `DEPS=`; it is what turns them
-into an action:
+If `DEP_SCRIPTS` is empty, stop and report `BLOCKED: checks library not linked — re-run install.sh`.
+
+First settle where commands run — before Step 4's first one:
 
 ```bash
-bash "$DEP_SCRIPTS/resolve-mode.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
-  --deps "<the DEPS= value from your prompt, or empty>"
+bash "$DEP_SCRIPTS/discover-mode.sh" --project-root "$PROJECT_ROOT"
 ```
 
-It prints `INSTALL_MODE` — the verdict every later command uses (`git config --local
-agent.install-mode` overrides it) — and an `ACTION`:
+`skipped` means it is settled. Otherwise it prints a prompt: answer it yourself, by reading the files
+it lists, and persist the answer as Step 5 persists discovered checks:
 
-- `none` — dependencies are already installed here. Continue to Step 3.
-- `install` — docker mode: invoke the `dep-install` skill now. Never optional or deferred — docker
-  mode has no host-side fallback.
-- `on-failure` — `INSTALL_MODE=host`. Do **not** install pre-emptively: a worktree usually inherits
-  `node_modules`/`.venv` through `.worktreeinclude`, and many repos have no dependency step.
+```bash
+cat > "$PROJECT_ROOT/.discovered-mode.json" <<'JSON'
+{"install_mode": "<docker or host>", "docker_service": "<service or null>"}
+JSON
+(cd "$PROJECT_ROOT" && bash "$DEP_SCRIPTS/write-commands-cache.sh" --response-file .discovered-mode.json)
+rm -f "$PROJECT_ROOT/.discovered-mode.json"
+```
 
-Under every `ACTION`, a command that later fails for a missing dependency (module-not-found, import
-error, test runner not found) means invoke `dep-install` then. Do not probe `node_modules`, `.venv`
-or `PATH` yourself: the script answered that.
+Do not install pre-emptively. The install mode is the dev commands file's `install_mode`
+(absent means host), and Step 4's `run.sh` acts on it: in docker mode its first call
+installs into this checkout's compose project, and a failed install stops with the service, the
+step and its log — report that `blocked` with its output. In host mode a worktree usually inherits
+`node_modules`/`.venv` through `.worktreeinclude`, and many repos have no dependency step.
+
+A command that later fails for a missing dependency (module-not-found, import error, test runner not
+found) means invoke `dep-install` then. Do not probe `node_modules`, `.venv` or `PATH` yourself.
 
 ### 3. Explore before coding
 
@@ -144,12 +150,12 @@ call (`grep -rn -E 'patternA|patternB'`) and read several files per turn.
 ### 4. Implement with TDD
 
 **Run every project command through `run.sh`** — test runs, type checks, linting, and any ad-hoc
-command, a one-off `docker compose` one included. It runs the command where `INSTALL_MODE` says:
-inside docker (with this worktree's compose override) or on the host. Never hand-build a `docker
+command, a one-off `docker compose` one included. It runs the command where `install_mode` says:
+inside docker (with this checkout's compose override) or on the host. Never hand-build a `docker
 compose` command.
 
 ```bash
-bash "$DEP_SCRIPTS/run.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" -- "<command>"
+bash "$DEP_SCRIPTS/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"
 ```
 
 Run commands in the foreground and wait for them — never in the background. Between edits run only
@@ -176,7 +182,7 @@ branch with a commit on it is resumable; uncommitted work looks like a run that 
 Message quality doesn't matter — checkpoints are squashed before merge:
 
 ```bash
-bash "<skill-dir>/scripts/commit-changes.sh" \
+bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
   --prefix "[$ISSUE_SLUG][WIP]" \
   --message "<behavior just made green>" \
   --files "<files touched this cycle>"
@@ -195,20 +201,12 @@ or touch unrelated doc sections.
 This is the one full-suite run:
 
 ```bash
-bash "<skill-dir>/scripts/run-checks.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
-  --dep-scripts "$DEP_SCRIPTS"
+bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT"
 ```
 
-It runs every `.coding-crew/dev-commands.json` check — `typecheck`, `lint`, `test`, then every other
+It runs every check in the dev commands file (`scripts/checks/commands-file.sh` names it) — `typecheck`, `lint`, `test`, then every other
 key with a command (coverage, integration) — each through `run.sh`, and reports each. `NOT RUN: no
 command found` means no local command exists: report it, do not re-check CLAUDE.md/Makefile.
-`<key>: deferred` means the verify gate runs it: report `deferred`.
-
-**Under `CREW_DEFER_FULL_CHECKS=1`** the full suite is the verify gate's: never run the
-`dev-commands.json` `test` command (or any whole-suite glob) yourself. Pass `--targeted` to
-`run-checks.sh`: it runs only the test files changed on the branch against its merge-base and
-reports `test: pass (targeted)` / `test: fail (targeted, exit N)`, or `test: deferred` when no
-changed test file is one the test command's suite selects (report `deferred`).
 
 - `CHECKS: pass` — continue.
 - `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
@@ -222,7 +220,7 @@ changed test file is one the test command's suite selects (report `deferred`).
   cat > "$PROJECT_ROOT/.discovered-commands.json" <<'JSON'
   {"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>"}
   JSON
-  bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file "$PROJECT_ROOT/.discovered-commands.json"
+  bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file "$PROJECT_ROOT/.discovered-commands.json"
   rm -f "$PROJECT_ROOT/.discovered-commands.json"
   ```
 
@@ -234,12 +232,12 @@ If any check in Step 5 failed, do NOT stage or commit — report `partial` or `b
 the working directory is already clean, check whether the issue is already implemented and
 committed; if so, go to Step 7.
 
-Run `commit-changes.sh` from the same directory you read this skill file from:
+Run `scripts/git-workflow/commit-changes.sh` from the same directory you read this skill file from:
 
 ```bash
 DETAILS="- <key decision or tradeoff line 1>
 - <key decision or tradeoff line 2>"
-bash "<skill-dir>/scripts/commit-changes.sh" \
+bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
   --prefix "[$ISSUE_SLUG]" \
   --message "<issue title>${DETAILS:+
 
@@ -252,38 +250,28 @@ Example: `[01-auth-logout] Add user logout endpoint`. Do not push.
 
 ### 6.5. Reminder: dev-commands.json
 
-Nothing here commits a `.coding-crew/dev-commands.json` that Step 5's `DISCOVER` created:
+Where the repo tracks `.coding-crew/dev-commands.json`, Step 5's `DISCOVER` updates it, and nothing here
+commits it:
 
 ```bash
-if [ -n "$(git -C "$MAIN_ROOT" status --porcelain -- .coding-crew/dev-commands.json 2>/dev/null)" ]; then
-  echo "Reminder: .coding-crew/dev-commands.json has uncommitted changes at MAIN_ROOT — review and commit it."
+if [ -n "$(git -C "$PROJECT_ROOT" status --porcelain -- .coding-crew/dev-commands.json 2>/dev/null)" ]; then
+  echo "Reminder: .coding-crew/dev-commands.json has uncommitted changes — review and commit it."
 fi
 ```
 
 ### 7. Mark done
 
-`ORCHESTRATED` from Step 0 says who owns the close — the same fact `mark-done` checks:
-`CREW_ORCHESTRATED=1`, or a `$MAIN_ROOT/.scratch/*/.orchestrated` marker.
-
-**`1` — write nothing to the issue file, in this step or the next:** no tick, no `mark-done`, no
-`Status:` rewrite, no move, no added section. Report every criterion and its state and stop; the
-owner ticks the boxes and closes the issue once its own gates pass on your branch.
-
-**`0` — the close is yours.** Verify every criterion under `## Acceptance criteria` — and under
-`## Cross-cutting Requirements` if present — against the code. Once each one holds, run `node
-"$TRACKER" tick <issue-ref>` (it checks every `- [ ]` off, on any tracker: a GitHub issue's body
-has no file to edit), then `node "$TRACKER" mark-done <issue-ref>`. Never hand-roll `mv`, `sed`,
-`gh issue edit` or a label edit. Exit 3 means another owner holds the close (report and stop);
-exit 4 that a criterion is still unchecked, or the section missing (Step 8). A criterion that does
-not hold is never ticked: Step 8 is for that, with nothing ticked.
+Verify every criterion under `## Acceptance criteria` — and under `## Cross-cutting Requirements` if
+present — against the code. Once each one holds, run `node "$TRACKER" tick <issue-ref>` (it checks
+every `- [ ]` off, on any tracker: a GitHub issue's body has no file to edit), then `node "$TRACKER"
+mark-done <issue-ref>`. Never hand-roll `mv`, `sed`, `gh issue edit` or a label edit. Exit 4 means a
+criterion is still unchecked, or the section missing (Step 8). A criterion that does not hold is
+never ticked: Step 8 is for that, with nothing ticked.
 
 ### 8. Unmet criteria
 
-Orchestrated (Step 7): report status `partial` with the unmet criteria, and stop.
-
-Otherwise record a `## Unmet criteria` section saying what is missing and why (descoped, blocked,
-split out): write it to a file and run `node "$TRACKER" write-section <issue-ref> --heading
-"Unmet criteria" --body-file <file>` (into the issue file on a local tracker, as a comment on a
-GitHub issue). On a **non-interactive run** (a headless/`-p` invocation or a subagent;
-`CREW_ORCHESTRATED` took the branch above), report `partial` listing them and stop — nobody can
-answer a question. Only on an interactive run, ask the user how to proceed.
+Record a `## Unmet criteria` section saying what is missing and why (descoped, blocked, split out):
+write it to a file and run `node "$TRACKER" write-section <issue-ref> --heading "Unmet criteria"
+--body-file <file>` (into the issue file on a local tracker, as a comment on a GitHub issue). On a
+**non-interactive run** (a headless/`-p` invocation or a subagent), report `partial` listing them
+and stop — nobody can answer a question. Only on an interactive run, ask the user how to proceed.

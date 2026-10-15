@@ -2,12 +2,11 @@
 
 # scripts/render-skill.sh's shared fragments: a whole-line {{FRAGMENT:<key>}} expands to
 # skills/_shared/fragments/<key>.md, so a fragment used by several skills (e.g. the "Tracker
-# Configuration" preamble to-issues/to-prd/upgrade-deps/crew-address-findings all used to
+# Configuration" preamble to-issues/to-prd/upgrade-deps all used to
 # copy-paste independently) has exactly one source instead of one per skill.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 RENDER="$REPO_ROOT/scripts/render-skill.sh"
-load helpers/platforms
 
 # The probe skill lives in a per-test copy of the render tree (render-skill.sh resolves
 # registry.json and skills/ from its own location), never under the real skills/: bats -j
@@ -33,20 +32,27 @@ setup() {
   } > "$FIXTURE_SKILL_DIR/SKILL.md"
 }
 
-@test "a fragment under skills/_shared/fragments renders on every platform" {
+@test "a fragment under skills/_shared/fragments renders into the body" {
   mkdir -p "$SHARED_DIR"
   echo "Shared content." > "$SHARED_DIR/shared-only.md"
 
-  for p in "${PLATFORMS[@]}"; do
-    run bash "$PROBE_RENDER" "$FIXTURE_NAME" "$p"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Shared content."* ]]
-    [[ "$output" != *"{{FRAGMENT"* ]]
-  done
+  run bash "$PROBE_RENDER" "$FIXTURE_NAME"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Shared content."* ]]
+  [[ "$output" != *"{{FRAGMENT"* ]]
+}
+
+@test "a {{PLATFORM}} placeholder is no longer expanded: it fails the render" {
+  mkdir -p "$SHARED_DIR"
+  echo "Shared content." > "$SHARED_DIR/shared-only.md"
+  echo "Run on {{PLATFORM}}." >> "$FIXTURE_SKILL_DIR/SKILL.md"
+  run bash "$PROBE_RENDER" "$FIXTURE_NAME"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unexpanded placeholder"* ]]
 }
 
 @test "a missing fragment is a hard error" {
-  run bash "$PROBE_RENDER" "$FIXTURE_NAME" claude
+  run bash "$PROBE_RENDER" "$FIXTURE_NAME"
   [ "$status" -ne 0 ]
   [[ "$output" == *"fragment"* ]]
 }
@@ -65,8 +71,8 @@ setup() {
   # place that says how; a skill whose rendered section differed would be saying it twice.
   local expected
   expected=$(cat "$REPO_ROOT/skills/_shared/fragments/tracker-configuration.md")
-  for skill in to-issues to-prd crew-address-findings upgrade-deps solve-issue; do
-    run bash "$RENDER" "$skill" claude
+  for skill in to-issues to-prd upgrade-deps solve-issue; do
+    run bash "$RENDER" "$skill"
     [ "$status" -eq 0 ]
     local actual
     # The fragment opens the section; a skill may add its own lines after it.
@@ -79,20 +85,18 @@ setup() {
   done
 }
 
-@test "to-issues, to-prd, upgrade-deps and crew-address-findings all render the shared tracker-configuration fragment, for every platform" {
-  for skill in to-issues to-prd upgrade-deps crew-address-findings; do
-    for p in "${PLATFORMS[@]}"; do
-      run bash "$RENDER" "$skill" "$p"
-      [ "$status" -eq 0 ] || { echo "$skill/$p failed to render: $output" >&2; return 1; }
-      [[ "$output" == *"## Tracker Configuration"* ]] || {
-        echo "$skill/$p is missing the Tracker Configuration section" >&2; return 1; }
-      [[ "$output" == *'node "$TRACKER" config'* ]] || {
-        echo "$skill/$p is missing the cli.mjs config check" >&2; return 1; }
-      [[ "$output" != *"issue-tracker.md"* ]] || {
-        echo "$skill/$p still names issue-tracker.md" >&2; return 1; }
-      [[ "$output" != *"{{FRAGMENT"* ]] || {
-        echo "$skill/$p left an unexpanded fragment placeholder" >&2; return 1; }
-    done
+@test "to-issues, to-prd and upgrade-deps all render the shared tracker-configuration fragment" {
+  for skill in to-issues to-prd upgrade-deps; do
+    run bash "$RENDER" "$skill"
+    [ "$status" -eq 0 ] || { echo "$skill failed to render: $output" >&2; return 1; }
+    [[ "$output" == *"## Tracker Configuration"* ]] || {
+      echo "$skill is missing the Tracker Configuration section" >&2; return 1; }
+    [[ "$output" == *'node "$TRACKER" config'* ]] || {
+      echo "$skill is missing the cli.mjs config check" >&2; return 1; }
+    [[ "$output" != *"issue-tracker.md"* ]] || {
+      echo "$skill still names issue-tracker.md" >&2; return 1; }
+    [[ "$output" != *"{{FRAGMENT"* ]] || {
+      echo "$skill left an unexpanded fragment placeholder" >&2; return 1; }
   done
 }
 
@@ -102,9 +106,10 @@ setup() {
   grep -qF 'configured=no' "$f"
   grep -qF 'configure-tracker' "$f"
   grep -qiF 'interactive run' "$f"
-  grep -qF 'CREW_ORCHESTRATED' "$f"
   grep -qF -- '-p' "$f"
   grep -qF 'proceed as `local`' "$f"
-  grep -qF '.coding-crew/tracker/docs/' "$f"
+  grep -qF '<skill-dir>/scripts/tracker/cli.mjs' "$f"
+  grep -qF '<skill-dir>/scripts/tracker/docs/<kind>.md' "$f"
+  ! grep -qF '.coding-crew/' "$f"
   ! grep -q 'issue-tracker.md' "$f"
 }

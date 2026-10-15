@@ -1,19 +1,17 @@
 #!/usr/bin/env bats
 
-# cli.mjs mark-done / close-issue.sh — github backend.
+# cli.mjs mark-done — github backend.
 #
 # mark-done re-fetches the issue body live (never a cached copy the caller
 # might be holding) and marks it done by swapping ready-for-agent for awaiting-merge —
 # never `gh issue close`: the work is only on a branch, and the PR's `Closes #n` closes
-# the issue on merge. close-issue.sh closes through it (--force). The guards every backend
-# shares (sprint marker, CREW_ORCHESTRATED, unchecked criteria) are tested once, in
-# tests/orchestrator/tracker-cli-write.test.mjs; this file keeps what is GitHub's own.
+# the issue on merge. The guards every backend shares (unchecked criteria) are tested once, in
+# tests/tracker/tracker-cli-write.test.mjs; this file keeps what is GitHub's own.
 #
 # `gh` is stubbed on PATH throughout: these tests pin argument shape and call
 # count, not real GitHub behaviour.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-CLOSE_SCRIPT="$REPO_ROOT/skills/crew-afk/scripts/close-issue.sh"
 
 setup() {
   TEMP_DIR=$(mktemp -d)
@@ -29,8 +27,7 @@ tracker: github
 # Issue tracker: GitHub Issues
 EOF
   # The tracker CLI, installed in the repo — the only tracker file an install ships.
-  cp -R "$REPO_ROOT/tracker" "$MAIN_ROOT/.coding-crew/tracker"
-  unset CREW_TRACKER_CLI CREW_INSTALL_DIR
+  cp -R "$REPO_ROOT/lib/tracker" "$MAIN_ROOT/.coding-crew/tracker"
 
   STUB="$TEMP_DIR/.stub"
   mkdir -p "$STUB"
@@ -41,8 +38,6 @@ EOF
   : > "$GH_LOG"
   GH_BODY_FILE="$TEMP_DIR/gh-body.txt"
   export GH_BODY_FILE
-
-  unset CREW_ORCHESTRATED SPRINT_DIR FEATURE_SLUG CREW_RECEIPTS
 }
 
 teardown() {
@@ -103,17 +98,6 @@ close_calls() {
 
 # ─── mark-done: the label edits ─────────────────────────────────────
 
-@test "mark-done (github): in-progress comes off in the one edit that adds awaiting-merge, and is created first" {
-  stub_gh 0
-  write_body_met
-
-  run mark_done 42
-  [ "$status" -eq 0 ]
-  grep -q '^label create in-progress --force' "$GH_LOG"
-  [ "$(grep -c '^issue edit' "$GH_LOG")" -eq 1 ]
-  grep -q '^issue edit 42 .*--remove-label in-progress' "$GH_LOG"
-}
-
 @test "mark-done (github): met criteria swaps ready-for-agent for awaiting-merge and never closes" {
   stub_gh 0
   write_body_met
@@ -122,7 +106,7 @@ close_calls() {
   [ "$status" -eq 0 ]
   [ "$(done_calls)" -eq 1 ]
   grep -q '^label create awaiting-merge --force' "$GH_LOG"
-  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human --remove-label in-progress$' "$GH_LOG"
+  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human$' "$GH_LOG"
   [ "$(close_calls)" -eq 0 ]
   [[ "$output" == *"Closes #42"* ]]
 }
@@ -146,7 +130,7 @@ EOF
   ! grep -q '^label create ready-for-human.*--force' "$GH_LOG" || false
   edit=$(grep -n '^issue edit' "$GH_LOG" | cut -d: -f1)
   [ -n "$create" ] && [ "$create" -lt "$edit" ]
-  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human --remove-label in-progress$' "$GH_LOG"
+  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human$' "$GH_LOG"
 }
 
 @test "mark-done (github): an existing ready-for-human label is left as is and still removed" {
@@ -169,7 +153,7 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" != *"WARNING"* ]]
   ! grep -q '^label create ready-for-human.*--force' "$GH_LOG" || false
-  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human --remove-label in-progress$' "$GH_LOG"
+  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human$' "$GH_LOG"
 }
 
 @test "mark-done (github): a failed ready-for-human label create only warns and leaves it alone" {
@@ -191,7 +175,7 @@ EOF
   run mark_done 42
   [ "$status" -eq 0 ]
   [[ "$output" == *"WARNING: gh label create ready-for-human failed"* ]]
-  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label in-progress$' "$GH_LOG"
+  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent$' "$GH_LOG"
 }
 
 @test "mark-done (github): rejects a non-numeric argument instead of shelling out to gh" {
@@ -212,91 +196,3 @@ EOF
   [[ "$output" == *"gh issue edit failed"* ]]
 }
 
-# ─── mark-done: --force against the sprint marker ───────────────────
-
-@test "mark-done (github): --force overrides the sprint marker" {
-  stub_gh 0
-  write_body_met
-  mkdir -p "$MAIN_ROOT/.scratch/alpha"
-  touch "$MAIN_ROOT/.scratch/alpha/.orchestrated"
-
-  SPRINT_DIR="$MAIN_ROOT/.scratch/alpha" run mark_done 42 --force
-  [ "$status" -eq 0 ]
-  [ "$(done_calls)" -eq 1 ]
-}
-
-# ─── close-issue.sh: the orchestrator's own close, github backend ────────────
-
-@test "close-issue (github): labels the issue awaiting-merge and leaves it open for the PR to close" {
-  stub_gh 0
-
-  run env CREW_RECEIPTS=off bash "$CLOSE_SCRIPT" 42
-  [ "$status" -eq 0 ]
-  [ "$(done_calls)" -eq 1 ]
-  grep -q '^label create awaiting-merge --force' "$GH_LOG"
-  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human --remove-label in-progress$' "$GH_LOG"
-  [ "$(close_calls)" -eq 0 ]
-}
-
-@test "close-issue (github): a gh issue edit failure surfaces and is not swallowed" {
-  stub_gh 9
-
-  run env CREW_RECEIPTS=off bash "$CLOSE_SCRIPT" 42
-  [ "$status" -ne 0 ]
-}
-
-# The tick is bookkeeping about the close, so close-issue.sh owns it on github too —
-# a merged issue must not read as half-done on GitHub while the local backend ticks.
-@test "close-issue (github): ticks every remaining criterion in the issue body" {
-  stub_gh 0
-  cat > "$GH_BODY_FILE" <<'BODY'
-Status: ready-for-agent
-
-## What to build
-
-- [ ] a note, not a criterion
-
-## Acceptance criteria
-
-- [x] one
-- [ ] two
-
-## Cross-cutting Requirements
-
-* [ ] three
-BODY
-  # Capture the body the edit sends, so the assertion is on what reached GitHub.
-  cat > "$STUB/gh" <<STUBEOF
-#!/usr/bin/env bash
-printf '%s\n' "\$*" >> "$GH_LOG"
-case "\$1 \$2" in
-  "issue view") cat "$GH_BODY_FILE" ;;
-  "issue edit")
-    while [ \$# -gt 0 ]; do
-      [ "\$1" = "--body-file" ] && cp "\$2" "$TEMP_DIR/sent-body.txt"
-      shift
-    done ;;
-esac
-exit 0
-STUBEOF
-  chmod +x "$STUB/gh"
-
-  run env CREW_RECEIPTS=off bash "$CLOSE_SCRIPT" 42
-  [ "$status" -eq 0 ]
-  grep -q '^issue edit 42 --body-file' "$GH_LOG"
-  grep -qx -- '- \[x\] two' "$TEMP_DIR/sent-body.txt"
-  grep -qx -- '\* \[x\] three' "$TEMP_DIR/sent-body.txt"
-  grep -qx -- '- \[ \] a note, not a criterion' "$TEMP_DIR/sent-body.txt"
-  grep -qx 'Status: ready-for-agent' "$TEMP_DIR/sent-body.txt"
-  [ "$(done_calls)" -eq 1 ]
-}
-
-@test "close-issue (github): no body edit when every criterion is already ticked" {
-  stub_gh 0
-  write_body_met
-
-  run env CREW_RECEIPTS=off bash "$CLOSE_SCRIPT" 42
-  [ "$status" -eq 0 ]
-  ! grep -q -- '--body-file' "$GH_LOG"
-  [ "$(done_calls)" -eq 1 ]
-}

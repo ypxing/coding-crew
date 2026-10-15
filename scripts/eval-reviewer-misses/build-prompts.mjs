@@ -1,20 +1,17 @@
 #!/usr/bin/env node
-// build-prompts.mjs <tree> — the review prompts of ONE ref, built from that ref's own modules, so
-// the prompt builders and rendered reviewer role are the ref's, never the head's.
-// stdin: JSON {mode, base, tip, branch, slug, issue, criteria, notes?, prdPath?, prdText, reportPath, reviewer?};
-// stdout: JSON {role, reviews: [{name, prompt}]}. reviewer "crew-review" builds crew-review's prompt instead of
-// crew-afk's: the ref's skills/crew-review/SKILL.md, or before the rename review-pr's reviewer-prompt.md, or before
-// that file existed, review-pr.sh's heredoc.
+// build-prompts.mjs <tree> — the crew-review prompt of ONE ref, built from that ref's own files, so
+// the reviewer's instructions are the ref's, never the head's: its skills/crew-review/SKILL.md, or before
+// the rename review-pr's reviewer-prompt.md, or before that file existed, review-pr.sh's heredoc.
+// stdin: JSON {mode, base, tip, branch, slug, issue, criteria, notes?, prdPath?, prdText, reportPath};
+// stdout: JSON {role, reviews: [{name, prompt}]}.
 
 import { execFileSync } from "node:child_process";
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 const tree = path.resolve(process.argv[2]);
-const load = (rel) => import(pathToFileURL(path.join(tree, rel)).href);
 const inp = JSON.parse(fs.readFileSync(0, "utf8"));
 
 // The case is not a GitHub PR: its spec (the PRD, and a branch case's criteria) and its diff are files.
@@ -40,39 +37,4 @@ function crewReviewPrompt() {
   return body.replace(/\$(PR|URL|SPEC|DIFF|REPORT)\b/g, (_, k) => vars[k]);
 }
 
-if (inp.reviewer === "crew-review") {
-  process.stdout.write(JSON.stringify({ role: "", reviews: [{ name: "crew-review", prompt: crewReviewPrompt() }] }));
-  process.exit(0);
-}
-
-const [prompts, render] = await Promise.all([
-  load("orchestrator/lib/prompts.mjs"),
-  load("orchestrator/lib/adapters/render.mjs"),
-]);
-
-const reviewAssets = path.join(tree, "orchestrator", "roles", "reviewer");
-// A feature case also gets the feature part (a ref that predates the split ignores `part`).
-const role = render.renderRolePrompt("reviewer", "claude", { mainRoot: null, ...(inp.mode === "branch" ? {} : { part: "feature" }) });
-const out = { role, reviews: [] };
-
-if (inp.mode === "branch") {
-  out.reviews.push({
-    name: inp.slug,
-    prompt: prompts.reviewPrompt({
-      branch: inp.tip, slug: inp.slug, issuePath: inp.issue, criteria: inp.criteria,
-      featureBranch: inp.base, checks: { test: "pass", lint: "pass", typecheck: "pass" },
-      reportPath: inp.reportPath, reviewAssets,
-    }),
-  });
-} else {
-  let prdPath = inp.prdPath ?? null;
-  if (!prdPath && inp.prdText) {
-    prdPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "eval-prd-")), "PRD.md");
-    fs.writeFileSync(prdPath, `${inp.prdText}\n`);
-  }
-  out.reviews.push({
-    name: prompts.FEATURE_REVIEW ?? "feature",
-    prompt: prompts.featureReviewPrompt({ featureBranch: inp.tip, base: inp.base, reportPath: inp.reportPath, reviewAssets, prdPath, notes: inp.notes ?? [] }),
-  });
-}
-process.stdout.write(JSON.stringify(out));
+process.stdout.write(JSON.stringify({ role: "", reviews: [{ name: "crew-review", prompt: crewReviewPrompt() }] }));

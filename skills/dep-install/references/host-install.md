@@ -2,27 +2,25 @@
 
 Use this when no `docker-compose.yml`, `docker-compose.yaml`, or `compose.yml` exists at `PROJECT_ROOT`.
 
-`PROJECT_ROOT` and `MAIN_ROOT` are **inherited from the caller** — do not re-derive them. Each bash tool call runs in a fresh shell and variables do not persist between calls, so at the top of every bash call assign both to the literal values you were given:
+`PROJECT_ROOT` is **inherited from the caller** — do not re-derive it. Each bash tool call runs in a fresh shell and variables do not persist between calls, so at the top of every bash call assign it to the literal value you were given:
 
 ```bash
-PROJECT_ROOT="/absolute/path/to/worktree"
-MAIN_ROOT="/absolute/path/to/main-checkout"
+PROJECT_ROOT="/absolute/path/to/checkout"
 ```
 
 ## Detect and run
 
-`scripts/host-install.sh` ensures `.env` exists (from `.env.example`, or empty if there is none) before it does anything else — the same mechanical step `docker-install.sh` already does via `ensure-env.sh`, now on the host path too. It runs even when no install method is found below, since checks after this step can still need a `.env` to exist. It never reads `.env*` content.
+`scripts/checks/host-install.sh` ensures `.env` exists (from `.env.example`, or empty if there is none) before it does anything else — the same mechanical step `docker-install.sh` already does via `ensure-env.sh`, now on the host path too. It runs even when no install method is found below, since checks after this step can still need a `.env` to exist. It never reads `.env*` content.
 
 Check in order — use the first match, stop as soon as one is found.
 
 ### 0. Check the command cache first
 
-`$MAIN_ROOT/.coding-crew/dev-commands.json`'s `"install"` field may already hold this repo's
-answer — written once by a sprint's own `discover-commands.sh`/`write-commands-cache.sh`, or by
-a prior dep-install session's own Step 1 below. Read it before touching `CLAUDE.md`/`AGENTS.md`:
+The dev commands file's `"install"` field may already hold this repo's
+answer — written once by a prior dep-install session's own Step 1 below. Read it before touching `CLAUDE.md`/`AGENTS.md`:
 
 ```bash
-CACHE="$MAIN_ROOT/.coding-crew/dev-commands.json"
+CACHE=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT")
 RAW=""
 [ -f "$CACHE" ] && RAW=$(grep -o '"install"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$CACHE" | head -1)
 ```
@@ -42,10 +40,11 @@ use that. Either way — a command found, or a confident "no install command is 
 persist the answer so no future session has to ask again:
 
 ```bash
-cat > /tmp/install-discovery.json <<'JSON'
+cat > "$PROJECT_ROOT/.install-discovery.json" <<'JSON'
 {"install": "<the command you found, or null if you checked and found none>"}
 JSON
-bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file /tmp/install-discovery.json
+(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .install-discovery.json)
+rm -f "$PROJECT_ROOT/.install-discovery.json"
 ```
 
 Only write `null` if you actually looked and found nothing — `null` means "no documented
@@ -56,10 +55,10 @@ find (or not find) an install command by other means.
 
 If neither specified an install command, run the detection script. It checks for a Makefile `install`/`deps` target first, then falls back to signal file detection.
 
-Run `scripts/host-install.sh` from the same directory you read this skill file from:
+Run `scripts/checks/host-install.sh` from the same directory you read this skill file from:
 
 ```bash
-bash "<skill-dir>/scripts/host-install.sh" --project-root "$PROJECT_ROOT"
+bash "<skill-dir>/scripts/checks/host-install.sh" --project-root "$PROJECT_ROOT"
 ```
 
 Exit codes:

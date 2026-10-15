@@ -1,6 +1,9 @@
 ---
 name: write-pr
-description: Write a short pull request title and body a human reviewer can act on — Why (2–4 sentences), What changes (3–6 high-level bullets), Risk (one line) and Tested (one line). Use when opening or updating a PR, or when asked to write or improve a PR description. Trigger with /write-pr.
+description: >
+  Writes a short pull request title and body a human reviewer can act on — Why (2–4 sentences), What changes
+  (3–6 high-level bullets), Risk (one line) and Tested (one line). Use when opening or updating a PR, or when
+  asked to write or improve a PR description. Trigger with /write-pr.
 argument-hint: "Optional base ref or PR number (defaults to the current branch against the repo's default branch)"
 ---
 
@@ -77,6 +80,4 @@ consumers, installs, CI, a platform, data — or `none beyond this module`.
 - **Otherwise:** show the title and body, then offer to apply them with
   `gh pr create --title <title> --body-file <file>` (no PR for the branch yet) or
   `gh pr edit <pr> --title <title> --body-file <file>`, the body without its `# <title>` line. Keep every `Closes #n` line the
-  current body has — they close the issues on merge. A `<!-- crew-afk:begin -->` …
-  `<!-- crew-afk:end -->` block is crew-afk's and is rewritten on its next run: put your body
-  in it, between the markers, above its `Closes` lines.
+  current body has — they close the issues on merge.

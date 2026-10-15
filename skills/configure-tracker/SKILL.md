@@ -1,9 +1,9 @@
 ---
 name: configure-tracker
 description: >
-  Choose where the project's issues live — local markdown files or GitHub Issues — and write the
-  choice to the `tracker` section of the repo's .coding-crew/config.json. Use when setting up a new
-  project's issue tracker or switching tracker backends.
+  Chooses where the project's issues live — local markdown files or GitHub Issues — and writes the choice to
+  the `tracker` section of the repo's .coding-crew/config.json. Use when setting up a new project's issue
+  tracker or switching tracker backends.
 ---
 
 # Configure Tracker
@@ -14,7 +14,7 @@ Choose the project's issue tracker and record it in the repo's `.coding-crew/con
 { "tracker": { "kind": "github" } }
 ```
 
-Every other section of that file (`afk`) is kept. This is an explicit (re)configuration: an
+Every other section of that file (`solveFeature`) is kept. This is an explicit (re)configuration: an
 existing `tracker` section is replaced.
 
 ## Step 1 — Offer the trackers
@@ -49,14 +49,12 @@ than swallowing it. `gh` targets the repo of the current directory's git remote.
 1. **Check authentication.** Run `gh auth status`. If it fails (non-zero exit), stop
    immediately with a clear error, e.g. "gh is not authenticated — run `gh auth login` first."
    Nothing below runs until this passes.
-2. **Create the 7 labels idempotently.** For each of `needs-triage`, `needs-info`,
-   `ready-for-agent`, `ready-for-human`, `awaiting-merge`, `blocked`, `in-progress`: check
-   whether it already exists (`gh label list`); if missing, create it (`gh label create <name>`).
-   Skip labels that already exist — do not error or duplicate. `awaiting-merge` is `done` before
-   the PR merges; `blocked` marks an issue crew-afk stopped on (later runs skip it until a human
-   removes the label); `in-progress` marks an issue a crew-afk run is working (display only, never
-   read for dispatch); `wontfix` is a close reason, not a label — do not create `done` or
-   `wontfix` as labels.
+2. **Create the 6 labels idempotently.** For each of `needs-triage`, `needs-info`,
+   `ready-for-agent`, `ready-for-human`, `awaiting-merge`, `blocked`: check whether it already
+   exists (`gh label list`); if missing, create it (`gh label create <name>`). Skip labels that
+   already exist — do not error or duplicate. `awaiting-merge` is `done` before the PR merges;
+   `blocked` marks an issue that needs a human (runs skip it until a person removes the label);
+   `wontfix` is a close reason, not a label — do not create `done` or `wontfix` as labels.
 
 ## Step 4 — Write config.json
 
@@ -82,5 +80,5 @@ replace a file you could not parse.
 Print a confirmation message, naming the kind chosen:
 
 ```
-Tracker configured: <kind> (.coding-crew/config.json). How it works: .coding-crew/tracker/docs/<kind>.md
+Tracker configured: <kind> (.coding-crew/config.json). How it works: <skill-dir>/scripts/tracker/docs/<kind>.md
 ```

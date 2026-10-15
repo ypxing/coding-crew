@@ -1,36 +1,39 @@
 ---
 name: add-tests
-description: Discover the project's coverage command, rank under-covered files by risk, resolve a mocking convention per ecosystem, and hand the findings to to-issues as ready-for-agent issues. Use when the user wants to close testing-coverage gaps or asks to find where test coverage is weakest.
+description: >
+  Discovers the project's coverage command, ranks under-covered files by risk, resolves a mocking convention
+  per ecosystem, and hands the findings to to-issues as ready-for-agent issues. Use when the user wants to
+  close testing-coverage gaps or asks where test coverage is weakest.
+disable-model-invocation: true
 ---
 
 # Add Tests
 
-Turn a coverage gap into `ready-for-agent` issues that `crew-afk` or `/solve-issue` can pick up
-directly — no special-casing needed on either downstream path.
+Turn a coverage gap into `ready-for-agent` issues.
 
 ## Process
 
 ### 1. Resolve the coverage and integration commands
 
-Use the same discovery/cache mechanism `crew-afk`/`solve-issue` already use:
+Use the same discovery/cache mechanism `solve-issue` already uses:
 
 ```bash
-bash scripts/discover-commands.sh
+bash "<skill-dir>/scripts/checks/discover-commands.sh"
 ```
 
 This prints either a skip message (the cache already has both fields) or a discovery prompt —
 hand that prompt to a model, then persist its response:
 
 ```bash
-bash scripts/write-commands-cache.sh --response-file <path>
+bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file <path>
 ```
 
-Then read the two fields this skill needs from `.coding-crew/dev-commands.json`, the same way
-`ensure-deps.sh` already reads `install`:
+Then read the two fields this skill needs from the dev commands file:
 
 ```bash
-grep -o '"coverage"[[:space:]]*:[[:space:]]*"[^"]*"' .coding-crew/dev-commands.json
-grep -o '"integration"[[:space:]]*:[[:space:]]*"[^"]*"' .coding-crew/dev-commands.json
+CACHE=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$(git rev-parse --show-toplevel)")
+grep -o '"coverage"[[:space:]]*:[[:space:]]*"[^"]*"' "$CACHE"
+grep -o '"integration"[[:space:]]*:[[:space:]]*"[^"]*"' "$CACHE"
 ```
 
 **If `coverage` resolves to `null`** (a model already looked and confirmed no coverage command
@@ -52,9 +55,9 @@ Makefile/lockfile heuristic — it exists so a documented `make deps`-style targ
 of a guessed package-manager command. Never substitute your own guess (`npm install`,
 `pnpm install`, …) for it.
 
-Check docker mode first — `bash <dep-install skill dir>/scripts/detect-mode.sh --project-root
-<repo root>`. `USE_DOCKER` → invoke the `dep-install` skill now, unconditionally, before running
-coverage. `USE_HOST` → don't install pre-emptively; run coverage in step 3 first, and only invoke
+Check docker mode first — `install_mode` in `$CACHE`. `docker` → invoke
+the `dep-install` skill now, unconditionally, before running coverage. Absent or `host` → don't
+install pre-emptively; run coverage in step 3 first, and only invoke
 `dep-install` if it fails for a missing-dependency reason (module-not-found, import error, test
 runner not found), then retry.
 
@@ -109,7 +112,7 @@ scans manifests: `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemf
 3. **Ask the user once** — if neither of the above resolves it.
 
 Cache the resolved choice per ecosystem to `.coding-crew/docs/test-conventions.md`, a lookup
-table (not an operations doc like `.coding-crew/tracker/docs/local.md`):
+table (not an operations doc like the tracker's docs):
 
 ```markdown
 # Test Conventions
@@ -146,7 +149,7 @@ by name from `test-conventions.md`), and tier routing — to a transient file,
 prompt for one, e.g. `add-tests-<short-topic>`). It is not a PRD: write no `PRD.md`.
 
 Every gap-fix finding's acceptance criteria must cite the resolved mock convention by name, so
-`crew-coder`/`solve-issue` don't each invent a different mocking style for the same issue.
+each coder doesn't invent a different mocking style for the same issue.
 
 Each finding also carries two criteria that stop coverage work from producing tests that prove
 nothing:

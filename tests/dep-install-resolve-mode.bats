@@ -1,16 +1,15 @@
 #!/usr/bin/env bats
 
-# resolve-mode.sh — the one install-mode verdict solve-issue's Step 2 and run.sh both read,
-# and the ACTION a worker takes on it. Pins the precedence rungs and every ACTION case.
+# resolve-mode.sh — the install mode run.sh and run-checks.sh act on: the checkout's dev commands file
+# (commands-file.sh), and nothing else.
 
-SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/resolve-mode.sh"
+SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks/resolve-mode.sh"
 
 setup() {
   TEMP_DIR=$(mktemp -d)
   WORK="$TEMP_DIR/work"
   mkdir -p "$WORK"
   git -C "$WORK" init -q
-  unset MAIN_ROOT
 }
 
 teardown() {
@@ -22,71 +21,51 @@ _cache() {
   printf '%s\n' "$1" > "$WORK/.coding-crew/dev-commands.json"
 }
 
-_docker_makefile() {
-  printf 'install:\n\tdocker compose run --rm app npm ci\n' > "$WORK/Makefile"
-}
-
-@test "no signal at all is host, installing only on failure" {
+@test "no dev-commands.json is host" {
   run bash "$SCRIPT" --project-root "$WORK"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"INSTALL_MODE=host"* ]]
-  [[ "$output" == *"ACTION=on-failure"* ]]
+  [ "$output" = $'INSTALL_MODE=host\nDOCKER_SERVICE=' ]
 }
 
-@test "git config agent.install-mode wins over the cache" {
-  git -C "$WORK" config --local agent.install-mode host
-  _cache '{"install_mode": "docker"}'
+@test "a dev-commands.json with no install_mode is host, even with a docker Makefile, git config and compose file" {
+  _cache '{"test": "npm test"}'
+  printf 'install:\n\tdocker compose run --rm app npm ci\n' > "$WORK/Makefile"
+  printf 'services:\n  app:\n    image: node\n' > "$WORK/docker-compose.yml"
+  git -C "$WORK" config --local agent.install-mode docker
   run bash "$SCRIPT" --project-root "$WORK"
-  [[ "$output" == *"INSTALL_MODE=host"* ]]
+  [ "$output" = $'INSTALL_MODE=host\nDOCKER_SERVICE=' ]
 }
 
-@test "a docker-compose.override.yml in the repo is no signal: the mode comes from git config and the cache" {
-  echo "services: {}" > "$WORK/docker-compose.override.yml"
+@test "install_mode docker and its docker_service are read from the checkout's dev-commands.json" {
+  _cache '{"test": "npm test", "install_mode": "docker", "docker_service": "web"}'
   run bash "$SCRIPT" --project-root "$WORK"
-  [[ "$output" == *"INSTALL_MODE=host"* ]]
-  _cache '{"install_mode": "docker"}'
-  run bash "$SCRIPT" --project-root "$WORK"
-  [[ "$output" == *"INSTALL_MODE=docker"* ]]
-  [[ "$output" == *"ACTION=install"* ]]
+  [ "$output" = $'INSTALL_MODE=docker\nDOCKER_SERVICE=web' ]
 }
 
-@test "the Makefile heuristic is the last rung, and --no-heuristic skips it" {
-  _docker_makefile
+@test "an unknown install_mode is host, and host mode reports no service" {
+  _cache '{"install_mode": "podman", "docker_service": "web"}'
   run bash "$SCRIPT" --project-root "$WORK"
-  [[ "$output" == *"INSTALL_MODE=docker"* ]]
-  run bash "$SCRIPT" --project-root "$WORK" --no-heuristic
-  [[ "$output" == *"INSTALL_MODE=host"* ]]
+  [ "$output" = $'INSTALL_MODE=host\nDOCKER_SERVICE=' ]
 }
 
-@test "the recorded service: git config first, then the cache" {
-  _cache '{"install_mode": "docker", "docker_service": "node"}'
-  run bash "$SCRIPT" --project-root "$WORK"
-  [[ "$output" == *"DOCKER_SERVICE=node"* ]]
-  git -C "$WORK" config --local agent.install-service worker
-  run bash "$SCRIPT" --project-root "$WORK"
-  [[ "$output" == *"DOCKER_SERVICE=worker"* ]]
-}
-
-@test "ACTION=none for every outcome that means the deps are already in place" {
-  _cache '{"install_mode": "docker"}'
-  for d in present "installed npm ci" docker-present "docker-installed npm ci" "DEPS: docker-present"; do
-    run bash "$SCRIPT" --project-root "$WORK" --deps "$d"
-    [[ "$output" == *"ACTION=none"* ]] || { echo "--deps '$d' → $output" >&2; return 1; }
+@test "--deps, --main-root and --no-heuristic are unknown arguments" {
+  for args in "--deps present" "--main-root $WORK" "--no-heuristic"; do
+    run bash "$SCRIPT" --project-root "$WORK" $args
+    [ "$status" -eq 2 ]
   done
 }
 
-@test "an outcome that installed nothing leaves docker at ACTION=install" {
-  _cache '{"install_mode": "docker"}'
-  for d in docker none skipped "failed npm ci (exit 1)" "docker-failed npm ci (exit 1)"; do
-    run bash "$SCRIPT" --project-root "$WORK" --deps "$d"
-    [[ "$output" == *"ACTION=install"* ]] || { echo "--deps '$d' → $output" >&2; return 1; }
-  done
-}
-
-@test "--main-root is where the cache and override are read from" {
-  MAIN="$TEMP_DIR/main"
-  mkdir -p "$MAIN/.coding-crew"
-  echo '{"install_mode": "docker"}' > "$MAIN/.coding-crew/dev-commands.json"
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
-  [[ "$output" == *"INSTALL_MODE=docker"* ]]
+@test "dep-install's recorded answer lands in a tracked file in the current checkout, keeps the discovered checks, and is what this reads" {
+  local write="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks/write-commands-cache.sh"
+  git -C "$WORK" -c user.email=t@t -c user.name=T commit -q --allow-empty -m init
+  git -C "$WORK" worktree add -q "$TEMP_DIR/wt" -b wt
+  mkdir -p "$TEMP_DIR/wt/.coding-crew"
+  printf '{"test": "npm test", "lint": null}\n' > "$TEMP_DIR/wt/.coding-crew/dev-commands.json"
+  printf '{"install_mode": "docker", "docker_service": "web"}\n' > "$TEMP_DIR/answer.json"
+  (cd "$TEMP_DIR/wt" && bash "$write" --response-file "$TEMP_DIR/answer.json") >/dev/null
+  [ ! -e "$WORK/.coding-crew/dev-commands.json" ]
+  grep -q '"test": "npm test"' "$TEMP_DIR/wt/.coding-crew/dev-commands.json"
+  grep -q '"lint": null' "$TEMP_DIR/wt/.coding-crew/dev-commands.json"
+  run bash "$SCRIPT" --project-root "$TEMP_DIR/wt"
+  [ "$output" = $'INSTALL_MODE=docker\nDOCKER_SERVICE=web' ]
 }

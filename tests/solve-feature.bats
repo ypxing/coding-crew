@@ -6,8 +6,8 @@
 # gates, commits and pushes what the review's fixer left, and describe writes the PR body, marks it ready when
 # nothing needs a person and writes .solve-feature/outcome.
 #
-# A temp clone with a bare `origin`, and the skill installed user-level under a temp $HOME as
-# install.sh lays it out. `gh`, `node` (only for the tracker CLI's path; everything else reaches the
+# A temp clone with a bare `origin`, and the skill's scripts/ as install.sh lays it out: its own
+# script beside the tracker and checks library links. `gh`, `node` (only for the tracker CLI's path; everything else reaches the
 # real node) and solve-issue's run-checks.sh are stubs that log their argv; the node stub answers
 # `next` from $STATE/issues.json by the tracker's dispatch rule. `coder <ref>` stands in for the
 # subagent: it commits a file and swaps the issue's ready-for-agent label for awaiting-merge, as
@@ -21,13 +21,15 @@ setup() {
   TEMP_DIR=$(cd "$(mktemp -d)" && pwd -P)
   export STATE="$TEMP_DIR/state" HOME="$TEMP_DIR/home"
   mkdir -p "$STATE" "$HOME"
-  unset CREW_ORCHESTRATED PR_EXISTS PR_DRAFT PR_HEAD_OID PR_STATE PR_HEAD_REF GH_READY_FAIL TRACKER_KIND SOLVE_FEATURE_HOST
+  unset PR_EXISTS PR_DRAFT PR_HEAD_OID PR_STATE PR_HEAD_REF GH_READY_FAIL TRACKER_KIND SOLVE_FEATURE_HOST
 
-  INSTALL="$HOME/.coding-crew"
-  mkdir -p "$INSTALL/solve-feature" "$INSTALL/solve-issue/scripts" "$INSTALL/dep-install/scripts" "$INSTALL/tracker"
-  cp -R "$REPO_ROOT/skills/solve-feature/scripts" "$INSTALL/solve-feature/scripts"
+  INSTALL="$HOME/skill/scripts"
+  mkdir -p "$HOME/skill"
+  cp -R "$REPO_ROOT/skills/solve-feature/scripts" "$INSTALL"
+  mkdir -p "$INSTALL/tracker" "$INSTALL/checks"
+  cp "$REPO_ROOT/lib/checks/commands-file.sh" "$INSTALL/checks/"
   : > "$INSTALL/tracker/cli.mjs"
-  SCRIPT="$INSTALL/solve-feature/scripts/solve-feature.sh"
+  SCRIPT="$INSTALL/solve-feature.sh"
 
   WORK="$TEMP_DIR/work"
   git init -q -b main "$WORK"
@@ -76,7 +78,7 @@ write_stubs() {
   # number is CLOSED or awaiting-merge (the tracker's `done`), the root included; exit 3 when none.
   cat > "$STUB/node" <<EOF
 #!/usr/bin/env bash
-case "\$1" in */.coding-crew/tracker/cli.mjs) ;; *) exec "$REAL_NODE" "\$@" ;; esac
+case "\$1" in */scripts/tracker/cli.mjs) ;; *) exec "$REAL_NODE" "\$@" ;; esac
 printf '%s\n' "\${*:2}" >> "\$STATE/node.log"
 case "\$2" in
   config) echo "tracker=\${TRACKER_KIND:-github}"; echo configured=yes ;;
@@ -132,7 +134,7 @@ case "$1 $2" in
 esac
 EOF
 
-  cat > "$HOME/.coding-crew/solve-issue/scripts/run-checks.sh" <<'EOF'
+  cat > "$INSTALL/checks/run-checks.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$STATE/checks.log"
 git status --porcelain > "$STATE/checks.status"
@@ -142,7 +144,7 @@ echo "test: ${CHECK_RESULT:-pass}"
 [ "${CHECKS_RC:-0}" = 0 ] && echo "CHECKS: pass" || echo "CHECKS: fail"
 exit "${CHECKS_RC:-0}"
 EOF
-  chmod +x "$STUB"/* "$HOME"/.coding-crew/*/scripts/*.sh
+  chmod +x "$STUB"/* "$INSTALL"/checks/*.sh
 }
 
 # coder <ref> — what the subagent's solve-issue leaves: a commit, and the issue out of `next`.
@@ -193,7 +195,7 @@ land_ready() {
   [ ! -e "$WORK/.solve-feature/outcome" ]
 }
 
-@test "start: a missing tool, an invalid slug, no tracker CLI, a dirty tree, no dev-commands.json or CREW_ORCHESTRATED exits 1 before any checkout or gh call" {
+@test "start: a missing tool, an invalid slug, no tracker CLI or a dirty tree exits 1 before any checkout or gh call" {
   local tool
   for tool in gh jq; do
     local bin="$TEMP_DIR/bin-$tool"
@@ -217,16 +219,6 @@ land_ready() {
   [[ "$output" == *"tracker CLI not found"* ]]
   mv "$TEMP_DIR/cli.mjs" "$INSTALL/tracker/cli.mjs"
 
-  git rm -q .coding-crew/dev-commands.json && git commit -q -m "no commands"
-  run bash "$SCRIPT" start feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *".coding-crew/dev-commands.json"* ]]
-  git revert --no-edit HEAD >/dev/null
-
-  CREW_ORCHESTRATED=1 run bash "$SCRIPT" start feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"CREW_ORCHESTRATED"* ]]
-
   echo dirt > dirt.txt
   run bash "$SCRIPT" start feat
   [ "$status" -eq 1 ]
@@ -244,6 +236,16 @@ land_ready() {
   ! git show-ref --verify -q refs/heads/feature/feta || false
   [ "$(git ls-remote --heads origin | grep -c .)" -eq 1 ]
   [ "$(cat .solve-feature/outcome)" = "stopped: start failed: no feature 'feta'; features: feat other" ]
+}
+
+# --- start: the dev commands file -----------------------------------------------------
+
+@test "start with no dev commands file, even beside a compose file, starts: the first coder discovers checks and mode" {
+  printf 'services:\n  app:\n    image: node\n' > compose.yml
+  git rm -q .coding-crew/dev-commands.json && git add compose.yml && git commit -q -m "no commands"
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out branch)" = feature/feat ]
 }
 
 # --- start: the branch ---------------------------------------------------------------
@@ -292,6 +294,24 @@ land_ready() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(out branch)" = feature/feat ]
   [ "$(git branch --show-current)" = feature/feat ]
+}
+
+@test "start with an unreachable origin, or a branch it cannot push, exits 1 and writes a stopped outcome; a re-run pushes it" {
+  git remote set-url origin "$TEMP_DIR/missing.git"
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$(cat .solve-feature/outcome)" == "stopped: start failed: git fetch origin failed"* ]]
+  git remote set-url origin "$TEMP_DIR/origin.git"
+  chmod -w "$TEMP_DIR/origin.git/refs/heads"
+  run bash "$SCRIPT" start feat
+  chmod +w "$TEMP_DIR/origin.git/refs/heads"
+  [ "$status" -eq 1 ]
+  [[ "$(cat .solve-feature/outcome)" == "stopped: start failed: cannot push feature/feat"* ]]
+  # The refused push left the local branch behind; a re-run pushes it rather than reuse it unpushed.
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  [ "$(git rev-parse --abbrev-ref '@{u}')" = origin/feature/feat ]
 }
 
 @test "start --branch naming the default branch exits 1 naming it" {
@@ -447,9 +467,9 @@ stops_at() {
   CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
   stops_at checks "run-checks.sh exit 1; once fixed and committed, run land feat 2 feature/feat before a re-run"
   [[ "$output" == *"$WORK/.solve-feature/2.checks.log"* ]]
-  [ "$(cat "$STATE/checks.log")" = "--project-root $WORK --main-root $WORK --dep-scripts $HOME/.coding-crew/dep-install/scripts" ]
+  [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
   CHECKS_RC=3 run bash "$SCRIPT" land feat 2 feature/feat
-  stops_at checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand"
+  stops_at checks "no check commands known (DISCOVER): the coder discovered none; run /solve-issue once by hand in this clone"
   # The recovery the stop names: land again once the checks pass, and the issue's commits are pushed.
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ]
@@ -554,14 +574,14 @@ EOF
   grep -q 'run land feat 2 feature/feat' .solve-feature/outcome
 }
 
-@test "land with solve-issue's scripts missing exits 1 naming them, before the checks" {
+@test "land with the checks library missing exits 1 naming it, before the checks" {
   land_ready
-  rm -rf "$INSTALL/solve-issue/scripts"
+  rm -rf "$INSTALL/checks"
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
-  [[ "$output" == *"solve-issue scripts not found"* ]]
+  [[ "$output" == *"checks library not found"* ]]
   [ ! -f "$STATE/checks.log" ]
-  grep -q 'solve-issue scripts not found' .solve-feature/outcome
+  grep -q 'checks library not found' .solve-feature/outcome
 }
 
 # --- fix: after the review -------------------------------------------------------------
@@ -623,7 +643,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "run-checks.sh exit 1; once fixed and committed (not pushed), run fix feat 10 feature/feat, then describe feat 10"
   [[ "$output" == *"log: $WORK/.solve-feature/pr-10.checks.log"* ]]
-  [ "$(cat "$STATE/checks.log")" = "--project-root $WORK --main-root $WORK --dep-scripts $HOME/.coding-crew/dep-install/scripts" ]
+  [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
   [ "$(git rev-parse HEAD)" = "$TIP" ]
   [ "$(git status --porcelain)" = 'A  fixed.txt' ]
 
@@ -839,7 +859,7 @@ EOF
 @test "install.sh claude --skill solve-feature ships the script, crew-review and the Actions host" {
   local target="$TEMP_DIR/target"
   mkdir -p "$target" && git -C "$target" init -q -b main
-  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" claude --skill solve-feature
+  run bash "$REPO_ROOT/install.sh" claude --skill solve-feature --project "$target"
   [ "$status" -eq 0 ]
   [ -f "$target/.claude/skills/solve-feature/scripts/solve-feature.sh" ]
   [ ! -e "$target/.claude/skills/review-pr" ]
@@ -847,8 +867,9 @@ EOF
   [ -f "$target/.claude/skills/solve-feature/hosts/github-actions.yml" ]
   [ -f "$target/.claude/skills/solve-feature/SKILL.md" ]
   [ -f "$target/.claude/skills/crew-review/SKILL.md" ]
-  [ -f "$target/.coding-crew/solve-issue/scripts/run-checks.sh" ]
-  [ -f "$target/.coding-crew/dep-install/scripts/run.sh" ]
+  [ -f "$target/.claude/skills/solve-feature/scripts/checks/run-checks.sh" ]
+  [ -f "$target/.claude/skills/solve-feature/scripts/checks/run.sh" ]
+  [ -f "$target/.claude/skills/solve-feature/scripts/tracker/cli.mjs" ]
   [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install","crew-review","tdd","write-pr"]' ]
 }
 

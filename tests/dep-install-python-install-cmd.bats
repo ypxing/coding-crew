@@ -5,7 +5,7 @@
 # alone left the dev tools the checks run (pytest, ruff, mypy…) uninstalled (#273).
 
 SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-SCRIPT="$SCRIPT_DIR/skills/dep-install/scripts/python-install-cmd.sh"
+SCRIPT="$SCRIPT_DIR/lib/checks/python-install-cmd.sh"
 
 setup() {
   PROJECT=$(mktemp -d)

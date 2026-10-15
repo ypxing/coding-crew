@@ -1,11 +1,12 @@
 ---
 name: crew-review
 description: >
-  Review a change — a branch's commits or a pull request — against the spec its caller names, for what breaks and
-  for the repo's documented rules, in a fresh read-only subagent, and write one JSON report. Report-only: it posts
-  nothing and marks nothing ready. Trigger with /crew-review [<pr-number> | branch <name>] [against <spec>].
+  Reviews a change — a branch's commits or a pull request — against the spec its caller names, for what breaks
+  and for the repo's documented rules, in a fresh read-only subagent, and writes one JSON report. Report-only:
+  it posts nothing and marks nothing ready. Use when a branch or PR needs a review against its spec before it
+  is merged or marked ready. Trigger with /crew-review [<pr-number> | branch <name>] [against <spec>].
 argument-hint: "[<pr-number> | branch <name> [base <ref>]] [against <spec file | issue ref>] [report <path>]"
-allowed-tools: Bash, shell
+allowed-tools: Bash shell
 ---
 
 # crew-review
@@ -21,8 +22,8 @@ Your caller names them; a bare number is a PR, nothing at all is the current bra
   caller names, else `git merge-base HEAD origin/<default branch>`. A **PR**: HEAD must be its head (`gh pr view <n>
   --json headRefOid`); if it is not, tell the caller to run `gh pr checkout <n>` and stop. The change is `gh pr diff
   <n>`.
-- **The spec.** A file; an issue ref, read with the tracker CLI's `fetch` (`node .coding-crew/tracker/cli.mjs fetch
-  <ref>`, the CLI in the repo, the main checkout or `$HOME`); or, given a PR and no spec, the PR body's
+- **The spec.** A file; an issue ref, read with the tracker CLI's `fetch` (`node "<skill-dir>/scripts/tracker/cli.mjs" fetch
+  <ref>`); or, given a PR and no spec, the PR body's
   `<details><summary>Spec</summary>` block when it has one, else the whole body. A branch with no spec named has none.
 - **The report's path.** Write the report there; with none, print it.
 

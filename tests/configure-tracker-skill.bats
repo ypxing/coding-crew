@@ -29,7 +29,7 @@ teardown() {
 }
 
 @test "configure-tracker-auto.sh no longer ships" {
-  [ ! -e "$SCRIPT_DIR/scripts/skill-utils/git-workflow/configure-tracker-auto.sh" ]
+  [ ! -e "$SCRIPT_DIR/lib/git-workflow/configure-tracker-auto.sh" ]
   run jq -r '.skills["configure-tracker"].scripts // empty' "$SCRIPT_DIR/registry.json"
   [ -z "$output" ]
 }

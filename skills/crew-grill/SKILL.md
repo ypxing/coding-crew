@@ -1,6 +1,9 @@
 ---
 name: crew-grill
-description: Full design pipeline — grill the user about a plan (lite by default; add "with docs" to also update CONTEXT.md and ADRs via domain-modeling), then hand the result to to-issues, which writes a PRD only when the work splits. Use when starting a new feature from scratch.
+description: >
+  Runs the full design pipeline: grills the user about a plan (lite by default; "with docs" also updates
+  CONTEXT.md and ADRs via domain-modeling), then hands the result to to-issues, which writes a PRD only when
+  the work splits. Use when starting a new feature from scratch.
 ---
 
 Run the full design pipeline in two phases. Pause for user feedback within each phase, but do not ask the user to manually invoke the next skill — transition automatically.

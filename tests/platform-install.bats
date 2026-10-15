@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# Every platform in orchestrator/platforms.json, installed the same way: which body it gets, what
+# Every platform in platforms.json, installed the same way: which body it gets, what
 # uninstall removes, and that the installer learns a platform from that
 # file alone (a fifth entry in a copy of it installs with no installer edit).
 
@@ -13,11 +13,11 @@ _unset_config_dirs() {
   for p in "${PLATFORMS[@]}"; do unset "$(platform_field "$p" configDirEnv)"; done
 }
 
-# One crew-afk install per platform, read by the tests below.
+# One solve-feature install per platform, read by the tests below.
 setup_file() {
   _unset_config_dirs
   local p
-  for p in "${PLATFORMS[@]}"; do shared_install "$p" "$p" --skill crew-afk; done
+  for p in "${PLATFORMS[@]}"; do shared_install "$p" "$p" --skill solve-feature; done
   bg_wait
 }
 
@@ -47,23 +47,23 @@ teardown() {
   [[ "$output" == *"zed"* ]]
 }
 
-@test "every platform's crew-afk SKILL.md launches that platform, with no per-platform body beside it" {
+@test "every platform gets one solve-feature SKILL.md, with no per-platform body beside it" {
   cd "$SCRIPT_DIR"
   local p q dir
   for p in "${PLATFORMS[@]}"; do
-    dir="$(shared_installed "$p")/$(platform_field "$p" projectSkills)/crew-afk"
-    grep -q "run --platform $p " "$dir/SKILL.md" || { echo "$p: {{PLATFORM}} not rendered" >&2; return 1; }
+    dir="$(shared_installed "$p")/$(platform_field "$p" projectSkills)/solve-feature"
+    [ -f "$dir/SKILL.md" ] || { echo "$p: no SKILL.md" >&2; return 1; }
     for q in "${PLATFORMS[@]}"; do
       [ ! -f "$dir/$q.SKILL.md" ] || { echo "$p: $q.SKILL.md installed" >&2; return 1; }
     done
   done
 }
 
-@test "no platform's crew-afk body names another platform's skills dir, CLI call or a bash dispatcher" {
+@test "no platform's solve-feature body names another platform's skills dir, CLI call or a bash dispatcher" {
   cd "$SCRIPT_DIR"
   local p q body
   for p in "${PLATFORMS[@]}"; do
-    body="$(shared_installed "$p")/$(platform_field "$p" projectSkills)/crew-afk/SKILL.md"
+    body="$(shared_installed "$p")/$(platform_field "$p" projectSkills)/solve-feature/SKILL.md"
     ! grep -n 'dispatch-agent\.sh\|dispatch-codex-agent\.sh' "$body" || return 1
     for q in "${PLATFORMS[@]}"; do
       [ "$q" != "$p" ] || continue
@@ -72,38 +72,22 @@ teardown() {
   done
 }
 
-@test "uninstall removes every platform's crew-afk, its assets, every retired agent file and copilot's legacy .copilot/ copy" {
+@test "uninstall removes every platform's solve-feature and copilot's legacy .copilot/ copy" {
   cd "$SCRIPT_DIR"
   local p dir
   for p in "${PLATFORMS[@]}"; do
     cp -R "$(shared_installed "$p")" "$TEMP_DIR/$p"
-    dir="$TEMP_DIR/$p/$(platform_field "$p" projectSkills)/crew-afk"
+    dir="$TEMP_DIR/$p/$(platform_field "$p" projectSkills)/solve-feature"
     [ -d "$dir" ]
     # Copilot project installs once landed in .copilot/, which Copilot never reads at project scope.
     if [ "$p" = copilot ]; then
-      mkdir -p "$TEMP_DIR/$p/.copilot/skills/crew-afk"
-      echo "stale body" > "$TEMP_DIR/$p/.copilot/skills/crew-afk/SKILL.md"
+      mkdir -p "$TEMP_DIR/$p/.copilot/skills/solve-feature"
+      echo "stale body" > "$TEMP_DIR/$p/.copilot/skills/solve-feature/SKILL.md"
     fi
-    TARGET_REPO="$TEMP_DIR/$p" ./uninstall.sh --skill crew-afk >/dev/null
+    TARGET_REPO="$TEMP_DIR/$p" ./uninstall.sh --skill solve-feature >/dev/null
     [ ! -d "$dir" ] || { echo "$p: $dir survived" >&2; return 1; }
-    [ ! -d "$TEMP_DIR/$p/.coding-crew/crew-afk" ] || { echo "$p: assets survived" >&2; return 1; }
-    [ -z "$(find "$TEMP_DIR/$p" -name 'crew-coder*')" ] || { echo "$p: a crew-coder agent file exists" >&2; return 1; }
     [ ! -d "$TEMP_DIR/$p/.copilot" ] || { echo "$p: .copilot/ survived" >&2; return 1; }
   done
-}
-
-@test "every platform's adapter has its own co-author trailer, and codex's credits Codex" {
-  command -v node >/dev/null 2>&1 || skip "node not installed"
-  # squash-commits.sh writes whatever --co-author it is given (tests/squash-commits.bats);
-  # the trailer itself is the adapter's.
-  local p trailers=""
-  cd "$SCRIPT_DIR"
-  for p in "${PLATFORMS[@]}"; do
-    trailers+="$(node -e 'import("./orchestrator/lib/adapters/index.mjs").then(({ ADAPTERS }) => console.log(ADAPTERS[process.argv[1]].coAuthor))' "$p")"$'\n'
-  done
-  [ "$(printf '%s' "$trailers" | grep -c '^Co-authored-by: ')" -eq "${#PLATFORMS[@]}" ]
-  [ "$(printf '%s' "$trailers" | sort -u | grep -c .)" -eq "${#PLATFORMS[@]}" ]
-  printf '%s' "$trailers" | grep -qx 'Co-authored-by: Codex <noreply@openai.com>'
 }
 
 # --- the installer learns a platform from platforms.json alone ---
@@ -159,7 +143,7 @@ _assert_every_skill_in() {
   cd "$SCRIPT_DIR"
   mkdir -p "$TEMP_DIR/home/.github/skills/tdd"
   echo "a repo's own skill" > "$TEMP_DIR/home/.github/skills/tdd/SKILL.md"
-  run env HOME="$TEMP_DIR/home" TARGET_REPO="$TEMP_DIR/home" ./uninstall.sh --user --skill tdd
+  run env -u TARGET_REPO HOME="$TEMP_DIR/home" ./uninstall.sh --skill tdd
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
   [ -f "$TEMP_DIR/home/.github/skills/tdd/SKILL.md" ]
 }
@@ -178,7 +162,7 @@ _assert_every_skill_in() {
   mkdir -p "$TEMP_DIR/home/.pi/skills/tdd" "$TEMP_DIR/home/.pi/agent/skills/tdd"
   echo stale > "$TEMP_DIR/home/.pi/skills/tdd/SKILL.md"
   echo current > "$TEMP_DIR/home/.pi/agent/skills/tdd/SKILL.md"
-  run env HOME="$TEMP_DIR/home" TARGET_REPO="$TEMP_DIR/home" ./uninstall.sh --user --skill tdd
+  run env -u TARGET_REPO HOME="$TEMP_DIR/home" ./uninstall.sh --skill tdd
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
   [ ! -d "$TEMP_DIR/home/.pi/skills/tdd" ]
   [ ! -d "$TEMP_DIR/home/.pi/agent/skills/tdd" ]
@@ -225,9 +209,9 @@ _assert_every_skill_in() {
   local f names
   names=$(IFS='|'; echo "${PLATFORMS[*]}")
   for f in install.sh uninstall.sh; do
-    # Migrations keep their platform: the legacy Copilot path and retired-agents removal.
+    # The one migration keeps its platform: the legacy Copilot path.
     # Comments and echoed help text are prose, not decisions.
-    run bash -c "awk '/^(prune_legacy_copilot_path|prune_retired_agents|remove_retired_agents)\\(\\)/{skip=1} skip&&/^}/{skip=0;next} !skip' '$SCRIPT_DIR/$f' \
+    run bash -c "awk '/^prune_legacy_copilot_path\\(\\)/{skip=1} skip&&/^}/{skip=0;next} !skip' '$SCRIPT_DIR/$f' \
       | grep -vE '^[[:space:]]*(#|echo )' \
       | grep -nE '(^|[^A-Za-z0-9_.-])($names)([^A-Za-z0-9_.-]|\$)'"
     [ "$status" -ne 0 ] || { echo "$f: $output" >&2; return 1; }
@@ -247,6 +231,6 @@ _assert_every_skill_in() {
   mkdir -p "$bin"
   for c in bash dirname git env cat tr; do ln -s "$(command -v "$c")" "$bin/$c"; done
   run env PATH="$bin" "$SCRIPT_DIR/install.sh" --help
-  [[ "$output" == *"platform:  all (default), a platform in orchestrator/platforms.json"* ]] || { echo "$output" >&2; return 1; }
+  [[ "$output" == *"platform:   all (default), a platform in platforms.json"* ]] || { echo "$output" >&2; return 1; }
   [[ "$output" != *"required command"* ]]
 }

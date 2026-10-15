@@ -1,21 +1,20 @@
 ---
 name: upgrade-deps
 description: >
-  Audit outdated npm/yarn/pnpm dependencies across a monorepo — security-advisory
-  exploitability, transitive conflicts, real call-site usage, and targeted changelog review
-  for major bumps — then publish issues (batched for trivial in-range bumps, one per package
-  or coupled group otherwise; every major-version bump defaults to ready-for-human, minor/patch
-  range-edits stay ready-for-agent unless a conflict or advisory can't be resolved cleanly)
-  with required test additions and a safety checklist, for crew-afk or
-  solve-issue to execute. Use when the user wants to upgrade dependencies, audit outdated
-  packages, or plan a safe dependency bump. Does not perform the upgrade itself.
+  Audits outdated npm/yarn/pnpm dependencies across a monorepo — security-advisory exploitability, transitive
+  conflicts, real call-site usage, and targeted changelog review for major bumps — then publishes issues
+  (batched for trivial in-range bumps, one per package or coupled group otherwise; every major-version bump
+  defaults to ready-for-human, minor/patch range-edits stay ready-for-agent unless a conflict or advisory
+  can't be resolved cleanly) with required test additions and a safety checklist. Use when the user wants to
+  upgrade dependencies, audit outdated packages, or plan a safe dependency bump. Does not perform the upgrade
+  itself.
+disable-model-invocation: true
 ---
 
 # Upgrade Deps
 
 Plan safe dependency upgrades and hand them off as issues. This skill never edits
-`package.json`/lockfiles or runs the upgrade itself — it analyzes, then files work for
-`solve-issue` / `crew-afk` to execute.
+`package.json`/lockfiles or runs the upgrade itself — it analyzes, then files issues.
 
 Ecosystem support: npm, yarn, pnpm (Node.js). If the repo uses another package manager,
 stop and ask the user before proceeding.
@@ -26,12 +25,13 @@ Before running any package-manager command (`outdated`, `audit`, `ls`/`why`, or 
 reinstall), use the `dep-install` skill first to detect and lock the session's install mode.
 Every command in this skill — not just install — must then run in that mode: if the project
 is docker-mode, `outdated`/`audit`/`ls`/`why` run inside the container via the same
-mechanism as `test`/`lint`/`typecheck` in `dev-commands.json`, never against the host's
+mechanism as `test`/`lint`/`typecheck` in the dev commands file, never against the host's
 `node_modules`, which may not even exist there.
 
-Also resolve the `typecheck` field from `.coding-crew/dev-commands.json` now, using the same
+Also resolve the `typecheck` field from the dev commands file (`bash
+"<skill-dir>/scripts/checks/commands-file.sh" --project-root <repo>` prints its path) now, using the same
 discovery/cache mechanism `add-tests` uses for its own fields (`bash
-scripts/discover-commands.sh`, then `write-commands-cache.sh` if it prompts). Step 6 needs
+"<skill-dir>/scripts/checks/discover-commands.sh"`, then `write-commands-cache.sh` beside it if it prompts). Step 6 needs
 this to get a mechanical breaking-change signal on major bumps; if it resolves to `null`, that
 step falls back to changelog review alone for every major bump — say so when it happens rather
 than silently skipping the signal.
@@ -47,7 +47,7 @@ reuse it (adding more packages to the same batch) or start a fresh dated slug
 ### 2. Inventory outdated dependencies, per workspace
 
 First check whether the project already has its own wrapper for this — a Makefile target
-(`make outdated`, `make audit`) or a script cached in `dev-commands.json` alongside
+(`make outdated`, `make audit`) or a script cached in the dev commands file alongside
 `test`/`lint`/`typecheck`. If one exists, use it: it already encodes the project's chosen
 flags (severity level, workspace scoping, docker routing) — don't invent a raw
 package-manager invocation that bypasses it.
@@ -330,8 +330,8 @@ Print a short table: package(s), current → target, risk (low/med/high), status
 ## Never
 
 - Never modify `package.json`, lockfiles, or `node_modules` in the working tree or on any
-  real branch — this skill only plans and files issues; execution belongs to `solve-issue` /
-  `crew-afk`. The one exception is the disposable git worktree from step 6d: created, bumped,
+  real branch — this skill only plans and files issues; whoever picks them up executes
+  them. The one exception is the disposable git worktree from step 6d: created, bumped,
   and deleted entirely within that sub-step, never merged and never left behind. Step 6a/6b's
   tarball diffing downloads to a scratch temp dir and never touches a worktree at all.
 - Never mark a range-edit issue `ready-for-agent` when the status-decision criteria in step 7

@@ -3,6 +3,8 @@
 # scripts/cut-release.sh's demo-smoke gate (PRD D16/B8), always under --dry-run, in a throwaway
 # repo with an upstream: no tag is made, nothing is pushed.
 
+load helpers/smoke-demo
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   R="$BATS_TEST_TMPDIR/repo"
@@ -11,8 +13,7 @@ setup() {
   mkdir -p "$R/scripts" "$R/tests"
   cp "$REPO_ROOT/scripts/cut-release.sh" "$R/scripts/"
   printf '# Changelog\n\n## [Unreleased]\n\n## [1.0.0]\n\n- first\n' > "$R/CHANGELOG.md"
-  echo '{"skills": {"crew-afk": {"version": "2.20.3"}}}' > "$R/registry.json"
-  printf '#!/usr/bin/env bats\n@test ok { true; }\n' > "$R/tests/registry-version-bump.bats"
+  echo '{"skills": {}}' > "$R/registry.json"
   git -C "$R" add -A
   git -C "$R" -c user.email=t@t -c user.name=t commit -qm init
   git -C "$R" remote add origin "$BATS_TEST_TMPDIR/remote.git"
@@ -31,34 +32,19 @@ release() { run bash "$R/scripts/cut-release.sh" --dry-run "$@"; }
 }
 
 @test "a log without SMOKE: PASS is refused" {
-  printf 'crew-afk-version: 2.20.3\nSMOKE: FAIL: crew-afk exited 1\n' > "$LOG"
+  printf 'SMOKE: FAIL: crew-afk exited 1\n' > "$LOG"
   release --demo-smoke "$LOG"
   [ "$status" -ne 0 ]
   [[ "$output" == *"SMOKE: PASS"* ]]
   [[ "$output" != *"would tag"* ]]
 }
 
-@test "a passing log for another crew-afk version is refused" {
-  printf 'crew-afk-version: 2.19.0\nSMOKE: PASS (claude, demo)\n' > "$LOG"
-  release --demo-smoke "$LOG"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"2.19.0"* ]]
-  [[ "$output" == *"2.20.3"* ]]
-}
-
 @test "a passing log from a non-demo smoke run is refused" {
-  printf 'crew-afk-version: 2.20.3\nSMOKE: PASS (claude)\n' > "$LOG"
+  printf 'SMOKE: PASS (claude)\n' > "$LOG"
   release --demo-smoke "$LOG"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"--demo"* ]]
+  [[ "$output" == *", demo)"* ]]
   [[ "$output" != *"would tag"* ]]
-}
-
-@test "a passing log with no crew-afk version is refused" {
-  printf 'SMOKE: PASS (claude, demo)\n' > "$LOG"
-  release --demo-smoke "$LOG"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"crew-afk-version"* ]]
 }
 
 @test "a missing log is refused" {
@@ -67,21 +53,21 @@ release() { run bash "$R/scripts/cut-release.sh" --dry-run "$@"; }
   [[ "$output" == *"nope.log"* ]]
 }
 
-@test "a passing log for HEAD's crew-afk version is accepted" {
-  printf 'SMOKE: repo ready\ncrew-afk-version: 2.20.3\ncrew-afk-commit: %s\nSMOKE: PASS (claude, demo)\n' "$(git -C "$R" rev-parse HEAD)" > "$LOG"
+@test "a passing log at HEAD with a crew-afk-commit line and no crew-afk-version line is accepted" {
+  printf 'SMOKE: repo ready\ncrew-afk-commit: %s\nSMOKE: PASS (claude, demo)\n' "$(git -C "$R" rev-parse HEAD)" > "$LOG"
   release --demo-smoke "$LOG"
   [ "$status" -eq 0 ]
   [[ "$output" == *"would tag HEAD as v1.0.0"* ]]
 }
 
-passing_log_at() { printf 'crew-afk-version: 2.20.3\ncrew-afk-commit: %s\nSMOKE: PASS (claude, demo)\n' "$1" > "$LOG"; }
+passing_log_at() { printf 'crew-afk-commit: %s\nSMOKE: PASS (claude, demo)\n' "$1" > "$LOG"; }
 commit_file() {
   mkdir -p "$R/$(dirname "$1")"; echo x >> "$R/$1"
   git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm "$1"
 }
 
 @test "a passing log with no crew-afk commit is refused" {
-  printf 'crew-afk-version: 2.20.3\nSMOKE: PASS (claude, demo)\n' > "$LOG"
+  printf 'SMOKE: PASS (claude, demo)\n' > "$LOG"
   release --demo-smoke "$LOG"
   [ "$status" -ne 0 ]
   [[ "$output" == *"crew-afk-commit"* ]]
@@ -128,7 +114,28 @@ commit_file() {
 @test "--no-demo-smoke needs a reason, and the two flags exclude each other" {
   release --no-demo-smoke ""
   [ "$status" -ne 0 ]
-  printf 'crew-afk-version: 2.20.3\nSMOKE: PASS (claude)\n' > "$LOG"
+  printf 'SMOKE: PASS (claude)\n' > "$LOG"
   release --demo-smoke "$LOG" --no-demo-smoke why
   [ "$status" -ne 0 ]
+}
+
+@test "the log of a stubbed demo smoke run, its RESULTS.md row committed after it, is accepted" {
+  # The smoke as cut-release meets it: run from this repo's own checkout, with install.sh stubbed to lay out
+  # what a claude project install leaves, so crew-afk-commit: is this repo's HEAD.
+  cp "$REPO_ROOT/scripts/smoke-sprint.sh" "$R/scripts/"
+  cp "$REPO_ROOT/platforms.json" "$R/"
+  printf '#!/usr/bin/env bash\nmkdir -p "$3/.claude/skills/crew-afk/scripts" "$3/.coding-crew/lib"\necho {} > "$3/.coding-crew/manifest.json"\n' > "$R/install.sh"
+  chmod +x "$R/install.sh"
+  mkdir -p "$R/scripts/smoke-sprint"
+  printf '| commit | date | platform | result | cost | findings |\n|---|---|---|---|---|---|\n' > "$R/scripts/smoke-sprint/RESULTS.md"
+  git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm smoke
+  export TMPDIR="$BATS_TEST_TMPDIR/tmp"
+  mkdir -p "$TMPDIR"
+  make_smoke_demo
+  "$R/scripts/smoke-sprint.sh" claude > "$LOG"
+  grep -qx 'SMOKE: PASS (claude, demo)' "$LOG"
+  commit_file scripts/smoke-sprint/RESULTS.md
+  release --demo-smoke "$LOG"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"would tag HEAD as v1.0.0"* ]]
 }

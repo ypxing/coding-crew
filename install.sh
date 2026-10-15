@@ -20,70 +20,105 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-REPO_ROOT="${TARGET_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-
-UPDATE_MODE=false
-SKILLS_LIST=""  # comma-separated list from --skills a,b,c
-if [[ "${1:-}" == "--update" ]]; then
-  UPDATE_MODE=true
-  PLATFORM="all"
-  AGENT="all"
-else
-  PLATFORM="${1:-all}"    # all | a platform in orchestrator/platforms.json
-  AGENT="${2:-all}"       # all | --skill <name> | --skills a,b
-fi
-
-if [[ "$AGENT" == "--skills" ]]; then
-  SKILLS_LIST="${3:-}"
-  if [[ -z "$SKILLS_LIST" ]]; then
-    echo "Error: --skills requires a comma-separated list (e.g. --skills tdd,to-issues)" >&2
-    usage
-  fi
-  AGENT="--skill"  # normalise so later dispatch hits the skill path
-fi
-
-INSTALLED=""
-MANIFEST_SKILL_ENTRIES=()  # each entry: "name version"
-
 usage() {
-  echo "Usage: ./install.sh [platform]"
-  echo "       ./install.sh [platform] --skill <skill-name>"
-  echo "       ./install.sh [platform] --skills <a,b,c>"
-  echo "       ./install.sh --update"
+  echo "Usage: ./install.sh [platform] [--skill <name> | --skills <a,b,c>] [--project [<path>]]"
+  echo "       ./install.sh --update [--project [<path>]]"
   echo ""
-  local known="a platform in orchestrator/platforms.json"
+  local known="a platform in platforms.json"
   [[ ${#PLATFORMS[@]} -gt 0 ]] && known=$(platforms_joined ", ")
-  echo "  platform:  all (default), $known"
-  echo "  --skill:   install a single skill (e.g. to-issues)"
-  echo "  --skills:  install multiple skills (comma-separated, e.g. tdd,to-issues,to-prd);"
-  echo "             treated as the full desired set — any skill from a prior --skills"
-  echo "             install that's missing from this list is uninstalled"
-  echo "  --update:  re-install only skills whose version changed since last install"
+  echo "  platform:   all (default), $known"
+  echo "  --skill:    install a single skill (e.g. to-issues) and the skills it uses"
+  echo "  --skills:   install multiple skills (comma-separated, e.g. tdd,to-issues,to-prd);"
+  echo "              treated as the full desired set — any skill from a prior --skills"
+  echo "              install that's missing from this list is uninstalled"
+  echo "  --project:  install into a repo (<path>, else the current repo) instead of \$HOME;"
+  echo "              TARGET_REPO=<path> does the same"
+  echo "  --update:   uninstall every skill and library the manifest lists, then install"
+  echo "              those skills again from this checkout, for the same platform"
   echo ""
   echo "Examples:"
-  echo "  ./install.sh                                      # install everything into project"
-  echo "  ./install.sh claude --skill tdd                   # one skill into project"
-  echo "  ./install.sh claude --skills tdd,to-issues          # multiple skills at once"
-  echo "  ./install.sh claude --skill crew-afk              # crew-afk and the skills its roles follow"
-  echo "  ./install.sh --update                             # update all installed skills"
+  echo "  ./install.sh                                      # every skill, user level (\$HOME)"
+  echo "  ./install.sh claude --skill solve-feature         # solve-feature and the skills it uses"
+  echo "  ./install.sh claude --skills tdd,to-issues        # several skills at once"
+  echo "  ./install.sh claude --project                     # every skill into the current repo"
+  echo "  ./install.sh claude --project /path/to/repo       # every skill into that repo"
+  echo "  ./install.sh --update                             # reinstall what \$HOME has"
   echo ""
   echo "Available skills:"
   echo "  $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json" 2>/dev/null || echo "(needs jq to list)")"
   echo ""
-  echo "Set TARGET_REPO to install into a different repo root."
-  echo "A user-level install (TARGET_REPO=\$HOME) honors each platform's own config-dir override:"
+  echo "A user-level install honors each platform's own config-dir override:"
   local i overrides=""
   for i in "${!PLATFORMS[@]}"; do overrides="${overrides:+$overrides, }${_PF_ENV[$i]} (${PLATFORMS[$i]})"; done
-  echo "  ${overrides:-the configDirEnv of each entry in orchestrator/platforms.json}."
+  echo "  ${overrides:-the configDirEnv of each entry in platforms.json}."
   exit 1
 }
 
+usage_error() { echo "Error: $1" >&2; usage; }
+
 # Help needs no dependency: usage() says where the platform list lives when jq is missing.
 PLATFORMS=(); _PF_ENV=()
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  command -v jq >/dev/null 2>&1 && source "$SCRIPT_DIR/scripts/lib/platforms.sh"
-  usage
+for _arg in "$@"; do
+  if [[ "$_arg" == "-h" || "$_arg" == "--help" ]]; then
+    command -v jq >/dev/null 2>&1 && source "$SCRIPT_DIR/scripts/lib/platforms.sh"
+    usage
+  fi
+done
+
+UPDATE_MODE=false
+PLATFORM=""
+SKILL_MODE="all"   # all | skill | skills
+SKILL_NAME=""
+SKILLS_LIST=""
+PROJECT=false
+PROJECT_PATH=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --update) UPDATE_MODE=true; shift ;;
+    --skill)
+      [[ -n "${2:-}" && "${2:-}" != -* ]] || usage_error "--skill requires a skill name"
+      SKILL_MODE="skill"; SKILL_NAME="$2"; shift 2 ;;
+    --skills)
+      [[ -n "${2:-}" && "${2:-}" != -* ]] || usage_error "--skills requires a comma-separated list (e.g. --skills tdd,to-issues)"
+      SKILL_MODE="skills"; SKILLS_LIST="$2"; shift 2 ;;
+    --project)
+      PROJECT=true; shift
+      # The next word is the repo when it reads as a path, or when the platform is already named.
+      if [[ $# -gt 0 && "$1" != -* ]] && [[ -n "$PLATFORM" || "$1" == */* || "$1" == "." || "$1" == ".." ]]; then
+        PROJECT_PATH="$1"; shift
+      fi ;;
+    -*) usage_error "unknown argument '$1'" ;;
+    *)
+      [[ -z "$PLATFORM" ]] || usage_error "unexpected argument '$1' (the platform is already '$PLATFORM')"
+      PLATFORM="$1"; shift ;;
+  esac
+done
+if [[ "$UPDATE_MODE" == "true" && ( -n "$PLATFORM" || "$SKILL_MODE" != "all" ) ]]; then
+  usage_error "--update takes no platform or skill: it reinstalls what the manifest lists"
 fi
+PLATFORM="${PLATFORM:-all}"
+
+# User level ($HOME) unless --project or TARGET_REPO names a repo.
+if [[ "$PROJECT" == "true" ]]; then
+  if [[ -n "$PROJECT_PATH" ]]; then
+    [[ -d "$PROJECT_PATH" ]] || { echo "Error: --project path does not exist: $PROJECT_PATH" >&2; exit 1; }
+    REPO_ROOT="$(cd "$PROJECT_PATH" && pwd)"
+  else
+    REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  fi
+elif [[ -n "${TARGET_REPO:-}" ]]; then
+  [[ "$TARGET_REPO" =~ ^/ ]] || { echo "Error: TARGET_REPO must be an absolute path" >&2; exit 1; }
+  [[ -d "$TARGET_REPO" ]] || { echo "Error: TARGET_REPO does not exist: $TARGET_REPO" >&2; exit 1; }
+  REPO_ROOT="$TARGET_REPO"
+else
+  REPO_ROOT="$HOME"
+fi
+
+INSTALLED=""
+MANIFEST_SKILLS=()
+MANIFEST_LIBS=()
+MANIFEST_PLATFORMS=()
+LIB_DEST=".coding-crew/lib"
 
 _required_cmds=("jq" "git")
 for cmd in "${_required_cmds[@]}"; do
@@ -110,21 +145,8 @@ fi
 
 source "$SCRIPT_DIR/scripts/lib/platforms.sh"
 
-if [[ "$UPDATE_MODE" == "false" ]]; then
-  if [[ "${1:-}" == "--skill" ]]; then
-    echo "Error: platform argument required before flag (e.g. ./install.sh claude --skill to-issues)" >&2
-    usage
-  fi
-
-  if [[ "$PLATFORM" != "all" ]] && ! platform_known "$PLATFORM"; then
-    echo "Error: invalid platform '$PLATFORM' — must be: all, $(platforms_joined ", ") (from orchestrator/platforms.json)" >&2
-    usage
-  fi
-fi
-
-if [[ -n "${TARGET_REPO:-}" ]]; then
-  [[ "$REPO_ROOT" =~ ^/ ]] || { echo "Error: TARGET_REPO must be an absolute path" >&2; exit 1; }
-  [[ -d "$REPO_ROOT" ]] || { echo "Error: TARGET_REPO does not exist: $REPO_ROOT" >&2; exit 1; }
+if [[ "$PLATFORM" != "all" ]] && ! platform_known "$PLATFORM"; then
+  usage_error "invalid platform '$PLATFORM' — must be: all, $(platforms_joined ", ") (from platforms.json)"
 fi
 
 assert_safe_path() {
@@ -145,68 +167,6 @@ prune_legacy_copilot_path() {
   rm -rf "$REPO_ROOT/$original"
   echo "  removed legacy $original (Copilot reads .github/ at project scope)"
   rmdir "$REPO_ROOT/.copilot/agents" "$REPO_ROOT/.copilot/skills" "$REPO_ROOT/.copilot" 2>/dev/null || true
-}
-
-# Retired role agent files are stale definitions a host still lists: every install removes each,
-# on every platform, by exact path (registry.json `retired-agents`), plus their .coding-crew/ dirs.
-prune_retired_agents() {
-  [[ "$INSTALLED" != *"|retired-agents|"* ]] || return 0
-  INSTALLED="${INSTALLED}|retired-agents|"
-  local platform name raw dir names
-  names=$(jq -r '."retired-agents".names // [] | .[]' "$SCRIPT_DIR/registry.json")
-  for platform in "${PLATFORMS[@]}"; do
-    raw=$(jq -r --arg p "$platform" '."retired-agents".paths[$p] // empty' "$SCRIPT_DIR/registry.json")
-    [[ -n "$raw" ]] || continue
-    while IFS= read -r name; do
-      name="${name%$'\r'}"
-      [[ -n "$name" ]] || continue
-      local path="${raw//\{name\}/$name}"
-      assert_safe_path "$path" "$platform retired agent"
-      prune_legacy_copilot_path "$platform" "$path"
-      resolve_dest "$platform" "$(platform_scope_path "$platform" "$path")"
-      if [[ -f "$_DEST_ROOT/$_DEST_REL" ]]; then
-        rm -f "$_DEST_ROOT/$_DEST_REL"
-        echo "  removed $_DEST_REL (agent files are no longer installed)"
-        prune_empty_agent_dirs "$_DEST_ROOT" "$_DEST_REL"
-      fi
-    done <<< "$names"
-  done
-  while IFS= read -r dir; do
-    [[ -n "$dir" ]] || continue
-    assert_safe_path "$dir" "retired agent dir"
-    if [[ -d "$REPO_ROOT/$dir" ]]; then
-      rm -rf "$REPO_ROOT/$dir"
-      echo "  removed $dir/ (now under .coding-crew/crew-afk/roles/)"
-    fi
-  done < <(jq -r '."retired-agents".dirs // [] | .[]' "$SCRIPT_DIR/registry.json")
-}
-
-# Retired tracker shell wrappers are a second answer that can go stale: every install removes each
-# by exact path (registry.json `retired-scripts`), then the directory once nothing else is in it.
-prune_retired_scripts() {
-  [[ "$INSTALLED" != *"|retired-scripts|"* ]] || return 0
-  INSTALLED="${INSTALLED}|retired-scripts|"
-  local path
-  while IFS= read -r path; do
-    path="${path%$'\r'}"
-    [[ -n "$path" ]] || continue
-    assert_safe_path "$path" "retired script"
-    if [[ -f "$REPO_ROOT/$path" ]]; then
-      rm -f "$REPO_ROOT/$path"
-      echo "  removed $path (callers run tracker/cli.mjs directly)"
-      rmdir "$(dirname "$REPO_ROOT/$path")" 2>/dev/null || true
-    fi
-  done < <(jq -r '."retired-scripts" // [] | .[]' "$SCRIPT_DIR/registry.json")
-}
-
-# Drop the agents/ dir an emptied legacy shim left behind (never one with anything else in it).
-prune_empty_agent_dirs() {
-  local root="$1" rel="$2" d
-  d="$(dirname "$rel")"
-  while [[ "$d" != "." && "$d" != "/" ]]; do
-    rmdir "$root/$d" 2>/dev/null || break
-    d="$(dirname "$d")"
-  done
 }
 
 assert_identifier() {
@@ -269,7 +229,8 @@ check_dest_status() {
 declare -A _WRITTEN
 
 # Make an installed tree an exact copy of what this run wrote into it. Prune after copy, never
-# wipe-then-copy: a sprint running during an install still finds every file the new version ships.
+# wipe-then-copy: a run during an install still finds every file the new version ships. A library
+# link is a file to find (it is not followed), so a written one stays and a stale one goes.
 prune_unwritten() {
   local root="$1" f
   while IFS= read -r -d '' f; do
@@ -280,59 +241,59 @@ prune_unwritten() {
   find "$root" -mindepth 1 -depth -type d -empty -delete
 }
 
-# Assets are platform-neutral runtime files, installed once to a shared path and always
-# overwritten; a file the source no longer has is removed so a stale module never shadows its replacement.
-install_assets_tree() {
-  local src="$1" dest_rel="$2" label="$3"
-  [[ -d "$src" ]] || { echo "Error: $label assets source not found: $src" >&2; exit 1; }
-
-  local asset_file rel_path dest_file status
+# A library is installed once per run to <root>/.coding-crew/lib/<name>, an exact copy of lib/<name>,
+# and reached from each skill that uses it through a link (link_lib).
+install_lib() {
+  local name="$1" src lib_file rel_path dest_file status
+  if [[ "$INSTALLED" == *"|lib:$name|"* ]]; then return 0; fi
+  INSTALLED="${INSTALLED}|lib:$name|"
+  assert_identifier "$name" "library"
+  src="$SCRIPT_DIR/lib/$name"
+  [[ -d "$src" ]] || { echo "Error: library source not found: lib/$name" >&2; exit 1; }
   _WRITTEN=()
-  while IFS= read -r -d '' asset_file; do
-    rel_path="${asset_file#$src/}"
-    dest_file="$REPO_ROOT/$dest_rel/$rel_path"
+  while IFS= read -r -d '' lib_file; do
+    rel_path="${lib_file#$src/}"
+    dest_file="$REPO_ROOT/$LIB_DEST/$name/$rel_path"
     mkdir -p "$(dirname "$dest_file")"
     status=0
-    check_dest_status "$asset_file" "$dest_file" || status=$?
-    cp "$asset_file" "$dest_file"
+    check_dest_status "$lib_file" "$dest_file" || status=$?
+    cp "$lib_file" "$dest_file"
     # *.sh, and every file under a shim/ directory: a PATH shim has the name of the command it
     # stands in for (`docker`), so there is no extension to go by.
     [[ "$rel_path" == *.sh || "$rel_path" == shim/* || "$rel_path" == */shim/* ]] && chmod +x "$dest_file"
     _WRITTEN["$dest_file"]=1
-    if [[ $status -eq 0 ]]; then echo "  $dest_rel/$rel_path"; fi
+    if [[ $status -eq 0 ]]; then echo "  $LIB_DEST/$name/$rel_path"; fi
   done < <(find "$src" -type f -print0)
-  prune_unwritten "$REPO_ROOT/$dest_rel"
+  prune_unwritten "$REPO_ROOT/$LIB_DEST/$name"
+  MANIFEST_LIBS+=("$name")
 }
 
-# Installed once per run, not per platform: four platforms launching one program must launch the
-# same copy, or a fixed bug is only fixed on one.
-install_skill_assets() {
-  local skill_name="$1"
-  local src_rel dest_rel
-  _skill_scalar "$skill_name" assets_source '.skills[$s].assets.source // empty'
-  src_rel="$_SKILL_SCALAR"
-  _skill_scalar "$skill_name" assets_dest '.skills[$s].assets.dest // empty'
-  dest_rel="$_SKILL_SCALAR"
-  [[ -n "$src_rel" && -n "$dest_rel" ]] || return 0
-  if [[ "$INSTALLED" == *"|assets:skill:$skill_name|"* ]]; then return 0; fi
-  INSTALLED="${INSTALLED}|assets:skill:$skill_name|"
-  assert_safe_path "$src_rel" "skill assets source"
-  assert_safe_path "$dest_rel" "skill assets dest"
-  install_assets_tree "$SCRIPT_DIR/$src_rel" "$dest_rel" "skill"
-  # `more-assets`: further trees the same way (crew-afk's role protocols render with the shared
-  # fragments, which orchestrator/lib/adapters/render.mjs reads from .coding-crew/skills/_shared/).
-  _skill_list "$skill_name" more_assets '.skills[$s]["more-assets"] // [] | .[] | "\(.source)\t\(.dest)"'
-  local more="$_SKILL_LIST" line
-  while IFS= read -r line; do
-    line="${line%$'\r'}"
-    [[ -n "$line" ]] || continue
-    src_rel="${line%%$'\t'*}"; dest_rel="${line#*$'\t'}"
-    assert_safe_path "$src_rel" "skill assets source"
-    assert_safe_path "$dest_rel" "skill assets dest"
-    install_assets_tree "$SCRIPT_DIR/$src_rel" "$dest_rel" "skill"
-  done <<< "$more"
+# link_lib <skill-root> <name> — <skill-root>/scripts/<name> → the installed library. Relative at
+# project level, so a committed skills dir and .coding-crew/ survive a clone to another path.
+link_lib() {
+  local skill_root="$1" name="$2" link target rel up=""
+  link="$skill_root/scripts/$name"
+  if [[ "$REPO_ROOT" == "$HOME" ]]; then
+    target="$REPO_ROOT/$LIB_DEST/$name"
+  else
+    rel="${skill_root#"$REPO_ROOT"/}/scripts"
+    while [[ -n "$rel" ]]; do
+      up="../$up"
+      if [[ "$rel" == */* ]]; then rel="${rel#*/}"; else rel=""; fi
+    done
+    target="$up$LIB_DEST/$name"
+  fi
+  mkdir -p "$skill_root/scripts"
+  if [[ -L "$link" && "$(readlink "$link")" == "$target" ]]; then
+    _WRITTEN["$link"]=1
+    return 0
+  fi
+  # A real directory there would take the link inside it.
+  [[ -L "$link" || ! -e "$link" ]] || rm -rf "$link"
+  ln -sfn "$target" "$link"
+  _WRITTEN["$link"]=1
+  echo "  ${link#"$REPO_ROOT/"} -> $target"
 }
-
 
 install_single_skill() {
   local skill_name="$1"
@@ -385,7 +346,7 @@ install_single_skill() {
     local staged="$src_file" render_tmp=""
     if [[ "$rel_path" == "SKILL.md" ]]; then
       render_tmp=$(mktemp)
-      bash "$SCRIPT_DIR/scripts/render-skill.sh" "$skill_name" "$PLATFORM" "$render_tmp" || {
+      bash "$SCRIPT_DIR/scripts/render-skill.sh" "$skill_name" "$render_tmp" || {
         rm -f "$render_tmp"; exit 1; }
       staged="$render_tmp"
     fi
@@ -399,37 +360,27 @@ install_single_skill() {
     if [[ $status -eq 0 ]]; then
       echo "  $rel_dest"
     fi
-  done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -not -name "test-*.sh" -print0)
+  done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -print0)
 
-  local scripts
-  _skill_list "$skill_name" scripts '.skills[$s].scripts // [] | .[]'
-  scripts="$_SKILL_LIST"
-  local scripts_arr=()
-  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && scripts_arr+=("$_line"); done <<< "$scripts"
-  if [[ "${#scripts_arr[@]}" -gt 0 ]]; then
-    mkdir -p "$skill_root/scripts"
-    for script in "${scripts_arr[@]}"; do
-      local script_src="$SCRIPT_DIR/scripts/skill-utils/git-workflow/$script"
-      if [[ ! -f "$script_src" ]]; then
-        echo "Error: script source not found: scripts/skill-utils/git-workflow/$script" >&2
-        exit 1
-      fi
-      cp "$script_src" "$skill_root/scripts/$script"
-      chmod +x "$skill_root/scripts/$script"
-      _WRITTEN["$skill_root/scripts/$script"]=1
-    done
-    echo "  $skill_dest/scripts/ (${#scripts_arr[@]} scripts from skill-utils/git-workflow)"
-  fi
+  local libs lib libs_arr=()
+  _skill_list "$skill_name" libs '.skills[$s].libs // [] | .[]'
+  libs="$_SKILL_LIST"
+  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && libs_arr+=("$_line"); done <<< "$libs"
+  for lib in "${libs_arr[@]+"${libs_arr[@]}"}"; do
+    assert_identifier "$lib" "library"
+    if [[ -e "$SCRIPT_DIR/skills/$source_dir/scripts/$lib" ]]; then
+      echo "Error: skills/$source_dir/scripts/$lib exists, but the library $lib is linked there" >&2
+      exit 1
+    fi
+    link_lib "$skill_root" "$lib"
+  done
   # Whatever this run did not write is a file an earlier version shipped: an agent listing the directory would read it.
   prune_unwritten "$skill_root"
+  MANIFEST_SKILLS+=("$skill_name")
 
-  local skill_version
-  _skill_scalar "$skill_name" version '.skills[$s].version // "unknown"'
-  skill_version="$_SKILL_SCALAR"
-  MANIFEST_SKILL_ENTRIES+=("$skill_name $skill_version")
-
-  # Runtime files the skill launches rather than reads (the crew-afk orchestrator).
-  install_skill_assets "$skill_name"
+  for lib in "${libs_arr[@]+"${libs_arr[@]}"}"; do
+    install_lib "$lib"
+  done
 
   local deps
   _skill_list "$skill_name" deps '.skills[$s].deps // [] | .[]'
@@ -439,7 +390,6 @@ install_single_skill() {
   for dep in "${deps_arr[@]+"${deps_arr[@]}"}"; do
     install_single_skill "$dep"
   done
-
 }
 
 # Move a legacy issue-tracker.md front-matter choice into config.json's `tracker` section (an
@@ -485,30 +435,11 @@ migrate_legacy_tracker_doc() {
   rmdir "$REPO_ROOT/.coding-crew/docs/templates" "$REPO_ROOT/.coding-crew/docs" 2>/dev/null || true
 }
 
-install_docs() {
-  local docs_header_printed=0
+migrate_legacy_docs() {
   if [[ -f "$REPO_ROOT/.coding-crew/docs/issue-tracker.md" || -d "$REPO_ROOT/.coding-crew/docs/templates/trackers" ]]; then
-    echo "Docs:"; docs_header_printed=1
+    echo "Docs:"
     migrate_legacy_tracker_doc
   fi
-
-  # The tracker CLI and its backends: installed whichever skill is, and kept an exact copy.
-  local trees
-  trees=$(jq -r '.docs.trees // {} | keys[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
-  local trees_arr=()
-  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && trees_arr+=("$_line"); done <<< "$trees"
-
-  for tree in "${trees_arr[@]+"${trees_arr[@]}"}"; do
-    local tree_src_rel tree_dest_rel
-    tree_src_rel=$(jq -r --arg t "$tree" '.docs.trees[$t].source // empty' "$SCRIPT_DIR/registry.json")
-    tree_dest_rel=$(jq -r --arg t "$tree" '.docs.trees[$t].dest // empty' "$SCRIPT_DIR/registry.json")
-    [[ -z "$tree_src_rel" || -z "$tree_dest_rel" ]] && continue
-    assert_safe_path "$tree_src_rel" "doc tree source"
-    assert_safe_path "$tree_dest_rel" "doc tree dest"
-
-    [[ "$docs_header_printed" -eq 0 ]] && { echo "Docs:"; docs_header_printed=1; }
-    install_assets_tree "$SCRIPT_DIR/$tree_src_rel" "$tree_dest_rel" "doc tree"
-  done
 }
 
 # A user-level copy of the same skill can take precedence over the project's, and we cannot change
@@ -521,8 +452,7 @@ warn_shadowing_user_installs() {
   while IFS= read -r d; do
     [[ -d "$d" ]] || continue
     local name
-    # The retired agent names too: nothing cleans a stale user-level copy on a project install.
-    for name in crew-afk solve-issue $(jq -r '."retired-agents".names // [] | .[]' "$SCRIPT_DIR/registry.json"); do
+    for name in solve-feature solve-issue; do
       if [[ -e "$d/$name" || -e "$d/$name.md" || -e "$d/$name.toml" || -e "$d/$name.agent.md" ]]; then
         found+=("$d/$name")
       fi
@@ -536,128 +466,133 @@ warn_shadowing_user_installs() {
   local f
   for f in "${found[@]}"; do echo "  $f"; done
   echo "  Some hosts (pi included) resolve the user-level definition first, so edits here"
-  echo "  can appear to have no effect. Remove or update those copies, or re-run with"
-  echo "  TARGET_REPO=\$HOME to install at user level instead."
+  echo "  can appear to have no effect. Remove or update those copies, or re-run without"
+  echo "  --project to install at user level instead."
 }
 
-write_manifest() {
-  local manifest="$REPO_ROOT/.coding-crew/manifest.json"
-  mkdir -p "$(dirname "$manifest")"
+MANIFEST="$REPO_ROOT/.coding-crew/manifest.json"
 
-  local source_sha source_remote
+# manifest_list <file> <key> — the names under .skills or .libs, one per line. An install made before
+# libraries keyed skills by name with a version each; both forms read the same.
+manifest_list() {
+  jq -r --arg k "$2" '.[$k] // [] | if type == "object" then keys[] else .[] end' "$1"
+}
+
+# manifest_platforms <file> — the platforms installed into this root, one per line. An install made
+# before the list recorded only the last platform, under .platform.
+manifest_platforms() {
+  jq -r '.platforms // [.platform // empty] | .[]' "$1"
+}
+
+# The manifest records the platforms, the skills and the libraries installed, merged with what an
+# earlier install recorded: every platform installs into one root, so --update must reinstall each.
+# No versions: --update reinstalls everything it lists.
+write_manifest() {
+  mkdir -p "$(dirname "$MANIFEST")"
+
+  local source_sha source_remote skills libs platforms
   source_sha=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")
   source_remote=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo "local")
 
-  local skills_json="{}"
-  for entry in "${MANIFEST_SKILL_ENTRIES[@]+"${MANIFEST_SKILL_ENTRIES[@]}"}"; do
-    local name version
-    read -r name version <<< "$entry"
-    skills_json=$(jq -n --argjson base "$skills_json" --arg n "$name" --arg v "$version" \
-      '$base | .[$n] = {version: $v}')
-  done
-
-  # Merge with the existing manifest. Its legacy `agents` key is dropped: prune_retired_agents removed their files.
-  local existing_skills="{}"
-  if [[ -f "$manifest" ]]; then
-    existing_skills=$(jq '.skills // {}' "$manifest")
-  fi
+  skills=$( { printf '%s\n' "${MANIFEST_SKILLS[@]+"${MANIFEST_SKILLS[@]}"}"
+              [[ ! -f "$MANIFEST" ]] || manifest_list "$MANIFEST" skills; } | tr -d '\r' | grep -v '^$' | LC_ALL=C sort -u || true)
+  libs=$( { printf '%s\n' "${MANIFEST_LIBS[@]+"${MANIFEST_LIBS[@]}"}"
+            [[ ! -f "$MANIFEST" ]] || manifest_list "$MANIFEST" libs; } | tr -d '\r' | grep -v '^$' | LC_ALL=C sort -u || true)
+  # --update sets MANIFEST_PLATFORMS: its uninstall may have removed the manifest it read them from.
+  platforms=$( { printf '%s\n' "${MANIFEST_PLATFORMS[@]:-$PLATFORM}"
+                 [[ ! -f "$MANIFEST" ]] || manifest_platforms "$MANIFEST"; } | tr -d '\r' | grep -v '^$' | LC_ALL=C sort -u || true)
+  # "all" covers every platform.
+  ! grep -qxF all <<< "$platforms" || platforms=all
 
   jq -n \
     --arg sha "$source_sha" \
     --arg remote "$source_remote" \
     --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-    --arg platform "$PLATFORM" \
-    --argjson existing_skills "$existing_skills" \
-    --argjson new_skills "$skills_json" \
+    --arg platforms "$platforms" \
+    --arg skills "$skills" \
+    --arg libs "$libs" \
     '{
       source: $remote,
       source_sha: $sha,
       installed_at: $ts,
-      platform: $platform,
-      skills: ($existing_skills * $new_skills)
-    }' > "$manifest"
+      platforms: ($platforms | split("\n") | map(select(. != ""))),
+      skills: ($skills | split("\n") | map(select(. != ""))),
+      libs: ($libs | split("\n") | map(select(. != "")))
+    }' > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
 
   echo "  .coding-crew/manifest.json"
 }
 
-# --skills a,b,c declares the full skill set, but write_manifest's merge never drops a key, so a
-# skill left out is removed here through uninstall.sh --skill (the single writer of skill files)
-# and its key deleted so the merge below does not resurrect it.
+# uninstall.sh is the single remover of skills and libraries: it drops each from the manifest, and
+# a library no remaining skill uses.
+uninstall_skills() {
+  local list="$1"
+  [[ -n "$list" ]] || return 0
+  TARGET_REPO="$REPO_ROOT" "$SCRIPT_DIR/uninstall.sh" --skills "$list" | sed 's/^/  /'
+}
+
+# --skills a,b,c declares the full skill set: a skill a prior install recorded and this list leaves
+# out is uninstalled first, so the libraries the list needs are installed after any it removed.
 prune_skills_not_in() {
-  local requested="$1"
-  local manifest="$REPO_ROOT/.coding-crew/manifest.json"
-  [[ -f "$manifest" ]] || return 0
-  local existing name
-  existing=$(jq -r '.skills | keys[]?' "$manifest")
-  [[ -n "$existing" ]] || return 0
+  local requested="$1" name prune=""
+  [[ -f "$MANIFEST" ]] || return 0
   while IFS= read -r name; do
+    name="${name%$'\r'}"
     [[ -n "$name" ]] || continue
     grep -qxF "$name" <<< "$requested" && continue
     echo "  pruning $name (not in --skills list)"
-    TARGET_REPO="$REPO_ROOT" "$SCRIPT_DIR/uninstall.sh" --skill "$name" | sed 's/^/  /'
-    jq --arg n "$name" 'del(.skills[$n])' "$manifest" > "$manifest.tmp" && mv "$manifest.tmp" "$manifest"
-  done <<< "$existing"
+    prune="${prune:+$prune,}$name"
+  done < <(manifest_list "$MANIFEST" skills)
+  uninstall_skills "$prune"
 }
 
+# --update: uninstall every skill and library the manifest lists, then install the listed skills the
+# registry still has, for each of the manifest's platforms. A skill the registry dropped stays uninstalled.
 run_update() {
-  local manifest="$REPO_ROOT/.coding-crew/manifest.json"
-  local legacy_manifest="$REPO_ROOT/.coding-crew.manifest.json"
-  if [[ ! -f "$manifest" && -f "$legacy_manifest" ]]; then
-    manifest="$legacy_manifest"
-  fi
-  if [[ ! -f "$manifest" ]]; then
-    echo "Error: no manifest found at $REPO_ROOT/.coding-crew/manifest.json (or legacy .coding-crew.manifest.json) — run ./install.sh first" >&2
+  if [[ ! -f "$MANIFEST" ]]; then
+    echo "Error: no manifest found at $MANIFEST — run ./install.sh first" >&2
     exit 1
   fi
+  local platforms=() platform
+  while IFS= read -r platform; do
+    platform="${platform%$'\r'}"
+    [[ -n "$platform" ]] || continue
+    if [[ "$platform" != "all" ]] && ! platform_known "$platform"; then
+      echo "Error: the manifest's platform '$platform' is not in platforms.json" >&2
+      exit 1
+    fi
+    platforms+=("$platform")
+  done < <(manifest_platforms "$MANIFEST")
+  [[ ${#platforms[@]} -gt 0 ]] || platforms=(all)
+  MANIFEST_PLATFORMS=("${platforms[@]}")
 
-  local saved_platform
-  saved_platform=$(jq -r '.platform' "$manifest")
-  PLATFORM="$saved_platform"
-
-  echo "Platform: $saved_platform (from manifest)"
-  echo "Checking for updates..."
-  echo "---"
-
-  local updated=0
-
-  # An install from before crew-afk owned its roles lists them as agents; crew-afk now prunes them.
-  if [[ -n "$(jq -r '.agents // {} | keys[]' "$manifest")" ]]; then
-    echo "  agents (crew-coder, crew-reviewer, crew-triage): now part of crew-afk — installing crew-afk"
-    install_single_skill crew-afk
-    updated=$((updated + 1))
-  fi
-
+  local names=() name
   while IFS= read -r name; do
-    local installed_version current_version
-    installed_version=$(jq -r --arg n "$name" '.skills[$n].version // "unknown"' "$manifest")
-    current_version=$(jq -r --arg n "$name" '.skills[$n].version // empty' "$SCRIPT_DIR/registry.json")
-    if [[ -z "$current_version" ]]; then
-      echo "  $name: removed from registry — skipping"
+    name="${name%$'\r'}"
+    [[ -n "$name" ]] && names+=("$name")
+  done < <(manifest_list "$MANIFEST" skills)
+
+  echo "Platform: ${platforms[*]} (from manifest)"
+  echo "---"
+  uninstall_skills "$(IFS=,; echo "${names[*]+"${names[*]}"}")"
+  echo "---"
+  for name in "${names[@]+"${names[@]}"}"; do
+    assert_identifier "$name" "skill"
+    _skill_scalar "$name" exists '.skills[$s] | if . == null then empty else "yes" end'
+    if [[ -z "$_SKILL_SCALAR" ]]; then
+      echo "  $name: removed from the registry — uninstalled"
       continue
     fi
-    if [[ "$installed_version" != "$current_version" ]]; then
-      echo "  Updating $name: $installed_version → $current_version"
-      install_single_skill "$name"
-      updated=$((updated + 1))
-    else
-      echo "  $name $installed_version: up to date"
-    fi
-  done < <(jq -r '.skills | keys[]' "$manifest")
-
-  echo "---"
-  echo "$updated item(s) updated"
+    for PLATFORM in "${platforms[@]}"; do install_single_skill "$name"; done
+  done
 }
 
 echo "Target: $REPO_ROOT"
 
 if [[ "$UPDATE_MODE" == "true" ]]; then
   run_update
-  prune_retired_agents
-  prune_retired_scripts
-  # The tracker CLI and docs carry no version of their own, so an update that skipped this would
-  # keep a stale gate forever.
-  install_docs
-  if [[ "${#MANIFEST_SKILL_ENTRIES[@]}" -gt 0 ]]; then
+  migrate_legacy_docs
+  if [[ "${#MANIFEST_SKILLS[@]}" -gt 0 ]]; then
     write_manifest
   fi
   echo "Done."
@@ -666,50 +601,38 @@ fi
 
 echo "Platform: $PLATFORM"
 
-if [[ "$AGENT" == "--skill" ]]; then
-  if [[ -n "$SKILLS_LIST" ]]; then
+case "$SKILL_MODE" in
+  skills)
     echo "Skills: $SKILLS_LIST"
     echo "---"
     IFS=',' read -ra _skills_arr <<< "$SKILLS_LIST"
     _requested_skills=""
     for _s in "${_skills_arr[@]}"; do
       _s="${_s// /}"  # trim spaces
-      if [[ -n "$_s" ]]; then
-        install_single_skill "$_s"
-        _requested_skills+="$_s"$'\n'
-      fi
+      [[ -n "$_s" ]] && _requested_skills+="$_s"$'\n'
     done
     prune_skills_not_in "$_requested_skills"
+    while IFS= read -r _s; do
+      [[ -n "$_s" ]] && install_single_skill "$_s"
+    done <<< "$_requested_skills"
     unset _skills_arr _s _requested_skills
-  else
-    SKILL_NAME="${3:-}"
-    if [[ -z "$SKILL_NAME" ]]; then
-      echo "Error: --skill requires a skill name"
-      usage
-    fi
+    ;;
+  skill)
     echo "Skill: $SKILL_NAME"
     echo "---"
     install_single_skill "$SKILL_NAME"
-  fi
-elif [[ "$AGENT" == "all" ]]; then
-  echo "---"
-  skill_names=()
-  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && skill_names+=("$_line"); done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json")
-  for skill_name in "${skill_names[@]}"; do
-    install_single_skill "$skill_name"
-  done
-elif jq -e --arg n "$AGENT" '."retired-agents".names | index($n)' "$SCRIPT_DIR/registry.json" >/dev/null; then
-  echo "Note: $AGENT is now a role inside crew-afk — installing crew-afk"
-  echo "---"
-  install_single_skill crew-afk
-else
-  echo "Error: unknown argument '$AGENT' (expected all, --skill <name> or --skills <a,b>)" >&2
-  usage
-fi
+    ;;
+  all)
+    echo "---"
+    skill_names=()
+    while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && skill_names+=("$_line"); done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json")
+    for skill_name in "${skill_names[@]}"; do
+      install_single_skill "$skill_name"
+    done
+    ;;
+esac
 
-install_docs
-prune_retired_agents
-prune_retired_scripts
+migrate_legacy_docs
 echo "---"
 write_manifest
 

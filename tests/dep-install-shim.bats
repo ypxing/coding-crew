@@ -1,11 +1,11 @@
 #!/usr/bin/env bats
 
-# shim/docker and shim/docker-compose: add the worktree's crew override as the last -f of
-# every `docker compose` call. A fake `docker` / `docker-compose` behind the shim logs its argv.
+# shim/docker: add the checkout's crew override as the last -f of every `docker compose` call.
+# A fake `docker` behind the shim logs its argv.
 
 bats_require_minimum_version 1.5.0
 
-SHIM_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/shim"
+SHIM_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks/shim"
 
 setup() {
   TEMP_DIR=$(mktemp -d)
@@ -13,10 +13,8 @@ setup() {
   FAKE="$TEMP_DIR/fake-bin"
   mkdir -p "$FAKE"
   LOG="$TEMP_DIR/argv.log"
-  for bin in docker docker-compose; do
-    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s"\n' "$LOG" > "$FAKE/$bin"
-    chmod +x "$FAKE/$bin"
-  done
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s"\n' "$LOG" > "$FAKE/docker"
+  chmod +x "$FAKE/docker"
   WORK="$TEMP_DIR/work"
   mkdir -p "$WORK"
   git -C "$WORK" init -q
@@ -129,11 +127,8 @@ logged() { tr '\n' ' ' < "$LOG" | sed 's/ $//'; }
   done
 }
 
-@test "docker-compose gets the same insertion" {
-  run docker-compose -f a.yml run app x
-  [ "$(logged)" = "-f a.yml -f $OVERRIDE run app x" ]
-  COMPOSE_FILE=a.yml:b.yml run docker-compose -p proj up
-  [ "$(logged)" = "-p proj -f a.yml -f b.yml -f $OVERRIDE up" ]
+@test "there is no docker-compose (v1) shim" {
+  [ ! -e "$SHIM_DIR/docker-compose" ]
 }
 
 @test "a non-compose docker command passes through unchanged" {
@@ -186,15 +181,12 @@ logged() { tr '\n' ' ' < "$LOG" | sed 's/ $//'; }
   # find the other as "the real docker" and exec it forever.
   OTHER="$TEMP_DIR/other-install/shim"
   mkdir -p "$OTHER"
-  cp "$SHIM_DIR/docker" "$SHIM_DIR/docker-compose" "$OTHER/"
+  cp "$SHIM_DIR/docker" "$OTHER/"
   chmod +x "$OTHER"/*
   export PATH="$OTHER:$PATH"
   run bash -c 'docker compose -f a.yml up & p=$!; (sleep 10; kill $p 2>/dev/null) & w=$!; wait $p; rc=$?; kill $w 2>/dev/null; exit $rc'
   [ "$status" -eq 0 ]
   [ "$(logged)" = "compose -f a.yml -f $OVERRIDE up" ]
-  run bash -c 'docker-compose run app x & p=$!; (sleep 10; kill $p 2>/dev/null) & w=$!; wait $p; rc=$?; kill $w 2>/dev/null; exit $rc'
-  [ "$status" -eq 0 ]
-  [ "$(logged)" = "run app x" ]
 }
 
 @test "a nested docker compose call made by the real docker's child still gets the override" {

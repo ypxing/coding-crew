@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
-# render-skill.sh — render a skill's SKILL.md body for one platform.
-# Usage: render-skill.sh <skill-name> <platform> [<outfile>]   (stdout without <outfile>)
-# A whole `{{FRAGMENT:<key>}}` line becomes skills/_shared/fragments/<key>.md and `{{PLATFORM}}` the
-# platform name. A missing fragment or any placeholder left over is a hard error: it would ship an
-# instruction hole to the model.
+# render-skill.sh — render a skill's SKILL.md body, the same for every platform.
+# Usage: render-skill.sh <skill-name> [<outfile>]   (stdout without <outfile>)
+# A whole `{{FRAGMENT:<key>}}` line becomes skills/_shared/fragments/<key>.md. A missing fragment or
+# any placeholder left over is a hard error: it would ship an instruction hole to the model.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REGISTRY="$SCRIPT_DIR/registry.json"
 
 usage() {
-  echo "Usage: render-skill.sh <skill-name> <platform> [outfile]" >&2
+  echo "Usage: render-skill.sh <skill-name> [outfile]" >&2
   exit 2
 }
 
-[[ $# -ge 2 ]] || usage
+[[ $# -ge 1 && $# -le 2 ]] || usage
 SKILL="$1"
-PLATFORM="$2"
-OUTFILE="${3:-}"
+OUTFILE="${2:-}"
 
 [[ -f "$REGISTRY" ]] || { echo "Error: registry not found: $REGISTRY" >&2; exit 1; }
 
@@ -56,7 +54,7 @@ render() {
       # blank-line spacing decides the layout.
       printf '%s\n' "$(cat "$fragment")"
     else
-      printf '%s\n' "${line//\{\{PLATFORM\}\}/$PLATFORM}"
+      printf '%s\n' "$line"
     fi
   done < "$SKILL_SRC/$BODY"
 }
@@ -66,7 +64,7 @@ trap 'rm -f "$TMP"' EXIT
 render > "$TMP"
 
 if grep -n '{{[A-Z]' "$TMP" >/dev/null 2>&1; then
-  echo "Error: unexpanded placeholder in rendered $SKILL ($PLATFORM):" >&2
+  echo "Error: unexpanded placeholder in rendered $SKILL:" >&2
   grep -n '{{[A-Z]' "$TMP" >&2
   exit 1
 fi

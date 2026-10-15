@@ -4,18 +4,18 @@ Guidance for Claude Code (or any agent) working in this repo.
 
 ## What this repo is
 
-A distributable collection of AI skills (and crew-afk, the program that runs them unattended) that other projects install via `install.sh`.
+A distributable collection of AI skills that other projects install via `install.sh`.
 Nothing here runs on its own — this repo is the source; consuming projects are the target.
-For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → crew-address-findings), see `README.md`.
+For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → solve-feature), see `README.md`.
 
 ## Working in this repo
 
 ```bash
-# Install into a scratch repo to see what a platform actually receives
-TARGET_REPO=/tmp/test-repo ./install.sh claude --skill crew-afk
+# Install into a scratch repo to see what a platform actually receives (no --project: $HOME, the default)
+./install.sh claude --skill solve-feature --project /tmp/test-repo
 
 # Render a skill body without a full install
-bash scripts/render-skill.sh crew-afk codex | less
+bash scripts/render-skill.sh solve-issue | less
 
 # Run tests: one bats process per file, CPU-count at a time, heaviest first (plain `bats tests/*.bats` runs files one by one, ~6x slower)
 bash scripts/ci-run-bats.sh tests/*.bats
@@ -23,60 +23,53 @@ bash scripts/ci-run-bats.sh tests/*.bats
 # After editing crew-grill/crew-brainstorm/to-issues: behavioural A/B (base ref vs worktree), judged blind; costs API money
 node scripts/eval-design-skills.mjs --skill crew-grill --runs 2 --dry-run   # drop --dry-run to run
 
-# One real crew-afk sprint on one platform, in a repo rebuilt fresh from scripts/smoke-sprint/ each run; costs API money
-scripts/smoke-sprint.sh copilot              # --setup-only builds the repo without calling the CLI
-scripts/smoke-sprint.sh claude --demo > /tmp/smoke.log   # the same on the pinned demo repo (scripts/smoke-sprint/demo/); appends a row to scripts/smoke-sprint/RESULTS.md — commit it before cutting the release
-
-# After editing orchestrator/roles/reviewer.md or reviewer/feature.md: replay the two bugs PR #208 shipped with against base and head, judged blind; costs API money
+# After editing skills/crew-review/SKILL.md: replay the bugs earlier reviews missed against base and head, judged blind; costs API money
 node scripts/eval-reviewer-misses.mjs --runs 2 --dry-run   # writes each ref's prompts, calls no model; drop --dry-run to run
 
-# Bring a PR branch up to date with origin/main (local only, never pushes): merge it, resolve registry version / CHANGELOG append conflicts, bump versions to sit above main's
+# One real crew-afk run on the pinned demo repo (scripts/smoke-sprint/demo/), in a clone rebuilt fresh each run; costs API money and opens (then closes) one demo PR
+scripts/smoke-sprint.sh claude > /tmp/smoke.log   # appends a row to scripts/smoke-sprint/RESULTS.md — commit it before cutting the release
+
+# Bring a PR branch up to date with origin/main (local only, never pushes): merge it, resolving CHANGELOG append conflicts
 scripts/sync-pr-with-main.sh <branch>
 
-# Cut a milestone release (not per merge) once CHANGELOG.md's top version entry and any registry.json version bumps are committed;
-# needs a passing demo smoke log (`SMOKE: PASS (<platform>, demo)`) for HEAD's crew-afk version, run on a clean checkout with nothing but CHANGELOG.md and RESULTS.md committed since, or an explicit opt-out; the tree must be clean, RESULTS.md row included
+# Cut a milestone release (not per merge) once CHANGELOG.md's top version entry is committed;
+# needs a passing demo smoke log (`SMOKE: PASS (<platform>, demo)` and the `crew-afk-commit:` it ran at), run on a clean checkout with nothing but CHANGELOG.md and RESULTS.md committed since, or an explicit opt-out; the tree must be clean, RESULTS.md row included
 scripts/cut-release.sh --dry-run --demo-smoke /tmp/smoke.log   # or --no-demo-smoke "<reason>"; verify, then re-run without --dry-run to tag and push
 ```
 
-- Version bump (D4): a change to any file a `skills.*` entry in `registry.json` ships (its `source-dir` tree, `assets.source` tree, `scripts[]`) or to that entry's own registry fields needs that entry's `version` in `registry.json` strictly above `origin/main`'s version for it — `install.sh --update` skips an entry whose version is unchanged, and two branches bumping to the same number would collide. An entry the branch did not change (measured from the merge-base) is exempt even if main bumped it. `tests/registry-version-bump.bats` enforces it against `origin/main` (skips when it is not found) and fails the verify gate otherwise.
-- A crew-afk mechanism change cites how many times its incident happened (from the logs or the tracker): a gate, retry or promotion rule added for one incident costs every sprint, so the count is what justifies it. The count belongs in the PR or commit message, never in code.
 - Code comments follow solve-issue's comment rule (`skills/solve-issue/SKILL.md`, Step 4).
-- One writer per issue file: don't add code paths where a worker/agent edits an issue's `Status:`/checkboxes directly — that's `close-issue.sh`'s job, gated by receipts.
+- One writer per issue file: don't add code paths where an agent edits an issue's `Status:`/checkboxes directly — that's the tracker CLI's job (`tick`, `mark-done`).
 - `CHANGELOG.md`: add one entry at the top of `[Unreleased]` (component prefix, what changed for a user, issue/PR number). Read only its first ~20 lines to do it, not the whole file.
-- Issues (this repo's own dev use) live in `.scratch/<feature-slug>/issues/{open,done}/`; the tracker is set in `.coding-crew/config.json` (`{"tracker": {"kind": …}}`); see `tracker/docs/<kind>.md`.
+- Issues (this repo's own dev use) live in `.scratch/<feature-slug>/issues/{open,done}/`; the tracker is set in `.coding-crew/config.json` (`{"tracker": {"kind": …}}`); see `lib/tracker/docs/<kind>.md`.
 
 ## Axes of variation
 
 The design standard (`skills/_shared/fragments/design-standard.md`, criterion 3) counts these as real axes, so a decision that varies along one belongs behind one abstraction even with a single implementation today:
 
-- platforms — `orchestrator/platforms.json` (claude, copilot, pi, codex)
-- trackers — local, github (`tracker/`, `tracker/docs/`, `.coding-crew/config.json`'s `tracker` section)
-- crew-afk roles — `orchestrator/roles/` (`ROLE_AGENTS` in `orchestrator/lib/adapters/render.mjs`)
-- dependency-install ecosystems — `dep-install`'s detection and install scripts
-- pane hosts — `orchestrator/lib/pane-host/` (herdr, orca)
+- platforms — `platforms.json` (claude, copilot, pi, codex)
+- trackers — local, github (`lib/tracker/`, `lib/tracker/docs/`, `.coding-crew/config.json`'s `tracker` section)
+- dependency-install ecosystems — the checks library's detection and install scripts (`lib/checks/`)
+- dispatch destinations (local, orca, herdr) — `skills/crew-afk/scripts/destinations/`
 
 ## Layer ownership
 
-The call direction is crew-afk (program) → `crew-coder` (role, `orchestrator/roles/coder.md`) → `solve-issue` (skill) → `tdd` /
-`dep-install`. `crew-coder` is on the **sprint path only** — a human running `/solve-issue` never
-touches it, so anything the direct path also needs belongs below it. Content that fits no row is in
-the wrong file; `tests/layer-ownership.bats` checks the `solve-issue`, `tdd` / `dep-install` and `crew-coder` (report wire) rows — the `orchestrator/` and `skills/crew-afk/scripts/` rows are not checked there.
+The call direction is `solve-feature` → `solve-issue` (skill) → `tdd` / `dep-install`. A human running
+`/solve-issue` gets the same procedure, so anything the direct path needs belongs in `solve-issue` or below
+it. Content that fits no row is in the wrong file; `tests/layer-ownership.bats` checks the table.
 
-| Layer                      | Owns                                                 | Must not contain                          |
-| -------------------------- | ---------------------------------------------------- | ----------------------------------------- |
-| `orchestrator/` (code)     | control flow: rounds, gate order, what runs and when | judgement, and prose asking to be obeyed  |
-| `skills/crew-afk/scripts/` | one effect each, runnable by hand                    | any decision the orchestrator should make |
-| `crew-coder`               | protocol + report wire                               | the implementation loop                   |
-| `solve-issue`              | the ordered procedure and the outcome vocabulary     | who its caller is                         |
-| `tdd` / `dep-install`      | one technique each                                   | issue, report or status handling          |
+| Layer                 | Owns                                             | Must not contain                 |
+| --------------------- | ------------------------------------------------ | -------------------------------- |
+| `solve-issue`         | the ordered procedure and the outcome vocabulary | who its caller is                |
+| `tdd` / `dep-install` | one technique each                               | issue, report or status handling |
 
 ## solve-feature and crew-review stay boring
 
-Two levels, for `skills/solve-feature/` and `skills/crew-review/`:
+Two levels: the first holds for every skill under `skills/` (`tests/native-skills.bats` checks its paths), the
+second for `skills/solve-feature/` and `skills/crew-review/`:
 
-- **Between skills:** one skill does one job and is named for it; a skill uses another only by name ("Use the X
-  skill"), never through a path into its files; where and how it runs (CI, hosts, config) belongs to setup, not
-  to the skill.
+- **Between skills:** one skill does one job and is named for it. A skill uses another skill by name. Code shared
+  between skills is a library linked into the skill's own `scripts/` directory, called like a tool, never a path
+  into another skill's directory; where and how it runs (CI, hosts, config) belongs to setup.
 - **Inside a skill:** a line earns its place as a step, or as a guard without which a person is **misled** (a PR
   marked ready or an issue counted landed when it isn't) or **stuck** (a stop that doesn't say what failed and how
   to recover). Cut: code that parses prose an LLM wrote, a second copy of status git/GitHub already shows, two

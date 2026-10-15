@@ -2,8 +2,8 @@
 # cut-release.sh — tag and push a milestone release once its checks pass.
 # Usage: scripts/cut-release.sh [--dry-run] (--demo-smoke <log> | --no-demo-smoke "<reason>")
 # The version is read back from CHANGELOG.md's first "## [X.Y.Z]" heading, so it is decided in one
-# place. A demo smoke log must hold `SMOKE: PASS (<platform>, demo)` for HEAD's crew-afk version,
-# from a clean checkout with nothing but CHANGELOG.md and RESULTS.md changed since.
+# place. A demo smoke log must hold `SMOKE: PASS (<platform>, demo)` and the `crew-afk-commit:` it ran
+# at, from a clean checkout with nothing but CHANGELOG.md and RESULTS.md changed since.
 # --dry-run runs every check and prints what would be tagged/pushed, without doing either.
 set -euo pipefail
 
@@ -24,7 +24,7 @@ done
 if [[ -n "$DEMO_LOG" && "$NO_DEMO_SET" -eq 1 ]]; then
   echo "Error: --demo-smoke and --no-demo-smoke exclude each other. $USAGE" >&2; exit 2
 elif [[ -z "$DEMO_LOG" && "$NO_DEMO_SET" -eq 0 ]]; then
-  echo "Error: no demo smoke — pass --demo-smoke <log> (scripts/smoke-sprint.sh <platform> --demo output)" \
+  echo "Error: no demo smoke — pass --demo-smoke <log> (scripts/smoke-sprint.sh <platform> output)" \
        "or --no-demo-smoke \"<reason>\"." >&2
   exit 2
 elif [[ "$NO_DEMO_SET" -eq 1 && -z "${NO_DEMO// }" ]]; then
@@ -32,7 +32,7 @@ elif [[ "$NO_DEMO_SET" -eq 1 && -z "${NO_DEMO// }" ]]; then
 fi
 
 [[ -z "$(git status --porcelain)" ]] || {
-  echo "Error: working tree not clean — commit (including the CHANGELOG.md/registry.json bumps) before releasing." >&2
+  echo "Error: working tree not clean — commit (including the CHANGELOG.md entry) before releasing." >&2
   exit 1
 }
 
@@ -66,19 +66,11 @@ echo "Releasing $TAG (previous: ${PREV_TAG:-none})"
 
 if [[ -n "$DEMO_LOG" ]]; then
   [[ -f "$DEMO_LOG" ]] || { echo "Error: demo smoke log $DEMO_LOG not found." >&2; exit 1; }
-  AFK_VERSION=$(git show HEAD:registry.json | jq -r '.skills["crew-afk"].version // empty')
-  [[ -n "$AFK_VERSION" ]] || { echo "Error: HEAD's registry.json has no crew-afk version." >&2; exit 1; }
   grep -q '^SMOKE: PASS' "$DEMO_LOG" || {
     echo "Error: $DEMO_LOG has no 'SMOKE: PASS' line — the demo smoke did not pass." >&2; exit 1
   }
   grep -Eq '^SMOKE: PASS \([a-z]+, demo\)$' "$DEMO_LOG" || {
-    echo "Error: $DEMO_LOG is not a demo run's — its PASS line lacks ', demo)'. Run scripts/smoke-sprint.sh <platform> --demo." >&2
-    exit 1
-  }
-  LOG_VERSIONS=$(sed -n 's/^crew-afk-version: *//p' "$DEMO_LOG" | sort -u | tr '\n' ' ' | sed 's/ $//')
-  [[ -n "$LOG_VERSIONS" ]] || { echo "Error: $DEMO_LOG records no 'crew-afk-version:' line." >&2; exit 1; }
-  [[ "$LOG_VERSIONS" == "$AFK_VERSION" ]] || {
-    echo "Error: $DEMO_LOG is for crew-afk $LOG_VERSIONS, but HEAD ships crew-afk $AFK_VERSION — re-run the demo smoke." >&2
+    echo "Error: $DEMO_LOG is not a demo run's — its PASS line lacks ', demo)'. Run scripts/smoke-sprint.sh <platform>." >&2
     exit 1
   }
   LOG_COMMIT=$(sed -n 's/^crew-afk-commit: *//p' "$DEMO_LOG" | tail -n 1)
@@ -97,17 +89,9 @@ if [[ -n "$DEMO_LOG" ]]; then
     printf '  %s\n' $SINCE >&2
     exit 1
   }
-  echo "Demo smoke: PASS for crew-afk $AFK_VERSION at ${LOG_COMMIT:0:12} ($DEMO_LOG)"
+  echo "Demo smoke: PASS at ${LOG_COMMIT:0:12} ($DEMO_LOG)"
 else
   echo "Demo smoke: skipped — $NO_DEMO"
-fi
-
-if command -v bats >/dev/null 2>&1; then
-  echo "Checking registry.json version bumps against ${PREV_TAG:-<none>} ..."
-  bats tests/registry-version-bump.bats
-else
-  echo "Warning: bats not found on PATH — skipping the registry.json version-bump check." \
-       "Run 'bats tests/registry-version-bump.bats' yourself before trusting this release." >&2
 fi
 
 SUBJECT=$(git log -1 --format=%s)

@@ -1,12 +1,8 @@
 #!/usr/bin/env bats
 
-# dep-install's scripts are two things at once: skill text the model reads and launches
-# ("run scripts/detect-mode.sh from the same directory you read this skill file from"),
-# and a mechanism the platform-neutral orchestrator has to run without knowing which
-# platform a repo installed. The per-platform copies stay for the first reader; a single
-# copy at .coding-crew/dep-install/scripts exists for the second.
-#
-# Both must hold at once, which is what this file pins.
+# dep-install's scripts are the checks library (lib/checks): installed once to
+# <root>/.coding-crew/lib/checks and linked as <skill-dir>/scripts/checks into each skill whose
+# registry `libs` names it, so the skill text's "<skill-dir>/scripts/checks/<script>" runs the one copy.
 
 setup_file() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -20,92 +16,74 @@ fresh_target() {
   printf '%s\n' "$target"
 }
 
-@test "registry declares dep-install's scripts at a platform-neutral path" {
-  run jq -r '.skills["dep-install"].assets.source' "$REPO_ROOT/registry.json"
-  [ "$output" = "skills/dep-install/scripts" ]
-  run jq -r '.skills["dep-install"].assets.dest' "$REPO_ROOT/registry.json"
-  [ "$output" = ".coding-crew/dep-install/scripts" ]
-}
+LIB=".coding-crew/lib/checks"
 
-@test "install ships detect-mode.sh, host-install.sh, docker-install.sh and manifest-fingerprint.sh, all executable" {
-  local target; target=$(fresh_target target-neutral)
-  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" pi --skill dep-install
-  [ "$status" -eq 0 ]
-
-  [ -f "$target/.coding-crew/dep-install/scripts/detect-mode.sh" ]
-  [ -f "$target/.coding-crew/dep-install/scripts/host-install.sh" ]
-  [ -f "$target/.coding-crew/dep-install/scripts/docker-install.sh" ]
-  [ -f "$target/.coding-crew/dep-install/scripts/manifest-fingerprint.sh" ]
-  [ -x "$target/.coding-crew/dep-install/scripts/detect-mode.sh" ]
-  [ -x "$target/.coding-crew/dep-install/scripts/host-install.sh" ]
-  [ -x "$target/.coding-crew/dep-install/scripts/docker-install.sh" ]
-  [ -x "$target/.coding-crew/dep-install/scripts/manifest-fingerprint.sh" ]
-}
-
-@test "the neutral tree installs once, not once per platform" {
-  local target; target=$(fresh_target target-all)
-  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" all --skill dep-install
-  [ "$status" -eq 0 ]
-  run bash -c "find '$target/.coding-crew' -name 'detect-mode.sh' | wc -l"
-  [ "$(echo "$output" | tr -d ' ')" = "1" ]
-}
-
-@test "a stale neutral copy is overwritten on re-install" {
-  local target; target=$(fresh_target target-stale)
-  mkdir -p "$target/.coding-crew/dep-install/scripts"
-  echo "stale" > "$target/.coding-crew/dep-install/scripts/detect-mode.sh"
-  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" pi --skill dep-install
-  [ "$status" -eq 0 ]
-  ! grep -q '^stale$' "$target/.coding-crew/dep-install/scripts/detect-mode.sh"
-}
-
-@test "uninstall --skill dep-install removes the neutral tree" {
-  local target; target=$(fresh_target target-uninstall)
-  TARGET_REPO="$target" bash "$REPO_ROOT/install.sh" pi --skill dep-install >/dev/null
-  [ -f "$target/.coding-crew/dep-install/scripts/detect-mode.sh" ]
-  TARGET_REPO="$target" run bash "$REPO_ROOT/uninstall.sh" --skill dep-install
-  [ "$status" -eq 0 ]
-  [ ! -d "$target/.coding-crew/dep-install" ]
-}
-
-@test "the per-platform skill copies still install and still run" {
-  local target; target=$(fresh_target target-per-platform)
-  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" all --skill dep-install
-  [ "$status" -eq 0 ]
-
-  local d
-  for d in .claude/skills/dep-install .pi/skills/dep-install \
-           .agents/skills/dep-install .github/skills/dep-install; do
-    [ -f "$target/$d/SKILL.md" ] || { echo "missing $d/SKILL.md" >&2; return 1; }
-    [ -f "$target/$d/scripts/detect-mode.sh" ] || {
-      echo "missing $d/scripts/detect-mode.sh" >&2; return 1; }
-    [ -f "$target/$d/scripts/host-install.sh" ] || {
-      echo "missing $d/scripts/host-install.sh" >&2; return 1; }
+@test "registry links the checks library into dep-install, solve-issue, solve-feature and address-pr-comments" {
+  local s
+  for s in dep-install solve-issue solve-feature address-pr-comments; do
+    run jq -r --arg s "$s" '.skills[$s].libs | index("checks") != null' "$REPO_ROOT/registry.json"
+    [ "$output" = "true" ] || { echo "$s: no checks lib" >&2; return 1; }
   done
-
-  # "run scripts/detect-mode.sh from the same directory you read this skill file from"
-  # still works: the copy next to SKILL.md is a runnable program, not a stub.
-  run bash "$target/.pi/skills/dep-install/scripts/detect-mode.sh" --project-root "$target"
-  [ "$status" -eq 0 ]
-  [[ "$output" == "USE_HOST" || "$output" == "USE_DOCKER" ]]
 }
 
-@test "install marks the extensionless shim/docker and shim/docker-compose executable, in the neutral tree and the skill copy" {
-  local target; target=$(fresh_target target-shim)
-  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" claude --skill dep-install
+@test "install ships discover-mode.sh, host-install.sh, docker-install.sh, manifest-fingerprint.sh and run-checks.sh, all executable" {
+  local target f; target=$(fresh_target target-lib)
+  run bash "$REPO_ROOT/install.sh" pi --skill dep-install --project "$target"
   [ "$status" -eq 0 ]
+  for f in discover-mode.sh host-install.sh docker-install.sh manifest-fingerprint.sh run-checks.sh; do
+    [ -x "$target/$LIB/$f" ] || { echo "$f missing or not executable" >&2; return 1; }
+  done
+}
 
-  [ -x "$target/.coding-crew/dep-install/scripts/shim/docker" ]
-  [ -x "$target/.coding-crew/dep-install/scripts/shim/docker-compose" ]
-  [ -x "$target/.claude/skills/dep-install/scripts/shim/docker" ]
-  [ -x "$target/.claude/skills/dep-install/scripts/shim/docker-compose" ]
+@test "the library installs once, not once per platform, and every platform's dep-install links it" {
+  local target d; target=$(fresh_target target-all)
+  run bash "$REPO_ROOT/install.sh" all --skill dep-install --project "$target"
+  [ "$status" -eq 0 ]
+  run bash -c "find '$target' -name 'discover-mode.sh' | wc -l"
+  [ "$(echo "$output" | tr -d ' ')" = "1" ]
+  for d in .claude/skills/dep-install .pi/skills/dep-install .agents/skills/dep-install .github/skills/dep-install; do
+    [ -f "$target/$d/SKILL.md" ] || { echo "missing $d/SKILL.md" >&2; return 1; }
+    [ -L "$target/$d/scripts/checks" ] || { echo "$d/scripts/checks is not a link" >&2; return 1; }
+    [ -f "$target/$d/scripts/checks/host-install.sh" ] || { echo "$d: the link does not resolve" >&2; return 1; }
+  done
+  # The path the skill text names is a runnable program, not a stub.
+  run bash "$target/.pi/skills/dep-install/scripts/checks/discover-mode.sh" --project-root "$target"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "Mode discovery: skipped (no compose file: host)" ]]
+}
+
+@test "a stale library copy is overwritten on re-install" {
+  local target; target=$(fresh_target target-stale)
+  mkdir -p "$target/$LIB"
+  echo "stale" > "$target/$LIB/discover-mode.sh"
+  run bash "$REPO_ROOT/install.sh" pi --skill dep-install --project "$target"
+  [ "$status" -eq 0 ]
+  ! grep -q '^stale$' "$target/$LIB/discover-mode.sh"
+}
+
+@test "uninstall --skill dep-install removes the library no remaining skill uses" {
+  local target; target=$(fresh_target target-uninstall)
+  bash "$REPO_ROOT/install.sh" pi --skill dep-install --project "$target" >/dev/null
+  [ -f "$target/$LIB/discover-mode.sh" ]
+  run bash "$REPO_ROOT/uninstall.sh" --skill dep-install --project "$target"
+  [ "$status" -eq 0 ]
+  [ ! -d "$target/$LIB" ]
+  [ ! -d "$target/.pi/skills/dep-install" ]
+}
+
+@test "install marks the extensionless shim/docker executable" {
+  local target; target=$(fresh_target target-shim)
+  run bash "$REPO_ROOT/install.sh" claude --skill dep-install --project "$target"
+  [ "$status" -eq 0 ]
+  [ -x "$target/$LIB/shim/docker" ]
+  [ -x "$target/.claude/skills/dep-install/scripts/checks/shim/docker" ]
 }
 
 @test "a re-install keeps the shim executable even when the previous copy was not" {
   local target; target=$(fresh_target target-shim-reinstall)
-  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" pi --skill dep-install
-  chmod -x "$target/.coding-crew/dep-install/scripts/shim/docker"
-  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" pi --skill dep-install
+  bash "$REPO_ROOT/install.sh" pi --skill dep-install --project "$target" >/dev/null
+  chmod -x "$target/$LIB/shim/docker"
+  run bash "$REPO_ROOT/install.sh" pi --skill dep-install --project "$target"
   [ "$status" -eq 0 ]
-  [ -x "$target/.coding-crew/dep-install/scripts/shim/docker" ]
+  [ -x "$target/$LIB/shim/docker" ]
 }

@@ -33,7 +33,7 @@ done
 FILES=()
 for f in $(printf '%s' "$FILES_RAW" | tr ',' ' '); do FILES+=("$f"); done
 
-SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT=$(git rev-parse --show-toplevel)
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 PR=$(gh pr view --json number -q .number 2>/dev/null || true)
@@ -88,9 +88,8 @@ for f in "${FILES[@]}"; do
 done
 [ -z "$touched" ] || refuse 11 "the change touches protected paths:$touched"
 
-RUN_CHECKS="${RUN_CHECKS:-$SKILL_DIR/../solve-issue/scripts/run-checks.sh}"
-DEP_SCRIPTS="${DEP_SCRIPTS:-$SKILL_DIR/../dep-install/scripts}"
-out=$(bash "$RUN_CHECKS" --project-root "$PROJECT_ROOT" --main-root "${MAIN_ROOT:-}" --dep-scripts "$DEP_SCRIPTS" 2>&1)
+RUN_CHECKS="${RUN_CHECKS:-$SELF_DIR/checks/run-checks.sh}"
+out=$(bash "$RUN_CHECKS" --project-root "$PROJECT_ROOT" 2>&1)
 if ! grep -qx 'CHECKS: pass' <<<"$out"; then
   refuse 12 "checks did not pass. Tail of the output:
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * fake-github.mjs — a stateful stand-in for the `gh` calls tracker/github.mjs and the crew-afk
+ * fake-github.mjs — a stateful stand-in for the `gh` calls tracker/github.mjs and the skills'
  * scripts make, so a test sees a feature as GitHub does: a root issue and its sub-issues.
  *   in-process: `fakeGithub(issues, {fail})` is an `exec` for github.mjs (`.calls`, `.issues`)
  *   as a script: `node fake-github.mjs <issues.json> <gh argv…>` reads and rewrites issues.json,

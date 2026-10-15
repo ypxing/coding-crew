@@ -28,7 +28,7 @@ reports it as `NOT RUN: no command found`, explicitly. Do not invent one to fill
 ## Docker projects
 
 Persist the bare command (`pnpm test`, not a `docker compose run …` wrapper): `run.sh` adds the
-compose flags, the service and this worktree's git env itself. Put any env a command needs inside
+compose flags, the service and this checkout's git env itself. Put any env a command needs inside
 the command, where it reaches the process that reads it:
 
 | Condition | Command |

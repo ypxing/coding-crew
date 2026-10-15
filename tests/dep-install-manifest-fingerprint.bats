@@ -1,11 +1,9 @@
 #!/usr/bin/env bats
 
-# manifest-fingerprint.sh — the shared "has anything host-install.sh/docker-install.sh would
-# act on changed" check both of them call before deciding whether to skip a redundant install.
-# Pinned standalone here since both callers only exercise it through their own skip/write
-# behaviour, not its own edge cases (monorepo layouts, exclusions, atomicity).
+# manifest-fingerprint.sh compute — the lockfile hash gen-override.sh names the dependency volumes
+# by. Pinned standalone for its own edge cases (monorepo layouts, exclusions).
 
-SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts"
+SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/manifest-fingerprint.sh"
 
 setup() {
@@ -82,38 +80,6 @@ teardown() {
   [ "$output" != "$no_manifest" ]
 }
 
-@test "check reports STALE when no stamp exists yet" {
-  echo '{}' > "$PROJECT/package-lock.json"
-  run bash "$SCRIPT" check --project-root "$PROJECT" --stamp "$PROJECT/.scratch/stamp"
-  [ "$status" -eq 0 ]
-  [ "$output" = "STALE" ]
-}
-
-@test "write then check reports FRESH when nothing changed" {
-  echo '{}' > "$PROJECT/package-lock.json"
-  bash "$SCRIPT" write --project-root "$PROJECT" --stamp "$PROJECT/.scratch/stamp"
-  run bash "$SCRIPT" check --project-root "$PROJECT" --stamp "$PROJECT/.scratch/stamp"
-  [ "$status" -eq 0 ]
-  [ "$output" = "FRESH" ]
-}
-
-@test "check reports STALE after the manifest changes post-write" {
-  echo '{}' > "$PROJECT/package-lock.json"
-  bash "$SCRIPT" write --project-root "$PROJECT" --stamp "$PROJECT/.scratch/stamp"
-  echo '{"a":1}' > "$PROJECT/package-lock.json"
-  run bash "$SCRIPT" check --project-root "$PROJECT" --stamp "$PROJECT/.scratch/stamp"
-  [ "$output" = "STALE" ]
-}
-
-@test "write creates the stamp's parent directory and is safe to call twice" {
-  echo '{}' > "$PROJECT/package-lock.json"
-  run bash "$SCRIPT" write --project-root "$PROJECT" --stamp "$PROJECT/.scratch/nested/stamp"
-  [ "$status" -eq 0 ]
-  [ -f "$PROJECT/.scratch/nested/stamp" ]
-  run bash "$SCRIPT" write --project-root "$PROJECT" --stamp "$PROJECT/.scratch/nested/stamp"
-  [ "$status" -eq 0 ]
-}
-
 @test "compute with no recognised manifest at all is still a stable, non-empty hash" {
   run bash "$SCRIPT" compute --project-root "$PROJECT"
   [ "$status" -eq 0 ]
@@ -132,11 +98,11 @@ teardown() {
   [ "$status" -ne 0 ]
 }
 
-@test "check requires --stamp; compute does not" {
+@test "check and write are gone: only compute remains" {
   run bash "$SCRIPT" check --project-root "$PROJECT"
-  [ "$status" -ne 0 ]
-  run bash "$SCRIPT" compute --project-root "$PROJECT"
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 1 ]
+  run bash "$SCRIPT" write --project-root "$PROJECT"
+  [ "$status" -eq 1 ]
 }
 
 @test "an unrecognised first argument is a usage error" {

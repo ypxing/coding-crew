@@ -1,6 +1,10 @@
 ---
 name: address-pr-comments
-description: Fetch all review comments on the current branch's open PR, challenge each one critically, implement sensible ones using TDD, commit touched files, and print a summary. Trigger with /address-pr-comments.
+description: >
+  Fetches every review comment on the current branch's open pull request, challenges each one critically,
+  implements the sensible ones with TDD, commits the touched files and prints a summary; on a solve-feature PR
+  it also pushes once the project's checks pass. Use when a PR has review comments to work through. Trigger
+  with /address-pr-comments.
 argument-hint: "Optional PR number or URL (defaults to current branch's open PR); --auto for unattended runs"
 ---
 
@@ -45,7 +49,7 @@ This applies only to GitHub issue/PR data. Fetching non-GitHub URLs (a spec or a
 This skill works on existing PR branches. Do not run on the default branch.
 
 ```bash
-bash "<skill-dir>/scripts/branch-safety-check.sh"
+bash "<skill-dir>/scripts/git-workflow/branch-safety-check.sh"
 ```
 
 If on the default branch, the script exits with an error. If on a non-default branch, continue to Step 0.1.
@@ -79,15 +83,10 @@ gh pr view --json number,url,title,body
 Confirm the PR number with the user before proceeding if it is ambiguous. Keep `body` for Steps 5,
 5.5 and 6.
 
-**crew-afk PR.** A PR whose body has the crew-afk block (a `<!-- crew-afk:begin -->` line) is
-crew-afk's. Its `<slug>` is the one the block's `<!-- crew-afk:slug <slug> -->` line names; a block
-with no slug marker (a PR opened by an older crew-afk) has no `<slug>`. The head branch alone never
-makes a PR crew-afk's: the feature branch's name is configurable (`afk.branchPrefix`, `--jira`).
-
 **solve-feature PR.** A PR whose body has the solve-feature block (a `<!-- solve-feature:begin -->`
 line) is solve-feature's. Its `<slug>` is the one the block's `<!-- solve-feature:slug <slug> -->`
-line names. Steps 5, 5.5 and 6 treat it as they treat a crew-afk PR, except where Step 6's Ready
-says otherwise. As with crew-afk, the head branch alone never makes a PR solve-feature's.
+line names. The head branch alone never makes a PR solve-feature's: its name is the run's choice
+(`--branch`).
 
 ## Step 2 — Fetch all review comments
 
@@ -161,19 +160,18 @@ COMMIT_BODY="address PR review comments
 - <what changed for comment 2 and why>
 - <what changed for comment N and why>"
 
-# Commit with co-author
-bash "<skill-dir>/scripts/commit-changes.sh" \
+# Commit with you, the agent running this skill, as co-author: your own name and commit email
+bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
   --message "$COMMIT_BODY" \
   --files "<space-separated file list>" \
-  --coauthor "Claude Code <claude@anthropic.com>"
+  --coauthor "<your agent name> <your agent's commit email>"
 ```
 
-**Push — crew-afk or solve-feature PRs only** (Step 1's tests). On one, after the commit, run
-`solve-issue`'s checks from this skill's sibling directory:
+**Push — solve-feature PRs only** (Step 1's test). On one, after the commit, run the project's
+checks:
 
 ```bash
-bash "<skill-dir>/../solve-issue/scripts/run-checks.sh" --project-root "$(git rev-parse --show-toplevel)" \
-  --main-root "${MAIN_ROOT:-}" --dep-scripts "<skill-dir>/../dep-install/scripts"
+bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$(git rev-parse --show-toplevel)"
 ```
 
 - It prints `CHECKS: pass` — run a plain `git push`: never forced, no `--force` or
@@ -183,14 +181,13 @@ bash "<skill-dir>/../solve-issue/scripts/run-checks.sh" --project-root "$(git re
 
 On any other PR, do not push — leave that to the user.
 
-## Step 5.5 — Record what crew-afk missed
+## Step 5.5 — Record what the review missed
 
-A comment fixed on a PR crew-afk or solve-feature opened is a defect their own review let through.
+A comment fixed on a PR solve-feature opened is a defect its own review let through.
 Record it so it can be replayed against the reviewer later (`scripts/eval-reviewer-misses/RESULTS.md`
 in the coding-crew repo).
 
-Only on a crew-afk or solve-feature PR with a `<slug>` (both from Step 1). On a PR with neither
-block, or a crew-afk PR with no `<slug>`, nothing is written — skip to Step 6.
+Only on a solve-feature PR (Step 1). On any other PR nothing is written — skip to Step 6.
 
 Otherwise append one line per comment that was accepted (**Actionable**, or a **Debatable** one the
 user told you to change) and fixed in Step 5's commit to `.scratch/<slug>/reviews/escaped.md` in the
@@ -201,16 +198,15 @@ main checkout (create the directory and file if missing; never rewrite existing 
 ```
 
 `<file:line>` is where the comment pointed (the file alone for a top-level comment), `<commit sha>`
-the short sha of the commit that fixed it. A comment whose body contains `crew-finding:` is a
-finding a crew reviewer posted — its review already caught it — so it is not recorded.
+the short sha of the commit that fixed it.
 
 Writing the file is best-effort: a failed write is reported in the Summary (Step 6) with the error
 and never stops the skill.
 
 ## Step 6 — Summary
 
-Print a markdown summary with three sections, plus the crew-afk / solve-feature PR sections (Steps 5
-and 5.5):
+Print a markdown summary with three sections, plus the solve-feature PR sections (Steps 5 and
+5.5):
 
 ### Addressed
 
@@ -224,33 +220,17 @@ One bullet per debatable comment that was dismissed after user confirmation, wit
 
 One bullet per dismissed comment with the reason.
 
-### Escaped (crew-afk and solve-feature PRs only)
+### Escaped (solve-feature PRs only)
 
 How many lines Step 5.5 appended to `.scratch/<slug>/reviews/escaped.md`, or the error if the write
 failed.
 
-### Ready (crew-afk and solve-feature PRs only)
+### Ready (solve-feature PRs only)
 
-**crew-afk PR.** Only after Step 5's push succeeded, read the `<!-- crew-afk:draft <kinds> -->` marker in the PR
-body's crew-afk block (Step 1; `<kinds>` is a comma-separated list of `findings`, `blocked`,
-`stalled`, `capped`, `wall-cap`, `integration`). When the marker names `findings` and nothing else,
-and every `crew-finding:` comment fetched in Step 2 was handled this run (fixed, or a decision
-recorded in Step 3), print:
-
-```
-once CI is green: gh pr ready <n>
-```
-
-Otherwise — no push, no marker, any other kind in it, or a `crew-finding:` comment left unhandled —
-print nothing here.
-
-**solve-feature PR.** Print nothing under Ready, and no next step: the run already reviewed the PR
-and fixed its findings, and its describe step marks the draft ready when nothing needs a person. A
-draft it left lists what does under `Needs attention` in the PR body.
-
-On either kind the skill never runs `gh pr ready` and never waits on CI: on a crew-afk PR marking
-it ready is the developer's call once CI passes; on a solve-feature PR it is the run's describe step's,
-and the developer's for a draft that step left.
+Print nothing under Ready, and no next step: the run already reviewed the PR and fixed its
+findings, and its describe step marks the draft ready when nothing needs a person. A draft it left
+lists what does under `Needs attention` in the PR body. The skill never runs `gh pr ready` and
+never waits on CI: marking a draft that step left ready is the developer's call.
 
 ## Unattended mode (`--auto`)
 
@@ -270,7 +250,7 @@ confirmation or question** — nobody is there to answer. Only the differences a
   `bash "<skill-dir>/scripts/push-rework.sh" --message <msg> --files <list> [--ci-workflow <file>]`,
   which applies the round cap, protected-path and checks guards. If it refuses (non-zero exit) it
   has already commented on the PR and labelled it `needs-human`: stop, do not retry.
-  This holds on a crew-afk or solve-feature PR too — `push-rework.sh`, not the push above.
+  This holds on a solve-feature PR too — `push-rework.sh`, not the push above.
 - **Reply on every thread you handled** — actionable, debatable or dismissed — with
   `bash "<skill-dir>/scripts/reply-thread.sh" <thread-id> <body>`: what changed (with the commit sha),
   or why nothing did.

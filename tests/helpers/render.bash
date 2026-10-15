@@ -2,12 +2,10 @@
 #
 # Rendering is what a consuming repo actually receives, so body assertions run against the
 # rendered result rather than the source file: `render-skill.sh` inlines any
-# `{{FRAGMENT:...}}` and substitutes `{{PLATFORM}}`. crew-afk's bodies are launchers with
-# nothing left to vary, but other skills still render, and a launcher must be asserted
-# through the same path that installs it.
+# `{{FRAGMENT:...}}`. Every platform receives the same body.
 #
 # Caching: keyed by a content hash of everything that can change a rendered result
-# (skills/, scripts/, orchestrator/roles/ and the renderer, registry.json, install.sh), stored under a fixed path
+# (skills/, scripts/ and the renderer, registry.json, install.sh), stored under a fixed path
 # outside any single bats run's own tmpdir. `install.sh` alone spawns ~84 `jq` calls, and
 # on Git Bash (no real fork()) that dwarfs everything else the suite does — so a cache
 # keyed to *bats' own tmpdir* (as this used to be) paid that cost again on every separate
@@ -25,9 +23,8 @@ RENDER_HELPER_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 _render_cache_key() {
   local root="$RENDER_HELPER_REPO_ROOT" hasher
   if command -v sha256sum >/dev/null 2>&1; then hasher=(sha256sum); else hasher=(shasum -a 256); fi
-  { find "$root/skills" "$root/scripts" "$root/orchestrator/roles" -type f 2>/dev/null
-    printf '%s\n' "$root/registry.json" "$root/install.sh" "$root/orchestrator/lib/adapters/render.mjs" \
-      "$root/orchestrator/lib/skill-dirs.mjs"
+  { find "$root/skills" "$root/scripts" -type f 2>/dev/null
+    printf '%s\n' "$root/registry.json" "$root/install.sh"
   } | LC_ALL=C sort | xargs "${hasher[@]}" | "${hasher[@]}" | awk '{print $1}'
 }
 
@@ -39,71 +36,20 @@ _render_cache_root() {
   printf '%s\n' "$base/$key"
 }
 
-# rendered_skill <skill> <platform> — prints the path to the rendered SKILL.md
+# rendered_skill <skill> — prints the path to the rendered SKILL.md
 rendered_skill() {
-  local skill="$1" platform="$2"
+  local skill="$1"
   local cache="$(_render_cache_root)/rendered-skills"
-  local out="$cache/$skill.$platform.SKILL.md"
+  local out="$cache/$skill.SKILL.md"
   if [ ! -f "$out" ]; then
     mkdir -p "$cache"
     # Rendered beside and renamed into place: CI runs bats files concurrently, and a
     # reader must never see a half-written body.
-    bash "$RENDER_HELPER_REPO_ROOT/scripts/render-skill.sh" "$skill" "$platform" "$out.$$" || return 1
+    bash "$RENDER_HELPER_REPO_ROOT/scripts/render-skill.sh" "$skill" "$out.$$" || return 1
     mv -f "$out.$$" "$out"
   fi
   printf '%s\n' "$out"
 }
 
-# afk_variant <platform> — shorthand for the crew-afk launcher body
-afk_variant() {
-  rendered_skill crew-afk "$1"
-}
-
-# ─── role bodies ─────────────────────────────────────────────────────────────
-# role_prompt <role> <platform> — prints the path to the role's protocol as crew-afk dispatches it
-# (orchestrator/lib/adapters/render.mjs). There is no agent file: this is the whole worker body.
-role_prompt() {
-  local role="$1" platform="$2"
-  local cache="$(_render_cache_root)/role-prompts"
-  local out="$cache/$role.$platform.md"
-  if [ ! -f "$out" ]; then
-    mkdir -p "$cache"
-    node --input-type=module -e '
-      const { renderRolePrompt } = await import(process.argv[1] + "/orchestrator/lib/adapters/render.mjs");
-      process.stdout.write(renderRolePrompt(process.argv[2], process.argv[3]));
-    ' "$RENDER_HELPER_REPO_ROOT" "$role" "$platform" > "$out.$$" || return 1
-    mv -f "$out.$$" "$out"
-  fi
-  printf '%s\n' "$out"
-}
-
-# coder_variant <platform> — prints the path to crew-coder's rendered protocol
-coder_variant() {
-  role_prompt coder "$1"
-}
-
-# The platform list, from orchestrator/platforms.json (helpers/platforms.bash).
+# The platform list, from platforms.json (helpers/platforms.bash).
 source "$(dirname "${BASH_SOURCE[0]}")/platforms.bash"
-
-# The platforms crew-coder is built for, read by tests/crew-coder-protocol.bats and by every
-# suite that asserts on a worker body: every platform.
-CODER_VARIANTS=("${PLATFORMS[@]}")
-
-# Every platform's crew-afk body is a launcher for the orchestrator program
-# (`orchestrator/`, installed to `.coding-crew/crew-afk/`), so the guarantees the prose
-# bodies used to promise — pipeline order, the receipt gates, fail-closed review handling,
-# the promotion threshold — are asserted against that program in tests/orchestrator/
-# instead. There is no prose list any more: `AFK_PROSE_VARIANTS` and its dispatch twin were
-# deleted with the last prose body, along with the suite that policed the shared-body
-# mechanism.
-#
-# Every platform is a launcher, read by tests/crew-afk-launcher.bats;
-# tests/orchestrator/contract.test.mjs reads the same orchestrator/platforms.json.
-AFK_LAUNCHER_VARIANTS=("${PLATFORMS[@]}")
-
-# The one word cap every launcher test asserts. It guards against the ~2,400-word pipeline
-# prose creeping back, not against a launcher gaining a real instruction — raised from 500
-# to 600 when the herdr/orca polling notes pushed every launcher past 500, then to 950 when the
-# launcher gained the tracker-configuration fragment it needs to run `features`. The banned-name
-# check in tests/crew-afk-launcher.bats is the primary guard; this is the backstop.
-AFK_LAUNCHER_WORD_BUDGET=950

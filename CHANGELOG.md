@@ -1,10 +1,109 @@
 # Changelog
 
-Users install from `main` (`bootstrap.sh`), and `install.sh --update` follows each agent's and
-skill's own `version` in `registry.json`. Tagged releases mark milestones only, not every merge.
+Users install from `main` (`bootstrap.sh`), and `install.sh --update` reinstalls every skill its
+manifest lists. Tagged releases mark milestones only, not every merge.
 Record changes under `[Unreleased]` and move them under a version heading when you cut a release.
 
 ## [Unreleased]
+
+- **add-tests / upgrade-deps**: run only when a person invokes them (`/add-tests`, `/upgrade-deps`); an agent
+  no longer starts them on its own (`disable-model-invocation`; for Codex, `agents/openai.yaml`). Neither names
+  the skills that pick up its issues any more.
+- **crew-afk / solve-feature**: `/crew-afk <feature> --branch <name>` passes the branch on to solve-feature, so a
+  repo whose branch-name rule refuses `feature/<slug>` (a ticket key, say) can be dispatched to. A solve-feature
+  re-run after a refused first push now pushes the branch at start, before any coder runs, rather than at the
+  first issue's land (#488).
+- **solve-feature / solve-issue / dep-install**: the dev commands file (checks, install command, install mode)
+  no longer needs committing, and nobody has to be asked for the install mode. Discovered checks and mode are
+  written to `.git/coding-crew/dev-commands.json`, outside every working tree and shared by all worktrees of the
+  clone; a tracked `.coding-crew/dev-commands.json` still wins and is updated in place. `solve-feature` no
+  longer stops at start without the file or the mode: its first coder discovers the checks, and in a repo with
+  a compose file solve-issue's Step 2 discovers the mode (docker or host, and the service) with the new
+  `discover-mode.sh`, as it does the checks. `dep-install` discovers it the same way and shows a person its
+  answer to change; `detect-mode.sh`'s Makefile heuristic is gone. `discover-commands.sh` and
+  `write-commands-cache.sh` move to the checks library beside the new `commands-file.sh`; add-tests,
+  upgrade-deps and dep-install link `checks` instead of `git-workflow` (#488).
+- **solve-feature / solve-issue**: a run whose `git fetch`, branch checkout or first push fails at `start` now
+  writes `stopped: start failed: …` to `.solve-feature/outcome` instead of exiting with none, so `crew-afk status`
+  and a host waiting on the file see it end. In a crew-afk worktree, solve-issue's preflight finds the
+  `.scratch/…` issue in the main checkout again, so the coder gets the feature's PRD and the Blocked-by and
+  Requires checks run. `crew-afk --to herdr` types the agent's command into its pane and returns, instead of
+  failing after 30s while the agent it started keeps running (#488).
+- **install / crew-afk**: `.coding-crew/manifest.json` records every platform installed into a root
+  (`platforms`), and `install.sh --update` reinstalls for each, so updating a root that holds both a claude and
+  a codex install no longer leaves only the last one. `crew-afk status` reports only worktrees it dispatched
+  to; a `.worktreeinclude` directory ignored as `dir/` no longer leaves the run's worktree unclean; the release
+  smoke fails when a user-level skill would shadow its project install (#488).
+- **skills**: every skill follows the Agent Skills authoring practice. Each `description` says in the third
+  person what the skill does and when to use it; `allowed-tools` is space-delimited; address-pr-comments
+  credits the agent that runs it as co-author instead of a hard-coded `Claude Code`. The native rule (a skill
+  uses another by name and reaches shared code only through the library linked into its own `scripts/`) is in
+  CLAUDE.md and enforced by `tests/native-skills.bats`. solve-issue's unrun `references/test-*.sh` are gone
+  (the branch-protection one now tests the real `branch-safety-check.sh`, which no longer exits 128 when a
+  repo has no `origin/HEAD`), and install.sh no longer filters `test-*.sh` (#486).
+- **crew-afk**: a new, thin `crew-afk` skill. `/crew-afk <feature> [--to local|orca|herdr]` resolves the
+  feature's slug, prepares (or reuses) one worktree per feature at `<repo>/../<repo-name>-worktrees/<slug>`
+  (`.worktreeinclude` entries linked, `.env` copied), starts one `/solve-feature <slug>` run there and returns:
+  locally a detached headless agent capped at 1 hour, and at $10 on claude (needs `timeout`; macOS: `brew install coreutils`),
+  or an interactive, uncapped agent in an orca terminal or a herdr pane. The run uses the agent CLI that ran
+  `/crew-afk` (claude, copilot, codex or pi). `/crew-afk status [<feature>]` prints each run's outcome line, `running`,
+  or why there is none, with how to continue and the claude session to resume; a second
+  dispatch on a feature whose local run is still going is refused. Cut from the old crew-afk, restorable if
+  missed: the `jq` live-log filter and auto-detecting orca/herdr from `ORCA_ENV`/`HERDR_ENV`. The demo smoke
+  (`scripts/smoke-sprint.sh <platform>`, always the demo, now pinned at `9b9c84c`) runs through `crew-afk.sh
+  dispatch --to local` and requires `ready pr=<n>`; its `--demo`, `--dir` and `--setup-only` flags are gone,
+  and `RESULTS.md` rows are commit / date / platform / result / cost / findings (#485).
+
+- **checks library, dep-install, solve-issue**: every checks script works on the one checkout it is given:
+  `--main-root` is gone from `run-checks.sh`, `run.sh`, `gen-override.sh`, `docker-install.sh`, `ensure-env.sh`,
+  `host-install.sh`, `resolve-mode.sh` and `preflight.sh` (and `--dep-scripts` from `run-checks.sh`), and a
+  worktree reads its own committed `.coding-crew/dev-commands.json`, which `write-commands-cache.sh` now writes
+  into the current checkout. Each linked worktree is its own compose project with its own dependency volumes
+  (no shared DB between features); a `.env` is generated per checkout instead of linked from the main one. The
+  install mode is `dev-commands.json`'s `install_mode` (`host` | `docker`) and `docker_service`, decided once by
+  `dep-install` with a person and committed; absent means host, and `git config agent.install-mode` /
+  `agent.install-service` are no longer read. Docker mode never falls back to the host: with no override,
+  `run.sh` installs first, and a failed install stops with the service, the step and its log. Removed:
+  `run.sh --describe`/`--via`, `resolve-mode.sh --deps`/`ACTION=`, `detect-service.sh`,
+  `detect-compose-bypass.sh`, the `docker-compose` (v1) shim, the install lock, host-run install commands and
+  their volume probe (an `install` command that runs docker itself is now refused, exit 5),
+  `gen-override.sh --query owner-prefix|platform|state-path`, host-install's fingerprint fast path and
+  `--force`, and `CREW_DOCKER_PLATFORM` (the override always pins the host's architecture). Also cut, restorable if a
+  corporate proxy needs it: the sandbox CA bundle mount and proxy variable passthrough (`IS_SANDBOX`,
+  `--sandbox`, `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`, `SSL_CERT_FILE`) (#484).
+
+- **install, every skill**: `install.sh <platform>` installs at user level (`$HOME`) by default;
+  `--project [<path>]` (or `TARGET_REPO`) installs into a repo, and `uninstall.sh` takes the same flags
+  (`uninstall.sh --user` is gone). Shared code is three libraries — `lib/tracker/` (was `tracker/`),
+  `lib/checks/` (`run-checks.sh` and dep-install's scripts) and `lib/git-workflow/` (was
+  `scripts/skill-utils/git-workflow/`) — each installed once to `<root>/.coding-crew/lib/<name>/` and linked
+  as `<skill-dir>/scripts/<name>` into each skill whose new `registry.json` `libs` names it (relative at
+  project level, so a committed install survives a clone). Skills run `node <skill-dir>/scripts/tracker/cli.mjs`
+  and `bash <skill-dir>/scripts/checks/…`; the tracker locator, `.coding-crew/tracker/`,
+  `.coding-crew/<skill>/scripts/` and the per-skill script copies are gone, and `render-skill.sh` takes no
+  platform (`{{PLATFORM}}` is no longer expanded). `registry.json` drops every `version`, `scripts`,
+  `assets`, `more-assets`, `docs`, `retired-agents` and `retired-scripts`; the manifest records the platform,
+  skills and libraries with no versions, and `install.sh --update` uninstalls everything it lists, then
+  installs those skills again. Gone with the versions: the version-bump rule, `tests/registry-version-bump.bats`,
+  and `sync-pr-with-main.sh`'s version repair (it still merges and resolves CHANGELOG appends). An install made
+  before this updates with `install.sh --update` (add `--project` for a project install), then needs a
+  one-time `rm -rf <root>/.coding-crew/{tracker,crew-afk,dep-install,solve-issue,to-issues,write-pr,skills}`,
+  `<root>` being `~` or the repo (#483).
+
+- **crew-afk, crew-address-findings (removed)**: the old crew-afk program — `orchestrator/`, `skills/crew-afk/`
+  and everything only it used — is deleted, so `/solve-feature` is the one unattended path (a new, thin crew-afk
+  that starts solve-feature runs follows). Gone with it: the `crew-address-findings` skill; solve-issue's
+  `ORCHESTRATED` preflight value and orchestrated close (it always closes its issue now), `run-checks.sh
+  --targeted` and the `CREW_DEFER_FULL_CHECKS` deferral (every check always runs); the `CREW_ORCHESTRATED` env
+  var and `.scratch/<slug>/.orchestrated` marker, which `tracker/cli.mjs mark-done`, solve-issue, tdd and
+  `solve-feature.sh start` no longer read; the tracker's `in-progress` label (configure-tracker creates six
+  labels; a person still sets `blocked`, which `next` keeps skipping); `close-shipped.sh`; address-pr-comments'
+  crew-afk PR path and write-pr's crew-afk block; `eval-reviewer-misses.mjs --reviewer` (it replays crew-review
+  only); the `crew-afk-version:` check in `cut-release.sh` (it keys on `crew-afk-commit:`); `install.sh
+  <platform> crew-coder` and `uninstall.sh --agent` (now unknown arguments). The `afk` section of
+  `.coding-crew/config.json` is no longer read: delete it. `platforms.json` moves to the repo root. An existing
+  install keeps its old `crew-afk` and `crew-address-findings` skill directories, `.coding-crew/crew-afk/` and
+  `.coding-crew/skills/`: delete them by hand (#482).
 
 - **crew-review, solve-feature**: `review-pr` is renamed `crew-review` and only reports: it reviews a branch
   (`<base>..HEAD`) or a PR against the spec its caller names (a file, an issue ref or the PR body), asks what the

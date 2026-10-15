@@ -48,9 +48,9 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git rep
 mkdir -p "$ROOT/.solve-feature" && echo '*' >"$ROOT/.solve-feature/.gitignore" # ignored in any repo, so the tree stays clean
 LOGS="$ROOT/.solve-feature"
 [ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md
-COMMON="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" CLI=""
-for c in "$ROOT" "$COMMON" "$HOME"; do [ -f "$c/.coding-crew/tracker/cli.mjs" ] && { CLI="$c/.coding-crew/tracker/cli.mjs"; break; }; done
-[ -n "$CLI" ] || die "tracker CLI not found (.coding-crew/tracker/cli.mjs): run install.sh"
+# The tracker and checks libraries, linked into this skill's scripts/ by install.sh.
+CLI="$SELF/tracker/cli.mjs" CHECKS="$SELF/checks"
+[ -f "$CLI" ] || die "tracker CLI not found ($CLI): run install.sh --skill solve-feature"
 
 PR_N=""
 pr_view() { # sets PR_N when the branch has an OPEN PR, else clears it
@@ -77,15 +77,11 @@ write_spec() {
 
 start() {
   [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
-  # DISCOVER needs an agent and a human once; run-checks.sh's own exit 3 guards a file that names no usable command.
-  [ -f "$ROOT/.coding-crew/dev-commands.json" ] || die "no .coding-crew/dev-commands.json: run /solve-issue or dep-install once by hand and commit it"
-  # solve-issue's Step 7 must close the issue itself: land sees `next` move on.
-  [ -z "${CREW_ORCHESTRATED:-}" ] || die "CREW_ORCHESTRATED is set: solve-issue would leave every close to crew-afk; unset it"
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
   grep -qxF "$SLUG" <<<"$features" || die "no feature '$SLUG'; features: $(paste -sd' ' - <<<"$features")"
   # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase
   # an existing one: a re-run lands on it as the last run left it.
-  git fetch -q origin
+  git fetch -q origin || die "git fetch origin failed (see above)"
   local default cfg="$ROOT/.coding-crew/config.json"
   default=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
   default=${default:-main}
@@ -93,7 +89,10 @@ start() {
   BRANCH=${BRANCH:-feature/$SLUG}
   if git show-ref --verify -q "refs/heads/$BRANCH"; then git checkout -q "$BRANCH"
   elif git show-ref --verify -q "refs/remotes/origin/$BRANCH"; then git checkout -q -t "origin/$BRANCH"
-  else git checkout -q -b "$BRANCH" "origin/$default" && git push -q -u origin "$BRANCH"; fi
+  else git checkout -q -b "$BRANCH" "origin/$default"
+  fi || die "cannot check out $BRANCH (see above)"
+  # A branch origin lacks is new, or one whose first push was refused: a re-run pushes it before any coder runs.
+  git show-ref --verify -q "refs/remotes/origin/$BRANCH" || git push -q -u origin "$BRANCH" || die "cannot push $BRANCH (see above)"
   write_spec
   pr_view
   echo "branch=$BRANCH"
@@ -133,23 +132,20 @@ pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the spec
   [ -n "$t" ] || t=$(grep -m1 '^# ' "$LOGS/$1.issue.md" | sed 's/^# //')
   printf '%s' "$t"
 }
-# A dependency skill is installed beside this one.
-scripts_of() { [ -d "$SELF/../../$1/scripts" ] && { (cd "$SELF/../../$1/scripts" && pwd); return; }
-  die "$1 scripts not found: run install.sh --skill solve-feature"; }
+checks_lib() { [ -f "$CHECKS/run-checks.sh" ] || die "checks library not found ($CHECKS): run install.sh --skill solve-feature"; }
 
 land() {
-  local rs="${REF//\//_}" rc=0 again checks_dir dep_dir clog f url
+  local rs="${REF//\//_}" rc=0 again clog="$LOGS/${REF//\//_}.checks.log" f url
   [ -f "$LOGS/$rs.issue.md" ] || die "no saved issue for $REF: run next first"
-  checks_dir=$(scripts_of solve-issue)
-  dep_dir=$(scripts_of dep-install) clog="$LOGS/$rs.checks.log"
+  checks_lib
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop solve "branch changed to '$(git branch --show-current)'"
   [ -z "$(git status --porcelain)" ] || stop solve "working tree left dirty"
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
   [ "$again" != "$REF" ] || stop solve "coder ran but did not close $REF (its report says why)"
-  rc=0; bash "$checks_dir/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$dep_dir" >"$clog" 2>&1 || rc=$?
-  [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand and commit .coding-crew/dev-commands.json" "$clog"
+  rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
+  [ "$rc" != 3 ] || stop checks "no check commands known (DISCOVER): the coder discovered none; run /solve-issue once by hand in this clone" "$clog"
   # $REF is closed and committed but not pushed, so a plain re-run would skip it.
   [ "$rc" = 0 ] || stop checks "run-checks.sh exit $rc; once fixed and committed, run land $SLUG $REF $BRANCH before a re-run" "$clog"
   git push -q -u origin "$BRANCH" || stop push "git push failed; once it can push, run land $SLUG $REF $BRANCH before a re-run"
@@ -167,8 +163,8 @@ land() {
 # The fixer's edits are staged before the checks and committed after, so the push carries exactly what was gated.
 fix() {
   local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.md" clog="$LOGS/pr-$PR.checks.log"
-  local checks_dir dep_dir head_oid prd rc=0 total attention=""
-  checks_dir=$(scripts_of solve-issue) dep_dir=$(scripts_of dep-install)
+  local head_oid prd rc=0 total attention=""
+  checks_lib
   head_oid=$(gh pr view "$PR" --json headRefOid | jq -r '.headRefOid // empty') || die "gh pr view $PR failed"
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop fix "branch changed to '$(git branch --show-current)'"
   [ -f "$report" ] || stop fix "no review report at $report"
@@ -177,8 +173,8 @@ fix() {
   total=$(jq '.findings // [] | length' "$report")
   # Staged before the checks, so run-checks.sh's modified-files test also sees a check rewrite a file the fixer changed.
   git add -A
-  bash "$checks_dir/run-checks.sh" --project-root "$ROOT" --main-root "$ROOT" --dep-scripts "$dep_dir" >"$clog" 2>&1 || rc=$?
-  [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /solve-issue or dep-install once by hand and commit .coding-crew/dev-commands.json" "$clog"
+  bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
+  [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /solve-issue once by hand in this clone" "$clog"
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed (not pushed), run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings on PR #$PR"
   git push -q -u origin "$BRANCH" || stop fix "git push failed; once it can push, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
