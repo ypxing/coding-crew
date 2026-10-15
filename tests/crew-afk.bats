@@ -3,7 +3,7 @@
 # crew-afk.sh dispatch|status — starts one solve-feature run in a feature's worktree and reports how
 # each run ended. A temp clone with a bare `origin` stands in for the user's repo; `claude`, `timeout`,
 # `orca` and `herdr` are stubs on PATH that log their argv. The stub claude waits for $T/release, so a
-# test can see dispatch return while the run is still going. CREW_AFK_AGENT=claude stands in for the
+# test can see dispatch return while the run is still going. CREW_AGENT=claude stands in for the
 # agent that runs crew-afk; one test leaves it unset and runs crew-afk from a stub agent instead.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
@@ -44,7 +44,7 @@ shift
 exec "$@"
 SH
   chmod +x "$STUB"/*
-  export PATH="$STUB:$PATH" CREW_AFK_AGENT=claude
+  export PATH="$STUB:$PATH" CREW_AGENT=claude
   cd "$MAIN"
 }
 
@@ -141,7 +141,7 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
     [ "$status" -eq 2 ] || { echo "$args: $output"; return 1; }
     [[ "$output" == *crew-afk:* ]]
   done
-  CREW_AFK_AGENT=nope run bash "$SCRIPT" dispatch report-cli
+  CREW_AGENT=nope run bash "$SCRIPT" dispatch report-cli
   [ "$status" -eq 1 ] && [[ "$output" == *"unknown agent 'nope'"* ]]
   [ ! -e "$T/app-worktrees" ]
   [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 1 ]
@@ -154,7 +154,7 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
 if [ "\$1" = dispatch ]; then bash "$SCRIPT" "\$@"; else printf '%s\n' "\$*" > "$T/pi-argv"; fi
 SH
   chmod +x "$T/stub/pi"
-  unset CREW_AFK_AGENT
+  unset CREW_AGENT
   run pi dispatch report-cli
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ -z "$(field session)" ]

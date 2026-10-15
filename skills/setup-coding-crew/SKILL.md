@@ -86,26 +86,34 @@ elif cmp -s "<skill-dir>/hosts/github-actions.yml" "$WF"; then echo identical
 else echo differs; fi
 ```
 
-- `identical`: show "Actions workflow: installed" and move on (on "redo actions", run the label command below).
-- `absent`: ask "Run solve-feature on GitHub Actions — the Copilot CLI on a GitHub runner, billed to GitHub
-  Copilot? [y/N]". On no, move on.
+- `identical`: show "Actions workflow: installed, agent <a>", `<a>` being what
+  `gh variable get CREW_AGENT` prints (`copilot` when it fails), and move on; on "redo actions", ask
+  the agent question below and run the commands after it.
+- `absent`: ask "Run solve-feature on GitHub Actions, on a GitHub runner? [y/N]". On no, move on.
 - `differs`: show `diff -u "$WF" "<skill-dir>/hosts/github-actions.yml"` and ask whether to replace the file
   with the template. Overwrite only on yes; on no, move on.
 
-On yes:
+On yes, ask which agent CLI the runner uses, and keep the answer as `<agent>`:
+
+- `copilot` (the default): billed to GitHub Copilot through the workflow's own token, no secret.
+- `claude`: Claude Code, billed through a repo secret the user adds: `ANTHROPIC_API_KEY` (an Anthropic Console
+  key) or `CLAUDE_CODE_OAUTH_TOKEN` (what `claude setup-token` prints, billed to their Claude subscription).
 
 ```bash
 mkdir -p .github/workflows
 cp "<skill-dir>/hosts/github-actions.yml" .github/workflows/solve-feature.yml
 gh label create solve-feature --force
+gh variable set CREW_AGENT --body <agent>
 ```
 
-When `gh label create` fails, show gh's error as it printed it (it says what to fix, e.g. `gh auth login`) and
+When a `gh` command fails, show its error as it printed it (it says what to fix, e.g. `gh auth login`) and
 carry on to Step 4: the workflow file is written. Tell the user that once gh's error is fixed, they re-run
-`/setup-coding-crew redo actions` (or run `gh label create solve-feature` themselves): a plain re-run finds the
-workflow `identical` and does not create the label. Then point the user to the workflow's header comment
-(`# Billing:`) for who pays for the runs, and say how a run starts: label a feature's root issue
-`solve-feature`, or run the workflow by hand with the slug.
+`/setup-coding-crew redo actions` (or run the failed `gh` command themselves): a plain re-run finds the
+workflow `identical` and runs neither. With `claude`, tell the user to add the secret themselves with
+`! gh secret set ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`), which prompts for the value; never ask for
+it in the conversation. Then point the user to the workflow's header comment (`# Billing`) for who pays for the
+runs, and say how a run starts: label a feature's root issue `solve-feature`, or run the workflow by hand with
+the slug.
 
 ## Step 4 — Commit hint
 

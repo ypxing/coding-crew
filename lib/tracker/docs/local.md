@@ -38,6 +38,7 @@ node "$TRACKER" rewrite <ref> --body-file <file> --status <status> --feature-slu
 node "$TRACKER" tick <ref>                                # check every criterion off
 node "$TRACKER" write-section <ref> --heading <h> --body-file <file>   # write `## <h>` into the issue file
 node "$TRACKER" mark-done <ref> [--force]
+node "$TRACKER" reopen <ref>                              # undo mark-done: ready-for-agent again
 ```
 
 Exit codes, every op: `0` ok, `1` the op failed (stderr says why), `2` a usage error or a ref
@@ -81,10 +82,14 @@ An issue may carry a `## Requires` section: one backticked shell command per bul
 
 ## Reopen an issue
 
-To undo `mark-done` (or put a finished issue back in a human's hands):
+To undo `mark-done` and hand the issue to an agent again, `node "$TRACKER" reopen <ref>` (its `open/` or
+`done/` path): it moves the file back to `issues/open/` with `Status: ready-for-agent`, and leaves its
+ticked criteria ticked. solve-feature runs it when an issue's checks fail after its coder closed it.
+
+To put a finished issue in a human's hands instead:
 
 1. Move the file from `.scratch/<slug>/issues/done/` back to `.scratch/<slug>/issues/open/`.
-2. Set its `Status:` line to `ready-for-human` (or `ready-for-agent` to hand it to an agent again).
+2. Set its `Status:` line to `ready-for-human`.
 
 ## Labels
 

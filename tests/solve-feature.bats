@@ -91,6 +91,10 @@ case "\$2" in
       [ "\$ok" = 1 ] && { echo "\$c"; exit 0; }
     done; exit 3 ;;
   fetch) [ -f "\$STATE/\${3//\//_}.md" ] || exit 3; cat "\$STATE/\${3//\//_}.md" ;;
+  reopen) [ -z "\${REOPEN_RC:-}" ] || { echo "gh: boom" >&2; exit "\$REOPEN_RC"; }
+    [ -z "\${REOPEN_TOUCHES:-}" ] || echo reopened > "\$REOPEN_TOUCHES"
+    jq --arg r "\$3" 'map(if (.ref // (.number | tostring)) == \$r then .labels = [{"name":"ready-for-agent"}] else . end)' "\$STATE/issues.json" > "\$STATE/i.tmp"
+    mv "\$STATE/i.tmp" "\$STATE/issues.json"; echo "REOPENED: \$3" ;;
   prd) [ -f "\$STATE/prd.md" ] || exit 3; cat "\$STATE/prd.md" ;;
   features) printf 'feat\topen\t2\nother\tclosed\t0\n' ;;
   # \`known\`: every issue but a PRD: one, named <number>-<title>.md, or by its ref's basename.
@@ -138,6 +142,7 @@ EOF
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$STATE/checks.log"
 git status --porcelain > "$STATE/checks.status"
+[ -z "${CHECK_LEAVES:-}" ] || echo build > "$CHECK_LEAVES"
 for i in $(seq 1 30); do echo "check line $i"; done
 echo "test: ${CHECK_RESULT:-pass}"
 [ "${CHECKS_RC:-0}" != 3 ] || { echo DISCOVER; exit 3; }
@@ -149,7 +154,7 @@ EOF
 
 # coder <ref> — what the subagent's solve-issue leaves: a commit, and the issue out of `next`.
 coder() {
-  echo "$1" > "work-${1//\//_}.txt"
+  echo "$1" >> "work-${1//\//_}.txt"
   git add "work-${1//\//_}.txt" && git commit -q -m "[$1] work"
   jq --arg r "$1" 'map(if (.ref // (.number | tostring)) == $r then .labels = [{"name":"awaiting-merge"}] else . end)' "$STATE/issues.json" > "$STATE/i.tmp"
   mv "$STATE/i.tmp" "$STATE/issues.json"
@@ -466,30 +471,57 @@ stops_at() {
   stops_at solve "coder ran but did not close 2; why: $WORK/.solve-feature/coder.report.md"
 }
 
-@test "land runs run-checks.sh once; exit 1 or 3 stops at checks naming the log, 3 sending the user to /setup-coding-crew" {
-  land_ready
-  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
-  stops_at checks "run-checks.sh exit 1; once fixed and committed, run land feat 2 feature/feat before a re-run"
-  [[ "$output" == *"$WORK/.solve-feature/2.checks.log"* ]]
-  [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
-  CHECKS_RC=3 run bash "$SCRIPT" land feat 2 feature/feat
-  stops_at checks "no check commands known (DISCOVER): the coder discovered none; run /setup-coding-crew and commit .coding-crew/dev-commands.json, then run land feat 2 feature/feat before a re-run"
-  # The recovery the stop names: land again once the checks pass, and the issue's commits are pushed.
-  run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$status" -eq 0 ]
+# handed_back <reason> — land just stopped at checks with the issue reopened and its work on origin, no PR opened.
+handed_back() {
+  [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
+  [[ "$output" == *"solve-feature: 2 checks failed: $1; 2 is ready again with its work pushed to feature/feat: "* ]] || { echo "$output"; return 1; }
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  [ ! -f "$STATE/pr-created" ]
+  [[ "$(cat .solve-feature/outcome)" == "stopped: 2 checks failed: $1; 2 is ready again"* ]]
+  [ "$(node "$INSTALL/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
 }
 
-@test "a re-run after a stop lands on the same branch: start keeps it, the closed issue's next is the following one" {
+@test "land runs run-checks.sh once; exit 1 or 3 reopens the issue and pushes its work before stopping at checks, 3 sending the user to /setup-coding-crew" {
+  land_ready
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  handed_back "run-checks.sh exit 1"
+  [[ "$output" == *"fix the cause, then re-run — log: $WORK/.solve-feature/2.checks.log"* ]]
+  [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
+  [ "$(git log -1 --format=%s)" = "[2] work" ]
+  coder 2
+  CHECKS_RC=3 run bash "$SCRIPT" land feat 2 feature/feat
+  handed_back "no check commands known (DISCOVER): the coder discovered none"
+  [[ "$output" == *"run /setup-coding-crew and commit .coding-crew/dev-commands.json, then re-run"* ]]
+}
+
+@test "a re-run after a checks stop hands the reopened issue to a coder on the pushed work, in a fresh clone too" {
   land_ready
   local tip; tip=$(git rev-parse HEAD)
   CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 1 ]
-  jq 'map(if .number == 2 then .state = "CLOSED" else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  # An Actions re-run: a new clone of origin, on its default branch.
+  cd "$TEMP_DIR" && git clone -q "$TEMP_DIR/origin.git" rerun && cd rerun
+  git config user.email t@example.com && git config user.name test
   loop
-  [ "$CODED" = 3 ]
+  [ "$CODED" = "2 3" ]
   git merge-base --is-ancestor "$tip" HEAD
   [ "$(git branch --show-current)" = feature/feat ]
+}
+
+@test "a reopen that changes a tracked file is committed alone; one that fails stops naming land, nothing pushed" {
+  land_ready
+  # artefact.out is what a check left behind: never committed.
+  CHECK_LEAVES="$WORK/artefact.out" REOPEN_TOUCHES="$WORK/issue-state.md" CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(git log -1 --format=%s)" = "Reopen 2: its checks failed" ]
+  [ "$(git show --name-only --format= HEAD)" = issue-state.md ]
+  [ "$(git status --porcelain)" = "?? artefact.out" ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  rm artefact.out
+
+  coder 2
+  REOPEN_RC=1 CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  stops_at checks "run-checks.sh exit 1; reopen 2 failed (see above): once fixed and committed, run land feat 2 feature/feat before a re-run"
 }
 
 # --- land: push and PR -----------------------------------------------------------------
@@ -562,9 +594,10 @@ EOF
   ! grep -q '^config' "$STATE/node.log" || false
 }
 
-@test "start, next and land reach the tracker through features, prd, known, next and fetch only, and name no tracker kind" {
+@test "start, next and land reach the tracker through features, prd, known, next, fetch and reopen only, and name no tracker kind" {
   loop
   [ "$(cut -d' ' -f1 "$STATE/node.log" | sort -u | paste -sd' ' -)" = "features fetch known next prd" ]
+  grep -q '"$CLI" reopen' "$SCRIPT"
   ! grep -nE 'KIND|github|\.scratch|"\$CLI" config|\$REF" =~' "$SCRIPT" || false
 }
 
@@ -948,7 +981,7 @@ yaml_to_json() {
   fi
 }
 
-@test "setup-coding-crew's hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, four write permissions, a slug concurrency group, the skill launched by copilot -p, then a step reading the outcome" {
+@test "setup-coding-crew's hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, four write permissions, a slug concurrency group, the skill launched by the agent, the logs kept, then a step reading the outcome" {
   local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
   run yaml_to_json "$wf" "$json"
   [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
@@ -964,11 +997,34 @@ yaml_to_json() {
   local conc; conc="$(jq -c '[.concurrency // empty, (.jobs[] | .concurrency // empty)]' "$json")"
   [ "$(jq 'length' <<<"$conc")" -eq 1 ]
   jq -e '.[0] | (.group | test("solve-feature-.*slug")) and .["cancel-in-progress"] == false' <<<"$conc" >/dev/null
-  local runs; runs="$(jq -c '[.jobs.solve.steps[].run // empty]' "$json")"
-  jq -e '.[-2] | contains("copilot -p \"Use the solve-feature skill on $SLUG\" --allow-all --no-color")' <<<"$runs" >/dev/null
+  [ "$(jq -r '.jobs.solve.env.CREW_AGENT' "$json")" = "\${{ vars.CREW_AGENT || 'copilot' }}" ]
+  # The logs step runs whatever the run step did, and keeps .solve-feature/, hidden files included.
+  jq -e '.jobs.solve.steps[-2] | .if == "always()" and (.uses | startswith("actions/upload-artifact@"))
+    and .with.path == ".solve-feature/" and .with["include-hidden-files"] == true' "$json" >/dev/null
   ! grep -q 'solve-feature\.sh' "$wf" || false
   ! grep -q 'SOLVE_FEATURE_HOST' "$wf" || false
   ! grep -q 'review-pr' "$wf" || false
+
+  # The run step, with each agent CLI stubbed: copilot by default; claude only with a non-empty secret, which it
+  # gets with the empty one unset.
+  jq -r '.jobs.solve.steps[] | select(.name == "Run solve-feature") | .run' "$json" > "$TEMP_DIR/run-step.sh"
+  for a in copilot claude; do
+    printf '#!/usr/bin/env bash\necho "%s $*"; env | grep -E "^(ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN)=" | sort\n' "$a" > "$STUB/$a"
+    chmod +x "$STUB/$a"
+  done
+  run env CREW_AGENT=copilot SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/run-step.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "copilot -p Use the solve-feature skill on feat --allow-all --no-color" ]
+  run env CREW_AGENT=claude SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/run-step.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"* ]]
+  run env CREW_AGENT=claude SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN=tok bash -e "$TEMP_DIR/run-step.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'claude -p /solve-feature feat --dangerously-skip-permissions\nCLAUDE_CODE_OAUTH_TOKEN=tok')" ]
+  jq -r '.jobs.solve.steps[] | select(.name == "Install the agent CLI") | .run' "$json" > "$TEMP_DIR/install-step.sh"
+  run env CREW_AGENT=codex bash -e "$TEMP_DIR/install-step.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"CREW_AGENT is 'codex': copilot or claude"* ]]
 
   # The last step, run as Actions would in the checkout: red unless the outcome line starts with `ready`.
   jq -r '.jobs.solve.steps[-1].run' "$json" > "$TEMP_DIR/last-step.sh"
