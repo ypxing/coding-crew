@@ -1,9 +1,10 @@
 ---
 name: add-tests
 description: >
-  Discovers the project's coverage command, ranks under-covered files by risk, resolves a mocking convention
-  per ecosystem, and hands the findings to to-issues as ready-for-agent issues. Use when the user wants to
-  close testing-coverage gaps or asks where test coverage is weakest.
+  Plans test-coverage work: discovers the project's coverage command, ranks under-covered files by risk,
+  resolves a mocking convention per ecosystem, and hands the findings to to-issues as ready-for-agent issues.
+  Writes no tests itself. Use when the user wants to close testing-coverage gaps or asks where test coverage
+  is weakest.
 disable-model-invocation: true
 ---
 
@@ -15,58 +16,61 @@ Turn a coverage gap into `ready-for-agent` issues.
 
 ### 1. Resolve the coverage and integration commands
 
-Use the same discovery/cache mechanism `solve-issue` already uses:
+`PROJECT_ROOT` is the repo root, `git rev-parse --show-toplevel`; carry it as a literal, since each
+bash call is a fresh shell. The commands come from the dev commands file
+(`.coding-crew/dev-commands.json`, or the clone's own copy when the repo commits none):
 
 ```bash
-bash "<skill-dir>/scripts/checks/discover-commands.sh"
+(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")
 ```
 
-This prints either a skip message (the cache already has both fields) or a discovery prompt —
-hand that prompt to a model, then persist its response:
+This prints either a skip message (the dev commands file already has all eight fields) or a
+discovery prompt. For a prompt, answer every field it lists by reading the files it names, write the
+JSON to `$PROJECT_ROOT/.discovered-commands.json`, and save it:
 
 ```bash
-bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file <path>
+(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .discovered-commands.json)
+rm -f "$PROJECT_ROOT/.discovered-commands.json"
 ```
 
-Then read the two fields this skill needs from the dev commands file:
+Then read the two fields this skill needs:
 
 ```bash
-CACHE=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$(git rev-parse --show-toplevel)")
-grep -o '"coverage"[[:space:]]*:[[:space:]]*"[^"]*"' "$CACHE"
-grep -o '"integration"[[:space:]]*:[[:space:]]*"[^"]*"' "$CACHE"
+COMMANDS_FILE=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT")
+grep -o '"coverage"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$COMMANDS_FILE"
+grep -o '"integration"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$COMMANDS_FILE"
 ```
 
 **If `coverage` resolves to `null`** (a model already looked and confirmed no coverage command
-exists), tell the user plainly and stop:
+exists) or is absent (discovery had no files to read), tell the user plainly and stop. A `null` is never asked again, so name both ways out:
 
-> "This project has no coverage command configured, so I can't find coverage gaps. Add one to
-> `CLAUDE.md`/`AGENTS.md`/a Makefile target and re-run `/add-tests`."
+> "This project has no coverage command configured, so I can't find coverage gaps. Set
+> `"coverage"` in the dev commands file (`<the path COMMANDS_FILE holds>`) to the command that
+> produces a coverage report, or rerun discovery with `discover-commands.sh --refresh` once the
+> project documents one, then re-run `/add-tests`."
 
 Do not fall back to a file-existence heuristic and do not attempt to bootstrap coverage tooling
 yourself — a low-fidelity guess standing in for real coverage data is worse than stopping.
 
-`integration` may be `null`; that only affects the tier-routing decision in step 6, it never
+`integration` may be `null`; that only affects the tier-routing decision in step 7, it never
 blocks this skill on its own.
 
 ### 2. Dependencies — only when something is missing
 
-The discovered `install` command from step 1 (if non-null) already overrides `dep-install`'s own
-Makefile/lockfile heuristic — it exists so a documented `make deps`-style target is used instead
-of a guessed package-manager command. Never substitute your own guess (`npm install`,
-`pnpm install`, …) for it.
-
-Check docker mode first — `install_mode` in `$CACHE`. `docker` → invoke
-the `dep-install` skill now, unconditionally, before running coverage. Absent or `host` → don't
-install pre-emptively; run coverage in step 3 first, and only invoke
-`dep-install` if it fails for a missing-dependency reason (module-not-found, import error, test
-runner not found), then retry.
-
-If the `dep-install` skill is not installed in this repo, stop and report `BLOCKED: dep-install
-skill not installed`.
+Do not install up front. Step 3 runs coverage through `run.sh`, which runs it where the dev commands
+file's install mode says (and, in docker mode, installs on its first call). Only when that fails for a
+missing dependency (module-not-found, import error, test runner not found) invoke the `dep-install`
+skill, with `PROJECT_ROOT` set as in step 1, then retry coverage once.
 
 ### 3. Run coverage and read the report directly
 
-Run the discovered `coverage` command and read whatever report format it produces (lcov,
+Run the discovered `coverage` command through the checks library:
+
+```bash
+bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<coverage command>"
+```
+
+Read whatever report format it produces (lcov,
 Cobertura XML, a JS test runner's JSON summary, `go tool cover`'s profile, …) yourself, as a
 model — extract per-file statement/branch coverage from the raw report. Do not write or invoke a
 parser per format; the report formats vary too much for that to stay maintainable, and reading
@@ -177,8 +181,8 @@ Two more things per finding, each cheap here and expensive for a coder to redisc
 Then invoke the `to-issues` skill with that findings file as its source, to slice, quiz, and publish
 `ready-for-agent` issues. `to-issues` alone decides whether the work needs a PRD and publishes it
 through `to-prd`. Do not slice, size, or publish issues yourself — that responsibility
-belongs entirely to `to-issues`, exactly as this skill's own upstream pipeline (`crew-grill`)
-already hands its design to `to-issues` rather than re-implementing slicing.
+belongs entirely to `to-issues`. `crew-grill` follows the same pattern: it hands its design to
+`to-issues` rather than slicing it itself.
 
 **Security**: Only read from and write to paths under `.scratch/` and `.coding-crew/docs/` within
 the current repo. Never fetch from external URLs, remote APIs, or paths outside the repository

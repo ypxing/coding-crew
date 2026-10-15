@@ -6,6 +6,16 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **dep-install / add-tests / upgrade-deps / address-pr-comments / configure-tracker / tdd / setup-coding-crew**:
+  the install mode's confirm-and-save rule now comes from `discover-mode.sh`'s prompt, so solve-issue and
+  dep-install decide it the same way, and `discover-commands.sh` alone discovers the `install` command (the host and
+  docker install guides only read it; the host guide applies whenever the mode is host). The `docker-install.sh`
+  call and its `--force` retry are two copy-pasteable commands. add-tests, upgrade-deps and address-pr-comments run
+  commands through the checks library's `run.sh` and invoke dep-install only after a missing-dependency failure.
+  add-tests' no-coverage stop names a fix that works (set `"coverage"` or rerun discovery with `--refresh`).
+  upgrade-deps publishes by invoking to-issues with its drafts and checks existing features through the tracker
+  CLI. address-pr-comments handles `DISCOVER` before pushing and skips resolved threads by GraphQL `isResolved`.
+  configure-tracker creates labels with `gh label create`, treating "already exists" as success (#503).
 - **to-issues / to-prd / crew-grill / crew-brainstorm / tracker**: to-issues prices a split as one more coder
   dispatch and checks run on solve-feature's single branch (no more parallelism split reason or retry/merge costs),
   writes the PRD with to-prd right after drafting slices and before tracing PRD IDs, and carries a design

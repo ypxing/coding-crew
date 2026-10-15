@@ -2,7 +2,7 @@
 name: setup-coding-crew
 description: >
   Takes a repo from a fresh install to a working /solve-feature in one run: chooses the tracker with the
-  configure-tracker skill, discovers and saves the check commands to .coding-crew/dev-commands.json, with the
+  configure-tracker skill, discovers the dev commands and saves them to .coding-crew/dev-commands.json, with the
   github tracker optionally installs the solve-feature GitHub Actions workflow and its label, then prints the
   git commit line for the files it wrote. It never commits. Use when setting up coding-crew in a project, or to
   redo one of those steps. Trigger with /setup-coding-crew [redo tracker | redo commands | redo actions].
@@ -11,11 +11,11 @@ argument-hint: "[redo tracker | redo commands | redo actions]"
 
 # Setup Coding Crew
 
-Three steps and a commit hint, in this order: tracker, check commands, GitHub Actions, commit hint. Run every
+Three steps and a commit hint, in this order: tracker, dev commands, GitHub Actions, commit hint. Run every
 command from the repo root (`git rev-parse --show-toplevel`).
 
-A re-run acts only on what is missing: a configured tracker, cached commands and a workflow identical to the
-template are shown, not redone, and no file changes. When the user names a step ("change the tracker", "redo
+A re-run acts only on what is missing: a configured tracker, commands already in the dev commands file and a
+workflow identical to the template are shown, not redone, and no file changes. When the user names a step ("change the tracker", "redo
 commands", "redo actions"), that step runs again. Every run ends with Step 4.
 
 This skill does not commit or push: it prints the command, and the user runs it.
@@ -31,11 +31,12 @@ node "$TRACKER" config
 On `configured=no`, or when the user asks to change the tracker: Use the configure-tracker skill, then run
 `config` again. Otherwise show `Tracker: <kind>` and move on. Keep the kind for Step 3.
 
-## Step 2 — Check commands
+## Step 2 — Dev commands
 
 solve-feature gates every issue on these commands, and a GitHub Actions runner sees only what is committed, so
-they live in the tracked `.coding-crew/dev-commands.json`. When that file is absent, start it from the clone's own
-cache (what an earlier `/solve-issue` discovered), else empty, then run discovery — with `--refresh` when the
+they live in the dev commands file, the tracked `.coding-crew/dev-commands.json`. When that file is absent,
+start it from the clone's own dev commands file under `.git/` (what an earlier `/solve-issue` discovered), else
+empty, then run discovery — with `--refresh` when the
 user said "redo commands", which asks all eight fields again:
 
 ```bash
@@ -65,6 +66,10 @@ bash "<skill-dir>/scripts/checks/discover-commands.sh"   # --refresh on "redo co
   Write the answers to `.discovered-commands.json` and save them with `write-commands-cache.sh` as above.
 
 Never run the commands: this step only records them.
+
+The install mode (`install_mode`, and `docker_service` for docker) is saved into this same committed file: the
+copy above carries a mode already decided, and once this file exists, solve-issue and dep-install save the mode
+they decide here, for the user to commit. This step does not decide it.
 
 When `test`, `lint` and `typecheck` are all `null`, warn: "solve-feature will land issues with no checks run:
 each prints `NOT RUN` and the run passes."

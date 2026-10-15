@@ -1,6 +1,6 @@
 # Host Install
 
-Use this when no `docker-compose.yml`, `docker-compose.yaml`, or `compose.yml` exists at `PROJECT_ROOT`.
+Use this when `INSTALL_MODE=host`.
 
 `PROJECT_ROOT` is **inherited from the caller** — do not re-derive it. Each bash tool call runs in a fresh shell and variables do not persist between calls, so at the top of every bash call assign it to the literal value you were given:
 
@@ -14,48 +14,26 @@ PROJECT_ROOT="/absolute/path/to/checkout"
 
 Check in order — use the first match, stop as soon as one is found.
 
-### 0. Check the command cache first
+### 1. The dev commands file's `install`
 
-The dev commands file's `"install"` field may already hold this repo's
-answer — written once by a prior dep-install session's own Step 1 below. Read it before touching `CLAUDE.md`/`AGENTS.md`:
+dep-install's Step 1 has already made sure this field was asked. Read it:
 
 ```bash
-CACHE=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT")
+COMMANDS_FILE=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT")
 RAW=""
-[ -f "$CACHE" ] && RAW=$(grep -o '"install"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$CACHE" | head -1)
+[ -f "$COMMANDS_FILE" ] && RAW=$(grep -o '"install"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$COMMANDS_FILE" | head -1)
 ```
 
-- `$RAW` holds a quoted command — that command is the answer. Use it directly; skip Steps 1–2.
-- `$RAW` is the bare word `null` — a model already checked this repo's docs/Makefile and
-  confirmed no documented install command exists. Trust it: skip straight to Step 2 (the
-  mechanical script), and do not re-read `CLAUDE.md`/`AGENTS.md` yourself — that would just
-  redo a check someone already made.
-- `$RAW` is empty (no cache file, or the `"install"` key is missing from it entirely) — nobody
-  has asked this question for this repo yet. Continue to Step 1.
-
-### 1. CLAUDE.md / AGENTS.md
-
-Read `$PROJECT_ROOT/CLAUDE.md` (or `AGENTS.md`) if it exists. If it specifies an install command,
-use that. Either way — a command found, or a confident "no install command is documented" —
-persist the answer so no future session has to ask again:
-
-```bash
-cat > "$PROJECT_ROOT/.install-discovery.json" <<'JSON'
-{"install": "<the command you found, or null if you checked and found none>"}
-JSON
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .install-discovery.json)
-rm -f "$PROJECT_ROOT/.install-discovery.json"
-```
-
-Only write `null` if you actually looked and found nothing — `null` means "no documented
-override", which is a real answer even when Step 2's own convention-based detection goes on to
-find (or not find) an install command by other means.
+- `$RAW` holds a quoted command — that is the project's documented install command. Run it, and skip
+  Step 2: `bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<that command>"`.
+- `$RAW` is `null` (someone looked and found no documented command) or empty (discovery had no files
+  to read) — continue to Step 2. Do not look for an install command in `CLAUDE.md`, `AGENTS.md` or
+  the Makefile yourself: discovery already did.
 
 ### 2. Script (Makefile target + signal file fallback)
 
-If neither specified an install command, run the detection script. It checks for a Makefile `install`/`deps` target first, then falls back to signal file detection.
-
-Run `scripts/checks/host-install.sh` from the same directory you read this skill file from:
+The detection script checks for a Makefile `install`/`deps` target first, then falls back to signal
+file detection:
 
 ```bash
 bash "<skill-dir>/scripts/checks/host-install.sh" --project-root "$PROJECT_ROOT"

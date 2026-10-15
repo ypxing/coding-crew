@@ -1,9 +1,9 @@
 ---
 name: upgrade-deps
 description: >
-  Audits outdated npm/yarn/pnpm dependencies across a monorepo — security-advisory exploitability, transitive
-  conflicts, real call-site usage, and targeted changelog review for major bumps — then publishes issues
-  (batched for trivial in-range bumps, one per package or coupled group otherwise; every major-version bump
+  Plans npm/yarn/pnpm dependency upgrades: audits outdated dependencies across a monorepo (security-advisory
+  exploitability, transitive conflicts, real call-site usage, and targeted changelog review for major bumps),
+  then publishes issues through to-issues (batched for trivial in-range bumps, one per package or coupled group otherwise; every major-version bump
   defaults to ready-for-human, minor/patch range-edits stay ready-for-agent unless a conflict or advisory
   can't be resolved cleanly) with required test additions and a safety checklist. Use when the user wants to
   upgrade dependencies, audit outdated packages, or plan a safe dependency bump. Does not perform the upgrade
@@ -21,33 +21,54 @@ stop and ask the user before proceeding.
 
 {{FRAGMENT:tracker-configuration}}
 
-Before running any package-manager command (`outdated`, `audit`, `ls`/`why`, or a later
-reinstall), use the `dep-install` skill first to detect and lock the session's install mode.
-Every command in this skill — not just install — must then run in that mode: if the project
-is docker-mode, `outdated`/`audit`/`ls`/`why` run inside the container via the same
-mechanism as `test`/`lint`/`typecheck` in the dev commands file, never against the host's
-`node_modules`, which may not even exist there.
+## Running commands
 
-Also resolve the `typecheck` field from the dev commands file (`bash
-"<skill-dir>/scripts/checks/commands-file.sh" --project-root <repo>` prints its path) now, using the same
-discovery/cache mechanism `add-tests` uses for its own fields (`bash
-"<skill-dir>/scripts/checks/discover-commands.sh"`, then `write-commands-cache.sh` beside it if it prompts). Step 6 needs
-this to get a mechanical breaking-change signal on major bumps; if it resolves to `null`, that
-step falls back to changelog review alone for every major bump — say so when it happens rather
-than silently skipping the signal.
+`PROJECT_ROOT` is the repo root, `git rev-parse --show-toplevel`; carry it as a literal, since each
+bash call is a fresh shell. Every project command in this skill — `outdated`, `audit`, `ls`/`why`,
+the dry-run resolutions, and step 6d's checks — runs through the checks library, which runs it where
+the dev commands file's install mode says (inside the container in docker mode, never against the
+host's `node_modules`, which may not even exist there):
+
+```bash
+bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"
+```
+
+Do not install up front. Only when a command fails for a missing dependency (module-not-found, a
+package manager or tool not found) invoke the `dep-install` skill, with `PROJECT_ROOT` set, then
+retry that command once.
+
+Resolve the `test`, `lint` and `typecheck` commands from the dev commands file now:
+
+```bash
+(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")
+```
+
+A prompt means some fields are unanswered: answer every field it lists by reading the files it
+names, write the JSON to `$PROJECT_ROOT/.discovered-commands.json`, and save it:
+
+```bash
+(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .discovered-commands.json)
+rm -f "$PROJECT_ROOT/.discovered-commands.json"
+```
+
+`bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT"` prints the dev
+commands file's path. Step 6 needs `typecheck` to get a mechanical breaking-change signal on major
+bumps; if it resolves to `null`, that step falls back to changelog review alone for every major
+bump — say so when it happens rather than silently skipping the signal.
 
 ## Process
 
 ### 1. Determine feature slug
 
-Default to `.scratch/deps-upgrade/`. If it already has issues, ask the user whether to
-reuse it (adding more packages to the same batch) or start a fresh dated slug
-(`deps-upgrade-YYYY-MM-DD`). Never guess silently.
+Default to `deps-upgrade`. Check whether that feature already exists with `node "$TRACKER"
+features` (one `<slug>\t<open|closed>\t<ready-count>` line per feature). If it lists
+`deps-upgrade`, ask the user whether to reuse it (adding more packages to the same batch) or start
+a fresh dated slug (`deps-upgrade-YYYY-MM-DD`). Never guess silently.
 
 ### 2. Inventory outdated dependencies, per workspace
 
 First check whether the project already has its own wrapper for this — a Makefile target
-(`make outdated`, `make audit`) or a script cached in the dev commands file alongside
+(`make outdated`, `make audit`) or a script recorded in the dev commands file alongside
 `test`/`lint`/`typecheck`. If one exists, use it: it already encodes the project's chosen
 flags (severity level, workspace scoping, docker routing) — don't invent a raw
 package-manager invocation that bypasses it.
@@ -108,7 +129,7 @@ For every advisory hit:
   despite the advisory; if it's reachable, treat it as high priority regardless of semver
   size.
 - A CVE-driven package always gets its own issue (or joins a coupled group) — never folds
-  into the in-range safe-batch from step 6, even if the fix happens to be in-range, so its
+  into the in-range safe-batch from step 7, even if the fix happens to be in-range, so its
   advisory-clean re-check (step 7) isn't buried in an unrelated batch.
 
 ### 4. Map transitive impact (range-edit packages only)
@@ -129,15 +150,15 @@ For each range-edit candidate, check the wider tree before treating the bump as 
     the same way.
   - yarn berry: `yarn up <pkg>@<target> --mode=update-lockfile` — updates the lockfile only
     and reports resolution failures without installing.
-  - Run this in whatever mode step 1's `dep-install` locked (host or docker), same as every
-    other command in this skill.
+  - Run it through `run.sh` (see "Running commands"), same as every other command in this
+    skill.
 - Treat a clean dry-run/lockfile-only resolution as the actual conflict-clean finding for
   step 7's safety checklist — not the `ls`/`why` inventory, which can't see the post-bump
   state. If you can't get a clean resolution, don't guess — this pushes the issue to
   `ready-for-human` in step 7.
 - Identify packages that must move together (e.g. a plugin and its peer host, or a family
   like `@opentelemetry/core` + `sdk-metrics` that don't mix major versions) — these become
-  **one** issue, not several, in step 6. Also identify build-tool coupling that isn't a
+  **one** issue, not several, in step 7. Also identify build-tool coupling that isn't a
   version constraint but still needs sequencing (e.g. a formatter's flat-config support
   landing only after the linter's own flat-config migration) — express these as `Blocked by`
   edges between issues, not merged groups.
@@ -210,9 +231,9 @@ resolve to git tags there:
 
 **6d. Worktree-verified typecheck/test/lint.** Create **one** disposable git worktree off the
 current branch, bump this package/group to `<target>` there, reinstall, and run whichever of
-`typecheck`/`test`/`lint` resolved to real commands (Tracker Configuration for `typecheck`,
-step 1 discovery for the others) in that worktree — same host/docker mode `dep-install`
-locked. Delete the worktree immediately after collecting all results.
+`typecheck`/`test`/`lint` the dev commands file holds as real commands (see "Running commands") in
+that worktree — every command through `run.sh` with `--project-root <the worktree>`. Delete the
+worktree immediately after collecting all results.
 
 - This is the one exception to the "never modify package.json/lockfiles" rule in `## Never`:
   the edit exists only inside the disposable worktree and is never merged, committed to a
@@ -304,8 +325,10 @@ Each range-edit issue must include:
   - Step 4 found a transitive/peer conflict with no clean resolution
   - Step 3 found a CVE fix whose exploitability check was inconclusive
 
-When the decision is `ready-for-human`, the issue opens with this block; `### Steps` is the bump
-itself and the review of the impacted call sites listed in the earlier steps:
+When the decision is `ready-for-human`, the issue is Kind B below: the bump stays agent work,
+blocked on a person's review. It opens with this block; `### Steps` is the review of the impacted
+call sites listed in the earlier steps, and its last step relabels the issue `ready-for-agent` so a
+coder makes the bump:
 
 {{FRAGMENT:human-issue}}
 
@@ -316,16 +339,20 @@ criteria / Blocked by / Interfaces where relevant).
 
 ### 8. Publish
 
-Write and publish the issues through `to-issues`' step 6 ("Write the issues") and its step 7
-dependency map: one draft per issue, its `Status:` line per this issue's own decision above
-(`ready-for-agent` or `ready-for-human`), its `## Blocked by` naming the blocking draft (the
-`Blocked by` edges from step 4's coupling analysis), the same edges in `deps.json`, then the lint,
-the builder check and `publish-issues`, exactly as that step runs them, its questions included.
+Write the drafted issues from step 7 to one file, `.scratch/<feature-slug>/upgrade-drafts.md`
+(the slug from step 1): one section per issue, each with its `Status:` line per step 7's decision
+(`ready-for-agent` or `ready-for-human`) and its `## Blocked by` naming the blocking draft (the
+`Blocked by` edges from step 4's coupling analysis).
+
+Then invoke the `to-issues` skill with that file as its source and the slug from step 1. Say that the
+slicing is done: each section is one issue, and its status and blocking edges are decided.
+`to-issues` writes, checks and publishes them, its questions included. Do not run its steps or its
+scripts yourself.
 
 ### 9. Summarize
 
 Print a short table: package(s), current → target, risk (low/med/high), status
-(ready-for-agent/ready-for-human), the issue ref `publish-issues` printed.
+(ready-for-agent/ready-for-human), the issue ref `to-issues` published.
 
 ## Never
 

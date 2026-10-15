@@ -54,9 +54,13 @@ bash "<skill-dir>/scripts/git-workflow/branch-safety-check.sh"
 
 If on the default branch, the script exits with an error. If on a non-default branch, continue to Step 0.1.
 
-## Step 0.1 — Install dependencies and check prerequisites
+## Step 0.1 — Check prerequisites
 
-Follow the `dep-install` skill to ensure dependencies are installed.
+`PROJECT_ROOT` is this checkout, `git rev-parse --show-toplevel`; carry it as a literal, since each
+bash call is a fresh shell. Do not install dependencies up front. Run project commands through
+`bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"`; only when
+one fails for a missing dependency (module-not-found, import error, test runner not found) invoke the
+`dep-install` skill, with `PROJECT_ROOT` set, then retry the command once.
 
 Check that the GitHub CLI is installed and authenticated before doing anything else:
 
@@ -90,14 +94,14 @@ line names. The head branch alone never makes a PR solve-feature's: its name is 
 
 ## Step 2 — Fetch all review comments
 
-Fetch both inline review comments and top-level PR review comments:
+Top-level PR comments and review bodies:
 
 ```
 gh pr view <number> --json reviews,comments
-gh api repos/{owner}/{repo}/pulls/<number>/comments --paginate
 ```
 
-Resolved-thread state is only available via GraphQL — still through `gh`:
+Inline comments, one entry per review thread with its resolved state — available only via GraphQL,
+still through `gh`:
 
 ```bash
 gh api graphql -f query='
@@ -105,14 +109,15 @@ gh api graphql -f query='
     repository(owner:$owner,name:$repo){
       pullRequest(number:$number){
         reviewThreads(first:100){
-          nodes{ isResolved isOutdated path line comments(first:50){ nodes{ author{login} body } } }
+          nodes{ id isResolved isOutdated path line comments(first:100){ nodes{ author{login} body } } }
         }
       }
     }
   }' -F owner=<owner> -F repo=<repo> -F number=<number>
 ```
 
-Group comments by file + thread so related replies are read together. Ignore comments that are already marked as resolved (`in_reply_to_id` chains where the root is resolved) unless the user says otherwise.
+Triage each thread as one item, its replies read together. Skip a thread whose `isResolved` is true
+unless the user says otherwise.
 
 ## Step 3 — Challenge each comment
 
@@ -171,12 +176,22 @@ bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
 checks:
 
 ```bash
-bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$(git rev-parse --show-toplevel)"
+bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT"
 ```
+
+- It prints `DISCOVER` — the dev commands file has no checks yet. Run discovery, answer every field
+  its prompt lists by reading the files it names, save the answer, then run `run-checks.sh` again:
+
+  ```bash
+  (cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")
+  # write the JSON answer to $PROJECT_ROOT/.discovered-commands.json, then:
+  (cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .discovered-commands.json)
+  rm -f "$PROJECT_ROOT/.discovered-commands.json"
+  ```
 
 - It prints `CHECKS: pass` — run a plain `git push`: never forced, no `--force` or
   `--force-with-lease`. A rejected push is reported in the Summary, never retried with force.
-- Anything else — stop here, show the failing output, and do not push. Step 5.5 still records the
+- Anything else (`CHECKS: fail`) — stop here, show the failing output, and do not push. Step 5.5 still records the
   commit; the Summary says the push was not made and why.
 
 On any other PR, do not push — leave that to the user.
@@ -191,7 +206,9 @@ Only on a solve-feature PR (Step 1). On any other PR nothing is written — skip
 
 Otherwise append one line per comment that was accepted (**Actionable**, or a **Debatable** one the
 user told you to change) and fixed in Step 5's commit to `.scratch/<slug>/reviews/escaped.md` in the
-main checkout (create the directory and file if missing; never rewrite existing lines):
+main checkout — the clone's main working tree, `git worktree list`'s first line, which is this checkout
+unless you run in a linked worktree (create the directory and file if missing; never rewrite existing
+lines):
 
 ```
 - <YYYY-MM-DD> <file:line> — <one-line summary> — <commit sha>
@@ -205,8 +222,8 @@ and never stops the skill.
 
 ## Step 6 — Summary
 
-Print a markdown summary with three sections, plus the solve-feature PR sections (Steps 5 and
-5.5):
+Print a markdown summary with three sections, plus the solve-feature PR section (Step 5.5) and
+whether Step 5 pushed:
 
 ### Addressed
 
@@ -224,13 +241,6 @@ One bullet per dismissed comment with the reason.
 
 How many lines Step 5.5 appended to `.scratch/<slug>/reviews/escaped.md`, or the error if the write
 failed.
-
-### Ready (solve-feature PRs only)
-
-Print nothing under Ready, and no next step: the run already reviewed the PR and fixed its
-findings, and its describe step marks the draft ready when nothing needs a person. A draft it left
-lists what does under `Needs attention` in the PR body. The skill never runs `gh pr ready` and
-never waits on CI: marking a draft that step left ready is the developer's call.
 
 ## Unattended mode (`--auto`)
 

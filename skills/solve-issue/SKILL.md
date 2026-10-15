@@ -104,15 +104,7 @@ bash "<skill-dir>/scripts/checks/discover-mode.sh" --project-root "$PROJECT_ROOT
 ```
 
 `skipped` means it is settled. Otherwise it prints a prompt: answer it yourself, by reading the files
-it lists, and persist the answer as Step 5 persists discovered checks:
-
-```bash
-cat > "$PROJECT_ROOT/.discovered-mode.json" <<'JSON'
-{"install_mode": "<docker or host>", "docker_service": "<service or null>"}
-JSON
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .discovered-mode.json)
-rm -f "$PROJECT_ROOT/.discovered-mode.json"
-```
+it lists, then confirm and save the answer exactly as the prompt's last lines say.
 
 Do not install pre-emptively. The install mode is the dev commands file's `install_mode`
 (absent means host), and Step 4's `run.sh` acts on it: in docker mode its first call
