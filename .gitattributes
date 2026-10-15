@@ -10,3 +10,7 @@
 *.json text eol=lf
 *.toml text eol=lf
 *.js text eol=lf
+
+# Every PR adds its entry at the top of [Unreleased], so any two branches conflict there; union keeps both
+# (ours first). solve-feature's start merges the default branch into a resumed branch and stops on a conflict.
+CHANGELOG.md merge=union
