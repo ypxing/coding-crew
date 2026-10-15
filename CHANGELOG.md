@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **setup-coding-crew / crew-afk**: the Actions workflow and crew-afk's copilot launches run Copilot with `--allow-all`
+  instead of `--allow-all-tools`, so a run no longer stops at its first step: the skill's scripts sit under
+  `$HOME/.copilot/skills`, outside the checkout, and Copilot's path check denied them with no one to approve. Re-run
+  `/setup-coding-crew redo actions` to update an installed workflow.
 - **repo**: this repo runs solve-feature on GitHub Actions: `.github/workflows/solve-feature.yml` is the
   setup-coding-crew template, so labelling a feature's root issue `solve-feature` (or dispatching the workflow with its
   slug) builds it on a runner (#509).

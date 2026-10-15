@@ -965,7 +965,7 @@ yaml_to_json() {
   [ "$(jq 'length' <<<"$conc")" -eq 1 ]
   jq -e '.[0] | (.group | test("solve-feature-.*slug")) and .["cancel-in-progress"] == false' <<<"$conc" >/dev/null
   local runs; runs="$(jq -c '[.jobs.solve.steps[].run // empty]' "$json")"
-  jq -e '.[-2] | contains("copilot -p \"Use the solve-feature skill on $SLUG\" --allow-all-tools --no-color")' <<<"$runs" >/dev/null
+  jq -e '.[-2] | contains("copilot -p \"Use the solve-feature skill on $SLUG\" --allow-all --no-color")' <<<"$runs" >/dev/null
   ! grep -q 'solve-feature\.sh' "$wf" || false
   ! grep -q 'SOLVE_FEATURE_HOST' "$wf" || false
   ! grep -q 'review-pr' "$wf" || false

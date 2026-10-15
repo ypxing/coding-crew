@@ -433,8 +433,8 @@ github tracker and answer yes to its Actions step: it copies
 Commit, then label a feature's root issue `solve-feature` or run the workflow by hand with the slug. The
 file's header explains billing.
 
-The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all-tools
---no-color`; the Copilot CLI runs each coder, the reviewer, the fixer and the PR's writer as its own subagents. A stop
+The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all
+--no-color` (tools, paths and URLs: the skill's scripts are outside the checkout); the Copilot CLI runs each coder, the reviewer, the fixer and the PR's writer as its own subagents. A stop
 exits the session without failing it, so the job's last step fails it unless the run's one-line
 `.solve-feature/outcome` starts with `ready` — written by the describe step (`solve-feature.sh
 describe`) once it has marked the PR ready. It fails on `needs-attention pr=<n>`, on a stop a script

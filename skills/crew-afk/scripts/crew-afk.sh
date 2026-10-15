@@ -40,8 +40,10 @@ launch_argv() {
       SESSION=$(node -e 'console.log(require("crypto").randomUUID())') || die "node not found: it makes the session id"
       ARGV=(claude -p "/solve-feature $args" --output-format json --session-id "$SESSION" --dangerously-skip-permissions) ;;
     claude:interactive) ARGV=(claude --dangerously-skip-permissions "/solve-feature $args") ;;
-    copilot:headless) ARGV=(copilot -p "$prompt" --allow-all-tools) ;;
-    copilot:interactive) ARGV=(copilot -i "$prompt" --allow-all-tools) ;;
+    # --allow-all, not --allow-all-tools: the skill's scripts are outside the worktree, and an unattended run's path
+    # check has no one to approve it.
+    copilot:headless) ARGV=(copilot -p "$prompt" --allow-all) ;;
+    copilot:interactive) ARGV=(copilot -i "$prompt" --allow-all) ;;
     codex:headless) ARGV=(codex exec --dangerously-bypass-approvals-and-sandbox "$prompt") ;;
     codex:interactive) ARGV=(codex --dangerously-bypass-approvals-and-sandbox "$prompt") ;;
     pi:headless) ARGV=(pi -p "/skill:solve-feature $args") ;;
