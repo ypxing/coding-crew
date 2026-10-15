@@ -23,7 +23,8 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    1. `bash "<skill-dir>/scripts/solve-feature.sh" next <slug>` — prints the issue's ref. Exit 3: no ready issue is
      left, go to step 3.
    2. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working
-     directory — with exactly this prompt: `Use the solve-issue skill on <ref>`. When `coder-model=`
+     directory — with exactly this prompt: `Use the solve-issue skill on <ref>; write your outcome and
+     report to <repo>/.solve-feature/coder.report.md`. When `coder-model=`
      is non-empty and your host accepts that model name for a subagent, run it on that model;
      otherwise on your own. Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" land <slug> <ref> <branch>`, with `start`'s `branch=` — always,
@@ -54,8 +55,8 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      `needs-attention pr=<n>`. Report it.
 
 **Any other non-zero exit stops the run.** Relay the script's message as it printed it (a stop names
-the step, the reason and, for the checks, its log) — after a `solve` stop, with the subagent's own
-report — and end; do not retry, fix or close anything.
+the step, the reason and, for the checks, its log; a `solve` stop, the coder's report) — and end; do
+not retry, fix or close anything.
 Once the cause is fixed, a re-run skips the issues already done and reuses the branch and the PR; a
 stop after an issue closed or a review was fixed names its own recovery.
 

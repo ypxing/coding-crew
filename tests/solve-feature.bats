@@ -453,13 +453,17 @@ stops_at() {
   [ ! -f "$STATE/checks.log" ]
 }
 
-@test "land with the issue still first in next exits 1 'did not close', before the checks" {
+@test "land with the issue still first in next exits 1 'did not close' naming the coder's report, before the checks" {
   run bash "$SCRIPT" start feat
+  echo "stale" > .solve-feature/coder.report.md
   run bash "$SCRIPT" next feat
   git commit -q --allow-empty -m "partial"
   run bash "$SCRIPT" land feat 2 feature/feat
-  stops_at solve "coder ran but did not close 2 (its report says why)"
+  stops_at solve "coder ran but did not close 2 and left no report at $WORK/.solve-feature/coder.report.md"
   [ ! -f "$STATE/checks.log" ]
+  echo "partial: the schema test needs a fixture" > .solve-feature/coder.report.md
+  run bash "$SCRIPT" land feat 2 feature/feat
+  stops_at solve "coder ran but did not close 2; why: $WORK/.solve-feature/coder.report.md"
 }
 
 @test "land runs run-checks.sh once; exit 1 or 3 stops at checks naming the log, 3 saying to discover the checks by hand" {
