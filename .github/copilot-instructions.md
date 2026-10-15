@@ -27,7 +27,7 @@ This repo is a **distributable collection** of AI skills. Nothing runs here dire
 ./install.sh --update
 ```
 
-**Prerequisites**: `git`, `jq`
+**Prerequisites**: `bash` ≥ 4, `git`, `jq`
 
 **Platforms**: `all` (default), `claude`, `copilot`, `pi`, `codex`
 
@@ -65,6 +65,7 @@ No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`,
 ### Skill Entry
 ```jsonc
 "<skill-name>": {
+  "source-dir": "<skill-name>",        // skills/<source-dir>/ holds SKILL.md and its files
   "description": "...",
   // installs to <projectSkills|userSkills>/<name> from platforms.json
   "deps": ["tdd", "dep-install"],      // other skills, installed recursively
@@ -77,12 +78,10 @@ No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`,
 
 ## Issue Tracker (This Repo)
 
-Issues live in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
+The tracker is `.coding-crew/config.json`'s `tracker` section (`github` today); how each kind works is in `lib/tracker/docs/<kind>.md`.
 
-- **Triage state**: `Status:` line near top (see `lib/tracker/docs/local.md`)
-- **To close**: Move to `done/` subdirectory after verifying acceptance criteria
-- **PRDs**: `.scratch/<feature-slug>/PRD.md`
-- **Comments**: Append under `## Comments` heading
+- **One writer per issue:** change an issue's status or checkboxes only through the tracker CLI (`tick`, `mark-done`), never by editing it directly
+- **Local tracker:** issues live in `.scratch/<feature-slug>/issues/{open,done}/`, PRDs in `.scratch/<feature-slug>/PRD.md`
 
 ---
 
@@ -99,21 +98,38 @@ Issues live in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
 
 - Skill `deps` are installed recursively with the skill
 
+### Working Rules
+
+`CLAUDE.md` is the full guide for any agent here; in short:
+
+- **Tests:** `bash scripts/ci-run-bats.sh tests/*.bats`
+- **CHANGELOG:** add one entry at the top of `[Unreleased]` (component prefix, what changed for a user, issue/PR number)
+- **Comments:** follow solve-issue's comment rule (`skills/solve-issue/SKILL.md`, Step 4)
+- **Layer ownership:** `solve-feature` → `solve-issue` → `tdd` / `dep-install`; `solve-issue` owns the procedure and must not know its caller, `tdd` / `dep-install` own one technique each (`tests/layer-ownership.bats`)
+- **Skills stay boring:** a skill uses another skill by name, and shares code through a library linked into its own `scripts/`, never a path into another skill's directory
+
 ---
 
 ## Available Skills
 
 | Skill | Description |
 |-------|-------------|
+| `setup-coding-crew` | Take a repo from a fresh install to a working /solve-feature: tracker, check commands, and the Actions workflow with the github tracker |
+| `configure-tracker` | Choose where the project's issues live: local markdown files or GitHub Issues |
+| `crew-afk` | Start one feature's solve-feature run unattended in its own worktree, locally, in orca or in herdr |
 | `solve-feature` | Run one feature's issues on one branch, each by a fresh coder subagent gated by the checks, then review, fix and describe its PR |
 | `crew-review` | Review a branch or PR against a spec in a fresh read-only subagent; write one JSON report |
 | `tdd` | Test-driven development with red-green-refactor loop |
 | `solve-issue` | Implement one issue end-to-end: read, explore, install, TDD, verify, commit |
+| `write-pr` | Write a short PR body for a human reviewer: Why, What changes, Risk and Tested |
 | `address-pr-comments` | Fetch PR review comments, implement sensible ones with TDD |
 | `domain-modeling` | Update CONTEXT.md glossary and create ADRs inline as decisions crystallise |
 | `to-issues` | Break plan/PRD into independently-grabbable issues |
 | `to-prd` | Synthesize conversation into PRD and publish to tracker |
 | `crew-grill` | Full design pipeline: grill → PRD → issues. Add "with docs" to also update CONTEXT.md and ADRs |
+| `crew-brainstorm` | Collaborative design pipeline: explore intent, propose approaches, build a spec, then hand off to to-issues |
+| `add-tests` | Rank under-covered files by risk and turn the findings into ready-for-agent issues |
+| `upgrade-deps` | Audit outdated npm/yarn/pnpm dependencies and plan safe upgrades as issues |
 | `dep-install` | Detect install mode (host/docker) and install dependencies once |
 
 ---
