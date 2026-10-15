@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# smoke-sprint.sh — the release smoke: one real crew-afk run on the pinned demo repo, on one platform.
-# Usage: scripts/smoke-sprint.sh <platform>
-# Clones the demo repo (scripts/smoke-sprint/demo/{repo,sha,slug,check}, feature/) into $TMPDIR, installs every
+# smoke-crew-afk.sh — the release smoke: one real crew-afk run on the pinned demo repo, on one platform.
+# Usage: scripts/smoke-crew-afk.sh <platform>
+# Clones the demo repo (scripts/smoke-crew-afk/demo/{repo,sha,slug,check}, feature/) into $TMPDIR, installs every
 # skill at project level kept out of git, dispatches `crew-afk.sh dispatch <slug> --to local`, waits for the
 # run and requires `ready pr=<n>`, then runs demo/check in the run's worktree. Appends one RESULTS.md row, closes
 # the PR and deletes its branch on a pass, and prints `crew-afk-commit: <sha>[-dirty]` and
@@ -13,8 +13,8 @@ set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-DEMO_DIR="${CREW_DEMO_DIR:-$SCRIPT_DIR/smoke-sprint/demo}"
-RESULTS="${CREW_SMOKE_RESULTS:-$SCRIPT_DIR/smoke-sprint/RESULTS.md}"
+DEMO_DIR="${CREW_DEMO_DIR:-$SCRIPT_DIR/smoke-crew-afk/demo}"
+RESULTS="${CREW_SMOKE_RESULTS:-$SCRIPT_DIR/smoke-crew-afk/RESULTS.md}"
 PLATFORMS=$(jq -r 'keys_unsorted | join("|")' "$ROOT/platforms.json" | tr -d '\r')
 
 PLATFORM="${1:-}"
@@ -40,7 +40,7 @@ SHORT=${COMMIT:0:12}
 if [[ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]]; then COMMIT="$COMMIT-dirty" SHORT="$SHORT-dirty"; fi
 echo "crew-afk-commit: $COMMIT"
 
-for f in repo sha slug check feature; do [[ -e "$DEMO_DIR/$f" ]] || { echo "smoke-sprint: missing $DEMO_DIR/$f" >&2; exit 2; }; done
+for f in repo sha slug check feature; do [[ -e "$DEMO_DIR/$f" ]] || { echo "smoke-crew-afk: missing $DEMO_DIR/$f" >&2; exit 2; }; done
 firstline() { awk 'NF { print $1; exit }' "$1"; }
 DEMO_REPO=$(firstline "$DEMO_DIR/repo") PIN=$(firstline "$DEMO_DIR/sha") SLUG=$(firstline "$DEMO_DIR/slug")
 BRANCH="feature/$SLUG"

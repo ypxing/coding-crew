@@ -1,5 +1,5 @@
-# smoke-demo.bash — a stubbed demo for scripts/smoke-sprint.sh: a local upstream repo pinned at its main
-# ($UP, $PIN), a demo dir laid out like scripts/smoke-sprint/demo/ ($DEMO, slug report-cli), a `gh` stub and a
+# smoke-demo.bash — a stubbed demo for scripts/smoke-crew-afk.sh: a local upstream repo pinned at its main
+# ($UP, $PIN), a demo dir laid out like scripts/smoke-crew-afk/demo/ ($DEMO, slug report-cli), a `gh` stub and a
 # CREW_SMOKE_DISPATCH stub in $STUB that log to $BATS_TEST_TMPDIR/calls. The dispatch stub adds a worktree,
 # writes solve-feature's files there ($OUTCOME, default `ready pr=9`; $1.25; two findings) and prints its
 # worktree and a short-lived pid, so no agent CLI is called. $GH_OPEN_PR is what `gh pr list` answers.
