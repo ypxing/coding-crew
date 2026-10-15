@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **setup-coding-crew**: the Actions workflow's billing comments say who pays with `github.token`: an
+  organisation-owned repo bills the organisation (under its "billed to the organization" policy), a personal repo
+  bills the owner's Copilot seat; a `COPILOT_GITHUB_TOKEN` PAT bills its owner's seat, and the old "Unverified" note
+  is gone (#507).
 - **solve-feature / crew-afk**: a run reviews its PR at most twice: `fix` ends `review-again=yes` when the review had
   a CRITICAL, HIGH or MEDIUM finding and the fixer changed something, and the run then reviews and fixes once more.
   crew-afk's local claude run drops its `$10` cap (`--max-budget-usd`), so every agent gets the same 1h limit (#497).
