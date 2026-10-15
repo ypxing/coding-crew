@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **repo**: this repo runs solve-feature on GitHub Actions: `.github/workflows/solve-feature.yml` is the
+  setup-coding-crew template, so labelling a feature's root issue `solve-feature` (or dispatching the workflow with its
+  slug) builds it on a runner (#509).
 - **copilot-instructions** (this repo's dev guide for Copilot): lists all 17 skills, points the issue-tracker section at
   the configured tracker and its CLI instead of hand-editing issue files, adds `source-dir` to the registry schema,
   and summarises CLAUDE.md's working rules (tests, CHANGELOG, comments, layer ownership) (#508).
