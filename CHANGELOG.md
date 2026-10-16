@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **setup-coding-crew / docs**: the label that starts the solve-feature Actions workflow is `run-agent`, not
+  `solve-feature` (which read as a topic tag): the template's `slug` job triggers on it, `/setup-coding-crew`
+  creates it, and the guide says to add it to a feature's root issue. A repo's copied workflow keeps its old
+  label until `/setup-coding-crew redo actions` shows the diff (#534).
 - **tracker (github)**: the tracker CLI's `create-issue`, `feature-issues` and `link-blockers` ops are gone (nothing
   called them since #488); they now exit 2 as unknown ops. To check a feature moved off milestones, run
   `known --feature-slug <slug> --out <dir>` and `features` instead (#531).

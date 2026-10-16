@@ -107,7 +107,7 @@ On yes, ask which agent CLI the runner uses, and keep the answer as `<agent>`:
 ```bash
 mkdir -p .github/workflows
 cp "<skill-dir>/hosts/github-actions.yml" .github/workflows/solve-feature.yml
-gh label create solve-feature --force
+gh label create run-agent --force
 gh variable set CREW_AGENT --body <agent>
 ```
 
@@ -117,7 +117,7 @@ carry on to Step 4: the workflow file is written. Tell the user that once gh's e
 workflow `identical` and runs neither. With `claude`, tell the user to add the secret themselves with
 `! gh secret set ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`), which prompts for the value; never ask for
 it in the conversation. Then point the user to the workflow's header comment (`# Billing`) for who pays for the
-runs, and say how a run starts: label a feature's root issue `solve-feature`, or run the workflow by hand with
+runs, and say how a run starts: label a feature's root issue `run-agent`, or run the workflow by hand with
 the slug. Tell them too that an issue whose change touches `.github/workflows/` cannot land from a runner — the
 workflow's `GITHUB_TOKEN` never gets the `workflows` scope — so such an issue is run locally, for example with
 `/solve-feature`.
