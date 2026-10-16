@@ -86,6 +86,7 @@ HOME/.claude/skills/to-issues/ /
 HOME/.claude/skills/to-issues/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/to-issues/references/ /
 HOME/.claude/skills/to-issues/references/expand-contract.md exec=0
+HOME/.claude/skills/to-issues/references/publish.md exec=0
 HOME/.claude/skills/to-issues/scripts/ /
 HOME/.claude/skills/to-issues/scripts/lint-issues.sh exec=1
 HOME/.claude/skills/to-issues/scripts/tracker link=HOME/.coding-crew/lib/tracker

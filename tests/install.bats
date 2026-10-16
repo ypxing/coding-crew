@@ -9,6 +9,7 @@ load helpers/shared-install
 setup_file() {
   shared_install all
   shared_install to-issues claude --skill to-issues
+  shared_install upgrade-deps claude --skill upgrade-deps
   bg_wait
 }
 
@@ -29,6 +30,18 @@ teardown() {
   [ "$(jq -c '.skills' "$m")" = "$(jq -c '.skills | keys' "$SCRIPT_DIR/registry.json")" ]
   [ "$(jq -c '.libs' "$m")" = '["checks","git-workflow","tracker"]' ]
   ! grep -q '"version"' "$m"
+}
+
+@test "a skill installed alone brings the skills it invokes: to-issues brings to-prd and configure-tracker, upgrade-deps brings to-issues" {
+  local dir s
+  dir="$(shared_installed to-issues)"
+  for s in to-issues to-prd configure-tracker; do
+    [ -f "$dir/.claude/skills/$s/SKILL.md" ] || { echo "to-issues: no $s"; return 1; }
+  done
+  dir="$(shared_installed upgrade-deps)"
+  for s in upgrade-deps to-issues dep-install; do
+    [ -f "$dir/.claude/skills/$s/SKILL.md" ] || { echo "upgrade-deps: no $s"; return 1; }
+  done
 }
 
 @test "to-issues installs references/ beside SKILL.md for every platform" {
@@ -65,7 +78,7 @@ teardown() {
   [ -f "$dir/references/expand-contract.md" ]
   [ -f "$dir/scripts/tracker/cli.mjs" ]
   [ ! -e "$TEMP_DIR/.claude/skills/gone-skill" ]
-  [ "$(jq -c '.skills' "$m")" = '["to-issues"]' ]
+  [ "$(jq -c '.skills' "$m")" = '["configure-tracker","to-issues","to-prd"]' ]
   [ "$(jq -c '.libs' "$m")" = '["tracker"]' ]
 }
 
@@ -277,12 +290,12 @@ _libs_linked() {
 
 @test "uninstall --skill removes a library only once no skill left in the manifest uses it" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skills tdd,to-prd,to-issues >/dev/null
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skills tdd,crew-review,configure-tracker >/dev/null
   local m="$TEMP_DIR/.coding-crew/manifest.json"
-  TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill to-prd >/dev/null
+  TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill crew-review >/dev/null
   [ -d "$TEMP_DIR/.coding-crew/lib/tracker" ]
-  [ "$(jq -c '.skills' "$m")" = '["tdd","to-issues"]' ]
-  TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill to-issues >/dev/null
+  [ "$(jq -c '.skills' "$m")" = '["configure-tracker","tdd"]' ]
+  TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill configure-tracker >/dev/null
   [ ! -e "$TEMP_DIR/.coding-crew/lib" ]
   [ "$(jq -c '.skills' "$m")" = '["tdd"]' ]
   [ "$(jq -c '.libs' "$m")" = '[]' ]
@@ -355,18 +368,18 @@ _libs_linked() {
 @test "--skills is the full desired set: a name dropped from the list is uninstalled" {
   cd "$SCRIPT_DIR"
 
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skills tdd,to-issues,to-prd > /dev/null
-  [ -d "$TEMP_DIR/.claude/skills/to-prd" ]
-  run jq -r '.skills | index("to-prd") != null' "$TEMP_DIR/.coding-crew/manifest.json"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skills tdd,to-issues,crew-review > /dev/null
+  [ -d "$TEMP_DIR/.claude/skills/crew-review" ]
+  run jq -r '.skills | index("crew-review") != null' "$TEMP_DIR/.coding-crew/manifest.json"
   [ "$output" == "true" ]
 
   run bash -c "cd '$SCRIPT_DIR' && TARGET_REPO='$TEMP_DIR' ./install.sh claude --skills tdd,to-issues"
 
-  [[ "$output" =~ "pruning to-prd" ]]
-  [ ! -d "$TEMP_DIR/.claude/skills/to-prd" ]
+  [[ "$output" =~ "pruning crew-review" ]]
+  [ ! -d "$TEMP_DIR/.claude/skills/crew-review" ]
   [ -d "$TEMP_DIR/.claude/skills/tdd" ]
   [ -d "$TEMP_DIR/.claude/skills/to-issues" ]
-  run jq -r '.skills | index("to-prd") != null' "$TEMP_DIR/.coding-crew/manifest.json"
+  run jq -r '.skills | index("crew-review") != null' "$TEMP_DIR/.coding-crew/manifest.json"
   [ "$output" == "false" ]
 }
 

@@ -19,7 +19,7 @@ name: solve-feature
 # with the workflow's own GITHUB_TOKEN triggers no other workflow, so a `pull_request` job would never
 # fire. The session's exit code does not carry a stop, so the last step reads the run's one-line
 # .solve-feature/outcome and fails the job on anything but `ready pr=<n>`: `needs-attention pr=<n>`,
-# `stopped: <reason>`, or no file at all (the session ended before the run finished). The step before it
+# `stopped: <what> failed: <reason>`, or no file at all (the session ended before the run finished). The step before it
 # uploads .solve-feature/ (the checks logs a stop names, the coder's report) as the run's artifact. A stop at an
 # issue's checks has already pushed its work and made the issue ready again, so a re-run picks it up there.
 # The last step also writes the run's summary page: the outcome, the PR, the model, and on a stop the coder's

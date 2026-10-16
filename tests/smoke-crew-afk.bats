@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 
-# scripts/smoke-sprint.sh <platform> — the release smoke: the pinned demo repo, a project-level install kept out
+# scripts/smoke-crew-afk.sh <platform> — the release smoke: the pinned demo repo, a project-level install kept out
 # of git, and one crew-afk dispatch whose run must end `ready pr=<n>`. Here the demo repo is a local one
-# (CREW_DEMO_DIR laid out like scripts/smoke-sprint/demo/), `gh` is a stub that logs its argv, and
+# (CREW_DEMO_DIR laid out like scripts/smoke-crew-afk/demo/), `gh` is a stub that logs its argv, and
 # CREW_SMOKE_DISPATCH stands in for crew-afk.sh: it adds a worktree, writes solve-feature's files there and
 # prints the worktree and a short-lived pid, so no agent CLI is called.
 
@@ -10,7 +10,7 @@ load helpers/smoke-demo
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
-  SMOKE="$REPO_ROOT/scripts/smoke-sprint.sh"
+  SMOKE="$REPO_ROOT/scripts/smoke-crew-afk.sh"
   export TMPDIR="$BATS_TEST_TMPDIR/tmp"
   mkdir -p "$TMPDIR"
   D="$TMPDIR/crew-smoke-claude"

@@ -50,9 +50,10 @@ than swallowing it. `gh` targets the repo of the current directory's git remote.
    immediately with a clear error, e.g. "gh is not authenticated — run `gh auth login` first."
    Nothing below runs until this passes.
 2. **Create the 6 labels idempotently.** For each of `needs-triage`, `needs-info`,
-   `ready-for-agent`, `ready-for-human`, `awaiting-merge`, `blocked`: check whether it already
-   exists (`gh label list`); if missing, create it (`gh label create <name>`). Skip labels that
-   already exist — do not error or duplicate. `awaiting-merge` is `done` before the PR merges;
+   `ready-for-agent`, `ready-for-human`, `awaiting-merge`, `blocked`, run `gh label create <name>`.
+   A failure whose message says the label already exists is success: the label is there. Any other
+   failure stops the setup with gh's error. Never list labels to decide which to create: `gh label
+   list` shows 30 by default and misses the rest. `awaiting-merge` is `done` before the PR merges;
    `blocked` marks an issue that needs a human (runs skip it until a person removes the label);
    `wontfix` is a close reason, not a label — do not create `done` or `wontfix` as labels.
 

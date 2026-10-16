@@ -79,6 +79,7 @@ This skill may only create or modify files at these paths:
 - `CONTEXT-MAP.md` (repo root)
 - `src/**/CONTEXT.md` (context-specific glossaries)
 - `docs/adr/*.md` (ADR files)
+- `src/**/docs/adr/*.md` (context-specific ADR files)
 
 Do NOT write to any other path. If a decision implies writing elsewhere, surface it to the user and let them handle it.
 

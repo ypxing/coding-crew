@@ -105,8 +105,8 @@ defines_term() {
 
 # ─── a direct run is self-sufficient ─────────────────────────────────────────
 
-@test "solve-issue keeps its branch guard" {
-  grep -q '^### 0\. Branch guard' "$SOLVE_ISSUE"
+@test "solve-issue keeps its branch guard in Preflight" {
+  grep -q '^### 0\. Preflight' "$SOLVE_ISSUE"
   grep -q 'DEFAULT_BRANCH' "$SOLVE_ISSUE"
 }
 

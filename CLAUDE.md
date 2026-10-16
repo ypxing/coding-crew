@@ -26,8 +26,8 @@ node scripts/eval-design-skills.mjs --skill crew-grill --runs 2 --dry-run   # dr
 # After editing skills/crew-review/SKILL.md: replay the bugs earlier reviews missed against base and head, judged blind; costs API money
 node scripts/eval-reviewer-misses.mjs --runs 2 --dry-run   # writes each ref's prompts, calls no model; drop --dry-run to run
 
-# One real crew-afk run on the pinned demo repo (scripts/smoke-sprint/demo/), in a clone rebuilt fresh each run; costs API money and opens (then closes) one demo PR
-scripts/smoke-sprint.sh claude > /tmp/smoke.log   # appends a row to scripts/smoke-sprint/RESULTS.md — commit it before cutting the release
+# One real crew-afk run on the pinned demo repo (scripts/smoke-crew-afk/demo/), in a clone rebuilt fresh each run; costs API money and opens (then closes) one demo PR
+scripts/smoke-crew-afk.sh claude > /tmp/smoke.log   # appends a row to scripts/smoke-crew-afk/RESULTS.md — commit it before cutting the release
 
 # Bring a PR branch up to date with origin/main (local only, never pushes): merge it, resolving CHANGELOG append conflicts
 scripts/sync-pr-with-main.sh <branch>

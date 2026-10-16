@@ -8,9 +8,15 @@
 
 Write acceptance criteria unticked (`- [ ]`): the person ticks each one as they finish it, so a box ticked at publish says "done" before anything was done.
 
-**Kind A — the whole task is a person's.** Drop `## Implements`, `## Interfaces` and the "Read this document before implementing" line; no agent will read this issue. End `### Steps` with a fixed last step, "Mark it done", that runs `node ~/.coding-crew/lib/tracker/cli.mjs mark-done <n>` — `node .coding-crew/lib/tracker/cli.mjs mark-done <n>` from the repo root when this skill is installed in the repo (its `<skill-dir>` is inside it) — (local tracker: the issue file path instead of `<n>`), never an absolute path, which does not exist on the reader's machine; with `Check:` the command exits 0 and prints no `REFUSED` line, and `Undo:` follow "Reopen an issue" in the tracker doc `docs/<kind>.md` beside that `cli.mjs` (`~/.coding-crew/lib/tracker/docs/<kind>.md`, or `.coding-crew/lib/tracker/docs/<kind>.md`), with `<kind>` the `tracker=` value the same `cli.mjs config` prints. Name neither the tracker nor its labels or files in the step.
+**Kind A — the whole task is a person's.**
 
-**Kind B — agent work blocked on a person.** Keep the agent brief (`## What to build`, `## Implements`, acceptance criteria, …) below the block, and make the last step of `### Steps` relabel the issue `ready-for-agent`, so an agent run picks it up.
+- Drop `## Implements`, `## Interfaces` and the "Read this document before implementing" line; no agent will read this issue.
+- End `### Steps` with a fixed last step, "Mark it done", that runs `node ~/.coding-crew/lib/tracker/cli.mjs mark-done <n>`, or `node .coding-crew/lib/tracker/cli.mjs mark-done <n>` from the repo root when this skill is installed in the repo (its `<skill-dir>` is inside it). On the local tracker, pass the issue file path instead of `<n>`. Never write an absolute path: it does not exist on the reader's machine.
+- That step's `Check:` is that the command exits 0 and prints no `REFUSED` line.
+- Its `Undo:` is to follow "Reopen an issue" in the tracker doc `docs/<kind>.md` beside that `cli.mjs` (`~/.coding-crew/lib/tracker/docs/<kind>.md`, or `.coding-crew/lib/tracker/docs/<kind>.md`), with `<kind>` the `tracker=` value the same `cli.mjs config` prints.
+- Name neither the tracker nor its labels or files in the step.
+
+**Kind B — agent work blocked on a person.** Keep the agent brief (`## What to build`, `## Implements`, acceptance criteria, …) below the block, and make the last step of `### Steps` relabel the issue `ready-for-agent` by following "Reopen an issue" in that same tracker doc, with `ready-for-agent` as the status, so an agent run picks it up.
 
 Trimmed example (Kind A):
 

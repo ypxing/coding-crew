@@ -7,7 +7,7 @@ description: >
 
 Synthesize the current conversation context into a PRD. Do not ask discovery questions — if
 something is unclear, state your assumption. Do confirm technical choices (seams, contracts) with
-the user before writing the final document.
+the user before writing the final document, except those already settled (step 4).
 
 {{FRAGMENT:tracker-configuration}}
 
@@ -20,15 +20,17 @@ the user before writing the final document.
 
    Never guess the slug silently — confirm with the user if there's any ambiguity. **Before reusing a slug `features` lists, ask the user** whether to extend that feature (its PRD is updated in place) or choose a new slug; a closed feature is still a taken slug. Skip that question when a calling skill (`to-issues`) handed you the slug: it already confirmed it with the user.
 
-2. **Check for an existing PRD.** Run `node "$TRACKER" prd --feature-slug <feature-slug>`: exit 0 prints it — read it, it may contain a `## Decisions` section pre-seeded by `crew-grill`. Preserve and expand those decisions rather than replacing them. An opening `<!-- PRD issue #<n>: … -->` line is the CLI naming the PRD's ref, not part of the PRD: leave it out of what step 6 publishes. Exit 3 means there is none.
+2. **Check for an existing PRD.** Run `node "$TRACKER" prd --feature-slug <feature-slug>`: exit 0 prints it — read it: its `## Decisions` are settled. Preserve and expand them rather than replacing them. An opening `<!-- PRD issue #<n>: … -->` line is the CLI naming the PRD's ref, not part of the PRD: leave it out of what step 6 publishes. Exit 3 means there is none.
 
-3. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout, and respect any ADRs in the area you're touching. The decisions from the grilling session should be captured in the conversation context or in the existing PRD.
+3. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout, and respect any ADRs in the area you're touching. Decisions already settled are in the conversation (a `crew-grill` or `crew-brainstorm` summary) or in the existing PRD.
 
-4. Sketch the seams at which the feature will be tested. Prefer existing seams over new ones; prefer the highest seam possible. **If decisions are already captured in the existing PRD (e.g. after `crew-grill`), skip re-confirming seams that were already settled — only present genuinely open questions.**
+4. Sketch the seams at which the feature will be tested. Prefer existing seams over new ones; prefer the highest seam possible; the fewer seams across the codebase the better, and the ideal number is one. **Skip re-confirming seams and decisions settled earlier in the conversation (a `crew-grill` or `crew-brainstorm` summary) or in an existing PRD — only present genuinely open questions.**
 
 5. Write the PRD using the template below.
 
 {{FRAGMENT:verification-pass}}
+
+   After a `crew-grill` or `crew-brainstorm` summary, re-check only what the PRD adds beyond it — the summary just went through this pass; a standalone run re-checks everything the PRD cites. Necessity is settled by the design you were handed. Revise each corrected decision in the PRD before publishing it, and report the corrections to the user.
 
 6. Then write the PRD to `.scratch/<feature-slug>/.prd-draft.md` and publish it, with that path as `<file>`:
 
@@ -36,17 +38,20 @@ the user before writing the final document.
    node "$TRACKER" publish-prd --feature-slug <feature-slug> --title "<feature title>" --body-file <file>
    ```
 
-   It creates the feature's PRD, or updates it when one exists, and prints its ref; delete the draft file once it exits 0. The PRD is titled `PRD: <feature title>`; where the tracker groups a feature under a root issue, the PRD becomes the root, or a sub-issue of the root the feature already has.
+   It creates the feature's PRD, or updates it when one exists, and prints its ref; delete the draft file once it exits 0. The title depends on the tracker (`tracker=` from `node "$TRACKER" config`):
+
+   - **local** — the PRD is a file with no other title, so the body you write opens with `# PRD: <feature title>`.
+   - **github** — `--title` titles the issue `PRD: <feature title>`, so the body has no such heading. The PRD becomes the feature's root issue, or a sub-issue of the root the feature already has.
 
 **Security**: Only write to paths under `.scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `config.json` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
 
-> **Never commit `PRD.md`.** (Local tracker only — on a remote tracker the PRD is an issue, with no local file to accidentally commit.) This file lives under `.scratch/` which is gitignored. Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`.
+> **Never commit `PRD.md`.** (Local tracker only — on a remote tracker the PRD is an issue, with no local file to accidentally commit.) This file lives under `.scratch/`, which the tracker CLI gitignores (`.scratch/.gitignore`). Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`.
 
 <prd-template>
 
 ## Problem Statement
 
-The problem from the user's perspective. Open with one actor line: `Actor: <who has the problem>`. If the design started from tracker issues, put `Origin: #<n>[, #<n>…]` on the next line (column 0); otherwise omit it. Those issues close together with this PRD.
+The problem from the user's perspective. Open with one actor line: `Actor: <who has the problem>`. If the design started from tracker issues, put `Origin: #<n>[, #<n>…]` on the next line (column 0); otherwise omit it. On the github tracker, those issues close together with this PRD; the local tracker closes nothing from it.
 
 ## Solution
 
@@ -61,7 +66,7 @@ The solution from the user's perspective.
 `<seam>` is where a test observes it (a command, a function, an endpoint, a rendered file).
 Example:
 
-- **B1** — given three ready issues, `/solve-feature` runs, all three are implemented in order on one branch, at `solve-feature.sh`
+- **B1** — given an expired token, the CLI exits 2 and names the env var to set, at `cli.mjs`
 
 Do not list every edge case — acceptance criteria on individual issues cover those.
 
@@ -70,6 +75,9 @@ Do not list every edge case — acceptance criteria on individual issues cover t
 Architectural and technical decisions made during design. One per line:
 
 - **D<n>** — <the decision, and the reason when it is not obvious>
+
+A decision a design summary tagged `(auto)` keeps that tag, and a fact it established goes into the
+decision it supports with its citation.
 
 End the line with `(no slice)` when no issue needs to implement the decision — it is already true
 of the code, or only constrains how other work is done. `to-issues` then gives it no slice, and its
@@ -80,31 +88,28 @@ May include:
 - Modules to build/modify and their interfaces
 - Schema changes and API contracts
 - Key technical tradeoffs and their rationale
-- Relevant file paths and existing signatures that implementing agents should know about
+- Relevant file paths and existing signatures the implementers should know about
 - Existing utilities, helpers, or conventions in this codebase that implementation should reuse
   rather than reinvent — the exploration this skill already does once, so each issue's implementer
   does not have to re-grep for it
 
-For each decision that changes existing behaviour, record what relies on the thing it changes, as
-facts with `path:line`: its callers, what it calls, the state it reads or writes, and state older
-versions left behind (saved files, records, config an earlier release wrote). How you find them is
-up to you; the implementer and the reviewer read these instead of rediscovering them. A claim about
-existing behaviour without a `path:line` is not a fact: cite it or leave it out.
+Rules for the lines:
 
-A decision that says "every", "always", "only" or "never" names the cases easy to miss for it
-(signals, thrown errors, early returns, retries, concurrent runs) and says whether each is
-included or excluded, e.g. "on every exit path, including a signal; only SIGKILL leaves no record". A
-reviewer checks the code against the cases you name and reads an unnamed one as by design. Do this
-for pre-seeded decisions too when you expand them. One clause, not a list on every line; a decision
-without such a word needs none.
-
-Module design: prefer deep modules (a small interface over substantial behaviour), give each module
-one owner, and state the dependency direction (which module depends on which, never the reverse).
-
-Include file paths and short code snippets where they make the intent unambiguous — this PRD is
-consumed immediately by agents, not read months later. Keep snippets trimmed to decision-rich
-parts (a type shape, schema, signature) — not full implementations. Keep the whole PRD lean:
-every coder and reviewer dispatch reads all of it.
+- **What relies on it.** A decision that changes existing behaviour records what relies on the
+  thing it changes, as facts with `path:line`: callers, callees, the state it reads or writes, and
+  state older versions left behind (saved files, records, config an earlier release wrote). The
+  implementer and the reviewer read these instead of rediscovering them. A claim about existing
+  behaviour without a `path:line` is not a fact: cite it or leave it out.
+- **"Every", "always", "only", "never".** A decision using such a word names, in one clause, the
+  cases easy to miss (signals, thrown errors, early returns, retries, concurrent runs) and whether
+  each is in or out, e.g. "on every exit path, including a signal; only SIGKILL leaves no record".
+  The reviewer checks the named cases and reads an unnamed one as by design. A decision without
+  such a word needs none.
+- **Module design.** Prefer deep modules (a small interface over substantial behaviour), one owner
+  per module, and a stated dependency direction.
+- **Lean.** File paths and short snippets where they make the intent unambiguous, trimmed to the
+  decision-rich parts (a type shape, schema, signature), never full implementations. This PRD is
+  read immediately, in full, by whoever implements and whoever reviews each issue.
 
 ## Trust Boundaries & Risks
 
@@ -135,7 +140,8 @@ or the conversation; otherwise omit the heading entirely. List them one line per
 
 ## Out of Scope
 
-What this feature explicitly does not cover.
+What this feature explicitly does not cover, including each item a design summary cut, with why it
+was cut.
 
 ## Further Notes
 

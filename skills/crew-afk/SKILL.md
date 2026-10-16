@@ -26,7 +26,8 @@ review, fix or close nothing**: each run is its own top-level session in its own
    ```
 
    Match the user's word against those slugs: exactly, then as a likely typo, then by issue content
-   (`node "$TRACKER" known --feature-slug <slug> --out <dir>` for a candidate). One match: use it and
+   (`d="$(mktemp -d)" && node "$TRACKER" known --feature-slug <slug> --out "$d" && echo "$d"` for a
+   candidate writes its issues as files in the directory it prints). One match: use it and
    say what you inferred. Several: ask which. None: start nothing, and point the user at
    `crew-grill`, `crew-brainstorm` or `to-issues` to plan the feature first. Never guess: a wrong
    slug spends a run on the wrong work. One call starts one feature; for several, run this once each.

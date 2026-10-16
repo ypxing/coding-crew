@@ -49,9 +49,8 @@ Before writing any code:
 
 **Non-interactive runs.** With no human in the loop — a headless/`-p` invocation, a subagent, or
 a program named as your caller — the confirm-and-approve box cannot be
-satisfied and must not be waited on. Treat the issue's acceptance criteria as the approved plan,
-derive the interface and behaviour list from them, record that list in your notes, and go straight
-to §2. Never ask a question nobody will read.
+satisfied and must not be waited on. Treat the task your caller gave as the approved plan, derive
+the interface and behaviour list from it, record that list in your notes, and go straight to §2. Never ask a question nobody will read.
 
 ### 2. Tracer Bullet
 
@@ -64,7 +63,7 @@ GREEN: Write minimal code to pass → test passes
 
 **Before writing any source code: run the test and paste the failure output.** A test that cannot be shown to fail is not a red test. Do not touch source files until you have visible evidence of failure; the one exception is the temporary break below, for code that already exists.
 
-**An edit that is only docs or prompt text** (a README, a SKILL.md, a role protocol) is exempt: no
+**An edit that is only docs or prompt text** (a README, a SKILL.md) is exempt: no
 red test, and no new test — a test that greps that text pins wording, not behaviour.
 
 It must fail **for the intended reason**: on the assertion you wrote, because the behaviour is

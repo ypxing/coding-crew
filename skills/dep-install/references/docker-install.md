@@ -26,87 +26,40 @@ no install command. Still apply the retry rule if a later command fails with a m
 error: a package installed into the volume since the stamp was written (an in-container `npm install
 foo`) is not in the lockfile, and `--force` reinstalls.
 
-`docker-install.sh` reads `docker_service`, `install` and `credential_target` from
-the dev commands file itself (`scripts/checks/commands-file.sh` names it). Steps 0 and 1 fill in the last two when nobody
-has looked yet.
+`docker-install.sh` reads `docker_service`, `install` and `credential_target` from the dev commands
+file itself (`scripts/checks/commands-file.sh` names it); dep-install's Step 1 has already made sure
+they were asked. Do not look for an install command or a credential target yourself.
 
-### 0. Credential target — only when the cache has none
-
-```bash
-CACHE=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT")
-RAW=""
-[ -f "$CACHE" ] && RAW=$(grep -o '"credential_target"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$CACHE" | head -1)
-```
-
-`$RAW` non-empty (a command, or `null`: someone already looked) — skip to step 1. Empty — read the
-Makefile (`$PROJECT_ROOT/Makefile`), if present, for:
-
-- Targets that generate package-manager credential config files (e.g. `.npmrc`, `.yarnrc.yml`,
-  `pip.conf`, `.cargo/credentials.toml`) via `envsubst`, `echo`, or template files
-  (`.npmrc.tpl`, `pip.conf.tpl`, etc.)
-- Comments describing required secrets, so you recognise a target's *purpose* even when its
-  name alone does not say so
-
-Persist whatever you conclude — the full command (e.g. `make _registry`, not just the bare target
-name), or a confident `null`:
+### 1. Run `docker-install.sh`
 
 ```bash
-cat > "$PROJECT_ROOT/.credential-target-discovery.json" <<'JSON'
-{"credential_target": "<the command you found, e.g. \"make _registry\", or null if you checked and found none>"}
-JSON
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .credential-target-discovery.json)
-rm -f "$PROJECT_ROOT/.credential-target-discovery.json"
+bash "<skill-dir>/scripts/checks/docker-install.sh" --project-root "$PROJECT_ROOT" --timeout 1800
 ```
 
-**Never read the contents of `.env*` or any credential config file** — not to log, not to inspect, not to verify.
-
-### 1. Install command — only when the cache has none
+Only on a module-not-found retry, delete the stamp and reinstall:
 
 ```bash
-RAW=""
-[ -f "$CACHE" ] && RAW=$(grep -o '"install"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$CACHE" | head -1)
+bash "<skill-dir>/scripts/checks/docker-install.sh" --project-root "$PROJECT_ROOT" --timeout 1800 --force
 ```
 
-`$RAW` non-empty — skip to step 2. Empty — check whether the Makefile has a public `install`/`deps`
-target whose recipe runs the package manager *inside the container* (no `docker` call of its own) in
-every subdirectory that has a named volume, not just the root. Persist that target invocation (e.g.
-`make install`), or `null`:
-
-```bash
-cat > "$PROJECT_ROOT/.install-discovery.json" <<'JSON'
-{"install": "<the command you found, or null>"}
-JSON
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .install-discovery.json)
-rm -f "$PROJECT_ROOT/.install-discovery.json"
-```
-
-### 2. Run `docker-install.sh`
-
-```bash
-bash "<skill-dir>/scripts/checks/docker-install.sh" --project-root "$PROJECT_ROOT" \
-  --timeout 1800 \
-  # only on a module-not-found retry: delete the stamp, then reinstall
-  --force
-```
-
-It ensures `.env`, generates this checkout's override, and runs the install command (the cached
+It ensures `.env`, generates this checkout's override, and runs the install command (the dev commands file's
 `install`, else each manifest directory's lockfile command) in the service, unless the root
 dependency volume's `.crew-stamp` says it already ran. Handle its exit code:
 
 - **0** — the volumes hold the install: it ran, or the stamp was already there (it prints
-  `Present: …`). Continue to step 3.
+  `Present: …`). Continue to step 2.
 - **2** — nothing this mechanism could do here (no compose file, no service, no supported
   ecosystem). Report this plainly rather than guessing a workaround.
 - **3** — the install command failed inside the container (no stamp was written). Report `BLOCKED`
   with the tail of output it prints to stderr.
-- **5** — the cached `install` command runs docker itself, which the container has none of. Report
+- **5** — the `install` command runs docker itself, which the container has none of. Report
   `BLOCKED` with its message — the fix is a container-side command in the dev commands file's
   `install`, not in this session.
 
 Every failure ends with `docker-install: failed — service <s>, step <step>, exit <n>` and removes the
 override, so the next `run.sh` call installs again rather than run against empty volumes.
 
-### 3. Run every later command through `run.sh`
+### 2. Run every later command through `run.sh`
 
 Every test, lint and type-check run from here on goes through `run.sh`, which builds the
 `docker compose run --rm <service>` invocation for you, through the shim — and runs a command whose

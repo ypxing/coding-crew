@@ -37,6 +37,17 @@ teardown() {
   [[ "$output" == *'{"install_mode": "<docker or host>", "docker_service": "<service, or null for host>"}'* ]]
 }
 
+@test "the prompt's save commands, run with an answer filled in, record the mode every caller then reads" {
+  run bash "$LIB/discover-mode.sh" --project-root "$WT"
+  block=$(printf '%s\n' "$output" | awk '/^cat > /{f=1} f{print} /^rm -f /{f=0}' \
+    | sed -e 's/<docker or host>/docker/' -e 's/<service, or null for host>/app/')
+  [ -n "$block" ]
+  (cd "$TEMP_DIR" && bash -c "$block")
+  [ -z "$(git -C "$WT" status --porcelain)" ]
+  run bash "$LIB/resolve-mode.sh" --project-root "$WT"
+  [ "$output" = $'INSTALL_MODE=docker\nDOCKER_SERVICE=app' ]
+}
+
 @test "an answer persisted from one worktree settles it for every worktree, and resolve-mode acts on it" {
   printf '{"install_mode": "docker", "docker_service": "app"}\n' > "$TEMP_DIR/answer.json"
   (cd "$WT" && bash "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/answer.json") >/dev/null

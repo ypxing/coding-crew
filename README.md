@@ -33,7 +33,7 @@ inside the repo with `| bash -s -- --project` (or `./install.sh <platform> --pro
 Then, inside your coding agent:
 
 ```bash
-/setup-coding-crew                                # once per repo: tracker + your check commands
+/setup-coding-crew                                # once per repo: tracker + your dev commands
 /crew-grill add rate limiting to the public API   # 👤 plan it together → PRD + issues
 /crew-afk rate-limit                              # 🤖 the crew builds it in its own worktree while you're away
 /crew-afk status                                  # which PRs are ready for you

@@ -39,12 +39,14 @@ the command, where it reaches the process that reads it:
 
 **Fixable** (test failures, type errors, lint violations) — fix the code and re-run. If the
 same check command continues to fail after 2 distinct fix attempts — regardless of whether the
-error message changed — stop and report blocked.
+error message changed — stop: commit the work with a `[WIP]` marker and report `partial`, naming
+the check and its output.
 
 **Environment errors** (Docker not running, missing credentials, network timeouts, permission
 denied on system paths) — stop immediately. Do not attempt to fix. Report blocked with
-verbatim output.
+verbatim output, after committing any files you changed with a `[WIP]` marker.
 
 ## Acceptance criteria
 
-Check each criterion from the issue against the implemented code. All must pass before committing.
+Check each criterion from the issue against the implemented code. All must hold for a `complete`
+commit; with one unmet, the commit carries a `[WIP]` marker and the outcome is `partial`.

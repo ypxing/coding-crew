@@ -2,10 +2,10 @@
 name: solve-issue
 description: >
   Implements a single issue end-to-end: reads it, explores the code, installs dependencies when missing,
-  builds with TDD, verifies the project's checks and commits. Works in a worktree or on a branch, on any
-  platform. Use when one issue — a tracker ref, an issue file or inline content — should be implemented and
-  committed.
-argument-hint: "Path to issue file (e.g. .scratch/auth/issues/01-add-logout.md)"
+  builds with TDD, verifies the project's checks, commits and marks the issue done. Works in a worktree or on
+  a branch, on any platform. Use when one issue — a tracker ref, an issue file or inline content — should be
+  implemented and committed.
+argument-hint: "An issue file (e.g. .scratch/auth/issues/01-add-logout.md), a tracker ref (e.g. 42) or the issue's content inline"
 ---
 
 # Solve Issue
@@ -20,7 +20,7 @@ the words, not the wire format:
 - **`complete`** — every acceptance criterion is met, every check passes, the work is committed
   (or there was none: Step 3's already met), and Step 7 has marked the issue done.
 - **`partial`** — meaningful progress, but a check fails or a criterion is unmet. Commit the work with
-  a `[WIP]` marker so the branch preserves it, and say what remains. A later round resumes here.
+  a `[WIP]` marker (Step 6) so the branch preserves it, and say what remains. A later round resumes here.
 - **`blocked`** — cannot proceed without human input or an environment fix. Not a way to avoid
   reporting `partial`. A failure that names something **no file in this repo can provide** — a
   credential, a license, a daemon, a registry, an external service — is `blocked`: run the
@@ -28,7 +28,12 @@ the words, not the wire format:
   output as the evidence, and stop. Do not start services by hand, search for tokens, or edit
   compose files or the Makefile to get around it: whatever you start is gone before anyone re-runs
   the checks, so a pass that depended on it proves nothing. Setup *inside* the repo that the issue
-  asks for (helpers, wiring, config) is still coding, and in scope.
+  asks for (helpers, wiring, config) is still coding, and in scope. A `blocked` run that changed files
+  commits them with a `[WIP]` marker too (Step 6).
+
+Every outcome but `complete` commits your own changes and leaves the issue open: what a caller checks next
+is the branch's commits and the tracker, not your working directory. The one exception is files a check
+rewrote that this change didn't touch (Step 5), left uncommitted for a human.
 
 When you stop on a blocker, always output:
 
@@ -42,68 +47,65 @@ Do not attempt workarounds.
 
 ## Inputs
 
-The caller provides a **file path** or tracker ref to read the issue from, or the issue content inline.
+The caller provides an **issue file path** or a tracker ref to read the issue from, or the issue content
+inline.
 
-`PROJECT_ROOT` (the checkout where code lives and all commands run) is **inherited from the
-caller** — use the value already established and do not re-derive it.
+`PROJECT_ROOT` (the checkout where code lives and all commands run) is **inherited from the caller**
+when it set one; otherwise it is `git rev-parse --show-toplevel`, run in your working directory. Resolve it once and carry
+it as a literal: each bash call is a fresh shell.
 
 {{FRAGMENT:tracker-configuration}}
 
-This skill uses two ops: `fetch` (Step 1) and `mark-done` (Step 7). `<issue-ref>` below is the issue
-the caller named — a path, or the tracker's issue number.
+This skill uses four ops: `fetch` (Step 1), `tick` and `mark-done` (Step 7), and `write-section`
+(Step 8). `<issue-ref>` below is the issue the caller named — a path, or the tracker's issue number.
 
 ## Steps
 
-### 0. Branch guard
+### 0. Preflight
 
 Every fact the run needs before it reads code comes from one call — run it first:
 
 ```bash
 bash "<skill-dir>/scripts/preflight.sh" --project-root "$PROJECT_ROOT" \
-  --issue "$ISSUE_PATH"   # omit --issue when the caller handed the issue over inline
+  --issue "<issue-ref>"   # omit --issue when the caller handed the issue over inline
 ```
 
 A `BLOCKED:` line (exit 1) ends the run: report it verbatim and do not proceed. It is
 `BLOCKED: on default branch` (`DEFAULT_BRANCH`: `origin/HEAD`, else `main`), `BLOCKED: depends on
-<file>` for a `## Blocked by` file not yet in the sibling `done/`, or `BLOCKED: requires: <cmd>` for
-a failing `## Requires` command. Otherwise it prints `OK` and three values; each bash call is a fresh
-shell, so carry them as literals for the rest of the run:
+<file>` for a `## Blocked by` file not yet in the sibling `done/`, `BLOCKED: requires: <cmd>` for
+a failing `## Requires` command, or `BLOCKED: checks library not linked — re-run install.sh`.
+Otherwise it prints `OK` and two values; carry them as literals for the rest of the run:
 
-- `ISSUE_SLUG` — the commit prefix (Steps 4 and 6)
-- `PRD` — the PRD path, or empty (Step 1.5)
-- `DEP_SCRIPTS` — the checks library, `<skill-dir>/scripts/checks` (Steps 2, 4 and 5)
+- `ISSUE_SLUG` — the commit prefix (Steps 4 and 6). For an issue handed over inline it is empty:
+  pick a short kebab-case slug from the issue's title and use that, so no prefix is `[]`.
+- `PRD` — a file PRD's path, or empty (Step 1.5)
+
+The checks library — `run.sh`, `run-checks.sh` and the discovery scripts of Steps 2, 4 and 5 — is
+`<skill-dir>/scripts/checks`.
 
 ### 1. Understand the issue
 
 Read the issue the caller names with `node "$TRACKER" fetch <issue-ref>` (inline content needs no
-fetch). Read no other issue from the tracker unless the caller explicitly says to. Extract the
-acceptance criteria and the files likely to change (confirmed in Step 3).
+fetch). On a GitHub tracker, an issue that cites its PRD as `PRD: #<n>` under `## Context Documents`
+names it by number, which preflight cannot resolve: fetch it too, `node "$TRACKER" fetch <n>`. Read no
+other issue from the tracker unless the caller explicitly says to. Extract the acceptance criteria and
+the files likely to change (confirmed in Step 3).
 
 ### 1.5. Read the PRD
 
-If `PRD` is non-empty, read it and keep it for the rest of the run: it holds the architecture
-decisions and constraints the issue assumes. No PRD is normal.
+If `PRD` is non-empty, or Step 1 fetched one, read it and keep it for the rest of the run: it holds
+the architecture decisions and constraints the issue assumes. No PRD is normal.
 
 ### 2. Dependencies — only when something is missing
-
-If `DEP_SCRIPTS` is empty, stop and report `BLOCKED: checks library not linked — re-run install.sh`.
 
 First settle where commands run — before Step 4's first one:
 
 ```bash
-bash "$DEP_SCRIPTS/discover-mode.sh" --project-root "$PROJECT_ROOT"
+bash "<skill-dir>/scripts/checks/discover-mode.sh" --project-root "$PROJECT_ROOT"
 ```
 
 `skipped` means it is settled. Otherwise it prints a prompt: answer it yourself, by reading the files
-it lists, and persist the answer as Step 5 persists discovered checks:
-
-```bash
-cat > "$PROJECT_ROOT/.discovered-mode.json" <<'JSON'
-{"install_mode": "<docker or host>", "docker_service": "<service or null>"}
-JSON
-(cd "$PROJECT_ROOT" && bash "$DEP_SCRIPTS/write-commands-cache.sh" --response-file .discovered-mode.json)
-rm -f "$PROJECT_ROOT/.discovered-mode.json"
-```
+it lists, then confirm and save the answer exactly as the prompt's last lines say.
 
 Do not install pre-emptively. The install mode is the dev commands file's `install_mode`
 (absent means host), and Step 4's `run.sh` acts on it: in docker mode its first call
@@ -156,7 +158,7 @@ inside docker (with this checkout's compose override) or on the host. Never hand
 compose` command.
 
 ```bash
-bash "$DEP_SCRIPTS/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"
+bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"
 ```
 
 Run commands in the foreground and wait for them — never in the background. Between edits run only
@@ -183,7 +185,7 @@ branch with a commit on it is resumable; uncommitted work looks like a run that 
 Message quality doesn't matter — checkpoints are squashed before merge:
 
 ```bash
-bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
+PROJECT_ROOT="$PROJECT_ROOT" bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
   --prefix "[$ISSUE_SLUG][WIP]" \
   --message "<behavior just made green>" \
   --files "<files touched this cycle>"
@@ -213,43 +215,45 @@ command found` means no local command exists: report it, do not re-check CLAUDE.
 - `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
   Except `<key>: modified files:` — the check rewrote files this change didn't touch, which a
   human commits — and a failure naming what no repo file can provide (§ Outcome): report
-  `blocked` with that output.
-- `DISCOVER` — no cache yet. STOP. Read `references/verification.md` now and discover every check
+  `blocked` with that output. The modified-files line's "run it, commit the result, and re-run" is
+  for that person, not for you.
+- `DISCOVER` — no dev commands file yet. STOP. Read `references/verification.md` now and discover every check
   as it describes, persist what you found, pass or fail, then re-run `run-checks.sh`:
 
   ```bash
   cat > "$PROJECT_ROOT/.discovered-commands.json" <<'JSON'
   {"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>"}
   JSON
-  bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file "$PROJECT_ROOT/.discovered-commands.json"
+  (cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .discovered-commands.json)
   rm -f "$PROJECT_ROOT/.discovered-commands.json"
   ```
 
-Do not proceed to commit if any check fails or any acceptance criterion from Step 1 is unmet.
+A check that still fails, or an acceptance criterion from Step 1 that is unmet, makes the run
+`partial`: commit it as Step 6 says and report it, recording an unmet criterion in Step 8 — never run
+Step 7.
 
 ### 6. Commit
 
-If any check in Step 5 failed, do NOT stage or commit — report `partial` or `blocked` instead. If
-the working directory is already clean, check whether the issue is already implemented and
-committed; if so, go to Step 7.
-
-Run `scripts/git-workflow/commit-changes.sh` from the same directory you read this skill file from:
+The prefix is `[$ISSUE_SLUG]` when every check passed and every criterion is met. Otherwise — a
+check still fails, a criterion is unmet, or the run is `blocked` with files changed — it is
+`[$ISSUE_SLUG][WIP]`, and the outcome stays `partial` or `blocked`: every outcome but `complete`
+leaves a clean tree. If the working directory is already clean, check whether the issue is already
+implemented and committed; if so, go to Step 7.
 
 ```bash
 DETAILS="- <key decision or tradeoff line 1>
 - <key decision or tradeoff line 2>"
-bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
+PROJECT_ROOT="$PROJECT_ROOT" bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
   --prefix "[$ISSUE_SLUG]" \
   --message "<issue title>${DETAILS:+
 
 $DETAILS}" \
-  --files "<space-separated list of files you modified>" \
-  ${COAUTHOR_TRAILER:+--coauthor "$COAUTHOR_TRAILER"}
+  --files "<space-separated list of files you modified>"
 ```
 
 Example: `[01-auth-logout] Add user logout endpoint`. Do not push.
 
-### 6.5. Reminder: dev-commands.json
+### 6.5. Reminder: the dev commands file
 
 Where the repo tracks `.coding-crew/dev-commands.json`, Step 5's `DISCOVER` updates it, and nothing here
 commits it:
@@ -265,9 +269,10 @@ fi
 Verify every criterion under `## Acceptance criteria` — and under `## Cross-cutting Requirements` if
 present — against the code. Once each one holds, run `node "$TRACKER" tick <issue-ref>` (it checks
 every `- [ ]` off, on any tracker: a GitHub issue's body has no file to edit), then `node "$TRACKER"
-mark-done <issue-ref>`. Never hand-roll `mv`, `sed`, `gh issue edit` or a label edit. Exit 4 means a
-criterion is still unchecked, or the section missing (Step 8). A criterion that does not hold is
-never ticked: Step 8 is for that, with nothing ticked.
+mark-done <issue-ref>`. Never hand-roll `mv`, `sed`, `gh issue edit` or a label edit. A criterion that
+does not hold is never ticked: go to Step 8, with nothing ticked. Exit 4 means a criterion is still
+unchecked, or the section missing: go to Step 8 too. `--force` closes an issue whose criteria are
+unmet, so pass it only on an interactive run, once the person approved the descope in Step 8.
 
 ### 8. Unmet criteria
 
@@ -275,4 +280,6 @@ Record a `## Unmet criteria` section saying what is missing and why (descoped, b
 write it to a file and run `node "$TRACKER" write-section <issue-ref> --heading "Unmet criteria"
 --body-file <file>` (into the issue file on a local tracker, as a comment on a GitHub issue). On a
 **non-interactive run** (a headless/`-p` invocation or a subagent), report `partial` listing them
-and stop — nobody can answer a question. Only on an interactive run, ask the user how to proceed.
+and stop, leaving the issue open — nobody can answer a question. Only on an interactive run, ask the
+user how to proceed; when they approve descoping what is unmet, run `node "$TRACKER" mark-done
+<issue-ref> --force`.

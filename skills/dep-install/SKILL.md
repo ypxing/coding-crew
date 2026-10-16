@@ -1,8 +1,8 @@
 ---
 name: dep-install
 description: >
-  Decides a project's install mode (host or docker) once, records it in the clone's dev commands
-  file, and installs dependencies. Use when setting up a project, or when a command
+  Decides a project's install mode (host or docker) once, records it in the dev commands file, and
+  installs dependencies. Use when setting up a project, or when a command
   failed for a missing dependency; used by solve-issue, address-pr-comments, add-tests and upgrade-deps.
 ---
 
@@ -44,26 +44,33 @@ It prints `INSTALL_MODE=docker` or `INSTALL_MODE=host`, and `DOCKER_SERVICE`: th
 Do not re-derive the mode yourself.
 
 **No `install_mode` yet, and the project has a compose file**: the mode has never been decided.
-Decide it the way the checks are discovered:
+Decide it:
 
 ```bash
 bash "<skill-dir>/scripts/checks/discover-mode.sh" --project-root "$PROJECT_ROOT"
 ```
 
-It prints `skipped` (nothing to decide) or a prompt: answer it by reading the files it lists. On an
-interactive run, show the person your answer — the mode, the service, and the line that decided it —
-and let them change it before you record it. Record it; every worktree of this clone reads it, and
-nothing needs committing unless the repo tracks `.coding-crew/dev-commands.json`, which it then updates:
+It prints `skipped` (nothing to decide) or a prompt: answer it by reading the files it lists, then
+confirm and save the answer exactly as the prompt's last lines say. Then run `resolve-mode.sh` again
+and continue with what it prints.
+
+**The install command.** The dev commands file's `install` field holds the project's documented
+install command, or `null` when someone looked and found none. Make sure it has been asked:
 
 ```bash
-cat > "$PROJECT_ROOT/.install-mode.json" <<'JSON'
-{"install_mode": "<docker or host>", "docker_service": "<service, or null for host>"}
-JSON
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .install-mode.json)
-rm -f "$PROJECT_ROOT/.install-mode.json"
+(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")
 ```
 
-Then run `resolve-mode.sh` again and continue with what it prints.
+`Command discovery: skipped` means every field is already answered. A prompt means some are not:
+answer every field it lists by reading the files it names, write the JSON to
+`$PROJECT_ROOT/.discovered-commands.json`, and save it:
+
+```bash
+(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .discovered-commands.json)
+rm -f "$PROJECT_ROOT/.discovered-commands.json"
+```
+
+The install guides below only read `install`; they never look for one themselves.
 
 ## Step 2 — Follow the install guide
 

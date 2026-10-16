@@ -24,7 +24,7 @@ done
 if [[ -n "$DEMO_LOG" && "$NO_DEMO_SET" -eq 1 ]]; then
   echo "Error: --demo-smoke and --no-demo-smoke exclude each other. $USAGE" >&2; exit 2
 elif [[ -z "$DEMO_LOG" && "$NO_DEMO_SET" -eq 0 ]]; then
-  echo "Error: no demo smoke — pass --demo-smoke <log> (scripts/smoke-sprint.sh <platform> output)" \
+  echo "Error: no demo smoke — pass --demo-smoke <log> (scripts/smoke-crew-afk.sh <platform> output)" \
        "or --no-demo-smoke \"<reason>\"." >&2
   exit 2
 elif [[ "$NO_DEMO_SET" -eq 1 && -z "${NO_DEMO// }" ]]; then
@@ -70,7 +70,7 @@ if [[ -n "$DEMO_LOG" ]]; then
     echo "Error: $DEMO_LOG has no 'SMOKE: PASS' line — the demo smoke did not pass." >&2; exit 1
   }
   grep -Eq '^SMOKE: PASS \([a-z]+, demo\)$' "$DEMO_LOG" || {
-    echo "Error: $DEMO_LOG is not a demo run's — its PASS line lacks ', demo)'. Run scripts/smoke-sprint.sh <platform>." >&2
+    echo "Error: $DEMO_LOG is not a demo run's — its PASS line lacks ', demo)'. Run scripts/smoke-crew-afk.sh <platform>." >&2
     exit 1
   }
   LOG_COMMIT=$(sed -n 's/^crew-afk-commit: *//p' "$DEMO_LOG" | tail -n 1)
@@ -83,7 +83,7 @@ if [[ -n "$DEMO_LOG" ]]; then
     echo "Error: $DEMO_LOG ran at $LOG_COMMIT, which HEAD does not descend from — re-run the demo smoke." >&2
     exit 1
   }
-  SINCE=$(git diff --name-only "$LOG_COMMIT" HEAD -- . ':(exclude)CHANGELOG.md' ':(exclude)scripts/smoke-sprint/RESULTS.md')
+  SINCE=$(git diff --name-only "$LOG_COMMIT" HEAD -- . ':(exclude)CHANGELOG.md' ':(exclude)scripts/smoke-crew-afk/RESULTS.md')
   [[ -z "$SINCE" ]] || {
     echo "Error: $DEMO_LOG ran at ${LOG_COMMIT:0:12}; these files changed since — re-run the demo smoke:" >&2
     printf '  %s\n' $SINCE >&2

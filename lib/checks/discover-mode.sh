@@ -3,7 +3,8 @@
 # (install_mode: docker or host, and docker_service), listing file paths, not contents. Prints "skipped" when the
 # checkout has no compose file (host, nothing to decide) or its dev commands file (commands-file.sh) already
 # records install_mode: a recorded mode, a hand edit included, is never re-asked.
-# The answer is persisted with write-commands-cache.sh, like the discovered commands.
+# The prompt ends with the rule for confirming the answer and the commands that save it (write-commands-cache.sh),
+# so every skill that decides the mode decides it the same way.
 
 set -uo pipefail
 
@@ -61,9 +62,21 @@ PROMPT
 for f in CLAUDE.md AGENTS.md Makefile README.md "$COMPOSE"; do
   [ -f "$PROJECT_ROOT/$f" ] && printf '  - %s\n' "$f"
 done
-cat <<'PROMPT'
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ANSWER="$PROJECT_ROOT/.discovered-mode.json"
+cat <<PROMPT
 
-Respond with **only** this JSON shape, no other prose:
+On an interactive run, show the person your answer (the mode, the service, and the line that decided
+it) and let them change it before you save it. On a non-interactive run (a headless/-p invocation or a
+subagent), save it without asking.
+
+Save it by running these commands with your answer as the JSON. Every worktree of this clone then reads
+it from $CACHE; when that is the committed .coding-crew/dev-commands.json, tell the person to commit it.
+
+cat > $(printf '%q' "$ANSWER") <<'JSON'
 {"install_mode": "<docker or host>", "docker_service": "<service, or null for host>"}
+JSON
+(cd $(printf '%q' "$PROJECT_ROOT") && bash $(printf '%q' "$SELF_DIR/write-commands-cache.sh") --response-file .discovered-mode.json)
+rm -f $(printf '%q' "$ANSWER")
 --- end mode discovery prompt ---
 PROMPT

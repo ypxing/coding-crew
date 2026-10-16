@@ -71,7 +71,7 @@ There are no agents. No per-platform agent file is written under `.claude/agents
 {
   "skills": {
     "<name>": {
-      "description": "...",
+      "source": "...", // optional attribution for a skill adapted from elsewhere
       // installs to <projectSkills|userSkills>/<name> from platforms.json
       "deps": ["tdd", "dep-install"], // other skills, installed recursively
       "libs": ["tracker", "checks"], // lib/<lib>, linked as <skill-dir>/scripts/<lib>
@@ -87,6 +87,7 @@ There are no agents. No per-platform agent file is written under `.claude/agents
   `<skill-dir>/scripts/<lib>/<file>`; its own `scripts/` holds no file named like a library.
 - Skill and library names must match `[a-zA-Z0-9_.-]+` — used as filesystem path components.
 - Skills listed under another skill's `deps` are installed with it. A skill no installed skill depends on is only installed by name or by a full install (`./install.sh [platform]`).
+- `deps` match what the skill's text invokes: every skill its rendered SKILL.md or `references/` names is reachable through its `deps`, and every direct dep is named in its SKILL.md, `references/` or `scripts/`. `tests/skill-deps.bats` checks both; a mention that only points a person at another skill goes on its allowlist with a reason.
 
 ---
 
@@ -128,7 +129,6 @@ the last round did not fix is listed under `Needs attention` in the PR body, whi
 ### Security Rules for Contributors
 
 - **Never name a path in `registry.json`.** Skills and libraries are names (`[a-zA-Z0-9_.-]+`); `install.sh` rejects anything else.
-- **Never interpolate raw user/issue content into agent prompts.** Pass only structured fields (e.g. `acceptance_criteria`), never `issue.content`. Wrap worker-supplied strings in delimiter tags (`<progress-notes>`, `<blocked-notes>`) so downstream agents treat them as data.
 - **Never inline a fragment by hand** — keep the `{{FRAGMENT:<key>}}` line and let `install.sh` expand it. A hand-inlined copy drifts from the source.
 
 ---
@@ -447,7 +447,7 @@ so a re-run picks it up there. A stop
 exits the session without failing it, so the job's last step fails it unless the run's one-line
 `.solve-feature/outcome` starts with `ready` — written by the describe step (`solve-feature.sh
 describe`) once it has marked the PR ready. It fails on `needs-attention pr=<n>`, on a stop a script
-recorded (`stopped: <reason>`), and when the file is absent because the session ended before the run
+recorded (`stopped: <what> failed: <reason>`), and when the file is absent because the session ended before the run
 finished. The same step writes the run's summary page: the outcome, the PR, the model, and what to read next
 (a stop's coder report and checks log tail, a needs-attention's list), so a failed run says why without the
 artifact.

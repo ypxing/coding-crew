@@ -18,7 +18,8 @@ the change exists, what it changes at a high level, and what a bad merge would c
   (`Closes #n`, an issue slug, a `.scratch/<feature>/` path) — read it. The body explains the
   change in its terms.
 - **The range.** `git log --oneline <base>..HEAD` and `git diff --stat <base>..HEAD`, where
-  `<base>` is the given ref, else `git merge-base HEAD origin/<default branch>`. Read the diff
+  `<base>` is the given ref; given a PR number, `origin/` plus its base branch (`gh pr view <n> --json
+  baseRefName`); else `git merge-base HEAD origin/<default branch>`. Read the diff
   itself only when there is neither a PRD nor an issue to say what the change is for.
 - **The checks.** Check results the caller hands you.
 - **The vocabulary.** `CONTEXT.md` (or `GLOSSARY.md`) at the repo root, when present: use its

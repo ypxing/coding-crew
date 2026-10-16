@@ -6,6 +6,51 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **registry / to-issues / to-prd / upgrade-deps / solve-issue**: installing to-issues alone now brings to-prd and
+  configure-tracker, upgrade-deps brings to-issues, and every skill that offers configure-tracker reaches it;
+  deps no skill invokes are gone (solve-feature → dep-install, address-pr-comments → solve-issue, crew-grill and
+  crew-brainstorm → to-prd, which still arrives through to-issues). `registry.json` drops its unread `description`
+  fields, and `tests/skill-deps.bats` fails when deps and skill text drift. The release smoke is now
+  `scripts/smoke-crew-afk.sh` (#504).
+- **dep-install / add-tests / upgrade-deps / address-pr-comments / configure-tracker / tdd / setup-coding-crew**:
+  the install mode's confirm-and-save rule now comes from `discover-mode.sh`'s prompt, so solve-issue and
+  dep-install decide it the same way, and `discover-commands.sh` alone discovers the `install` command (the host and
+  docker install guides only read it; the host guide applies whenever the mode is host). The `docker-install.sh`
+  call and its `--force` retry are two copy-pasteable commands. add-tests, upgrade-deps and address-pr-comments run
+  commands through the checks library's `run.sh` and invoke dep-install only after a missing-dependency failure.
+  add-tests' no-coverage stop names a fix that works (set `"coverage"` or rerun discovery with `--refresh`).
+  upgrade-deps publishes by invoking to-issues with its drafts and checks existing features through the tracker
+  CLI; it and add-tests delete their drafts or findings file once to-issues has published. address-pr-comments handles `DISCOVER` before pushing and skips resolved threads by GraphQL `isResolved`.
+  configure-tracker creates labels with `gh label create`, treating "already exists" as success (#503).
+- **to-issues / to-prd / crew-grill / crew-brainstorm / tracker**: to-issues sizes an issue as one implementer's
+  work, taken, finished and verified as a unit: it drafts slices as the work divides, splits one that is well beyond
+  the reference size (what has been finished as one issue), and merges one that exists only to be smaller (size, a human boundary or expand–contract order are
+  the only split reasons; no more parallelism, token estimates or dispatch costs), and shows the user only the
+  slices that survived. Its step 6 mechanics (drafts, known issues, `deps.json`, lint, builder check, publish,
+  rewrite) move to `references/publish.md`, read when that step is reached; the design skills name no downstream
+  tool, only the implementer and reviewer who read what they write. to-issues writes the PRD with to-prd right
+  after drafting slices and before tracing PRD IDs, and carries a design summary's `(auto)` lines, cited facts and
+  cut list into the PRD or the issue's new `## Out of Scope`. to-prd no longer re-confirms decisions settled
+  earlier, its Decisions guidance is a four-rule list, and a local PRD opens with `# PRD: <title>`. crew-grill and
+  crew-brainstorm share one size-test fragment (`skills/_shared/fragments/size-test.md`: the do-least option and the
+  subtraction pass are one test, stated once), run the light path's single tracker fetch themselves instead of
+  loading the tracker-configuration fragment, and the verification-pass fragment names no skill (to-prd carries its
+  own clause); crew-brainstorm
+  states the light path once and drops its duplicate flow graph and principles list, asks open questions before
+  offering a menu, covers anti-goals, and tags the defaults it chose `(auto)` for the hand-off; crew-grill words
+  each question so "yes" takes its recommendation, points its "annoyed" lane at the light path's list instead of
+  repeating it, and hands off to to-issues once; to-prd prefers the fewest
+  seams; and both design skills' descriptions say how they differ (adversarial vs collaborative). The
+  local tracker now writes `.scratch/.gitignore` (`*`) when it writes under `.scratch/`, so a consuming repo's tree
+  stays clean after publishing; an existing one is left alone (#502).
+- **solve-issue / solve-feature / crew-review / tracker**: a coder that stops short (`partial`, or `blocked` with
+  changes) commits its work as `[WIP]`, so solve-feature's `land` names its report, and its "working tree left
+  dirty" stop names the report too when a check rewrote files the coder left for a person; `mark-done --force` is only for a descope a person approved,
+  and the CLI's exit-4 message no longer suggests it. solve-issue finds `PROJECT_ROOT` itself when its caller
+  sets none, commits there, and reads a GitHub issue's `PRD: #<n>`; its preflight stops when the checks library
+  is not linked and no longer prints `DEP_SCRIPTS`. crew-review's report field `prd` is renamed `spec`
+  (`met|unmet|none`) — update any script that reads a standalone `/crew-review` report. Every solve-feature stop
+  line reads `stopped: <what> failed: <reason>`, a run with nothing landed included (#501).
 - **repo**: this repo's solve-feature workflow maps Claude Code's `haiku`, `sonnet` and `opus` aliases to
   `claude-haiku-5-5`, `claude-sonnet-5-5` and `claude-opus-5-5[1m]` (#519).
 - **setup-coding-crew**: the solve-feature Actions workflow streams a Claude run's steps into the job log as they

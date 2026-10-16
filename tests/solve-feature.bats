@@ -448,7 +448,7 @@ EOF
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
   [[ "$output" == *"nothing landed: no ready issue for feat and no open PR"* ]]
-  [ "$(cat .solve-feature/outcome)" = "stopped: nothing landed: no ready issue for feat and no open PR" ]
+  [ "$(cat .solve-feature/outcome)" = "stopped: next failed: nothing landed: no ready issue for feat and no open PR" ]
 }
 
 @test "issues run lowest number first, skipping closed and blocked-labelled issues and any whose blocker is neither CLOSED nor awaiting-merge" {
@@ -491,13 +491,18 @@ stops_at() {
   run bash "$SCRIPT" land feat 2 feature/feat
   stops_at solve "working tree left dirty"
   [ ! -f "$STATE/checks.log" ]
+  # solve-issue's blocked on a check that rewrote untouched files leaves them for a human, and says why.
+  echo "blocked: lint: modified files: dirt.txt" > .solve-feature/coder.report.md
+  run bash "$SCRIPT" land feat 2 feature/feat
+  stops_at solve "working tree left dirty; why: $WORK/.solve-feature/coder.report.md"
 }
 
-@test "land with the issue still first in next exits 1 'did not close' naming the coder's report, before the checks" {
+@test "land after a coder committed [WIP] and left its issue open exits 1 'did not close' naming the coder's report, before the checks" {
   run bash "$SCRIPT" start feat
   echo "stale" > .solve-feature/coder.report.md
   run bash "$SCRIPT" next feat
-  git commit -q --allow-empty -m "partial"
+  # solve-issue's partial: the work committed with a [WIP] marker, the tree clean, the issue not closed.
+  echo half > half.txt && git add half.txt && git commit -q -m "[2][WIP] half the work"
   run bash "$SCRIPT" land feat 2 feature/feat
   stops_at solve "coder ran but did not close 2 and left no report at $WORK/.solve-feature/coder.report.md"
   [ ! -f "$STATE/checks.log" ]
@@ -663,7 +668,7 @@ EOF
 fix_ready() {
   loop
   [ "$LAST_PR" = 10 ]
-  local two='{"prd":"met","gaps":[],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"},{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
+  local two='{"spec":"met","gaps":[],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"},{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
   report "${1:-$two}"
   echo fixed > fixed.txt
 }
@@ -700,7 +705,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
 }
 
 @test "a report whose gaps is not a list stops fix before the checks" {
-  fix_ready '{"prd":"met","gaps":"no logout endpoint","findings":[]}'
+  fix_ready '{"spec":"met","gaps":"no logout endpoint","findings":[]}'
   TIP=$(git rev-parse HEAD)
   local checks; checks=$(wc -l < "$STATE/checks.log")
   run bash "$SCRIPT" fix feat 10 feature/feat
@@ -778,7 +783,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
 
 @test "fix with no findings on a clean tree commits nothing" {
   loop
-  report '{"prd":"met","gaps":[],"findings":[]}'
+  report '{"spec":"met","gaps":[],"findings":[]}'
   TIP=$(git rev-parse HEAD)
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
@@ -798,7 +803,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
 }
 
 @test "a gap, an unmet spec and each unfixed line are handed to describe as needing attention" {
-  fix_ready '{"prd":"unmet","gaps":["no logout endpoint"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"},{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
+  fix_ready '{"spec":"unmet","gaps":["no logout endpoint"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"},{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
   printf -- '#2: race on the lock: needs a design call\n\n' > .solve-feature/pr-10.unfixed.md
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
@@ -807,7 +812,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=3 review-again=yes" ]
 
   # The spec unmet with no gap named still needs a person.
-  report '{"prd":"unmet","gaps":[],"findings":[]}'
+  report '{"spec":"unmet","gaps":[],"findings":[]}'
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]
   [ "$(attention)" = "the reviewer found the spec unmet" ]
@@ -816,43 +821,43 @@ attention() { cat .solve-feature/pr-10.attention.md; }
 @test "fix asks for a re-review after a CRITICAL, HIGH or MEDIUM finding when the fixer left a change, committed by fix or by the fixer" {
   fix_ready
   for sev in CRITICAL HIGH MEDIUM; do
-    report "{\"prd\":\"met\",\"gaps\":[],\"findings\":[{\"severity\":\"LOW\",\"location\":\"b:2\",\"issue\":\"j\",\"fix\":\"g\"},{\"severity\":\"$sev\",\"location\":\"a:1\",\"issue\":\"i\",\"fix\":\"f\"}]}"
+    report "{\"spec\":\"met\",\"gaps\":[],\"findings\":[{\"severity\":\"LOW\",\"location\":\"b:2\",\"issue\":\"j\",\"fix\":\"g\"},{\"severity\":\"$sev\",\"location\":\"a:1\",\"issue\":\"i\",\"fix\":\"f\"}]}"
     echo "$sev" > fixed.txt
     run bash "$SCRIPT" fix feat 10 feature/feat
     [ "$status" -eq 0 ] || { echo "$sev: $output"; return 1; }
     [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ] || { echo "$sev: $output"; return 1; }
   done
   # The fixer's own commit, with nothing left for fix to commit.
-  report '{"prd":"met","gaps":[],"findings":[{"severity":"MEDIUM","location":"a:1","issue":"i","fix":"f"}]}'
+  report '{"spec":"met","gaps":[],"findings":[{"severity":"MEDIUM","location":"a:1","issue":"i","fix":"f"}]}'
   echo again > fixed.txt && git add fixed.txt && git commit -q -m "fixer's commit"
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=1 needs-attention=0 review-again=yes" ]
 }
 
 @test "fix asks for no re-review after only LOW findings, no findings, a severity it does not know, or a fixer that changed nothing" {
-  fix_ready '{"prd":"met","gaps":[],"findings":[{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
+  fix_ready '{"spec":"met","gaps":[],"findings":[{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=1 needs-attention=0 review-again=no" ]
-  report '{"prd":"met","gaps":[],"findings":[]}'
+  report '{"spec":"met","gaps":[],"findings":[]}'
   echo more > fixed.txt
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=0 needs-attention=0 review-again=no" ]
-  report '{"prd":"met","gaps":[],"findings":[{"location":"a:1","issue":"i","fix":"f"},{"severity":"high","location":"b:2","issue":"j","fix":"g"},"a string"]}'
+  report '{"spec":"met","gaps":[],"findings":[{"location":"a:1","issue":"i","fix":"f"},{"severity":"high","location":"b:2","issue":"j","fix":"g"},"a string"]}'
   echo again > fixed.txt
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=3 needs-attention=0 review-again=no" ]
-  report '{"prd":"met","gaps":[],"findings":[{"severity":"CRITICAL","location":"a:1","issue":"i","fix":"f"}]}'
+  report '{"spec":"met","gaps":[],"findings":[{"severity":"CRITICAL","location":"a:1","issue":"i","fix":"f"}]}'
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=1 needs-attention=1 review-again=no" ]
 }
 
 @test "a second fix after a re-review leaves only its own gaps and unfixed lines needing attention" {
-  fix_ready '{"prd":"met","gaps":["first gap"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
+  fix_ready '{"spec":"met","gaps":["first gap"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
   echo 'first unfixed' > .solve-feature/pr-10.unfixed.md
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$(attention)" = "$(printf 'first gap\nfirst unfixed')" ]
-  report '{"prd":"met","gaps":["second gap"],"findings":[{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
+  report '{"spec":"met","gaps":["second gap"],"findings":[{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
   echo 'second unfixed' > .solve-feature/pr-10.unfixed.md
   echo second > fixed.txt
   run bash "$SCRIPT" fix feat 10 feature/feat
@@ -861,7 +866,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
 }
 
 @test "fix posts nothing on the PR" {
-  fix_ready '{"prd":"unmet","gaps":["g"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
+  fix_ready '{"spec":"unmet","gaps":["g"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
   echo 'x' > .solve-feature/pr-10.unfixed.md
   : > "$STATE/gh.log"
   run bash "$SCRIPT" fix feat 10 feature/feat
@@ -919,12 +924,21 @@ EOF
 }
 
 @test "with anything needing a person describe lists it under Needs attention, leaves the PR a draft and writes needs-attention" {
-  fixed '{"prd":"met","gaps":["no logout endpoint"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
+  fixed '{"spec":"met","gaps":["no logout endpoint"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
   summary
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(sed -n '/^## Needs attention$/,/^<details>/p' "$STATE/pr-body")" = "$(printf '## Needs attention\n\n- no logout endpoint\n\n<details><summary>Spec</summary>')" ]
   [ "$(grep -n -m1 '^## Why$' "$STATE/pr-body" | cut -d: -f1)" -lt "$(grep -n -m1 '^## Needs attention$' "$STATE/pr-body" | cut -d: -f1)" ]
+  ! grep -q '^pr ready' "$STATE/gh.log" || false
+  [ "$(cat .solve-feature/outcome)" = "needs-attention pr=10" ]
+}
+
+@test "a report whose spec is unmet, with no gap or finding, leaves the PR a draft and writes needs-attention" {
+  fixed '{"spec":"unmet","gaps":[],"findings":[]}'
+  [ "$(attention)" = "the reviewer found the spec unmet" ]
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   ! grep -q '^pr ready' "$STATE/gh.log" || false
   [ "$(cat .solve-feature/outcome)" = "needs-attention pr=10" ]
 }
@@ -999,7 +1013,7 @@ EOF
   [ -f "$target/.claude/skills/solve-feature/scripts/checks/run-checks.sh" ]
   [ -f "$target/.claude/skills/solve-feature/scripts/checks/run.sh" ]
   [ -f "$target/.claude/skills/solve-feature/scripts/tracker/cli.mjs" ]
-  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","dep-install","crew-review","tdd","write-pr","setup-coding-crew"]' ]
+  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","crew-review","tdd","write-pr","setup-coding-crew"]' ]
 }
 
 # --- hosts -------------------------------------------------------------------------------

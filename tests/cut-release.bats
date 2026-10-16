@@ -23,11 +23,12 @@ setup() {
 
 release() { run bash "$R/scripts/cut-release.sh" --dry-run "$@"; }
 
-@test "neither --demo-smoke nor --no-demo-smoke is refused, naming both" {
+@test "neither --demo-smoke nor --no-demo-smoke is refused, naming both and the smoke script" {
   release
   [ "$status" -ne 0 ]
   [[ "$output" == *"--demo-smoke"* ]]
   [[ "$output" == *"--no-demo-smoke"* ]]
+  [[ "$output" == *"scripts/smoke-crew-afk.sh <platform>"* ]]
   [[ "$output" != *"would tag"* ]]
 }
 
@@ -44,6 +45,7 @@ release() { run bash "$R/scripts/cut-release.sh" --dry-run "$@"; }
   release --demo-smoke "$LOG"
   [ "$status" -ne 0 ]
   [[ "$output" == *", demo)"* ]]
+  [[ "$output" == *"scripts/smoke-crew-afk.sh <platform>"* ]]
   [[ "$output" != *"would tag"* ]]
 }
 
@@ -90,7 +92,7 @@ commit_file() {
 
 @test "a passing log at a commit followed only by its RESULTS.md row and CHANGELOG.md is accepted" {
   passing_log_at "$(git -C "$R" rev-parse HEAD)"
-  commit_file scripts/smoke-sprint/RESULTS.md
+  commit_file scripts/smoke-crew-afk/RESULTS.md
   commit_file CHANGELOG.md
   release --demo-smoke "$LOG"
   [ "$status" -eq 0 ]
@@ -122,19 +124,19 @@ commit_file() {
 @test "the log of a stubbed demo smoke run, its RESULTS.md row committed after it, is accepted" {
   # The smoke as cut-release meets it: run from this repo's own checkout, with install.sh stubbed to lay out
   # what a claude project install leaves, so crew-afk-commit: is this repo's HEAD.
-  cp "$REPO_ROOT/scripts/smoke-sprint.sh" "$R/scripts/"
+  cp "$REPO_ROOT/scripts/smoke-crew-afk.sh" "$R/scripts/"
   cp "$REPO_ROOT/platforms.json" "$R/"
   printf '#!/usr/bin/env bash\nmkdir -p "$3/.claude/skills/crew-afk/scripts" "$3/.coding-crew/lib"\necho {} > "$3/.coding-crew/manifest.json"\n' > "$R/install.sh"
   chmod +x "$R/install.sh"
-  mkdir -p "$R/scripts/smoke-sprint"
-  printf '| commit | date | platform | result | cost | findings |\n|---|---|---|---|---|---|\n' > "$R/scripts/smoke-sprint/RESULTS.md"
+  mkdir -p "$R/scripts/smoke-crew-afk"
+  printf '| commit | date | platform | result | cost | findings |\n|---|---|---|---|---|---|\n' > "$R/scripts/smoke-crew-afk/RESULTS.md"
   git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm smoke
   export TMPDIR="$BATS_TEST_TMPDIR/tmp"
   mkdir -p "$TMPDIR"
   make_smoke_demo
-  "$R/scripts/smoke-sprint.sh" claude > "$LOG"
+  "$R/scripts/smoke-crew-afk.sh" claude > "$LOG"
   grep -qx 'SMOKE: PASS (claude, demo)' "$LOG"
-  commit_file scripts/smoke-sprint/RESULTS.md
+  commit_file scripts/smoke-crew-afk/RESULTS.md
   release --demo-smoke "$LOG"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"would tag HEAD as v1.0.0"* ]]

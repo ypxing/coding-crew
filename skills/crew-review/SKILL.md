@@ -18,12 +18,13 @@ nothing ready: your caller decides what to do with the report.
 
 Your caller names them; a bare number is a PR, nothing at all is the current branch.
 
-- **The change.** A **branch**: it is checked out at HEAD and the change is `<base>..HEAD`, `<base>` the ref the
+- **The change.** A **branch**: it must be checked out at HEAD (`git branch --show-current`); if it is not, tell
+  the caller to check it out and stop. The change is `<base>..HEAD`, `<base>` the ref the
   caller names, else `git merge-base HEAD origin/<default branch>`. A **PR**: HEAD must be its head (`gh pr view <n>
   --json headRefOid`); if it is not, tell the caller to run `gh pr checkout <n>` and stop. The change is `gh pr diff
   <n>`.
 - **The spec.** A file; an issue ref, read with the tracker CLI's `fetch` (`node "<skill-dir>/scripts/tracker/cli.mjs" fetch
-  <ref>`); or, given a PR and no spec, the PR body's
+  <ref>`, `<skill-dir>` being the directory you read this file from); or, given a PR and no spec, the PR body's
   `<details><summary>Spec</summary>` block when it has one, else the whole body. A branch with no spec named has none.
 - **The report's path.** Write the report there; with none, print it.
 
@@ -72,12 +73,12 @@ doc or message.
 As your last action, write the report as JSON to the path you were given, or print it when you were given none:
 
 ```json
-{"prd": "met|unmet|none",
+{"spec": "met|unmet|none",
  "gaps": ["each spec requirement the code at HEAD lacks or does differently (question 1)"],
  "findings": [{"severity": "CRITICAL|HIGH|MEDIUM|LOW", "location": "<file:line>",
                "issue": "<trigger → bad outcome, or the rule broken, or the addition no requirement needs>",
                "fix": "<the smallest change>"}]}
 ```
 
-`prd` is `met` when `gaps` is empty, and `none` with empty `gaps` when there was no spec. Then explain in a few
+`spec` is `met` when `gaps` is empty, and `none` with empty `gaps` when there was no spec. Then explain in a few
 lines of prose.
