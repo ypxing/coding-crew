@@ -61,8 +61,9 @@ the step, the reason and, for the checks, its log; a `solve` stop, the coder's r
 not retry, fix or close anything.
 Once the cause is fixed, a re-run skips the issues already done and reuses the branch and the PR, which `start`
 brings up to date with the default branch first. A `checks`
-stop has already reopened its issue and pushed its work, so the re-run's coder starts from that work; a stop
-after a push failed or a review was fixed names its own recovery.
+stop has already reopened its issue and pushed its work, so the re-run's coder starts from that work; a `land`
+`push` stop has already reopened its issue too, so a re-run where git can push redoes it, from its unpushed
+commits when in the same checkout. A push stop of `start` or after a review was fixed names its own recovery.
 
 Run it where an unattended agent may change the checkout — a worktree or a container, not the one
 the user works in. Nothing takes a lock: never start a second run on a slug whose run is still going.

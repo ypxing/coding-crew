@@ -12,6 +12,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   detection, `CREW_AGENT`, the `session=` line and status's `claude --resume` line are gone; the cost line now
   appears for any local run whose command printed a JSON result with a cost last. The release smoke passes its own
   per-platform command (#499).
+- **solve-feature / setup-coding-crew**: a failed push after an issue landed now reopens the issue (committing a
+  local tracker's file move) instead of leaving it counted done, so a plain re-run where git can push redoes it;
+  every push stop quotes git's own reason (e.g. GitHub's `workflows` permission refusal). The Actions workflow's
+  header and `/setup-coding-crew` say an issue that touches `.github/workflows/` cannot land from a runner and is
+  run locally (#525).
 - **setup-coding-crew / docs**: the solve-feature Actions workflow, once the session ends, approves the PR's
   `pull_request` runs GitHub held for approval, so its CI runs and shows on the PR; where GitHub refuses, it
   dispatches that workflow on the PR's branch as before (#523's dispatch alone left the PR showing a run awaiting
