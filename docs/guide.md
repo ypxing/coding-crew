@@ -436,16 +436,21 @@ to GitHub Copilot with no API key; `claude` runs Claude Code on an `ANTHROPIC_AP
 workflow by hand with the slug. The file's header explains billing.
 
 The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all
---no-color` or `claude -p "/solve-feature $SLUG" --dangerously-skip-permissions` (every tool and path: the
-skill's scripts are outside the checkout); the agent runs each coder, the reviewer, the fixer and the PR's
-writer as its own subagents. Every run uploads `.solve-feature/` as an artifact, so the checks log a stop names
+--no-color` or `claude -p "/solve-feature $SLUG" --dangerously-skip-permissions --output-format stream-json
+--verbose` (every tool and path: the skill's scripts are outside the checkout), adding `--model` when the repo
+variable `CREW_MODEL` names one (else the CLI's default for the account); the agent runs each coder, the
+reviewer, the fixer and the PR's writer as its own subagents, on that model unless `solveFeature.models` names
+theirs. Claude's job log shows the run as it goes, one line per step (the model, each command and subagent, a
+failed tool), and keeps the whole stream as `.solve-feature/session.jsonl`. Every run uploads `.solve-feature/` as an artifact, so the checks log a stop names
 outlives the runner; a stop at an issue's checks has already pushed its work and made the issue ready again,
 so a re-run picks it up there. A stop
 exits the session without failing it, so the job's last step fails it unless the run's one-line
 `.solve-feature/outcome` starts with `ready` — written by the describe step (`solve-feature.sh
 describe`) once it has marked the PR ready. It fails on `needs-attention pr=<n>`, on a stop a script
 recorded (`stopped: <reason>`), and when the file is absent because the session ended before the run
-finished.
+finished. The same step writes the run's summary page: the outcome, the PR, the model, and what to read next
+(a stop's coder report and checks log tail, a needs-attention's list), so a failed run says why without the
+artifact.
 
 ---
 

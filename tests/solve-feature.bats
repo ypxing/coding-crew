@@ -1033,6 +1033,7 @@ yaml_to_json() {
   [ "$(jq 'length' <<<"$conc")" -eq 1 ]
   jq -e '.[0] | (.group | test("solve-feature-.*slug")) and .["cancel-in-progress"] == false' <<<"$conc" >/dev/null
   [ "$(jq -r '.jobs.solve.env.CREW_AGENT' "$json")" = "\${{ vars.CREW_AGENT || 'copilot' }}" ]
+  [ "$(jq -r '.jobs.solve.env.CREW_MODEL' "$json")" = '${{ vars.CREW_MODEL }}' ]
   # The logs step runs whatever the run step did, and keeps .solve-feature/, hidden files included.
   jq -e '.jobs.solve.steps[-2] | .if == "always()" and (.uses | startswith("actions/upload-artifact@"))
     and .with.path == ".solve-feature/" and .with["include-hidden-files"] == true' "$json" >/dev/null
@@ -1047,36 +1048,93 @@ yaml_to_json() {
     printf '#!/usr/bin/env bash\necho "%s $*"; env | grep -E "^(ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN)=" | sort\n' "$a" > "$STUB/$a"
     chmod +x "$STUB/$a"
   done
-  run env CREW_AGENT=copilot SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/run-step.sh"
+  run env CREW_AGENT=copilot CREW_MODEL= SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/run-step.sh"
   [ "$status" -eq 0 ]
   [ "$output" = "copilot -p Use the solve-feature skill on feat --allow-all --no-color" ]
-  run env CREW_AGENT=claude SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/run-step.sh"
+  run env CREW_AGENT=copilot CREW_MODEL=gpt-5 SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/run-step.sh"
+  [ "$output" = "copilot -p Use the solve-feature skill on feat --allow-all --no-color --model gpt-5" ]
+  run env CREW_AGENT=claude CREW_MODEL= SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/run-step.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"* ]]
-  run env CREW_AGENT=claude SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN=tok bash -e "$TEMP_DIR/run-step.sh"
+  # Claude streams JSON: the whole stream is kept for the artifact, the log gets one line per event it knows, and
+  # the session's exit code comes through the pipe.
+  run env CREW_AGENT=claude CREW_MODEL= SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN=tok bash -e "$TEMP_DIR/run-step.sh"
   [ "$status" -eq 0 ]
-  [ "$output" = "$(printf 'claude -p /solve-feature feat --dangerously-skip-permissions\nCLAUDE_CODE_OAUTH_TOKEN=tok')" ]
+  [ "$(cat .solve-feature/session.jsonl)" = "$(printf 'claude -p /solve-feature feat --dangerously-skip-permissions --output-format stream-json --verbose\nCLAUDE_CODE_OAUTH_TOKEN=tok')" ]
+  [ "$(cat .solve-feature/.gitignore)" = '*' ]
+  cat > "$STUB/claude" <<'SH'
+#!/usr/bin/env bash
+echo "$*" >"$TEMP_DIR/claude-argv"
+cat <<'J'
+{"type":"system","subtype":"init","model":"claude-opus-5-5"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Starting."},{"type":"tool_use","name":"Bash","input":{"command":"bash s.sh start feat\necho"}}]},"parent_tool_use_id":null}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Agent","input":{"description":"Coder for 7","model":"opus"}}]},"parent_tool_use_id":null}
+{"type":"user","message":{"content":[{"type":"tool_result","is_error":true,"content":"no such file\nmore"}]},"parent_tool_use_id":"t2"}
+{"type":"result","subtype":"error_max_turns","num_turns":3,"duration_ms":120000,"total_cost_usd":1.5}
+J
+exit 4
+SH
+  run env CREW_AGENT=claude CREW_MODEL=opus SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN=tok TEMP_DIR="$TEMP_DIR" bash -e "$TEMP_DIR/run-step.sh"
+  [ "$status" -eq 4 ]
+  [ "$(cat "$TEMP_DIR/claude-argv")" = "-p /solve-feature feat --dangerously-skip-permissions --model opus --output-format stream-json --verbose" ]
+  [ "$output" = "$(printf '%s\n' 'model: claude-opus-5-5' Starting. '$ bash s.sh start feat' '> subagent: Coder for 7 (opus)' \
+    '      failed: no such file' 'session: error_max_turns, 3 turns, 2 min, $1.5')" ]
+  [ "$(wc -l < .solve-feature/session.jsonl)" -eq 5 ]
   jq -r '.jobs.solve.steps[] | select(.name == "Install the agent CLI") | .run' "$json" > "$TEMP_DIR/install-step.sh"
   run env CREW_AGENT=codex bash -e "$TEMP_DIR/install-step.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"CREW_AGENT is 'codex': copilot or claude"* ]]
 
-  # The last step, run as Actions would in the checkout: red unless the outcome line starts with `ready`.
+  # The last step, run as Actions would in the checkout whatever the run step did: red unless the outcome line
+  # starts with `ready`, and a summary page naming the outcome, the PR, the model and what to read next.
+  [ "$(jq -r '.jobs.solve.steps[-1].if' "$json")" = "always()" ]
   jq -r '.jobs.solve.steps[-1].run' "$json" > "$TEMP_DIR/last-step.sh"
+  export GITHUB_STEP_SUMMARY="$TEMP_DIR/summary.md" GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=o/r \
+    CREW_AGENT=claude CREW_MODEL= SLUG=feat
+  rm -rf .solve-feature
   run bash -e "$TEMP_DIR/last-step.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"never finished"* ]]
+  grep -qF '### solve-feature feat: `never finished' "$GITHUB_STEP_SUMMARY"
+  grep -qxF -- '- Agent: claude, model unpinned (the CLI default)' "$GITHUB_STEP_SUMMARY"
   mkdir -p .solve-feature
   echo 'needs-attention pr=10' > .solve-feature/outcome
+  echo '- the flaky test' > .solve-feature/pr-10.attention.md
+  echo 'report of the last coder' > .solve-feature/coder.report.md
+  echo '{"type":"system","subtype":"init","model":"claude-opus-5-5"}' > .solve-feature/session.jsonl
+  : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"needs-attention pr=10"* ]]
+  grep -qxF -- '- PR: https://github.com/o/r/pull/10' "$GITHUB_STEP_SUMMARY"
+  grep -qxF -- '- Agent: claude, model claude-opus-5-5' "$GITHUB_STEP_SUMMARY"
+  grep -qxF -- '- the flaky test' "$GITHUB_STEP_SUMMARY"
+  ! grep -q 'report of the last coder' "$GITHUB_STEP_SUMMARY" || false
   echo 'stopped: 2 checks failed: run-checks.sh exit 1' > .solve-feature/outcome
+  echo 'FAIL: test_x' > .solve-feature/2.checks.log
+  : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"stopped: 2 checks failed: run-checks.sh exit 1"* ]]
+  grep -qxF 'report of the last coder' "$GITHUB_STEP_SUMMARY"
+  grep -qxF 'FAIL: test_x' "$GITHUB_STEP_SUMMARY"
+  # Each stop shows the files of the step it names: a coder's stop not an earlier issue's passing checks log, a
+  # fix stop the PR's checks log and no coder's report.
+  echo 'stopped: 3 solve failed: coder ran but did not close 3; why: x' > .solve-feature/outcome
+  : > "$GITHUB_STEP_SUMMARY"
+  run bash -e "$TEMP_DIR/last-step.sh"
+  grep -qxF 'report of the last coder' "$GITHUB_STEP_SUMMARY"
+  ! grep -q 'FAIL: test_x' "$GITHUB_STEP_SUMMARY" || false
+  echo 'stopped:  fix failed: run-checks.sh exit 1; once fixed' > .solve-feature/outcome
+  echo 'FAIL: test_after_fix' > .solve-feature/pr-10.checks.log
+  : > "$GITHUB_STEP_SUMMARY"
+  run bash -e "$TEMP_DIR/last-step.sh"
+  grep -qxF 'FAIL: test_after_fix' "$GITHUB_STEP_SUMMARY"
+  ! grep -q 'report of the last coder' "$GITHUB_STEP_SUMMARY" || false
   echo 'ready pr=10' > .solve-feature/outcome
+  : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"
   [ "$status" -eq 0 ]
   [[ "$output" == *"ready pr=10"* ]]
+  ! grep -q 'FAIL: test_x' "$GITHUB_STEP_SUMMARY" || false
 }

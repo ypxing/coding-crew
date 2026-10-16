@@ -22,6 +22,12 @@ name: solve-feature
 # `stopped: <reason>`, or no file at all (the session ended before the run finished). The step before it
 # uploads .solve-feature/ (the checks logs a stop names, the coder's report) as the run's artifact. A stop at an
 # issue's checks has already pushed its work and made the issue ready again, so a re-run picks it up there.
+# The last step also writes the run's summary page: the outcome, the PR, the model, and on a stop the coder's
+# report and the checks log's tail, so the run says why it stopped without the artifact.
+#
+# Model: the agent CLI's default for the account, unless the repo variable CREW_MODEL names one, passed as
+# `--model` (a Claude Code alias such as `opus`, or a Copilot model name). The subagents run on it too, unless
+# .coding-crew/config.json's solveFeature.models names theirs.
 #
 # Billing, Copilot: with `github.token`, a repo owned by an organisation bills the organisation (its budgets,
 # not any user's), which needs the organisation policy "Allow use of Copilot CLI billed to the
@@ -94,6 +100,7 @@ jobs:
       cancel-in-progress: false
     env:
       CREW_AGENT: ${{ vars.CREW_AGENT || 'copilot' }}
+      CREW_MODEL: ${{ vars.CREW_MODEL }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -138,14 +145,38 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         # An unset secret arrives as an empty variable, which Claude Code would read as a credential.
         run: |
+          set -o pipefail
           [ -n "$ANTHROPIC_API_KEY" ] || unset ANTHROPIC_API_KEY
           [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || unset CLAUDE_CODE_OAUTH_TOKEN
+          model=()
+          [ -z "$CREW_MODEL" ] || model=(--model "$CREW_MODEL")
           case "$CREW_AGENT" in
-            copilot) copilot -p "Use the solve-feature skill on $SLUG" --allow-all --no-color ;;
+            copilot) copilot -p "Use the solve-feature skill on $SLUG" --allow-all --no-color "${model[@]}" ;;
             claude)
               [ -n "${ANTHROPIC_API_KEY:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ] ||
                 { echo "::error::Claude Code needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1; }
-              claude -p "/solve-feature $SLUG" --dangerously-skip-permissions ;;
+              # Plain -p prints only the session's last message, at its end; tee -p keeps the session going should
+              # the filter die.
+              mkdir -p .solve-feature && echo '*' > .solve-feature/.gitignore
+              claude -p "/solve-feature $SLUG" --dangerously-skip-permissions "${model[@]}" --output-format stream-json --verbose |
+                tee -p .solve-feature/session.jsonl | jq --unbuffered -Rr '
+                  fromjson? | try (
+                    (if .parent_tool_use_id then "    " else "" end) as $pad
+                    | if .type == "system" and .subtype == "init" then "model: \(.model)"
+                      elif .type == "assistant" then .message.content[]
+                        | if .type == "text" then $pad + .text
+                          elif .type != "tool_use" then empty
+                          elif .name == "Bash" then $pad + "$ " + (.input.command | tostring | split("\n")[0])
+                          elif .name == "Agent" or .name == "Task" then
+                            $pad + "> subagent: \(.input.description // "")" + (if .input.model then " (\(.input.model))" else "" end)
+                          else $pad + "\(.name) \(.input.file_path // .input.pattern // "")" end
+                      elif .type == "user" then .message.content[]
+                        | select(type == "object" and .type == "tool_result" and .is_error == true)
+                        | $pad + "  failed: " + (.content | if type == "array" then map(.text // "") | join(" ") else tostring end | split("\n")[0])
+                      elif .type == "result" then
+                        "session: \(.subtype), \(.num_turns) turns, \(.duration_ms / 60000 | floor) min, $\(.total_cost_usd)"
+                      else empty end
+                  ) catch empty' ;;
           esac
 
       - name: Keep the run's logs
@@ -158,11 +189,33 @@ jobs:
           if-no-files-found: ignore
 
       - name: Fail the job unless solve-feature marked the PR ready
+        if: always()
+        env:
+          SLUG: ${{ needs.slug.outputs.slug }}
         run: |
-          if [ ! -f .solve-feature/outcome ]; then
-            echo "::error::solve-feature never finished: the session ended early (see the Run solve-feature step)"; exit 1
-          fi
-          line=$(cat .solve-feature/outcome)
+          logs=.solve-feature
+          line=$(cat "$logs/outcome" 2>/dev/null) ||
+            line="never finished: the session ended early or never started (see the first failed step)"
+          model=$(jq -r 'select(.type == "system" and .subtype == "init") | .model' "$logs/session.jsonl" 2>/dev/null | head -n 1)
+          pr=$(sed -n 's/.*pr=\([0-9][0-9]*\).*/\1/p' <<<"$line")
+          {
+            echo "### solve-feature $SLUG: \`$line\`"
+            [ -z "$pr" ] || echo "- PR: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr"
+            echo "- Agent: $CREW_AGENT, model ${model:-${CREW_MODEL:-unpinned (the CLI default)}}"
+            ref=${line#stopped: }
+            case "$line" in
+              "stopped: "*" solve failed: "*) files="$logs/coder.report.md" ;;
+              "stopped: "*" checks failed: "*)
+                ref=${ref%% checks failed: *}; files="$logs/coder.report.md $logs/${ref//\//_}.checks.log" ;;
+              "stopped: "*" fix failed: "*) files=$(ls -t "$logs"/pr-*.checks.log 2>/dev/null | head -n 1) ;;
+              needs-attention*) files="$logs/pr-$pr.attention.md" ;;
+              *) files="" ;;
+            esac
+            for f in $files; do
+              [ -s "$f" ] || continue
+              printf '\n<details open><summary>%s</summary>\n\n```text\n%s\n```\n\n</details>\n' "${f#"$logs"/}" "$(tail -n 60 "$f")"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
           case "$line" in
             ready*) echo "solve-feature: $line" ;;
             *) echo "::error::solve-feature: $line"; exit 1 ;;

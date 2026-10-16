@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **setup-coding-crew**: the solve-feature Actions workflow streams a Claude run's steps into the job log as they
+  happen (the model, each command and subagent, a failed tool) and keeps the stream in the artifact; its summary
+  page shows the outcome, the PR, the model and, on a stop, the coder's report and checks log; the repo variable
+  `CREW_MODEL` pins the model. A re-run of `/setup-coding-crew` offers the new file (#518).
 - **crew-afk**: `crew-afk.sh wait <slug>` blocks until the run has ended and prints its `status` line, and `/crew-afk`
   runs it in the background when the agent can, so the session that dispatched a run reports how it ended (#510).
 - **repo**: `.gitattributes` merges `CHANGELOG.md` with git's `union` driver, so two branches' `[Unreleased]` entries
