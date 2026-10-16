@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 
-# dep-install's scripts are the checks library (lib/checks): installed once to
-# <root>/.coding-crew/lib/checks and linked as <skill-dir>/scripts/checks into each skill whose
-# registry `libs` names it, so the skill text's "<skill-dir>/scripts/checks/<script>" runs the one copy.
+# dep-install's scripts are the checks library (lib/checks): committed as a copy at
+# skills/<skill>/scripts/checks in each skill whose registry `libs` names it, and installed with the
+# skill, so the skill text's "<skill-dir>/scripts/checks/<script>" runs the skill's own copy.
 
 setup_file() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -16,7 +16,7 @@ fresh_target() {
   printf '%s\n' "$target"
 }
 
-LIB=".coding-crew/lib/checks"
+LIB=".pi/skills/dep-install/scripts/checks"
 
 @test "registry links the checks library into dep-install, solve-issue, solve-feature and address-pr-comments" {
   local s
@@ -35,16 +35,15 @@ LIB=".coding-crew/lib/checks"
   done
 }
 
-@test "the library installs once, not once per platform, and every platform's dep-install links it" {
+@test "every platform's dep-install carries its own copy of the library, and no .coding-crew/lib is written" {
   local target d; target=$(fresh_target target-all)
   run bash "$REPO_ROOT/install.sh" all --skill dep-install --project "$target"
   [ "$status" -eq 0 ]
-  run bash -c "find '$target' -name 'discover-mode.sh' | wc -l"
-  [ "$(echo "$output" | tr -d ' ')" = "1" ]
+  [ ! -e "$target/.coding-crew/lib" ]
   for d in .claude/skills/dep-install .pi/skills/dep-install .agents/skills/dep-install .github/skills/dep-install; do
     [ -f "$target/$d/SKILL.md" ] || { echo "missing $d/SKILL.md" >&2; return 1; }
-    [ -L "$target/$d/scripts/checks" ] || { echo "$d/scripts/checks is not a link" >&2; return 1; }
-    [ -f "$target/$d/scripts/checks/host-install.sh" ] || { echo "$d: the link does not resolve" >&2; return 1; }
+    [ -d "$target/$d/scripts/checks" ] && [ ! -L "$target/$d/scripts/checks" ] || { echo "$d/scripts/checks is not a directory" >&2; return 1; }
+    diff -r "$REPO_ROOT/lib/checks" "$target/$d/scripts/checks" || { echo "$d: not a copy of lib/checks" >&2; return 1; }
   done
   # The path the skill text names is a runnable program, not a stub.
   run bash "$target/.pi/skills/dep-install/scripts/checks/discover-mode.sh" --project-root "$target"
@@ -61,7 +60,7 @@ LIB=".coding-crew/lib/checks"
   ! grep -q '^stale$' "$target/$LIB/discover-mode.sh"
 }
 
-@test "uninstall --skill dep-install removes the library no remaining skill uses" {
+@test "uninstall --skill dep-install removes the skill with its library copy" {
   local target; target=$(fresh_target target-uninstall)
   bash "$REPO_ROOT/install.sh" pi --skill dep-install --project "$target" >/dev/null
   [ -f "$target/$LIB/discover-mode.sh" ]
@@ -75,7 +74,6 @@ LIB=".coding-crew/lib/checks"
   local target; target=$(fresh_target target-shim)
   run bash "$REPO_ROOT/install.sh" claude --skill dep-install --project "$target"
   [ "$status" -eq 0 ]
-  [ -x "$target/$LIB/shim/docker" ]
   [ -x "$target/.claude/skills/dep-install/scripts/checks/shim/docker" ]
 }
 

@@ -7,7 +7,7 @@
 # nothing needs a person and writes .solve-feature/outcome.
 #
 # A temp clone with a bare `origin`, and the skill's scripts/ as install.sh lays it out: its own
-# script beside the tracker and checks library links. `gh`, `node` (only for the tracker CLI's path; everything else reaches the
+# script beside the tracker and checks library copies. `gh`, `node` (only for the tracker CLI's path; everything else reaches the
 # real node) and solve-issue's run-checks.sh are stubs that log their argv; the node stub answers
 # `next` from $STATE/issues.json by the tracker's dispatch rule. `coder <ref>` stands in for the
 # subagent: it commits a file and swaps the issue's ready-for-agent label for awaiting-merge, as

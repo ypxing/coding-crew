@@ -8,10 +8,10 @@ RUN_CHECKS="$REPO_ROOT/lib/checks/run-checks.sh"
 
 setup() {
   TEMP_DIR=$(mktemp -d)
-  # solve-issue's scripts/ as install.sh lays it out: its own scripts, and the checks library linked in.
+  # solve-issue's scripts/ as installed: its own scripts, and its copy of the checks library.
   mkdir -p "$TEMP_DIR/skill/scripts"
   cp "$REPO_ROOT"/skills/solve-issue/scripts/*.sh "$TEMP_DIR/skill/scripts/"
-  ln -s "$REPO_ROOT/lib/checks" "$TEMP_DIR/skill/scripts/checks"
+  cp -R "$REPO_ROOT/skills/solve-issue/scripts/checks" "$TEMP_DIR/skill/scripts/checks"
   PREFLIGHT="$TEMP_DIR/skill/scripts/preflight.sh"
   WORK="$TEMP_DIR/work"
   mkdir -p "$WORK/.scratch/feat/issues/open" "$WORK/.scratch/feat/issues/done"
@@ -107,15 +107,15 @@ _preflight() {
   [[ "$output" == *$'\nPRD=' ]]
 }
 
-@test "preflight: reports the slug and PRD only, and stops when the checks library is not linked into scripts/checks" {
+@test "preflight: reports the slug and PRD only, and stops when the checks library is missing from scripts/checks" {
   _issue "" "None"
   _preflight
   [ "$status" -eq 0 ]
   [ "$output" = "$(printf 'OK\nISSUE_SLUG=02-second\nPRD=')" ]
-  rm "$TEMP_DIR/skill/scripts/checks"
+  rm -r "$TEMP_DIR/skill/scripts/checks"
   _preflight
   [ "$status" -eq 1 ]
-  [ "$output" = "BLOCKED: checks library not linked — re-run install.sh" ]
+  [ "$output" = "BLOCKED: checks library missing from scripts/checks — re-install coding-crew" ]
 }
 
 # ─── run-checks.sh ───────────────────────────────────────────────────────────

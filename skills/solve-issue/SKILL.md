@@ -108,7 +108,7 @@ bash "<skill-dir>/scripts/preflight.sh" --project-root "$PROJECT_ROOT" \
 A `BLOCKED:` line (exit 1) ends the run: report it verbatim and do not proceed. It is
 `BLOCKED: on default branch` (`DEFAULT_BRANCH`: `origin/HEAD`, else `main`), `BLOCKED: depends on
 <file>` for a `## Blocked by` file not yet in the sibling `done/`, `BLOCKED: requires: <cmd>` for
-a failing `## Requires` command, or `BLOCKED: checks library not linked — re-run install.sh`.
+a failing `## Requires` command, or `BLOCKED: checks library missing from scripts/checks — re-install coding-crew`.
 Otherwise it prints `OK` and two values; carry them as literals for the rest of the run:
 
 - `ISSUE_SLUG` — the commit prefix (Steps 4 and 6). For an issue handed over inline it is empty:

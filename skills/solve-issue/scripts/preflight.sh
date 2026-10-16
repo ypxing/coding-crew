@@ -13,7 +13,7 @@
 #   BLOCKED: on default branch (<name>) — create or switch to a feature branch first
 #   BLOCKED: depends on <file> which is not yet done
 #   BLOCKED: requires: <cmd>          then check-requires.sh's output tail
-#   BLOCKED: checks library not linked — re-run install.sh
+#   BLOCKED: checks library missing from scripts/checks — re-install coding-crew
 # --issue is optional: an issue handed over inline has no Blocked by or PRD to resolve, and no slug. A PRD path is
 # resolved against the checkout that holds the issue's .scratch/, then against --project-root.
 
@@ -117,9 +117,9 @@ if [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
   fi
 fi
 
-# The checks library, linked into this skill's scripts/ by install.sh: Steps 2, 4 and 5 run through it.
+# The checks library, shipped as a copy in this skill's scripts/: Steps 2, 4 and 5 run through it.
 if [ ! -f "$SELF_DIR/checks/run-checks.sh" ] || [ ! -f "$SELF_DIR/checks/run.sh" ]; then
-  echo "BLOCKED: checks library not linked — re-run install.sh"
+  echo "BLOCKED: checks library missing from scripts/checks — re-install coding-crew"
   exit 1
 fi
 

@@ -292,6 +292,9 @@ install_single_skill() {
     local status=0
     check_dest_status "$src_file" "$dest_file" || status=$?
     cp "$src_file" "$dest_file"
+    # cp keeps an existing file's mode: the copy's exec bit must follow the source's.
+    if [[ -x "$src_file" && ! -x "$dest_file" ]]; then chmod +x "$dest_file"
+    elif [[ ! -x "$src_file" && -x "$dest_file" ]]; then chmod -x "$dest_file"; fi
     _WRITTEN["$dest_file"]=1
 
     if [[ $status -eq 0 ]]; then
