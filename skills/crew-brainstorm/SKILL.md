@@ -42,18 +42,20 @@ Complete these in order:
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
 - If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own pass through `to-issues`.
 - For appropriately-scoped projects, ask questions one at a time to refine the idea
-- Open questions first: the user's own words carry intent your options can't, and options steer. Offer a short menu only when they are stuck; when they say "just guess", propose something concrete.
+- Each question carries options and your recommended answer. An open question is for when the user has not found the words yet: their own description carries intent your options can't.
 - Only one question per message - if a topic needs more exploration, break it into multiple questions
 - Ground to cover — territory, not a script; never read these out as questions: purpose, constraints, success criteria, and anti-goals (what would make this a failure even if it technically works)
 - Size the problem before any solution: how often it happens, what the manual workaround costs today, and what goes wrong if nothing is done. Look these up (git history, the tracker, the code) before asking. Solutions the user arrives with are inputs, not the menu.
 
 ### Exploring approaches
 
-Propose 2-3 different approaches with trade-offs, conversationally, leading with your recommended option and why. What you recommend is judged by the design standard, and one approach is always the do-least option from the size test:
-
-{{FRAGMENT:design-standard}}
+Propose 2-3 different approaches with trade-offs, conversationally, leading with your recommended option and why. One of them is always the do-least option:
 
 {{FRAGMENT:size-test}}
+
+What you recommend is judged by the design standard:
+
+{{FRAGMENT:design-standard}}
 
 ### Presenting the design
 

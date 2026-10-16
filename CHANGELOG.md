@@ -23,8 +23,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   CLI; it and add-tests delete their drafts or findings file once to-issues has published. address-pr-comments handles `DISCOVER` before pushing and skips resolved threads by GraphQL `isResolved`.
   configure-tracker creates labels with `gh label create`, treating "already exists" as success (#503).
 - **to-issues / to-prd / crew-grill / crew-brainstorm / tracker**: to-issues sizes an issue as one implementer's
-  work, taken, finished and verified as a unit: it drafts slices as the work divides, splits one that is more than
-  one sitting, and merges one that exists only to be smaller (size, a human boundary or expand–contract order are
+  work, taken, finished and verified as a unit: it drafts slices as the work divides, splits one that is well beyond
+  the reference size (what has been finished as one issue), and merges one that exists only to be smaller (size, a human boundary or expand–contract order are
   the only split reasons; no more parallelism, token estimates or dispatch costs), and shows the user only the
   slices that survived. Its step 6 mechanics (drafts, known issues, `deps.json`, lint, builder check, publish,
   rewrite) move to `references/publish.md`, read when that step is reached; the design skills name no downstream

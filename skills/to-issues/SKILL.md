@@ -65,8 +65,8 @@ Also note any **shared surfaces**: a schema/table, a shared type, or an existing
 An issue is one piece of work that one implementer takes, finishes and gets verified as a unit, and that stands on its own once landed. Shape the slices in three passes:
 
 1. **Draft** them as the work divides on its own, without weighing size: each one a tracer bullet (below), HITL work apart from AFK work, and the steps of an expand–contract migration in their order (**Expand–contract sequencing** below).
-2. **Split** a slice that is more than one sitting's work for one implementer, along its own seams. For scale: slices of 7–44 files and ~100–1600 changed lines have each been finished as one issue.
-3. **Merge** a slice that exists only to be smaller. For each pair of slices, name what keeping them apart buys. Only three things do: one side needs a person and the other does not (**human boundary**), one must land before the other as a migration step (**expand–contract order**), or together they would be more than one sitting (**size**). Separate files, modules, concerns, behaviours or test seams buy nothing on their own. A pair with no reason is merged now, not shown to the user as a choice; a split is never kept by relabelling it — when none of the three holds, merge. One slice may deliver several behaviours. Repeat until every remaining split names one of the three.
+2. **Split** a slice that is more than one implementer finishes as one issue, along its own seams. The **reference size** is what has been finished as one issue: slices of 7–44 files and ~100–1600 changed lines each. A slice inside that range is one issue; one well beyond it is split.
+3. **Merge** a slice that exists only to be smaller. For each pair of slices, name what keeping them apart buys. Only three things do: one side needs a person and the other does not (**human boundary**), one must land before the other as a migration step (**expand–contract order**), or together they would be well beyond the reference size (**size**). A size split shows its arithmetic: the merged pair's files and changed lines next to the reference size; a pair whose merged total sits inside the reference is one issue, whatever else separates it. Separate files, modules, concerns, behaviours or test seams buy nothing on their own, and are not size. A pair with no reason is merged now, not shown to the user as a choice; when none of the three holds, merge. One slice may deliver several behaviours. Repeat until every remaining split names one of the three.
 
 The breakdown shows only the slices that survived pass 3, each split with the reason it named.
 
@@ -86,7 +86,7 @@ Otherwise add no edge: edits to separate parts of a file do not interact, and a 
 - When a slice's behaviour is prose (a skill, prompt or doc), its check is never a grep of the rendered output: its criteria are checkable from the diff, and its behaviour is judged by an eval where a harness exists
 - If the work is split, the first slice is the thinnest end-to-end path: the narrowest behaviour that proves the layers connect. Later slices widen it
 - A completed slice is demoable or verifiable on its own
-- Each slice is one sitting's work for one implementer — passes 2 and 3 above are the only size rule
+- Each slice is one implementer's issue, judged against the reference size — passes 2 and 3 above are the only size rule
 - A slice with more than 10 acceptance criteria is flagged for the user (step 5). Neither that nor any other rule in this list is on its own a reason to split
 - Any prefactoring is sequenced first: at the start of the slice, or as the first slice when the work is split
 </vertical-slice-rules>
@@ -117,8 +117,8 @@ Show the coverage table from step 4.5 (when there is one), then ask only what ne
 2. **Design-standard failures** — each slice that fails a criterion of the design standard (step 3): the criterion, its evidence at `file:line`, and the reshape you propose.
 3. **The PRD's `## Assumptions`** — each one the slices lean on, for the user to confirm or correct. With no PRD, show instead the one slice's drafted acceptance criteria, its `## Decisions`, the assumptions you filled in beyond the source, and the slug: this is the single review on the light path.
 4. **PRD IDs no slice covers** — the empty rows of the coverage table: add a slice, fold the ID into one, or confirm it is out of scope.
-5. **Large slices** — each slice you judged close to a full sitting, or that carries more than 10 acceptance criteria, with its files and changed lines, for the user to confirm it stays one issue. Neither is a reason to split.
-6. **Splits and edges** — one line per split naming its reason from step 4's pass 3 (size, human boundary, expand–contract order), and one line per `Blocked by` edge naming the edge-rule row that produced it, each naming its slices, for the user to override. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
+5. **Large slices** — each slice near the top of the reference size, or that carries more than 10 acceptance criteria, with its files and changed lines, for the user to confirm it stays one issue. Neither is a reason to split.
+6. **Splits and edges** — one line per split naming its reason from step 4's pass 3 (size — with the merged pair's files and lines against the reference size; human boundary; expand–contract order), and one line per `Blocked by` edge naming the edge-rule row that produced it, each naming its slices, for the user to override. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
 7. **HITL choices** — each slice marked HITL, and why a human is needed (that reason becomes the block's `### Why a person`); the rest are AFK.
 
 Then one approve/adjust prompt: approve the breakdown as shown, or say what to adjust. Iterate until the user approves. Do not ask generic questions about granularity, blocking edges, combining slices or HITL/AFK — a breakdown with nothing to list above needs only the approve/adjust prompt.

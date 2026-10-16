@@ -4,7 +4,7 @@ You are scoring outputs of `to-issues` at its slicing step: each output is the b
 show the user — numbered slices with a title, an acceptance-criteria count, `Blocked by`, and the
 reason for each split. The skill treats an issue as one piece of work one implementer takes,
 finishes and gets verified as a unit: it drafts slices as the work divides, splits one that is more
-than one sitting's work, and merges one that exists only to be smaller. A split is right only for
+than the reference size, and merges one that exists only to be smaller. A split is right only for
 one of three reasons:
 
 1. **size** (also written "context budget") — together the work is more than one implementer
