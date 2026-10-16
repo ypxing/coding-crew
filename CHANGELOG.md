@@ -9,6 +9,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - **solve-feature**: a `fix` re-run after you pushed the branch by hand (its own push failed) no longer adds a false
   "the fixer changed nothing": `fix` compares with the head it first saw that review round, and its stops now say
   pushing before the re-run is fine (#529).
+- **tracker (github)**: the tracker CLI's `create-issue`, `feature-issues` and `link-blockers` ops are gone (nothing
+  called them since #488); they now exit 2 as unknown ops. To check a feature moved off milestones, run
+  `known --feature-slug <slug> --out <dir>` and `features` instead (#531).
 - **crew-afk**: `crew-afk.sh wait` no longer drops a local run's cost from its line when the run exits while
   wait is reading its log (#530).
 - **crew-afk / docs**: crew-afk no longer knows how to launch any agent CLI: the agent you run `/crew-afk` in
