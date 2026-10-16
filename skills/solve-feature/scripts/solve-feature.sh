@@ -242,6 +242,8 @@ describe() {
   [ ! -f "$f" ] || title=$(head -n 1 "$f" | sed -n 's/^# //p')
   {
     echo "$BEGIN"
+    # Written here, not by the writer subagent, so a reviewer always sees that agents wrote this PR.
+    printf '> Written by solve-feature (`%s`): its coder, reviewer and fixer were agents; no person has read this body.\n\n' "$SLUG"
     # write-pr's summary minus its title line, which titles the PR instead.
     if [ -f "$f" ]; then if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d'; echo; fi
     if [ -s "$att" ]; then printf '## Needs attention\n\n'; sed 's/^/- /' "$att"; echo; fi
