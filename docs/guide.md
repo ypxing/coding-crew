@@ -349,7 +349,8 @@ checks pass. Then it reviews the whole feature and fixes the findings, at most t
 only after fixing a CRITICAL, HIGH or MEDIUM finding. It writes the PR body and marks the draft PR ready
 when nothing needs a person. Run it where an unattended agent may change the
 checkout — a worktree or a container, not the one you work in. A stop names the step and how to
-recover; a re-run skips the issues already done and reuses the branch and the PR.
+recover; a re-run skips the issues already done and reuses the branch and the PR, merging the default
+branch into it first (a conflict stops the run for you to merge by hand).
 
 | Setting | Effect |
 | --- | --- |
@@ -426,20 +427,30 @@ pushes as the App.
 ### solve-feature on GitHub Actions (optional)
 
 `/solve-feature` runs one feature from a terminal or a worktree pane. To run it on a GitHub runner
-instead, on the Copilot CLI and billed to GitHub Copilot (no API key), run `/setup-coding-crew` with the
-github tracker and answer yes to its Actions step: it copies
+instead, run `/setup-coding-crew` with the github tracker and answer yes to its Actions step: it copies
 [`hosts/github-actions.yml`](../skills/setup-coding-crew/hosts/github-actions.yml) to
-`.github/workflows/solve-feature.yml`, creates the `solve-feature` label and prints the commit line for it.
-Commit, then label a feature's root issue `solve-feature` or run the workflow by hand with the slug. The
-file's header explains billing.
+`.github/workflows/solve-feature.yml`, creates the `solve-feature` label, sets the repo variable
+`CREW_AGENT` to the agent you pick and prints the commit line for it. `copilot` (the default) is billed
+to GitHub Copilot with no API key; `claude` runs Claude Code on an `ANTHROPIC_API_KEY` or
+`CLAUDE_CODE_OAUTH_TOKEN` repo secret. Commit, then label a feature's root issue `solve-feature` or run the
+workflow by hand with the slug. The file's header explains billing.
 
-The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all-tools
---no-color`; the Copilot CLI runs each coder, the reviewer, the fixer and the PR's writer as its own subagents. A stop
+The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all
+--no-color` or `claude -p "/solve-feature $SLUG" --dangerously-skip-permissions --output-format stream-json
+--verbose` (every tool and path: the skill's scripts are outside the checkout), adding `--model` when the repo
+variable `CREW_MODEL` names one (else the CLI's default for the account); the agent runs each coder, the
+reviewer, the fixer and the PR's writer as its own subagents, on that model unless `solveFeature.models` names
+theirs. Claude's job log shows the run as it goes, one line per step (the model, each command and subagent, a
+failed tool), and keeps the whole stream as `.solve-feature/session.jsonl`. Every run uploads `.solve-feature/` as an artifact, so the checks log a stop names
+outlives the runner; a stop at an issue's checks has already pushed its work and made the issue ready again,
+so a re-run picks it up there. A stop
 exits the session without failing it, so the job's last step fails it unless the run's one-line
 `.solve-feature/outcome` starts with `ready` — written by the describe step (`solve-feature.sh
 describe`) once it has marked the PR ready. It fails on `needs-attention pr=<n>`, on a stop a script
 recorded (`stopped: <what> failed: <reason>`), and when the file is absent because the session ended before the run
-finished.
+finished. The same step writes the run's summary page: the outcome, the PR, the model, and what to read next
+(a stop's coder report and checks log tail, a needs-attention's list), so a failed run says why without the
+artifact.
 
 ---
 

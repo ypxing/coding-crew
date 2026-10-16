@@ -29,7 +29,7 @@ echo "gh $*" >> "$BATS_TEST_TMPDIR/calls"
 SH
   cat > "$STUB/dispatch" <<'SH'
 #!/usr/bin/env bash
-echo "dispatch $* (in $PWD, agent $CREW_AFK_AGENT)" >> "$BATS_TEST_TMPDIR/calls"
+echo "dispatch $* (in $PWD, agent $CREW_AGENT)" >> "$BATS_TEST_TMPDIR/calls"
 wt="$BATS_TEST_TMPDIR/wt"
 rm -rf "$wt"
 git worktree add -q --detach "$wt" >&2

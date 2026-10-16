@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
 
-# crew-afk.sh dispatch|status — starts one solve-feature run in a feature's worktree and reports how
+# crew-afk.sh dispatch|status|wait — starts one solve-feature run in a feature's worktree and reports how
 # each run ended. A temp clone with a bare `origin` stands in for the user's repo; `claude`, `timeout`,
 # `orca` and `herdr` are stubs on PATH that log their argv. The stub claude waits for $T/release, so a
-# test can see dispatch return while the run is still going. CREW_AFK_AGENT=claude stands in for the
+# test can see dispatch return while the run is still going. CREW_AGENT=claude stands in for the
 # agent that runs crew-afk; one test leaves it unset and runs crew-afk from a stub agent instead.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
@@ -44,7 +44,7 @@ shift
 exec "$@"
 SH
   chmod +x "$STUB"/*
-  export PATH="$STUB:$PATH" CREW_AFK_AGENT=claude
+  export PATH="$STUB:$PATH" CREW_AGENT=claude
   cd "$MAIN"
 }
 
@@ -141,7 +141,7 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
     [ "$status" -eq 2 ] || { echo "$args: $output"; return 1; }
     [[ "$output" == *crew-afk:* ]]
   done
-  CREW_AFK_AGENT=nope run bash "$SCRIPT" dispatch report-cli
+  CREW_AGENT=nope run bash "$SCRIPT" dispatch report-cli
   [ "$status" -eq 1 ] && [[ "$output" == *"unknown agent 'nope'"* ]]
   [ ! -e "$T/app-worktrees" ]
   [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 1 ]
@@ -154,7 +154,7 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
 if [ "\$1" = dispatch ]; then bash "$SCRIPT" "\$@"; else printf '%s\n' "\$*" > "$T/pi-argv"; fi
 SH
   chmod +x "$T/stub/pi"
-  unset CREW_AFK_AGENT
+  unset CREW_AGENT
   run pi dispatch report-cli
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ -z "$(field session)" ]
@@ -191,6 +191,68 @@ SH
   session=$(cat "$WT/.solve-feature/run.session")
   [ "${lines[0]}" = "report-cli: ended without an outcome — log: $WT/.solve-feature/run.log; re-run /crew-afk report-cli to continue" ]
   [ "${lines[1]}" = "  resume: cd $WT && claude --resume $session" ]
+}
+
+@test "wait blocks while the run is going, then prints the status line once the outcome is written" {
+  export CREW_AFK_WAIT_INTERVAL=0.1
+  bash "$SCRIPT" dispatch report-cli >/dev/null
+  bash "$SCRIPT" wait report-cli >"$T/wait-out" &
+  waiter=$!
+  sleep 0.5
+  kill -0 "$waiter"
+  echo 'ready pr=7' > "$WT/.solve-feature/outcome"
+  wait "$waiter"
+  [ "$(cat "$T/wait-out")" = "report-cli: ready pr=7" ]
+}
+
+@test "wait on a local run that ends without an outcome prints status's ended line and resume line" {
+  export CREW_AFK_WAIT_INTERVAL=0.1
+  ended_run
+  run bash "$SCRIPT" wait report-cli
+  [ "$status" -eq 0 ]
+  [[ "${lines[0]}" == "report-cli: ended without an outcome — log: "* ]]
+  [[ "${lines[1]}" == "  resume: cd $WT && claude --resume "* ]]
+}
+
+@test "wait on an orca run, which has no run.pid, returns once the outcome is written" {
+  export CREW_AFK_WAIT_INTERVAL=0.1
+  stub_orca
+  bash "$SCRIPT" dispatch report-cli --to orca >/dev/null
+  OWT="$T/orca-wt/app-report-cli"
+  bash "$SCRIPT" wait report-cli >"$T/wait-out" &
+  waiter=$!
+  sleep 0.5
+  kill -0 "$waiter"
+  echo 'ready pr=9' > "$OWT/.solve-feature/outcome"
+  wait "$waiter"
+  [ "$(cat "$T/wait-out")" = "report-cli: ready pr=9" ]
+}
+
+@test "wait follows the slug's latest dispatch, not an older orca run that never wrote an outcome" {
+  export CREW_AFK_WAIT_INTERVAL=0.1
+  stub_orca
+  bash "$SCRIPT" dispatch report-cli --to orca >/dev/null
+  touch -t 202001010000 "$T/orca-wt/app-report-cli/.solve-feature/run.slug"
+  bash "$SCRIPT" dispatch report-cli >/dev/null
+  bash "$SCRIPT" wait report-cli >"$T/wait-out" &
+  waiter=$!
+  sleep 0.5
+  kill -0 "$waiter"
+  echo 'ready pr=7' > "$WT/.solve-feature/outcome"
+  for _ in $(seq 1 30); do kill -0 "$waiter" 2>/dev/null || break; sleep 0.1; done
+  ! kill -0 "$waiter" 2>/dev/null || { kill "$waiter"; echo "wait did not return"; return 1; }
+  [ "$(cat "$T/wait-out")" = "report-cli: ready pr=7" ]
+}
+
+@test "wait with no run for the slug exits at once with status's line; a missing slug is a usage error" {
+  run bash "$SCRIPT" wait nothing
+  [ "$status" -eq 0 ]
+  [ "$output" = "no crew-afk run for nothing" ]
+  run bash "$SCRIPT" wait
+  [ "$status" -eq 2 ]
+  run bash "$SCRIPT" --help
+  [[ "$output" == *"wait <slug>"* ]]
+  grep -q '^#   wait <slug>' "$SCRIPT"
 }
 
 @test "status leaves out a worktree crew-afk did not dispatch, such as a solve-feature run started by hand" {

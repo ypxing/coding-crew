@@ -39,9 +39,16 @@ review, fix or close nothing**: each run is its own top-level session in its own
    bash "<skill-dir>/scripts/crew-afk.sh" dispatch <slug> [--to local|orca|herdr] [--branch <name>]
    ```
 
-   Relay what it prints and stop: the run goes on without you, so do not wait for it, read its log or
-   check on it. On a non-zero exit, relay the message as printed. Only a local run is refused while it
+   Relay what it prints: the run goes on without you, so do not wait for it in the foreground, read its
+   log or check on it. On a non-zero exit, relay the message as printed. Only a local run is refused while it
    is still going: a second dispatch to orca or herdr starts a second agent beside the first.
+3. **Watch the end**, after a dispatch that exited 0, if you can run a command in the background and be told when
+   it exits: run it that way and relay its lines when it does. It prints what `status` prints, once the run has
+   ended. Otherwise skip this step: `/crew-afk status` works as today.
+
+   ```bash
+   bash "<skill-dir>/scripts/crew-afk.sh" wait <slug>
+   ```
 
 ## Status
 

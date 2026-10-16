@@ -77,3 +77,43 @@ _stub() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"Failed files (1)"* ]]
 }
+
+# A PATH of every command but bats, and a local bats-core whose v1.13.0 tag ships the fake bats.
+_no_bats_path() {
+  local d f
+  mkdir -p "$TEMP_DIR/nobats"
+  IFS=: read -ra dirs <<< "$PATH"
+  for d in "${dirs[@]}"; do
+    for f in "$d"/*; do
+      [[ -x "$f" && "${f##*/}" != bats && ! -e "$TEMP_DIR/nobats/${f##*/}" ]] && ln -s "$f" "$TEMP_DIR/nobats/${f##*/}"
+    done
+  done
+  mkdir -p "$TEMP_DIR/bats-core/bin"
+  cp "$BATS" "$TEMP_DIR/bats-core/bin/bats"
+  git -C "$TEMP_DIR/bats-core" init -q
+  git -C "$TEMP_DIR/bats-core" add -A
+  git -C "$TEMP_DIR/bats-core" -c user.name=t -c user.email=t@t commit -q -m bats
+  git -C "$TEMP_DIR/bats-core" tag v1.13.0
+}
+
+@test "with no bats on PATH it clones the pinned bats-core outside the tree, once" {
+  _stub a.bats 1
+  _no_bats_path
+  export CI_BATS_REPO="file://$TEMP_DIR/bats-core" XDG_CACHE_HOME="$TEMP_DIR/cache"
+  PATH="$TEMP_DIR/nobats" run env -u BATS bash "$RUNNER" "$TEMP_DIR/a.bats"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STARTS")" = a.bats ]
+  [ -x "$TEMP_DIR/cache/coding-crew/bats-core-v1.13.0/bin/bats" ]
+  rm -rf "$TEMP_DIR/bats-core"
+  PATH="$TEMP_DIR/nobats" run env -u BATS bash "$RUNNER" "$TEMP_DIR/a.bats"
+  [ "$status" -eq 0 ]
+}
+
+@test "with no bats on PATH a failed clone says so" {
+  _stub a.bats 1
+  _no_bats_path
+  export CI_BATS_REPO="file://$TEMP_DIR/missing" XDG_CACHE_HOME="$TEMP_DIR/cache"
+  PATH="$TEMP_DIR/nobats" run env -u BATS bash "$RUNNER" "$TEMP_DIR/a.bats"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no bats on PATH, and cloning bats-core v1.13.0 failed"* ]]
+}

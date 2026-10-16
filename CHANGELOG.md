@@ -51,6 +51,33 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   is not linked and no longer prints `DEP_SCRIPTS`. crew-review's report field `prd` is renamed `spec`
   (`met|unmet|none`) — update any script that reads a standalone `/crew-review` report. Every solve-feature stop
   line reads `stopped: <what> failed: <reason>`, a run with nothing landed included (#501).
+- **repo**: this repo's solve-feature workflow maps Claude Code's `haiku`, `sonnet` and `opus` aliases to
+  `claude-haiku-5-5`, `claude-sonnet-5-5` and `claude-opus-5-5[1m]` (#519).
+- **setup-coding-crew**: the solve-feature Actions workflow streams a Claude run's steps into the job log as they
+  happen (the model, each command and subagent, a failed tool) and keeps the stream in the artifact; its summary
+  page shows the outcome, the PR, the model and, on a stop, the coder's report and checks log; the repo variable
+  `CREW_MODEL` pins the model. A re-run of `/setup-coding-crew` offers the new file (#518).
+- **crew-afk**: `crew-afk.sh wait <slug>` blocks until the run has ended and prints its `status` line, and `/crew-afk`
+  runs it in the background when the agent can, so the session that dispatched a run reports how it ended (#510).
+- **repo**: `.gitattributes` merges `CHANGELOG.md` with git's `union` driver, so two branches' `[Unreleased]` entries
+  no longer conflict, and solve-feature's re-run on this repo's feature branches does not stop on them (#516).
+- **solve-feature / solve-issue**: a re-run on an existing branch merges the default branch in first, so its checks
+  run main's later fixes (a conflict stops it, naming the files); a resumed coder whose issue's work is already
+  committed still runs the checks and marks it done, instead of stopping the run with the issue open (#515).
+- **scripts**: `ci-run-bats.sh` clones the bats-core ci.yml pins (v1.13.0) into `~/.cache/coding-crew/` when no `bats`
+  is on PATH, so this repo's own solve-feature Actions runs, whose runner installs no bats, can run their checks (#513).
+- **solve-feature / tracker**: a failed check after an issue's coder closed it no longer strands the work: `land` reopens
+  the issue (the tracker CLI's new `reopen` op) and pushes its commits before it stops, so a plain re-run's coder
+  picks the issue up from that work, on an Actions runner too, where the checkout goes with the job (#512).
+- **setup-coding-crew**: the Actions workflow runs Claude Code as well as Copilot, picked by the repo variable
+  `CREW_AGENT` (`claude` needs an `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` secret), and uploads
+  `.solve-feature/` as an artifact on every run, so the checks log a stop names outlives the runner. Re-run
+  `/setup-coding-crew redo actions` to update an installed workflow. crew-afk's `CREW_AFK_AGENT` is now `CREW_AGENT`
+  too: one name for the agent CLI a launcher runs solve-feature with (#512).
+- **setup-coding-crew / crew-afk**: the Actions workflow and crew-afk's copilot launches run Copilot with `--allow-all`
+  instead of `--allow-all-tools`, so a run no longer stops at its first step: the skill's scripts sit under
+  `$HOME/.copilot/skills`, outside the checkout, and Copilot's path check denied them with no one to approve. Re-run
+  `/setup-coding-crew redo actions` to update an installed workflow (#511).
 - **repo**: this repo runs solve-feature on GitHub Actions: `.github/workflows/solve-feature.yml` is the
   setup-coding-crew template, so labelling a feature's root issue `solve-feature` (or dispatching the workflow with its
   slug) builds it on a runner (#509).
@@ -235,7 +262,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - **solve-feature, review-pr**: no agent CLI is launched any more. Both skills run inside whichever host agent invoked
   them: each issue's coder and the reviewer are fresh subagents SKILL.md asks for, and the scripts keep only the guards
   as subcommands — `solve-feature.sh start|next|land` and `review-pr.sh prepare|post` (the old one-shot forms exit 2).
-  `--agent`, `SOLVE_FEATURE_AGENT`, `--budget`, the 60/30-minute timeouts and `review-pr/scripts/agent.sh` are gone; put
+  `--agent`, `CREW_AGENT`, `--budget`, the 60/30-minute timeouts and `review-pr/scripts/agent.sh` are gone; put
   caps on your own launch line. Models come from `.coding-crew/config.json` `solveFeature.models.{coder,reviewer}`
   (crew-afk accepts the section and ignores it), no longer `afk.models`. The progress comment drops the final
   `REVIEW:` note (the review is on the PR). **A copied `hosts/github-actions.yml` must be copied again**: it now runs
@@ -265,7 +292,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   user-level) — and SKILL.md's "Where to run it" covers terminal, worktree pane, cloud Claude Code session (launch,
   don't host), GitHub Actions and docker (#464).
 - **solve-feature**: each issue is coder → checks → the tracker's own close (no verifier; `verify-prompt.md` and the
-  `roles/` tree are gone); `--agent claude|copilot` (`SOLVE_FEATURE_AGENT`) picks the coder; `next` selects issues on
+  `roles/` tree are gone); `--agent claude|copilot` (`CREW_AGENT`) picks the coder; `next` selects issues on
   either tracker; dependencies are prepared headlessly before the first coder; the first landed issue pushes and opens
   a draft PR whose body carries the spec (PRD + each issue's criteria, cut at GitHub's body limit), progress is one
   comment on that PR, and the run ends by running `review-pr` on it. `--open-pr` is gone; a committed
