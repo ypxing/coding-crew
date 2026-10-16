@@ -69,7 +69,7 @@ Print `builder check: N answered, M (auto), K asked`. One round: dispatch no sec
 node "$TRACKER" publish-issues --feature-slug <feature-slug> --drafts .scratch/<feature-slug>/.drafts
 ```
 
-It creates the issues in dependency order and prints one `<draft> <ref>` line per issue; the drafts directory (`known/` and `PRD.md` included) is deleted after a full publish. Two exits are questions for the user, and both write nothing:
+It creates the issues in dependency order and prints one `<draft> <ref>` line per issue; the drafts directory (`known/` and `PRD.md` included) is deleted after a full publish. Finish by telling the user the feature slug, the PRD's ref when one was written, and those `<draft> <ref>` lines, with each `ready-for-human` issue marked as one a person must act on: the slug is what every later step takes. Two exits are questions for the user, and both write nothing:
 
 - **Exit 4** — the feature has completed issues: stop, and tell the user: "Some issues are already completed. Please reconcile manually (delete or archive the old issues directory) before re-running."
 - **Exit 5** — the feature already has open issues, which publishing would overwrite (stderr lists them): show them, warn they will be overwritten, and ask for confirmation. On yes, re-run the same command with `--replace`; on no, stop.

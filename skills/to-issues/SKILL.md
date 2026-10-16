@@ -142,7 +142,7 @@ Write each approved slice with the template below and the rules that follow it, 
 
 **Acceptance criteria describe this slice's behaviour, not repo-wide hygiene.** A rule every change must follow that a check already enforces — a version bump, a changelog entry, lint — is not a criterion: the check holds it, and as a per-issue criterion each issue on the branch repeats it (a second version bump, a duplicate changelog entry).
 
-A criterion that needs a paid run, a manual measurement or a person is not an acceptance criterion: nobody working unattended can meet it, so it stays unmet and the issue never lands. It goes to the PRD's human steps or a `ready-for-human` issue.
+A criterion that needs a paid run, a manual measurement or a person is not an acceptance criterion: nobody working unattended can meet it, so it stays unmet and the issue never lands. It goes to a `ready-for-human` issue (its `### Steps` say what the person does), or, when no issue owns it, to the PRD's Further Notes.
 
 **Acceptance-criteria rubric.** Whoever reviews the result gates on these, so each criterion is:
 
