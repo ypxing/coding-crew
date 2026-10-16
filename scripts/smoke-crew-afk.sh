@@ -5,7 +5,7 @@ set -uo pipefail
 # Usage: scripts/smoke-crew-afk.sh <platform>
 # Clones the demo repo (scripts/smoke-crew-afk/demo/{repo,sha,slug,check}, feature/) into $TMPDIR, installs every
 # skill at project level kept out of git, dispatches `crew-afk.sh dispatch <slug> --to local`, waits for the
-# run and requires `ready pr=<n>`, then runs demo/check in the run's worktree. Appends one RESULTS.md row, closes
+# run with `crew-afk.sh wait <slug>` and requires `ready pr=<n>`, then runs demo/check in the run's worktree. Appends one RESULTS.md row, closes
 # the PR and deletes its branch on a pass, and prints `crew-afk-commit: <sha>[-dirty]` and
 # `SMOKE: PASS (<platform>, demo)` — the lines cut-release.sh reads back — or `SMOKE: FAIL: <why>`.
 # Maintainer-only: ships to no consumer. A real run calls the platform's CLI and the demo repo's GitHub, and
@@ -20,17 +20,16 @@ PLATFORMS=$(jq -r 'keys_unsorted | join("|")' "$ROOT/platforms.json" | tr -d '\r
 PLATFORM="${1:-}"
 [[ $# -eq 1 && "|$PLATFORMS|" == *"|$PLATFORM|"* ]] || { echo "usage: $0 <$PLATFORMS>" >&2; exit 2; }
 
-RECORD=0 WT="" PR=""
-# One results row once the run was dispatched: its cost from the claude JSON result that ends the log, and its
-# finding count from the last review solve-feature saved (a re-review after fixes overwrites the first one's report).
+RECORD=0 WT="" PR="" COST='?'
+# One results row once the run was dispatched: its cost from crew-afk.sh wait's line (`cost=$<n>`, a local claude
+# run only), and its finding count from the last review solve-feature saved (a re-review after fixes overwrites
+# the first one's report).
 record() {
   [[ $RECORD -eq 1 ]] || return 0
   RECORD=0
-  local cost findings
-  cost=$(grep '^{' "$WT/.solve-feature/run.log" 2>/dev/null | tail -n 1 | jq -r '.total_cost_usd // empty' 2>/dev/null)
-  if [[ -n "$cost" ]]; then cost=$(printf '$%.2f' "$cost"); else cost='?'; fi
+  local findings
   findings=$(jq '.findings // [] | length' "$WT/.solve-feature/pr-$PR.review.json" 2>/dev/null) || findings='?'
-  echo "| $SHORT | $(date -u +%Y-%m-%d) | $PLATFORM | $1 | $cost | ${findings:-?} |" >>"$RESULTS" ||
+  echo "| $SHORT | $(date -u +%Y-%m-%d) | $PLATFORM | $1 | $COST | ${findings:-?} |" >>"$RESULTS" ||
     echo "SMOKE: warning: cannot append to $RESULTS" >&2
 }
 fail() { record FAIL; echo "SMOKE: FAIL: $*"; exit 1; }
@@ -94,11 +93,13 @@ DISPATCH=(bash "$SKILLS/crew-afk/scripts/crew-afk.sh")
 [[ -n "${CREW_SMOKE_DISPATCH:-}" ]] && DISPATCH=("$CREW_SMOKE_DISPATCH")
 OUT=$(CREW_AGENT="$PLATFORM" "${DISPATCH[@]}" dispatch "$SLUG" --to local) || fail "crew-afk dispatch exited $?: $OUT"
 echo "$OUT"
-WT=$(sed -n 's/^worktree=//p' <<<"$OUT") PID=$(sed -n 's/^pid=//p' <<<"$OUT")
-[[ -n "$WT" && -n "$PID" ]] || fail "crew-afk dispatch printed no worktree= or pid="
+WT=$(sed -n 's/^worktree=//p' <<<"$OUT")
+[[ -n "$WT" ]] || fail "crew-afk dispatch printed no worktree="
 RECORD=1
-echo "SMOKE: waiting for pid $PID (log: $WT/.solve-feature/run.log)"
-while kill -0 "$PID" 2>/dev/null; do sleep 1; done
+echo "SMOKE: waiting for the run (log: $WT/.solve-feature/run.log)"
+LINE=$("${DISPATCH[@]}" wait "$SLUG") || fail "crew-afk wait exited $?: $LINE"
+echo "$LINE"
+[[ "$LINE" =~ \ cost=(\$[0-9.]+) ]] && COST="${BASH_REMATCH[1]}"
 
 OUTCOME=$(head -n 1 "$WT/.solve-feature/outcome" 2>/dev/null)
 [[ "$OUTCOME" =~ pr=([0-9]+) ]] && PR="${BASH_REMATCH[1]}"
