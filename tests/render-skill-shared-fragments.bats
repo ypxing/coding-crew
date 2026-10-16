@@ -8,23 +8,21 @@
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 RENDER="$REPO_ROOT/scripts/render-skill.sh"
 
-# The probe skill lives in a per-test render tree (render-skill.sh resolves registry.json, skills/ and
-# lib/ from its own location) whose registry names only the probe, never under the real skills/: bats -j
+# The probe skill lives in a per-test render tree (render-skill.sh resolves registry.json and skills/ from
+# its own location) whose registry names only the probe, never under the real skills/: bats -j
 # runs tests concurrently, and the renderer rewrites the tree it runs in.
 FIXTURE_NAME="__render_skill_fragment_probe__"
 
 setup() {
   TREE="$BATS_TEST_TMPDIR/tree"
-  mkdir -p "$TREE/scripts" "$TREE/skills/$FIXTURE_NAME" "$TREE/lib/probe-lib"
+  mkdir -p "$TREE/scripts" "$TREE/skills/$FIXTURE_NAME"
   cp "$RENDER" "$TREE/scripts/render-skill.sh"
-  jq -n --arg s "$FIXTURE_NAME" '{skills: {($s): {libs: ["probe-lib"]}}}' > "$TREE/registry.json"
+  jq -n --arg s "$FIXTURE_NAME" '{skills: {($s): {}}}' > "$TREE/registry.json"
   PROBE_RENDER="$TREE/scripts/render-skill.sh"
   FIXTURE_SKILL_DIR="$TREE/skills/$FIXTURE_NAME"
   SHARED_DIR="$TREE/skills/_shared/fragments"
   mkdir -p "$SHARED_DIR"
   echo "Shared content." > "$SHARED_DIR/shared-only.md"
-  echo "#!/bin/sh" > "$TREE/lib/probe-lib/tool.sh"
-  chmod +x "$TREE/lib/probe-lib/tool.sh"
   {
     echo "# Probe"
     echo ""
@@ -40,17 +38,6 @@ setup() {
   run bash "$PROBE_RENDER"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(cat "$FIXTURE_SKILL_DIR/SKILL.md")" = "$(printf '# Probe\n\n<!-- fragment:shared-only -->\nShared content.\n<!-- /fragment:shared-only -->\n\n## Process')" ]
-}
-
-@test "scripts/<lib> becomes an exact copy of lib/<lib>: files added, removed and exec bits kept" {
-  mkdir -p "$FIXTURE_SKILL_DIR/scripts/probe-lib"
-  echo gone > "$FIXTURE_SKILL_DIR/scripts/probe-lib/old.sh"
-  mkdir -p "$TREE/lib/probe-lib/docs" && echo doc > "$TREE/lib/probe-lib/docs/a.md"
-  run bash "$PROBE_RENDER"
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  diff -r "$TREE/lib/probe-lib" "$FIXTURE_SKILL_DIR/scripts/probe-lib"
-  [ -x "$FIXTURE_SKILL_DIR/scripts/probe-lib/tool.sh" ]
-  [ ! -x "$FIXTURE_SKILL_DIR/scripts/probe-lib/docs/a.md" ]
 }
 
 @test "the renderer takes no arguments" {

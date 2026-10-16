@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# render-skill.sh — render the committed skill tree in place, so skills/<name>/ is what every installer copies.
-# Usage: render-skill.sh   (no arguments; run after editing a fragment, a lib, or a SKILL.md's markers)
-# For every skill in registry.json:
-#   - the text between each `<!-- fragment:<key> -->` and `<!-- /fragment:<key> -->` line in its SKILL.md
-#     becomes skills/_shared/fragments/<key>.md;
-#   - skills/<skill>/scripts/<lib>/ becomes an exact copy of lib/<lib>/ for each name in its `libs`,
-#     and is removed for each lib/<lib>/ its `libs` does not name.
+# render-skill.sh — render the committed SKILL.md bodies in place, so skills/<name>/ is what every installer copies.
+# Usage: render-skill.sh   (no arguments; run after editing a fragment or a SKILL.md's markers)
+# For every skill in registry.json, the text between each `<!-- fragment:<key> -->` and
+# `<!-- /fragment:<key> -->` line in its SKILL.md becomes skills/_shared/fragments/<key>.md.
+# A skill's scripts/<lib> is a committed link to ../../../lib/<lib>, copied through at install; this
+# script never touches it.
 # A missing fragment, an unmatched marker or a `{{` left in a body is a hard error naming the file: it would
 # ship an instruction hole to the model.
 set -euo pipefail
@@ -65,29 +64,6 @@ render_body() {
   fi
 }
 
-exec_bit() { if [[ -x "$1" ]]; then echo 1; else echo 0; fi; }
-
-# copy_lib <name> <dest> — <dest> becomes an exact copy of lib/<name>: same files, same modes, nothing else.
-copy_lib() {
-  local src="$ROOT/lib/$1" dest="$2" f rel
-  [[ -d "$src" ]] || { echo "Error: library source not found: lib/$1" >&2; exit 1; }
-  [[ -L "$dest" || ( -e "$dest" && ! -d "$dest" ) ]] && rm -f "$dest"
-  mkdir -p "$dest"
-  while IFS= read -r -d '' f; do
-    rel="${f#"$src"/}"
-    if [[ ! -f "$dest/$rel" ]] || ! cmp -s "$f" "$dest/$rel" || [[ "$(exec_bit "$f")" != "$(exec_bit "$dest/$rel")" ]]; then
-      mkdir -p "$(dirname "$dest/$rel")"
-      rm -f "$dest/$rel"
-      cp -p "$f" "$dest/$rel"
-    fi
-  done < <(find "$src" -type f -print0)
-  while IFS= read -r -d '' f; do
-    rel="${f#"$dest"/}"
-    [[ -f "$src/$rel" ]] || rm -f "$f"
-  done < <(find "$dest" -mindepth 1 ! -type d -print0)
-  find "$dest" -mindepth 1 -depth -type d -empty -delete
-}
-
 while IFS= read -r skill; do
   [[ -n "$skill" ]] || continue
   dir=$(jq -r --arg s "$skill" '.skills[$s]["source-dir"] // $s' "$REGISTRY")
@@ -95,16 +71,4 @@ while IFS= read -r skill; do
   [[ -f "$ROOT/$rel" ]] || { echo "Error: skill body not found: $rel" >&2; exit 1; }
   render_body "$rel"
   cmp -s "$TMP" "$ROOT/$rel" || cp "$TMP" "$ROOT/$rel"
-  libs=$(jq -r --arg s "$skill" '.skills[$s].libs // [] | .[]' "$REGISTRY")
-  for lib_dir in "$ROOT"/lib/*/; do
-    lib=$(basename "$lib_dir")
-    if grep -qxF "$lib" <<< "$libs"; then
-      copy_lib "$lib" "$ROOT/skills/$dir/scripts/$lib"
-    else
-      rm -rf "${ROOT:?}/skills/$dir/scripts/$lib"
-    fi
-  done
-  while IFS= read -r lib; do
-    [[ -z "$lib" || -d "$ROOT/lib/$lib" ]] || { echo "Error: library source not found: lib/$lib" >&2; exit 1; }
-  done <<< "$libs"
 done < <(jq -r '.skills | keys[]' "$REGISTRY")
