@@ -1030,7 +1030,7 @@ yaml_to_json() {
   fi
 }
 
-@test "setup-coding-crew's hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, four write permissions, a slug concurrency group, the skill launched by the agent, the logs kept, then a step reading the outcome" {
+@test "setup-coding-crew's hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, five write permissions (actions: write so it can dispatch PR CI), a slug concurrency group, the skill launched by the agent, the logs kept, then a step reading the outcome" {
   local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
   run yaml_to_json "$wf" "$json"
   [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
@@ -1040,7 +1040,7 @@ yaml_to_json() {
   [ "$(jq -c "$on.issues.types" "$json")" = '["labeled"]' ]
   [ "$(jq -r "$on.workflow_dispatch.inputs.slug.required" "$json")" = true ]
   grep -q '^ *# *schedule:' "$wf"
-  [ "$(jq -r '.permissions | "\(.contents) \(.issues) \(.["pull-requests"]) \(.["copilot-requests"])"' "$json")" = "write write write write" ]
+  [ "$(jq -r '.permissions | "\(.contents) \(.issues) \(.["pull-requests"]) \(.["copilot-requests"]) \(.actions)"' "$json")" = "write write write write write" ]
   jq -e '[.jobs[].if // empty] | any(test("github.event.label.name == .solve-feature."))' "$json" >/dev/null
   # The group holds the slug, so it is on the job that has it: a workflow-level group would only see the issue number.
   local conc; conc="$(jq -c '[.concurrency // empty, (.jobs[] | .concurrency // empty)]' "$json")"

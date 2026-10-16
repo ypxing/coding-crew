@@ -17,8 +17,9 @@ name: solve-feature
 # The agent runs the solve-feature skill, which runs each coder, the reviewer, the fixer and the
 # PR's writer as its own subagents. The review runs inside the same job, from the skill. The PR is the
 # workflow's own GITHUB_TOKEN's, so its `pull_request` runs wait for someone to approve them, after every push;
-# that token may start `workflow_dispatch`, so after the session the job dispatches, on the PR's branch, every
-# workflow in .github/workflows/ that has both triggers (add `workflow_dispatch:` to a PR workflow to opt it in).
+# that token may start `workflow_dispatch` (hence `actions: write`), so after the session the job dispatches, on
+# the PR's branch, every workflow in .github/workflows/ that has both triggers (add `workflow_dispatch:` to a PR
+# workflow to opt it in).
 # The session's exit code does not carry a stop, so the last step reads the run's one-line
 # .solve-feature/outcome and fails the job on anything but `ready pr=<n>`: `needs-attention pr=<n>`,
 # `stopped: <what> failed: <reason>`, or no file at all (the session ended before the run finished). The step before it
@@ -63,6 +64,7 @@ permissions:
   issues: write
   pull-requests: write
   copilot-requests: write
+  actions: write
 
 jobs:
   # The slug is a job of its own because a concurrency group can only read a job's outputs, never
