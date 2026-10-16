@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **repo**: this repo's solve-feature workflow maps Claude Code's `haiku`, `sonnet` and `opus` aliases to
+  `claude-haiku-5-5`, `claude-sonnet-5-5` and `claude-opus-5-5[1m]`.
 - **setup-coding-crew**: the solve-feature Actions workflow streams a Claude run's steps into the job log as they
   happen (the model, each command and subagent, a failed tool) and keeps the stream in the artifact; its summary
   page shows the outcome, the PR, the model and, on a stop, the coder's report and checks log; the repo variable

@@ -135,6 +135,10 @@ jobs:
       - name: Run solve-feature
         env:
           SLUG: ${{ needs.slug.outputs.slug }}
+          # This repo only (not in setup-coding-crew's template): the model ids Claude Code's aliases resolve to.
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-haiku-5-5
+          ANTHROPIC_DEFAULT_SONNET_MODEL: claude-sonnet-5-5
+          ANTHROPIC_DEFAULT_OPUS_MODEL: claude-opus-5-5[1m]
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           # To bill a person rather than the organisation, or when the organisation policy is off,
