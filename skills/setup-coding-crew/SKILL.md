@@ -118,7 +118,9 @@ workflow `identical` and runs neither. With `claude`, tell the user to add the s
 `! gh secret set ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`), which prompts for the value; never ask for
 it in the conversation. Then point the user to the workflow's header comment (`# Billing`) for who pays for the
 runs, and say how a run starts: label a feature's root issue `solve-feature`, or run the workflow by hand with
-the slug.
+the slug. Tell them too that an issue whose change touches `.github/workflows/` cannot land from a runner — the
+workflow's `GITHUB_TOKEN` never gets the `workflows` scope — so such an issue is run locally, for example with
+`/solve-feature`.
 
 ## Step 4 — Commit hint
 
