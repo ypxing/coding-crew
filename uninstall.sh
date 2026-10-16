@@ -131,14 +131,9 @@ remove_skill() {
 }
 
 # .coding-crew/lib held the libraries an older install.sh linked every skill to; only install.sh ever
-# wrote it, and each skill now carries its own copy. Run after the removals: it stays while a skill
-# left installed links there.
+# wrote it, and each skill now carries its own copy, so it is removed wherever it is found.
 remove_legacy_lib() {
   [[ -e "$REPO_ROOT/.coding-crew/lib" || -L "$REPO_ROOT/.coding-crew/lib" ]] || return 0
-  if legacy_lib_linked; then
-    echo "  kept .coding-crew/lib/: other skills still link there; run install.sh --update to move them off it"
-    return 0
-  fi
   rm -rf "${REPO_ROOT:?}/.coding-crew/lib"
   echo "  removed .coding-crew/lib/"
 }

@@ -151,7 +151,8 @@ npx skills add ypxing/coding-crew --all      # this project (writes skills-lock.
 npx skills add ypxing/coding-crew --all -g   # user level
 ```
 
-Claude Code gets the project-level link only when `.claude/` already exists. The tool sends telemetry to
+The project install also writes `.agents/skills/`, `.claude/skills/` and `agent/skills/` (link dirs for agents
+that create their own project dir). The tool sends telemetry to
 skills.sh unless `DISABLE_TELEMETRY` is set. To update, re-run the same command; `npx skills update` misses
 changes inside the skills' library directories.
 

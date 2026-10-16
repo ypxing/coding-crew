@@ -360,13 +360,9 @@ migrate_legacy_tracker_doc() {
 }
 
 # .coding-crew/lib held the libraries every skill linked to; only install.sh ever wrote it, and each
-# skill now carries its own copy. Run after the copies: it stays while a skill this run skipped links there.
+# skill now carries its own copy, so it is removed wherever it is found.
 remove_legacy_lib() {
   [[ -e "$REPO_ROOT/.coding-crew/lib" || -L "$REPO_ROOT/.coding-crew/lib" ]] || return 0
-  if legacy_lib_linked; then
-    echo "  .coding-crew/lib/ (kept: other skills still link there; run install.sh --update to move them off it)"
-    return 0
-  fi
   rm -rf "${REPO_ROOT:?}/.coding-crew/lib"
   echo "  .coding-crew/lib/ (removed: each skill carries its own scripts/<lib>)"
 }

@@ -31,8 +31,8 @@ npx skills add ypxing/coding-crew --all      # this project
 npx skills add ypxing/coding-crew --all -g   # user level, every repo
 ```
 
-- A project install writes `skills-lock.json`: commit it.
-- Claude Code gets the project-level link only when `.claude/` already exists in the repo.
+- A project install writes `.agents/skills/`, `.claude/skills/` and `agent/skills/` (link dirs for agents that
+  create their own project dir) along with `skills-lock.json`: commit `skills-lock.json`.
 - The `skills` tool sends telemetry to skills.sh unless `DISABLE_TELEMETRY` is set.
 - To update, re-run the same `npx skills add` command. Not `npx skills update`: its hash skips the skills' library directories, so it misses library changes.
 

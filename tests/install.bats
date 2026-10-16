@@ -728,25 +728,22 @@ _old_lib_second_skill() {
   jq '.skills += ["crew-review"]' "$root/.coding-crew/manifest.json" > "$root/m.tmp" && mv "$root/m.tmp" "$root/.coding-crew/manifest.json"
 }
 
-@test "a partial install over the old layout keeps .coding-crew/lib while another skill still links there" {
+@test "a partial install over the old layout removes .coding-crew/lib even while another skill still links there" {
   _old_lib_install "$TEMP_DIR" with-libs
   _old_lib_second_skill "$TEMP_DIR"
   cd "$SCRIPT_DIR"
   run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill to-issues
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
-  [ -f "$TEMP_DIR/.claude/skills/crew-review/scripts/tracker/cli.mjs" ]
-  [[ "$output" == *"install.sh --update"* ]]
-  [[ "$output" != *".coding-crew/lib/ (removed"* ]]
+  _assert_old_lib_gone
 }
 
-@test "uninstall --skill over the old layout keeps .coding-crew/lib while another skill still links there" {
+@test "uninstall --skill over the old layout removes .coding-crew/lib even while another skill still links there" {
   _old_lib_install "$TEMP_DIR" with-libs
   _old_lib_second_skill "$TEMP_DIR"
   cd "$SCRIPT_DIR"
   run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill to-issues
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
-  [ -f "$TEMP_DIR/.claude/skills/crew-review/scripts/tracker/cli.mjs" ]
-  [[ "$output" == *"install.sh --update"* ]]
+  _assert_old_lib_gone
 }
 
 @test "install --update over the old layout removes .coding-crew/lib and keeps config.json" {
