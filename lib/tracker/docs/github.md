@@ -39,7 +39,6 @@ node "$TRACKER" tick <number>                             # check every criterio
 node "$TRACKER" write-section <number> --heading <h> --body-file <file>   # a `## <h>` comment on the issue
 node "$TRACKER" mark-done <number> [--force]
 node "$TRACKER" reopen <number>                           # undo mark-done: ready-for-agent again
-node "$TRACKER" feature-issues --feature-slug <slug> [--state open|all]   # the feature's issues as JSON
 node "$TRACKER" closing-refs --feature-slug <slug>       # the feature PR's `Closes #n` lines
 ```
 
@@ -85,10 +84,6 @@ root with `gh issue edit --parent`. It exits `1`, editing nothing, when the issu
 sub-issue of another issue or carries another slug's `Feature:` line: it never moves an issue out
 of another feature. One exception: an issue that becomes the root keeps a parent with no
 `Feature:` line (a human's epic, say), since making it the root moves nothing.
-
-`feature-issues` prints the feature's issues — the root and its sub-issues, all of them or only
-the open ones — as one JSON array of `{number, title, state, labels}`, the root's entry also
-carrying `"root": true`, `[]` for a slug with no root.
 
 `closing-refs` prints the `Closes #<n>` lines the feature's PR body needs, one per line, by the
 rule below: every open `awaiting-merge` issue of the feature, plus its `PRD:` issue (and that
@@ -230,5 +225,6 @@ to every skill (it reads as empty) until you move it by hand. For each feature s
 
 3. Close the milestone (on GitHub: Issues → Milestones → Close), so it stops collecting issues.
 
-`node "$TRACKER" feature-issues --feature-slug <slug>` then lists the root and every issue you
-moved; `node "$TRACKER" features` lists the slug.
+`node "$TRACKER" known --feature-slug <slug> --out <dir>` then writes every work issue you moved
+into `<dir>` (not the `PRD:` issue: `known` leaves it out); `node "$TRACKER" features` lists the
+slug; and any op on the slug exits `1` naming both issues if two still carry the `Feature:` line.
