@@ -6,7 +6,9 @@ REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
 SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
 
 @test "crew-review is one file, review-pr is gone, and the registry ships crew-review as solve-feature's dep" {
-  [ "$(ls "$REPO_ROOT/skills/crew-review" | paste -sd' ' -)" = "SKILL.md scripts" ]
+  # LC_ALL=C: under a UTF-8 locale ls may sort case-insensitively, scripts before SKILL.md.
+  run bash -c 'cd "$1" && LC_ALL=C ls | paste -sd" " -' _ "$REPO_ROOT/skills/crew-review"
+  [ "$output" = "SKILL.md scripts" ] || { echo "got: $output"; return 1; }
   [ "$(ls "$REPO_ROOT/skills/crew-review/scripts")" = tracker ]
   jq -e '.skills["crew-review"].libs == ["tracker"]' "$REPO_ROOT/registry.json" >/dev/null
   [ ! -e "$REPO_ROOT/skills/review-pr" ]

@@ -16,7 +16,12 @@ stale_files() {
   cp "$root/registry.json" "$copy/"
   cp -Rp "$root/skills" "$root/lib" "$copy/"
   bash "$copy/scripts/render-skill.sh" || { echo "render-skill.sh failed"; return 1; }
-  out=$(diff -rq "$root/skills" "$copy/skills" 2>&1)
+  # Regular files only: macOS diff -r follows the scripts/<lib> links into lib/ and reports a directory loop.
+  out=$(diff <(cd "$root" && find skills -type f | LC_ALL=C sort) <(cd "$copy" && find skills -type f | LC_ALL=C sort) |
+    sed -n 's/^[<>] /only on one side: /p')
+  while IFS= read -r f; do
+    [ ! -f "$copy/$f" ] || cmp -s "$root/$f" "$copy/$f" || out+=$'\n'"$f"
+  done < <(cd "$root" && find skills -type f)
   out+=$(diff <(cd "$root" && find skills -type f -perm -u+x | LC_ALL=C sort) \
     <(cd "$copy" && find skills -type f -perm -u+x | LC_ALL=C sort) | sed -n 's/^[<>] /exec bit differs: /p')
   [ -z "$out" ] || { printf '%s\n' "$out"; return 1; }
