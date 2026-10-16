@@ -8,8 +8,9 @@ than the reference size, and merges one that exists only to be smaller. A split 
 one of three reasons:
 
 1. **size** (also written "context budget") — together the work is more than one implementer
-   finishes as one issue (reference size: the `crew-afk-review` slices #148–#160, 7–44 files and
-   ~100–1600 lines each, each finished as one issue);
+   finishes as one issue (reference size: the `crew-afk-review` slices #148–#160, each finished as one
+   issue — about a dozen files and a few hundred written lines, the largest around 500 written lines;
+   deletions and mechanical renames cost little);
 2. **human boundary** — part is HITL, the rest AFK;
 3. **expand–contract order** — migration steps that must land in sequence.
 
