@@ -18,18 +18,14 @@ add-tests tdd                   # cites tdd'"'"'s rule the coder follows; the co
 crew-afk crew-grill             # tells the person to plan the feature first
 crew-afk crew-brainstorm        # tells the person to plan the feature first
 crew-afk to-issues              # tells the person to plan the feature first
-crew-grill crew-brainstorm      # the shared verification fragment names both design skills
-crew-brainstorm crew-grill      # the shared verification fragment names both design skills
 setup-coding-crew solve-feature # what setup prepares the repo for, and its workflow file
 setup-coding-crew solve-issue   # says which earlier run discovered the dev commands file
 to-issues add-tests             # a caller: names the findings file add-tests hands over
 to-issues crew-grill            # a caller: hands over its design summary
 to-issues crew-brainstorm       # a caller: hands over its design summary
-to-issues solve-issue           # describes the coder that later runs each slice
 to-prd crew-grill               # a caller: its summary holds settled decisions
 to-prd crew-brainstorm          # a caller: its summary holds settled decisions
 to-prd to-issues                # a caller: it hands over the slug
-to-prd solve-feature            # an example behaviour line in the PRD template
 '
 
 # named_skills <names-regex> — the registry names stdin names as a skill, one per line: a whole

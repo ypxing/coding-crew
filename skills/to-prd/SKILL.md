@@ -24,11 +24,13 @@ the user before writing the final document, except those already settled (step 4
 
 3. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout, and respect any ADRs in the area you're touching. Decisions already settled are in the conversation (a `crew-grill` or `crew-brainstorm` summary) or in the existing PRD.
 
-4. Sketch the seams at which the feature will be tested. Prefer existing seams over new ones; prefer the highest seam possible. **Skip re-confirming seams and decisions settled earlier in the conversation (a `crew-grill` or `crew-brainstorm` summary) or in an existing PRD — only present genuinely open questions.**
+4. Sketch the seams at which the feature will be tested. Prefer existing seams over new ones; prefer the highest seam possible; the fewer seams across the codebase the better, and the ideal number is one. **Skip re-confirming seams and decisions settled earlier in the conversation (a `crew-grill` or `crew-brainstorm` summary) or in an existing PRD — only present genuinely open questions.**
 
 5. Write the PRD using the template below.
 
 {{FRAGMENT:verification-pass}}
+
+   After a `crew-grill` or `crew-brainstorm` summary, re-check only what the PRD adds beyond it — the summary just went through this pass; a standalone run re-checks everything the PRD cites. Necessity is settled by the design you were handed. Revise each corrected decision in the PRD before publishing it, and report the corrections to the user.
 
 6. Then write the PRD to `.scratch/<feature-slug>/.prd-draft.md` and publish it, with that path as `<file>`:
 
@@ -64,7 +66,7 @@ The solution from the user's perspective.
 `<seam>` is where a test observes it (a command, a function, an endpoint, a rendered file).
 Example:
 
-- **B1** — given three ready issues, `/solve-feature` runs, all three are implemented in order on one branch, at `solve-feature.sh`
+- **B1** — given an expired token, the CLI exits 2 and names the env var to set, at `cli.mjs`
 
 Do not list every edge case — acceptance criteria on individual issues cover those.
 
@@ -86,31 +88,28 @@ May include:
 - Modules to build/modify and their interfaces
 - Schema changes and API contracts
 - Key technical tradeoffs and their rationale
-- Relevant file paths and existing signatures that implementing agents should know about
+- Relevant file paths and existing signatures the implementers should know about
 - Existing utilities, helpers, or conventions in this codebase that implementation should reuse
   rather than reinvent — the exploration this skill already does once, so each issue's implementer
   does not have to re-grep for it
 
-For each decision that changes existing behaviour, record what relies on the thing it changes, as
-facts with `path:line`: its callers, what it calls, the state it reads or writes, and state older
-versions left behind (saved files, records, config an earlier release wrote). How you find them is
-up to you; the implementer and the reviewer read these instead of rediscovering them. A claim about
-existing behaviour without a `path:line` is not a fact: cite it or leave it out.
+Rules for the lines:
 
-A decision that says "every", "always", "only" or "never" names the cases easy to miss for it
-(signals, thrown errors, early returns, retries, concurrent runs) and says whether each is
-included or excluded, e.g. "on every exit path, including a signal; only SIGKILL leaves no record". A
-reviewer checks the code against the cases you name and reads an unnamed one as by design. Do this
-for decisions carried from a summary or an existing PRD too when you expand them. One clause, not a list on every line; a decision
-without such a word needs none.
-
-Module design: prefer deep modules (a small interface over substantial behaviour), give each module
-one owner, and state the dependency direction (which module depends on which, never the reverse).
-
-Include file paths and short code snippets where they make the intent unambiguous — this PRD is
-consumed immediately by agents, not read months later. Keep snippets trimmed to decision-rich
-parts (a type shape, schema, signature) — not full implementations. Keep the whole PRD lean:
-every coder and reviewer dispatch reads all of it.
+- **What relies on it.** A decision that changes existing behaviour records what relies on the
+  thing it changes, as facts with `path:line`: callers, callees, the state it reads or writes, and
+  state older versions left behind (saved files, records, config an earlier release wrote). The
+  implementer and the reviewer read these instead of rediscovering them. A claim about existing
+  behaviour without a `path:line` is not a fact: cite it or leave it out.
+- **"Every", "always", "only", "never".** A decision using such a word names, in one clause, the
+  cases easy to miss (signals, thrown errors, early returns, retries, concurrent runs) and whether
+  each is in or out, e.g. "on every exit path, including a signal; only SIGKILL leaves no record".
+  The reviewer checks the named cases and reads an unnamed one as by design. A decision without
+  such a word needs none.
+- **Module design.** Prefer deep modules (a small interface over substantial behaviour), one owner
+  per module, and a stated dependency direction.
+- **Lean.** File paths and short snippets where they make the intent unambiguous, trimmed to the
+  decision-rich parts (a type shape, schema, signature), never full implementations. This PRD is
+  read immediately, in full, by whoever implements and whoever reviews each issue.
 
 ## Trust Boundaries & Risks
 

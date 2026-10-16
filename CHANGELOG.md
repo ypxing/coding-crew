@@ -22,13 +22,25 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   upgrade-deps publishes by invoking to-issues with its drafts and checks existing features through the tracker
   CLI; it and add-tests delete their drafts or findings file once to-issues has published. address-pr-comments handles `DISCOVER` before pushing and skips resolved threads by GraphQL `isResolved`.
   configure-tracker creates labels with `gh label create`, treating "already exists" as success (#503).
-- **to-issues / to-prd / crew-grill / crew-brainstorm / tracker**: to-issues prices a split as one more coder
-  dispatch and checks run on solve-feature's single branch (no more parallelism split reason or retry/merge costs),
-  splits any slice estimated over ~120k tokens and merges back slices that fit together under it, writes the PRD with to-prd right after drafting slices and before
-  tracing PRD IDs, and carries a design
-  summary's `(auto)` lines, cited facts and cut list into the PRD or the issue's new `## Out of Scope`. to-prd no
-  longer re-confirms decisions settled earlier, and a local PRD opens with `# PRD: <title>`. crew-grill hands off
-  to to-issues once, and both design skills' descriptions say how they differ (adversarial vs collaborative). The
+- **to-issues / to-prd / crew-grill / crew-brainstorm / tracker**: to-issues sizes an issue as one implementer's
+  work, taken, finished and verified as a unit: it drafts slices as the work divides, splits one that is more than
+  one sitting, and merges one that exists only to be smaller (size, a human boundary or expand–contract order are
+  the only split reasons; no more parallelism, token estimates or dispatch costs), and shows the user only the
+  slices that survived. Its step 6 mechanics (drafts, known issues, `deps.json`, lint, builder check, publish,
+  rewrite) move to `references/publish.md`, read when that step is reached; the design skills name no downstream
+  tool, only the implementer and reviewer who read what they write. to-issues writes the PRD with to-prd right
+  after drafting slices and before tracing PRD IDs, and carries a design summary's `(auto)` lines, cited facts and
+  cut list into the PRD or the issue's new `## Out of Scope`. to-prd no longer re-confirms decisions settled
+  earlier, its Decisions guidance is a four-rule list, and a local PRD opens with `# PRD: <title>`. crew-grill and
+  crew-brainstorm share one size-test fragment (`skills/_shared/fragments/size-test.md`: the do-least option and the
+  subtraction pass are one test, stated once), run the light path's single tracker fetch themselves instead of
+  loading the tracker-configuration fragment, and the verification-pass fragment names no skill (to-prd carries its
+  own clause); crew-brainstorm
+  states the light path once and drops its duplicate flow graph and principles list, asks open questions before
+  offering a menu, covers anti-goals, and tags the defaults it chose `(auto)` for the hand-off; crew-grill words
+  each question so "yes" takes its recommendation, points its "annoyed" lane at the light path's list instead of
+  repeating it, and hands off to to-issues once; to-prd prefers the fewest
+  seams; and both design skills' descriptions say how they differ (adversarial vs collaborative). The
   local tracker now writes `.scratch/.gitignore` (`*`) when it writes under `.scratch/`, so a consuming repo's tree
   stays clean after publishing; an existing one is left alone (#502).
 - **solve-issue / solve-feature / crew-review / tracker**: a coder that stops short (`partial`, or `blocked` with
