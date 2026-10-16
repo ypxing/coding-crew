@@ -15,7 +15,8 @@
 #   fix <slug> <pr> <branch>        the review report is there and the checks pass on the fixer's tree: commit it,
 #                                   push, and write what needs a person to pr-<pr>.attention.md; last stdout line
 #                                   `FIX: findings=<k> needs-attention=<a> review-again=yes|no`, yes when a
-#                                   CRITICAL/HIGH/MEDIUM finding was there and HEAD moved past the PR's head
+#                                   CRITICAL/HIGH/MEDIUM finding was there and HEAD moved past the head fix first
+#                                   saw that review round (kept in pr-<pr>.head until the attention file is written)
 #   describe <slug> <pr>            write the PR's whole body and title, mark the draft ready when nothing needs a
 #                                   person, then write the outcome
 # .solve-feature/outcome holds the run's result in one line: `ready pr=<n>`, `needs-attention pr=<n>` or
@@ -52,7 +53,7 @@ for t in gh jq node git; do command -v "$t" >/dev/null || die "$t not found on P
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"; cd "$ROOT"
 mkdir -p "$ROOT/.solve-feature" && echo '*' >"$ROOT/.solve-feature/.gitignore" # ignored in any repo, so the tree stays clean
 LOGS="$ROOT/.solve-feature"
-[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md
+[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head
 # The tracker and checks libraries, linked into this skill's scripts/ by install.sh.
 CLI="$SELF/tracker/cli.mjs" CHECKS="$SELF/checks"
 [ -f "$CLI" ] || die "tracker CLI not found ($CLI): run install.sh --skill solve-feature"
@@ -227,9 +228,14 @@ land() {
 # The fixer's edits are staged before the checks and committed after, so the push carries exactly what was gated.
 fix() {
   local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.md" clog="$LOGS/pr-$PR.checks.log"
-  local head_oid spec rc=0 total severe moved=no again=no attention=""
+  local headf="$LOGS/pr-$PR.head" head_oid spec rc=0 total severe moved=no again=no attention=""
   checks_lib
-  head_oid=$(gh pr view "$PR" --json headRefOid | jq -r '.headRefOid // empty') || die "gh pr view $PR failed"
+  # The round's first run keeps the PR's head, so a re-run after a person pushed the fix by hand still sees it moved.
+  if [ -s "$headf" ]; then head_oid=$(cat "$headf")
+  else
+    head_oid=$(gh pr view "$PR" --json headRefOid | jq -r '.headRefOid // empty') || die "gh pr view $PR failed"
+    printf '%s\n' "$head_oid" >"$headf"
+  fi
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop fix "branch changed to '$(git branch --show-current)'"
   [ -f "$report" ] || stop fix "no review report at $report"
   spec=$(jq -r '.spec // empty' "$report" 2>/dev/null) || stop fix "unreadable review report $report"
@@ -241,11 +247,11 @@ fix() {
   git add -A
   bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
   [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /setup-coding-crew and commit .coding-crew/dev-commands.json" "$clog"
-  [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed (not pushed), run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
+  [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings on PR #$PR"
-  push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
+  push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
 
-  # "Changed nothing" is HEAD still at the PR's head, which is why the stops say to commit, not push, before a re-run.
+  # "Changed nothing" is HEAD still at the head fix first saw this round, so a push by hand before a re-run counts.
   [ "$(git rev-parse HEAD)" = "$head_oid" ] || moved=yes
   # Needs a person: the reviewer's gaps, an unmet spec, each line the fixer left in unfixed.md, and a fixer that
   # changed nothing without saying why (it crashed or gave up).
@@ -258,6 +264,8 @@ fix() {
   rm -f "$unfixed"
   # describe reads it: an empty file is a review with nothing needing a person.
   grep -v '^[[:space:]]*$' <<<"$attention" >"$LOGS/pr-$PR.attention.md" || true
+  # A second review round starts from the head its reviewer saw.
+  rm -f "$headf"
   echo "FIX: findings=$total needs-attention=$(grep -c . "$LOGS/pr-$PR.attention.md" || true) review-again=$again"
 }
 

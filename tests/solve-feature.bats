@@ -425,7 +425,7 @@ EOF
 
 @test "start writes a spec with no PRD when prd exits 3, closed issues included, and removes an old outcome and review files" {
   mkdir -p .solve-feature && echo '*' > .solve-feature/.gitignore && echo 'ready pr=7' > .solve-feature/outcome
-  echo old > .solve-feature/pr-7.unfixed.md && echo old > .solve-feature/pr-7.review.json
+  echo old > .solve-feature/pr-7.unfixed.md && echo old > .solve-feature/pr-7.review.json && echo old > .solve-feature/pr-7.head
   echo old > .solve-feature/pr-7.summary.md && echo old > .solve-feature/pr-7.attention.md
   rm "$STATE/prd.md"
   jq 'map(if .number == 2 then .state = "CLOSED" else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
@@ -439,6 +439,7 @@ EOF
   [ ! -e .solve-feature/pr-7.review.json ]
   [ ! -e .solve-feature/pr-7.summary.md ]
   [ ! -e .solve-feature/pr-7.attention.md ]
+  [ ! -e .solve-feature/pr-7.head ]
 }
 
 # --- next ------------------------------------------------------------------------------
@@ -765,7 +766,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   TIP=$(git rev-parse HEAD)
   : > "$STATE/checks.log"
   CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
-  fix_stops "run-checks.sh exit 1; once fixed and committed (not pushed), run fix feat 10 feature/feat, then describe feat 10"
+  fix_stops "run-checks.sh exit 1; once fixed and committed, run fix feat 10 feature/feat, then describe feat 10"
   [[ "$output" == *"log: $WORK/.solve-feature/pr-10.checks.log"* ]]
   [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
   [ "$(git rev-parse HEAD)" = "$TIP" ]
@@ -793,7 +794,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   TIP=$(git rev-parse HEAD)
   refuse_pushes
   run bash "$SCRIPT" fix feat 10 feature/feat
-  fix_stops "git push failed: pre-receive hook declined; once it can push, run fix feat 10 feature/feat, then describe feat 10"
+  fix_stops "git push failed: pre-receive hook declined; once it can push, or once you have pushed it, run fix feat 10 feature/feat, then describe feat 10"
 }
 
 # push_says <stderr> — a git whose push prints <stderr> and fails; every other git command is the real one.
@@ -816,6 +817,33 @@ push_says() {
   push_says "$(printf 'something odd\nthe last word\n\n')"
   run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "git push failed: the last word; once it can push"
+}
+
+@test "a fix re-run after its push failed and the branch was pushed by hand compares with the head fix first saw" {
+  fix_ready
+  TIP=$(git rev-parse HEAD)
+  refuse_pushes
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  fix_stops "git push failed: pre-receive hook declined"
+  [ "$(cat .solve-feature/pr-10.head)" = "$TIP" ]
+  rm "$TEMP_DIR/origin.git/hooks/pre-receive"
+  git push -q origin feature/feat
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -z "$(attention)" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
+  [ ! -e .solve-feature/pr-10.head ]
+}
+
+@test "a second review round compares with its own head: a round-2 fixer that changed nothing is flagged" {
+  fix_ready
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
+  [ ! -e .solve-feature/pr-10.head ]
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(attention)" = "the fixer changed nothing" ]
 }
 
 @test "a fixer that changed nothing fixed nothing: the findings need attention" {

@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature**: a `fix` re-run after you pushed the branch by hand (its own push failed) no longer adds a false
+  "the fixer changed nothing": `fix` compares with the head it first saw that review round, and its stops now say
+  pushing before the re-run is fine (#529).
 - **crew-afk**: `crew-afk.sh wait` no longer drops a local run's cost from its line when the run exits while
   wait is reading its log (#530).
 - **crew-afk / docs**: crew-afk no longer knows how to launch any agent CLI: the agent you run `/crew-afk` in
