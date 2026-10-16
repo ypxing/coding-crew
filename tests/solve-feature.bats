@@ -1143,7 +1143,9 @@ yaml_to_json() {
   [ "$(jq -r "$on.workflow_dispatch.inputs.slug.required" "$json")" = true ]
   grep -q '^ *# *schedule:' "$wf"
   [ "$(jq -r '.permissions | "\(.contents) \(.issues) \(.["pull-requests"]) \(.["copilot-requests"]) \(.actions)"' "$json")" = "write write write write write" ]
-  jq -e '[.jobs[].if // empty] | any(test("github.event.label.name == .solve-feature."))' "$json" >/dev/null
+  # The trigger label is `run-agent`, not the skill's name: a label named after the skill reads as a topic tag.
+  jq -e '[.jobs[].if // empty] | any(test("github.event.label.name == .run-agent."))' "$json" >/dev/null
+  ! jq -e '[.jobs[].if // empty] | any(test("solve-feature"))' "$json" >/dev/null || false
   # The group holds the slug, so it is on the job that has it: a workflow-level group would only see the issue number.
   local conc; conc="$(jq -c '[.concurrency // empty, (.jobs[] | .concurrency // empty)]' "$json")"
   [ "$(jq 'length' <<<"$conc")" -eq 1 ]
