@@ -10,7 +10,8 @@
 #                                   report to .solve-feature/coder.report.md, which land's solve stop names
 #   land <slug> <ref> <branch>      the coder left <branch> clean with <ref> closed and the checks pass: push, and
 #                                   open the draft PR if the branch has none; prints pr=<n>. Failed checks reopen
-#                                   <ref> and push its work before the stop, so a plain re-run picks it up again
+#                                   <ref> and push its work before the stop, and a failed push reopens it, so a
+#                                   plain re-run picks it up again
 #   fix <slug> <pr> <branch>        the review report is there and the checks pass on the fixer's tree: commit it,
 #                                   push, and write what needs a person to pr-<pr>.attention.md; last stdout line
 #                                   `FIX: findings=<k> needs-attention=<a> review-again=yes|no`, yes when a
@@ -56,6 +57,21 @@ LOGS="$ROOT/.solve-feature"
 CLI="$SELF/tracker/cli.mjs" CHECKS="$SELF/checks"
 [ -f "$CLI" ] || die "tracker CLI not found ($CLI): run install.sh --skill solve-feature"
 
+# push <git push args> — `git push -q`; on failure sets PUSH_WHY to git's reason and returns 1. git's stderr still
+# reaches the terminal. The reason: a rejected ref's parenthesised one (GitHub's workflow-permission refusal arrives
+# there), else git's last fatal:/error: line, else its last non-empty one (a network failure ends in advice).
+PUSH_WHY=""
+push() {
+  local err="$LOGS/push.err" rc=0
+  git push -q "$@" 2>"$err" || rc=$?
+  cat "$err" >&2
+  [ "$rc" != 0 ] || return 0
+  PUSH_WHY=$(sed -nE 's/^[[:space:]]*! \[(remote )?rejected\][^(]*\((.*)\)[[:space:]]*$/\2/p' "$err" | tail -1)
+  [ -n "$PUSH_WHY" ] || PUSH_WHY=$(grep -E '^(fatal|error):' "$err" | tail -1 || true)
+  [ -n "$PUSH_WHY" ] || PUSH_WHY=$(grep -v '^[[:space:]]*$' "$err" | tail -1 || true)
+  return 1
+}
+
 PR_N=""
 pr_view() { # sets PR_N when the branch has an OPEN PR, else clears it
   local view; view=$(gh pr view "$BRANCH" --json number,state 2>/dev/null) || view=""
@@ -96,7 +112,7 @@ start() {
   else git checkout -q -b "$BRANCH" "origin/$default"
   fi || die "cannot check out $BRANCH (see above)"
   # A branch origin lacks is new, or one whose first push was refused: a re-run pushes it before any coder runs.
-  git show-ref --verify -q "refs/remotes/origin/$BRANCH" || git push -q -u origin "$BRANCH" || die "cannot push $BRANCH (see above)"
+  git show-ref --verify -q "refs/remotes/origin/$BRANCH" || push -u origin "$BRANCH" || die "cannot push $BRANCH: $PUSH_WHY"
   # The checks run the branch's own files, so a branch an earlier run left takes the default branch's fixes first.
   if ! git merge-base --is-ancestor "origin/$default" HEAD; then
     if ! git merge -q --no-edit "origin/$default" >&2; then
@@ -105,7 +121,7 @@ start() {
       [ -n "$conflicts" ] || die "merging origin/$default into $BRANCH failed (see above)"
       die "merging origin/$default into $BRANCH conflicts in $conflicts: merge it by hand, push $BRANCH, then re-run"
     fi
-    git push -q origin "$BRANCH" || die "cannot push $BRANCH after merging origin/$default into it (see above)"
+    push origin "$BRANCH" || die "cannot push $BRANCH after merging origin/$default into it: $PUSH_WHY"
   fi
   write_spec
   pr_view
@@ -150,20 +166,26 @@ pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the spec
 }
 checks_lib() { [ -f "$CHECKS/run-checks.sh" ] || die "checks library not found ($CHECKS): run install.sh --skill solve-feature"; }
 
+# reopen_ref <step> <reason> <commit message> <recovery when reopen fails> [<log>] — make the closed $REF ready
+# again, so a plain re-run's coder takes it up instead of the tracker counting it landed; a failure stops at <step>.
+reopen_ref() {
+  local before changed
+  before=$(git status --porcelain -uall)
+  node "$CLI" reopen "$REF" >/dev/null || stop "$1" "$2; reopen $REF failed (see above): $4" "${5:-}"
+  # A file tracker's reopen moves a tracked issue file; only that is committed, never what the checks left.
+  changed=$(comm -13 <(sort <<<"$before") <(git status --porcelain -uall | sort) | cut -c4-)
+  if [ -n "$changed" ]; then
+    xargs git add -A -- <<<"$changed" && git commit -q -m "$3" ||
+      stop "$1" "$2; $REF is ready again but committing its reopen failed (see above): commit it, then re-run" "${5:-}"
+  fi
+}
+
 # hand_back <reason> <recovery> <log> — the checks failed on a closed issue: reopen it and push its work, then stop.
 # Pushed, the work outlives this checkout (an Actions runner's goes with its job); reopened, a plain re-run's coder
 # starts from that work instead of skipping the issue. The PR stays a draft until describe, so nothing reads as ready.
 hand_back() {
-  local before changed
-  before=$(git status --porcelain -uall)
-  node "$CLI" reopen "$REF" >/dev/null || stop checks "$1; reopen $REF failed (see above): once fixed and committed, run land $SLUG $REF $BRANCH before a re-run" "$3"
-  # A file tracker's reopen moves a tracked issue file; only that is committed, never what the checks left.
-  changed=$(comm -13 <(sort <<<"$before") <(git status --porcelain -uall | sort) | cut -c4-)
-  if [ -n "$changed" ]; then
-    xargs git add -A -- <<<"$changed" && git commit -q -m "Reopen $REF: its checks failed" ||
-      stop checks "$1; $REF is ready again but committing its reopen failed (see above): commit it, then re-run" "$3"
-  fi
-  git push -q -u origin "$BRANCH" || stop checks "$1; $REF is ready again but git push failed: once it can push, $2" "$3"
+  reopen_ref checks "$1" "Reopen $REF: its checks failed" "once fixed and committed, run land $SLUG $REF $BRANCH before a re-run" "$3"
+  push -u origin "$BRANCH" || stop checks "$1; $REF is ready again but git push failed: $PUSH_WHY; once it can push, $2" "$3"
   stop checks "$1; $REF is ready again with its work pushed to $BRANCH: $2" "$3"
 }
 
@@ -184,7 +206,13 @@ land() {
   rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
   [ "$rc" != 3 ] || hand_back "no check commands known (DISCOVER): the coder discovered none" "run /setup-coding-crew and commit .coding-crew/dev-commands.json, then re-run" "$clog"
   [ "$rc" = 0 ] || hand_back "run-checks.sh exit $rc" "fix the cause, then re-run" "$clog"
-  git push -q -u origin "$BRANCH" || stop push "git push failed; once it can push, run land $SLUG $REF $BRANCH before a re-run"
+  # Any failed push reopens the issue, unretried: an Actions runner's commits go with its job, so a closed issue
+  # would count as landed work that exists nowhere. Here a re-run finds the commits, since start never resets a branch.
+  if ! push -u origin "$BRANCH"; then
+    local why="git push failed: $PUSH_WHY"
+    reopen_ref push "$why" "Reopen $REF: its push failed" "reopen $REF by hand, then re-run where git can push"
+    stop push "$why; $REF is ready again: re-run where git can push (a re-run in this checkout starts from its unpushed commits)"
+  fi
   pr_view
   if [ -z "$PR_N" ]; then
     # describe writes the whole body at the end; until then it only carries the markers address-pr-comments reads.
@@ -215,7 +243,7 @@ fix() {
   [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /setup-coding-crew and commit .coding-crew/dev-commands.json" "$clog"
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed (not pushed), run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings on PR #$PR"
-  git push -q -u origin "$BRANCH" || stop fix "git push failed; once it can push, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
+  push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
 
   # "Changed nothing" is HEAD still at the PR's head, which is why the stops say to commit, not push, before a re-run.
   [ "$(git rev-parse HEAD)" = "$head_oid" ] || moved=yes
