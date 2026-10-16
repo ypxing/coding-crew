@@ -54,7 +54,7 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git rep
 mkdir -p "$ROOT/.solve-feature" && echo '*' >"$ROOT/.solve-feature/.gitignore" # ignored in any repo, so the tree stays clean
 LOGS="$ROOT/.solve-feature"
 [ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head
-# The tracker and checks libraries, copied into this skill's scripts/.
+# The tracker and checks libraries: this skill's scripts/<lib> (a link into lib/ here, a real directory once installed).
 CLI="$SELF/tracker/cli.mjs" CHECKS="$SELF/checks"
 [ -f "$CLI" ] || die "tracker CLI not found ($CLI): re-install coding-crew"
 

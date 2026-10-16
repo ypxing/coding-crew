@@ -117,7 +117,7 @@ if [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
   fi
 fi
 
-# The checks library, shipped as a copy in this skill's scripts/: Steps 2, 4 and 5 run through it.
+# The checks library, this skill's scripts/checks (a link into lib/ here, a real directory once installed): Steps 2, 4 and 5 run through it.
 if [ ! -f "$SELF_DIR/checks/run-checks.sh" ] || [ ! -f "$SELF_DIR/checks/run.sh" ]; then
   echo "BLOCKED: checks library missing from scripts/checks — re-install coding-crew"
   exit 1

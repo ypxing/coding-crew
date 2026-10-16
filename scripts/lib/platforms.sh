@@ -120,6 +120,17 @@ platform_skills_paths() {
   done
 }
 
+# legacy_lib_linked — true when an installed skill still links into $REPO_ROOT/.coding-crew/lib, the
+# layout an older install.sh wrote; a run that skips that skill must leave the dir in place.
+legacy_lib_linked() {
+  local dir
+  while IFS= read -r dir; do
+    [[ -d "$dir" ]] || continue
+    [[ -n "$(find "$dir" -lname '*.coding-crew/lib*' -print -quit 2>/dev/null)" ]] && return 0
+  done < <(platform_skills_paths)
+  return 1
+}
+
 # platform_user_dirs — the user-level dirs a host may resolve a skill or agent from, one per line.
 platform_user_dirs() {
   local i env_name env_val config user

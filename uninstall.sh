@@ -131,9 +131,14 @@ remove_skill() {
 }
 
 # .coding-crew/lib held the libraries an older install.sh linked every skill to; only install.sh ever
-# wrote it, and each skill now carries its own copy, so it is removed wherever it is found.
+# wrote it, and each skill now carries its own copy. Run after the removals: it stays while a skill
+# left installed links there.
 remove_legacy_lib() {
   [[ -e "$REPO_ROOT/.coding-crew/lib" || -L "$REPO_ROOT/.coding-crew/lib" ]] || return 0
+  if legacy_lib_linked; then
+    echo "  kept .coding-crew/lib/: other skills still link there; run install.sh --update to move them off it"
+    return 0
+  fi
   rm -rf "${REPO_ROOT:?}/.coding-crew/lib"
   echo "  removed .coding-crew/lib/"
 }
@@ -174,7 +179,6 @@ update_manifest() {
 
 echo "Target: $REPO_ROOT ($LEVEL-level)"
 echo "---"
-remove_legacy_lib
 
 if [[ "$MODE" == "skills" ]]; then
   _removed=""
@@ -185,6 +189,7 @@ if [[ "$MODE" == "skills" ]]; then
     remove_skill "$_s"
     _removed+="$_s"$'\n'
   done
+  remove_legacy_lib
   update_manifest "$_removed"
 else
   _skill_names=()
@@ -196,6 +201,7 @@ else
       jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json"; } | tr -d '\r' | sort -u
   )
   for name in "${_skill_names[@]+"${_skill_names[@]}"}"; do remove_skill "$name"; done
+  remove_legacy_lib
 
   if [[ -f "$MANIFEST" ]]; then
     rm -f "$MANIFEST"
