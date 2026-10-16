@@ -487,6 +487,12 @@ finished. The same step writes the run's summary page: the outcome, the PR, the 
 (a stop's coder report and checks log tail, a needs-attention's list), so a failed run says why without the
 artifact.
 
+The job pushes and opens the PR with the workflow's own `GITHUB_TOKEN`, so the PR's `pull_request` runs wait for
+someone with write access to approve them, after every push. To get CI on solve-feature PRs with no approval, add
+a `workflow_dispatch:` trigger to the PR workflow: after the session, the job dispatches every workflow in
+`.github/workflows/` that has both `pull_request` and `workflow_dispatch` on the PR's branch (a failed dispatch
+is a warning, and leaves the run waiting for approval).
+
 ---
 
 ### Planning Skills

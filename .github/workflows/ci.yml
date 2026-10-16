@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # solve-feature's job dispatches this on its PR's branch: a bot-made PR's pull_request run waits for approval.
+  workflow_dispatch:
 
 jobs:
   test:
