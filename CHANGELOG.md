@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **crew-afk**: `crew-afk.sh wait` no longer drops a local run's cost from its line when the run exits while
+  wait is reading its log (#530).
 - **crew-afk / docs**: crew-afk no longer knows how to launch any agent CLI: the agent you run `/crew-afk` in
   writes the command that starts a session of its own CLI, and `crew-afk.sh dispatch <slug> … -- <argv…>` runs it
   as given (`local` under the 1h cap; `orca` and `herdr` in their terminal). The per-CLI launch table, parent-process

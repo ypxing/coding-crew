@@ -120,7 +120,7 @@ status() {
 }
 
 wait_for() {
-  local slug="${1:-}" wt run="" out
+  local slug="${1:-}" wt run="" out live
   [ $# -eq 1 ] || usage "wait needs a slug"
   # Only the slug's latest dispatch, the newest run.slug: an older worktree's run whose terminal closed with no
   # outcome stays `no outcome yet` for good, and would keep the wait from ever seeing this run end.
@@ -132,9 +132,12 @@ wait_for() {
   [ -n "$run" ] || { echo "no crew-afk run for $slug"; return; }
   # report reads the outcome and run.pid as status does: keep asking until the run is neither live nor waiting
   # on a terminal. solve-feature writes its outcome before the session prints the JSON result line, with the cost,
-  # that ends the log, so a live process keeps the wait going past the outcome.
-  while out=$(report "$run" "$slug"); do
-    case "$out" in *": running (pid "* | *": no outcome yet — "*) ;; *) live_pid "$run/.solve-feature" >/dev/null || break ;; esac
+  # that ends the log, so a live process keeps the wait going past the outcome. Liveness is read before the
+  # report: a process that exits in between has its whole log read by the report.
+  while :; do
+    live=$(live_pid "$run/.solve-feature") || live=""
+    out=$(report "$run" "$slug")
+    case "$out" in *": running (pid "* | *": no outcome yet — "*) ;; *) [ -n "$live" ] || break ;; esac
     sleep "${CREW_AFK_WAIT_INTERVAL:-5}"
   done
   echo "$out"
