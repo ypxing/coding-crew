@@ -30,12 +30,30 @@ setup() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"SMOKE: PASS (claude, demo)"* ]]
   [[ "$output" =~ crew-afk-commit:\ [0-9a-f]{40}(-dirty)? ]]
-  grep -qxF "dispatch dispatch report-cli --to local (in $D, agent claude)" "$BATS_TEST_TMPDIR/calls"
+  grep -qxF "dispatch dispatch report-cli --to local -- claude -p /solve-feature report-cli --output-format json --dangerously-skip-permissions (in $D)" "$BATS_TEST_TMPDIR/calls"
   grep -qx 'wait report-cli' "$BATS_TEST_TMPDIR/calls"
   grep -qx 'gh pr close 9' "$BATS_TEST_TMPDIR/calls"
   grep -qx 'gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/feature/report-cli' "$BATS_TEST_TMPDIR/calls"
   [ "$(wc -l < "$RESULTS")" -eq 3 ]
   [[ "$(tail -n 1 "$RESULTS")" =~ ^\|\ [0-9a-f]{12}(-dirty)?\ \|\ [0-9]{4}-[0-9]{2}-[0-9]{2}\ \|\ claude\ \|\ PASS\ \|\ \$1\.25\ \|\ 2\ \|$ ]]
+}
+
+@test "each platform in platforms.json dispatches its own headless launch command after --" {
+  local p want
+  for p in $(jq -r 'keys[]' "$REPO_ROOT/platforms.json" | tr -d '\r'); do
+    case "$p" in
+      # JSON last, so the run's log ends with the result whose cost fills the RESULTS cost column.
+      claude) want=$'claude\n-p\n/solve-feature report-cli\n--output-format\njson\n--dangerously-skip-permissions' ;;
+      copilot) want=$'copilot\n-p\nUse the solve-feature skill on report-cli\n--allow-all' ;;
+      codex) want=$'codex\nexec\n--dangerously-bypass-approvals-and-sandbox\nUse the solve-feature skill on report-cli' ;;
+      pi) want=$'pi\n-p\n/skill:solve-feature report-cli' ;;
+      *) echo "no expected argv for $p"; return 1 ;;
+    esac
+    run "$SMOKE" "$p"
+    [ "$status" -eq 0 ] || { echo "$p: $output"; return 1; }
+    [ "$(sed '1,/^--$/d' "$BATS_TEST_TMPDIR/dispatch-argv")" = "$want" ] || { echo "$p:"; cat "$BATS_TEST_TMPDIR/dispatch-argv"; return 1; }
+    [ "$(sed -n '1,/^--$/p' "$BATS_TEST_TMPDIR/dispatch-argv")" = $'dispatch\nreport-cli\n--to\nlocal\n--' ]
+  done
 }
 
 @test "a wait line with no cost records ? in the cost column" {

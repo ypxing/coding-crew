@@ -2,7 +2,8 @@
 # ($UP, $PIN), a demo dir laid out like scripts/smoke-crew-afk/demo/ ($DEMO, slug report-cli), a `gh` stub and a
 # CREW_SMOKE_DISPATCH stub in $STUB that log to $BATS_TEST_TMPDIR/calls. The dispatch stub's `dispatch` adds a
 # worktree, writes solve-feature's files there ($OUTCOME, default `ready pr=9`; two findings) and prints its
-# worktree and a short-lived pid, so no agent CLI is called; its `wait` prints crew-afk's status line for the run,
+# worktree and a short-lived pid, so no agent CLI is called (its argv, one per line, goes to
+# $BATS_TEST_TMPDIR/dispatch-argv); its `wait` prints crew-afk's status line for the run,
 # with $WAIT_COST (default ` cost=$1.25 (3 min)`) after the outcome. $GH_OPEN_PR is what `gh pr list` answers.
 
 make_smoke_demo() {
@@ -35,7 +36,8 @@ if [ "$1" = wait ]; then
   echo "$2: ${OUTCOME:-ready pr=9}${WAIT_COST- cost=\$1.25 (3 min)}"
   exit 0
 fi
-echo "dispatch $* (in $PWD, agent $CREW_AGENT)" >> "$BATS_TEST_TMPDIR/calls"
+echo "dispatch $* (in $PWD)" >> "$BATS_TEST_TMPDIR/calls"
+printf '%s\n' "$@" > "$BATS_TEST_TMPDIR/dispatch-argv"
 wt="$BATS_TEST_TMPDIR/wt"
 rm -rf "$wt"
 git worktree add -q --detach "$wt" >&2

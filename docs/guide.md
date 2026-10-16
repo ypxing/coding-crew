@@ -402,20 +402,21 @@ runs each before it starts, and a failing one blocks that issue with the command
 **Unattended, in its own worktree.** `/crew-afk <feature>` starts that `/solve-feature` run for you
 and returns at once. It resolves the feature from a likely name, then prepares (or reuses) one
 worktree per feature beside your checkout, at `<repo>/../<repo-name>-worktrees/<slug>`, linking each
-`.worktreeinclude` entry and copying `.env` into it.
+`.worktreeinclude` entry and copying `.env` into it. The agent you ran `/crew-afk` in writes the
+command that starts a session of its own CLI there, and crew-afk runs it as given.
 
 | `--to` | Where the run goes |
 | --- | --- |
-| `local` (default) | A detached headless agent, capped at 1 hour; it logs to `<worktree>/.solve-feature/run.log` (needs `timeout`, on macOS `brew install coreutils`) |
+| `local` (default) | A detached headless session, capped at 1 hour; it logs to `<worktree>/.solve-feature/run.log` (needs `timeout`, on macOS `brew install coreutils`) |
 | `orca` | An orca-managed worktree and an interactive agent in an orca terminal, uncapped: you watch and steer it |
 | `herdr` | An interactive agent in a new herdr pane on the worktree, uncapped |
 
 `/crew-afk status [<feature>]` prints each run's outcome line (`ready pr=<n>`, `needs-attention pr=<n>`
 or `stopped: …`), `running (pid <n>)`, or why there is none — for a local run that ended without one,
-`re-run /crew-afk <slug> to continue` (a re-run skips the issues already done) and the `claude --resume`
-line. For a local claude run only, the outcome line ends with what the run cost and how long it took,
-from the result claude prints last: `ready pr=7 cost=$1.73 (23 min)` (`cost=$<n> (<m> min)`); other
-agents print no cost, and a run the 1h cap killed has none. `/crew-afk wait <feature>` on a local run
+`re-run /crew-afk <slug> to continue` (a re-run skips the issues already done). For a local run whose
+command printed a JSON result with a cost as its last line, the outcome line ends with what the run cost
+and how long it took: `ready pr=7 cost=$1.73 (23 min)` (`cost=$<n> (<m> min)`); a run whose CLI prints
+no such line, or that the 1h cap killed, has none. `/crew-afk wait <feature>` on a local run
 returns once its process is gone, not at the outcome, so its line carries the cost too. A second `/crew-afk` on a feature whose local run is still going is refused; one to orca or herdr
 while its agent still works starts a second agent beside it.
 Nothing removes a worktree: `git worktree remove <path>` once you are done with it.

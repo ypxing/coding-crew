@@ -2,8 +2,8 @@
 name: crew-afk
 description: >
   Starts one feature's /solve-feature run unattended in that feature's own worktree and returns at
-  once: locally as a detached headless agent capped at 1 hour, or as an interactive agent in
-  an orca terminal or a herdr pane. Reports how each run ended. Use when a feature's issues are ready
+  once, launched with your own agent CLI's command: locally as a detached headless session capped at
+  1 hour, or as an interactive session in an orca terminal or a herdr pane. Reports how each run ended. Use when a feature's issues are ready
   and it should be built without anyone watching. Trigger with /crew-afk <feature> [--to local|orca|herdr] [--branch <name>],
   or /crew-afk status [<feature>].
 argument-hint: "<feature> [--to local|orca|herdr] [--branch <name>] | status [<feature>]"
@@ -32,11 +32,20 @@ review, fix or close nothing**: each run is its own top-level session in its own
    `crew-grill`, `crew-brainstorm` or `to-issues` to plan the feature first. Never guess: a wrong
    slug spends a run on the wrong work. One call starts one feature; for several, run this once each.
 2. **Dispatch**, with `--to` only when the user named a destination (default `local`), and `--branch`
-   only when the user named a branch (default: solve-feature's, named after the slug). The run uses
-   the same agent CLI you are:
+   only when the user named a branch (default: solve-feature's, named after the slug). After `--`, pass
+   the command that starts a session of your own agent CLI in the run's worktree, with permission
+   prompts off, that runs the solve-feature skill on `<slug>` (plus ` --branch <name>` when given): by
+   the prompt `Use the solve-feature skill on <slug>`, or by your CLI's own form for invoking a skill by
+   name. Write it as separate arguments; the script runs it as given, in the worktree. What that command
+   must be depends on the destination:
+
+   - `local`: a non-interactive run that needs no terminal and exits when the session ends. If your
+     CLI can print the session's result with its cost as a JSON line last, ask it to: `status` and
+     `wait` read the cost from that line.
+   - `orca` or `herdr`: an interactive session, which a person watches in that terminal.
 
    ```bash
-   bash "<skill-dir>/scripts/crew-afk.sh" dispatch <slug> [--to local|orca|herdr] [--branch <name>]
+   bash "<skill-dir>/scripts/crew-afk.sh" dispatch <slug> [--to local|orca|herdr] [--branch <name>] -- <command…>
    ```
 
    Relay what it prints: the run goes on without you, so do not wait for it in the foreground, read its

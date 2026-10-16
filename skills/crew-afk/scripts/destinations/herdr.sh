@@ -1,7 +1,5 @@
 # herdr — a worktree herdr creates beside the main checkout, and an interactive run in a new herdr pane:
 # uncapped, a person watches it. Sourced by crew-afk.sh, which sets MAIN, WORKTREES and die.
-MODE=interactive
-
 prepare() { # <slug> <base-branch>
   command -v herdr >/dev/null || die "herdr not found on PATH"
   local wt="$WORKTREES/$1"

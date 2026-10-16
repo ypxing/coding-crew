@@ -6,6 +6,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **crew-afk**: `crew-afk.sh wait` no longer drops a local run's cost from its line when the run exits while
+  wait is reading its log (#530).
+- **crew-afk / docs**: crew-afk no longer knows how to launch any agent CLI: the agent you run `/crew-afk` in
+  writes the command that starts a session of its own CLI, and `crew-afk.sh dispatch <slug> … -- <argv…>` runs it
+  as given (`local` under the 1h cap; `orca` and `herdr` in their terminal). The per-CLI launch table, parent-process
+  detection, `CREW_AGENT`, the `session=` line and status's `claude --resume` line are gone; the cost line now
+  appears for any local run whose command printed a JSON result with a cost last. The release smoke passes its own
+  per-platform command (#499).
 - **solve-feature / setup-coding-crew**: a failed push after an issue landed now reopens the issue (committing a
   local tracker's file move) instead of leaving it counted done, so a plain re-run where git can push redoes it;
   every push stop quotes git's own reason (e.g. GitHub's `workflows` permission refusal). The Actions workflow's
