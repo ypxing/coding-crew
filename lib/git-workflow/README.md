@@ -1,6 +1,6 @@
 # Git Workflow Scripts
 
-**A library: shared scripts, copied into the skills that use them**
+**A library: shared scripts, linked into the skills that use them**
 
 These scripts are **not skills themselves** — they are infrastructure utilities that skills use for git/branch/commit operations.
 

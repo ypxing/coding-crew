@@ -24,7 +24,7 @@ THIS REPO (source)
 │   ├── crew-grill/
 │   ├── _shared/fragments/  ← shared fragments (rendered between <!-- fragment:<key> --> markers)
 │   └── ...
-├── lib/                    ← libraries the skills share, copied into each skill that uses one
+├── lib/                    ← libraries the skills share, linked into each skill that uses one
 │   ├── tracker/            ← tracker CLI and backends; docs/{local,github}.md
 │   ├── checks/             ← run-checks.sh, the dev commands file (discover/write-commands-cache) and dep-install's install/run scripts
 │   └── git-workflow/       ← commit-changes, branch-safety-check

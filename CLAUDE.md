@@ -70,7 +70,7 @@ Two levels: the first holds for every skill under `skills/` (`tests/native-skill
 second for `skills/solve-feature/` and `skills/crew-review/`:
 
 - **Between skills:** one skill does one job and is named for it. A skill uses another skill by name. Code shared
-  between skills is a library copied into the skill's own `scripts/` directory, called like a tool, never a path
+  between skills is a library linked into the skill's own `scripts/` directory, called like a tool, never a path
   into another skill's directory; where and how it runs (CI, hosts, config) belongs to setup.
 - **Inside a skill:** a line earns its place as a step, or as a guard without which a person is **misled** (a PR
   marked ready or an issue counted landed when it isn't) or **stuck** (a stop that doesn't say what failed and how
