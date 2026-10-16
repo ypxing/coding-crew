@@ -68,7 +68,7 @@ Start from **one slice for the whole PRD**. Split it only for one of these reaso
 2. **Human boundary** — part is HITL, the rest AFK.
 3. **Expand–contract order** — steps from the PRD's `## Compatibility & Migration` (or `<skill-dir>/references/expand-contract.md`) that must land in sequence.
 
-Unrelated modules or test seams are not a reason on their own: they only cost the coder context, which reason 1 covers. One slice may deliver several behaviours. A context-budget split needs the slice it splits to be over the threshold; otherwise merge it back.
+Unrelated modules or test seams are not a reason on their own: they only cost the coder context, which reason 1 covers. One slice may deliver several behaviours.
 
 Each issue is a **tracer bullet**: a vertical slice that cuts through every integration layer its behaviour needs end-to-end, NOT a horizontal slice of one layer.
 
@@ -96,6 +96,8 @@ Otherwise add no edge: edits to separate parts of a file do not interact, and a 
 **Wide refactor?** One mechanical change — rename a column, retype a shared symbol — whose blast radius fans across the whole codebase, so no vertical slice can land green on its own: read `<skill-dir>/references/expand-contract.md` before slicing it.
 
 **Expand–contract sequencing** is drawn from the PRD's `## Compatibility & Migration` when it exists: each expand, migrate and contract step it names becomes a slice (or part of one) sequenced in that order, with the contract step blocked by every migrate step. Without that section, do not invent a migration sequence.
+
+**Merge pass.** Last, merge any two slices that no human boundary or expand–contract step separates and whose combined estimate, with the fixed context counted once, is under the threshold. Try pairs joined by a `Blocked by` edge or sharing files first, and repeat until no pair merges. A slice whose split reason is none, or a context budget its merge would not exceed, never reaches the user.
 
 **PRD for a split.** After step 4, with two or more slices (or two or more origin issues named in the source) and no PRD from step 2, invoke `to-prd` with the feature slug (so its own slug question is never reached). Then save the PRD it wrote, `node "$TRACKER" prd --feature-slug <feature-slug>`, to `.scratch/<feature-slug>/.drafts/PRD.md`, so the lint's `--prd` and the builder check receive it, and note its ref as step 2 does. Then do step 4.5 against it. Origin issues count because only a PRD's `Origin:` line closes them.
 

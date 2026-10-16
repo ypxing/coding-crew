@@ -24,7 +24,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   configure-tracker creates labels with `gh label create`, treating "already exists" as success (#503).
 - **to-issues / to-prd / crew-grill / crew-brainstorm / tracker**: to-issues prices a split as one more coder
   dispatch and checks run on solve-feature's single branch (no more parallelism split reason or retry/merge costs),
-  splits any slice estimated over ~120k tokens, writes the PRD with to-prd right after drafting slices and before
+  splits any slice estimated over ~120k tokens and merges back slices that fit together under it, writes the PRD with to-prd right after drafting slices and before
   tracing PRD IDs, and carries a design
   summary's `(auto)` lines, cited facts and cut list into the PRD or the issue's new `## Out of Scope`. to-prd no
   longer re-confirms decisions settled earlier, and a local PRD opens with `# PRD: <title>`. crew-grill hands off
