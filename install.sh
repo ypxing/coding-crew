@@ -466,7 +466,8 @@ write_manifest() {
 uninstall_skills() {
   local list="$1"
   [[ -n "$list" ]] || return 0
-  TARGET_REPO="$REPO_ROOT" "$SCRIPT_DIR/uninstall.sh" --skills "$list" | sed 's/^/  /'
+  # CODING_CREW_NESTED: this run checks for old-layout links once it has reinstalled, so uninstall.sh skips it.
+  CODING_CREW_NESTED=1 TARGET_REPO="$REPO_ROOT" "$SCRIPT_DIR/uninstall.sh" --skills "$list" | sed 's/^/  /'
 }
 
 # --skills a,b,c declares the full skill set: a skill a prior install recorded and this list leaves

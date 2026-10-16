@@ -54,9 +54,9 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git rep
 mkdir -p "$ROOT/.solve-feature" && echo '*' >"$ROOT/.solve-feature/.gitignore" # ignored in any repo, so the tree stays clean
 LOGS="$ROOT/.solve-feature"
 [ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head
-# The tracker and checks libraries, linked into this skill's scripts/ by install.sh.
+# The tracker and checks libraries, copied into this skill's scripts/.
 CLI="$SELF/tracker/cli.mjs" CHECKS="$SELF/checks"
-[ -f "$CLI" ] || die "tracker CLI not found ($CLI): run install.sh --skill solve-feature"
+[ -f "$CLI" ] || die "tracker CLI not found ($CLI): re-install coding-crew"
 
 # push <git push args> — `git push -q`; on failure sets PUSH_WHY to git's reason and returns 1. git's stderr still
 # reaches the terminal. The reason: a rejected ref's parenthesised one (GitHub's workflow-permission refusal arrives
@@ -165,7 +165,7 @@ pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the spec
   [ -n "$t" ] || t=$(grep -m1 '^# ' "$LOGS/$1.issue.md" | sed 's/^# //')
   printf '%s' "$t"
 }
-checks_lib() { [ -f "$CHECKS/run-checks.sh" ] || die "checks library not found ($CHECKS): run install.sh --skill solve-feature"; }
+checks_lib() { [ -f "$CHECKS/run-checks.sh" ] || die "checks library not found ($CHECKS): re-install coding-crew"; }
 
 # reopen_ref <step> <reason> <commit message> <recovery when reopen fails> [<log>] — make the closed $REF ready
 # again, so a plain re-run's coder takes it up instead of the tracker counting it landed; a failure stops at <step>.

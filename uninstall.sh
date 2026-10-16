@@ -216,5 +216,5 @@ else
 fi
 
 echo "---"
-warn_old_layout_links
+[[ -n "${CODING_CREW_NESTED:-}" ]] || warn_old_layout_links
 echo "Done."
