@@ -3,8 +3,8 @@
 # scripts/smoke-crew-afk.sh <platform> — the release smoke: the pinned demo repo, a project-level install kept out
 # of git, and one crew-afk dispatch whose run must end `ready pr=<n>`. Here the demo repo is a local one
 # (CREW_DEMO_DIR laid out like scripts/smoke-crew-afk/demo/), `gh` is a stub that logs its argv, and
-# CREW_SMOKE_DISPATCH stands in for crew-afk.sh: it adds a worktree, writes solve-feature's files there and
-# prints the worktree and a short-lived pid, so no agent CLI is called.
+# CREW_SMOKE_DISPATCH stands in for crew-afk.sh: its dispatch adds a worktree, writes solve-feature's files there
+# and prints the worktree and a short-lived pid, so no agent CLI is called; its wait prints the status line.
 
 load helpers/smoke-demo
 
@@ -31,10 +31,22 @@ setup() {
   [[ "$output" == *"SMOKE: PASS (claude, demo)"* ]]
   [[ "$output" =~ crew-afk-commit:\ [0-9a-f]{40}(-dirty)? ]]
   grep -qxF "dispatch dispatch report-cli --to local (in $D, agent claude)" "$BATS_TEST_TMPDIR/calls"
+  grep -qx 'wait report-cli' "$BATS_TEST_TMPDIR/calls"
   grep -qx 'gh pr close 9' "$BATS_TEST_TMPDIR/calls"
   grep -qx 'gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/feature/report-cli' "$BATS_TEST_TMPDIR/calls"
   [ "$(wc -l < "$RESULTS")" -eq 3 ]
   [[ "$(tail -n 1 "$RESULTS")" =~ ^\|\ [0-9a-f]{12}(-dirty)?\ \|\ [0-9]{4}-[0-9]{2}-[0-9]{2}\ \|\ claude\ \|\ PASS\ \|\ \$1\.25\ \|\ 2\ \|$ ]]
+}
+
+@test "a wait line with no cost records ? in the cost column" {
+  WAIT_COST= run "$SMOKE" claude
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$(tail -n 1 "$RESULTS")" == *"| claude | PASS | ? | 2 |" ]]
+}
+
+@test "the smoke script reads no cost from run.log and has no wait loop of its own" {
+  ! grep -nE 'run\.log.*jq|jq.*run\.log|kill -0' "$SMOKE" || false
+  grep -qF '"${DISPATCH[@]}" wait "$SLUG"' "$SMOKE"
 }
 
 @test "the smoke repo is the pinned clone with origin kept, the install and feature in place and the tree clean" {
