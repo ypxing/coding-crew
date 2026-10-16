@@ -7,10 +7,11 @@
 **Turn the AI coding tool you already use into a whole dev team: a planner, a coder per issue, and a reviewer.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Claude Code](https://img.shields.io/badge/Claude_Code-supported-D97757)
-![Copilot CLI](https://img.shields.io/badge/Copilot_CLI-supported-24292e)
-![Codex CLI](https://img.shields.io/badge/Codex_CLI-supported-10a37f)
-![pi](https://img.shields.io/badge/pi-supported-6f42c1)
+![Agent Skills](https://img.shields.io/badge/Agent_Skills-any_capable_agent-555555)
+![Claude Code](https://img.shields.io/badge/Claude_Code-smoke--tested-D97757)
+![Copilot CLI](https://img.shields.io/badge/Copilot_CLI-smoke--tested-24292e)
+![Codex CLI](https://img.shields.io/badge/Codex_CLI-smoke--tested-10a37f)
+![pi](https://img.shields.io/badge/pi-smoke--tested-6f42c1)
 
 </div>
 
@@ -23,12 +24,27 @@ get one PR at the end.
 
 ## Get going
 
+From inside your repo:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
+npx skills add ypxing/coding-crew --all      # this project
+npx skills add ypxing/coding-crew --all -g   # user level, every repo
 ```
 
-That installs every skill at user level (under `~`). To install into one repo instead, run it from
-inside the repo with `| bash -s -- --project` (or `./install.sh <platform> --project` from a clone).
+- A project install writes `skills-lock.json`: commit it.
+- Claude Code gets the project-level link only when `.claude/` already exists in the repo.
+- The `skills` tool sends telemetry to skills.sh unless `DISABLE_TELEMETRY` is set.
+- To update, re-run the same `npx skills add` command. Not `npx skills update`: its hash skips the skills' library directories, so it misses library changes.
+
+Or use `bootstrap.sh`, for what only it does: a pinned or offline install from a clone (`./install.sh`), the
+per-platform config-dir relocation (`CLAUDE_CONFIG_DIR`, `COPILOT_HOME`, `PI_CODING_AGENT_DIR`, `CODEX_HOME`),
+and a warning when user-level copies would shadow a project install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash   # add `-s -- --project` for one repo
+```
+
+To update a `bootstrap.sh` install, run it again with `| bash -s -- --update`.
 
 Then, inside your coding agent:
 
@@ -39,7 +55,19 @@ Then, inside your coding agent:
 /crew-afk status                                  # which PRs are ready for you
 ```
 
+Where `/name` is not your agent's form, ask your agent for the skill by name: Codex `$crew-grill`,
+pi `/skill:crew-grill`, Amp has no slash form.
+
 That's the whole workflow.
+
+### Which agents
+
+The skills are plain [Agent Skills](https://agentskills.io): any agent that loads `SKILL.md` runs them.
+`install.sh`'s `codex` target is the shared `.agents/skills` / `~/.agents/skills` location, which Codex, Copilot,
+pi, Cursor, Gemini CLI, OpenCode, Amp, Devin, Cline, Goose, Factory, Junie, Zed, Augment, Warp, Qwen Code, Kimi,
+Mistral Vibe, Crush, Kilo, Hermes, Codebuff, Rovo Dev and Zencoder read. Claude Code, Kiro and Continue read only
+their own directories, which `npx skills` targets. The release smoke runs on Claude Code, Copilot CLI, Codex CLI
+and pi.
 
 ## How it works
 
@@ -89,7 +117,7 @@ Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to t
 - 🔍 **A reviewer that sees the whole feature.** It reviews against the plan, not one diff at a time.
 - 🔁 **Fixes itself, within bounds.** At most two review rounds, the second only after it fixed a critical, high or medium finding, each fix gated by your checks; then it stops.
 - 🙋 **Only what needs you.** A PR it could not finish lists what needs a person; one it could is marked ready.
-- 🧩 **Agent-agnostic.** Plain skills any skills-capable coding CLI can run; Claude Code, Copilot CLI, Codex CLI and [pi](https://github.com/badlogic/pi-mono) are supported today. Issues stay as local markdown or in GitHub Issues.
+- 🧩 **Agent-agnostic.** Plain Agent Skills that any agent loading `SKILL.md` can run; the release smoke runs on Claude Code, Copilot CLI, Codex CLI and [pi](https://github.com/badlogic/pi-mono). Issues stay as local markdown or in GitHub Issues.
 
 ## The toolkit
 

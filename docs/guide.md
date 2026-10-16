@@ -142,7 +142,23 @@ For developers who have installed the skills into their project and want to use 
 
 ### Install
 
-#### One-line install
+#### `npx skills add`
+
+From inside the repo:
+
+```bash
+npx skills add ypxing/coding-crew --all      # this project (writes skills-lock.json: commit it)
+npx skills add ypxing/coding-crew --all -g   # user level
+```
+
+Claude Code gets the project-level link only when `.claude/` already exists. The tool sends telemetry to
+skills.sh unless `DISABLE_TELEMETRY` is set. To update, re-run the same command; `npx skills update` misses
+changes inside the skills' library directories.
+
+#### `bootstrap.sh`
+
+For a pinned or offline install from a clone (`./install.sh`), the per-platform config-dir relocation in the
+table below, and a warning when user-level copies shadow a project install:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash                             # every platform, into $HOME
@@ -170,11 +186,14 @@ Where files land:
 | pi          | `.pi/`            | `~/.pi/agent/` (`PI_CODING_AGENT_DIR`) |
 | Codex       | `.agents/skills/` | `~/.agents/skills/` (`CODEX_HOME`)     |
 
+The `codex` target is the shared `.agents/skills` location that most Agent-Skills agents read (Copilot, pi,
+Cursor, Gemini CLI, OpenCode and more; the README lists them), not Codex alone.
+
 Runtime requirements:
 
 - **Node.js on `PATH`** for the skills that touch the issue tracker — `/to-issues`, `/to-prd`, `/solve-issue`,
   `/solve-feature` and `/upgrade-deps`. They reach the tracker (local or GitHub) through the tracker CLI,
-  `<skill-dir>/scripts/tracker/cli.mjs`, the tracker library each of those skills ships (a link into `lib/` in this repo, a real directory once installed).
+  `<skill-dir>/scripts/tracker/cli.mjs`, inside the `scripts/tracker/` directory each of those skills ships (a link into `lib/` in this repo, a real directory once installed).
 
 #### Prerequisites
 

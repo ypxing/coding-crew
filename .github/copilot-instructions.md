@@ -1,13 +1,16 @@
 # Copilot Instructions — Coding Crew
 
-This repo is a **distributable collection** of AI skills. Nothing runs here directly — this is the source; consuming projects install skills via `./install.sh`.
+This repo is a **distributable collection** of AI skills. Nothing runs here directly — this is the source; consuming projects install skills via `npx skills add ypxing/coding-crew --all` or `./install.sh`.
 
 ---
 
 ## Installation
 
 ```bash
-# Install everything at user level ($HOME)
+# Any Agent-Skills agent: from inside the consuming repo (add -g for user level); re-run to update
+npx skills add ypxing/coding-crew --all
+
+# From a clone: install everything at user level ($HOME)
 ./install.sh
 
 # Install everything for one platform
@@ -29,7 +32,7 @@ This repo is a **distributable collection** of AI skills. Nothing runs here dire
 
 **Prerequisites**: `bash` ≥ 4, `git`, `jq`
 
-**Platforms**: `all` (default), `claude`, `copilot`, `pi`, `codex`
+**Platforms**: `all` (default), `claude`, `copilot`, `pi`, `codex` (`codex` is the shared `.agents/skills` location most Agent-Skills agents read)
 
 There are no installable agents: `./install.sh <platform> <name>` with anything but `--skill`/`--skills` is refused, and so is `uninstall.sh --agent`.
 

@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **docs**: the README and guide lead with `npx skills add ypxing/coding-crew --all` (`-g` for user level), keep
+  `bootstrap.sh` for pinned/offline installs, config-dir relocation and the shadowing warning, and name the agents
+  that read `.agents/skills` — the `codex` install target (#540).
+
 - **install**: `install.sh` installs the same tree `npx skills add` writes: each `<skills-dir>/<name>/` is a
   byte-for-byte copy of `skills/<name>/`, its `scripts/<lib>/` a real directory, and `.coding-crew/lib` is no longer
   written. A plain `install.sh`, `install.sh --update` and `uninstall.sh` remove an existing `.coding-crew/lib` and
