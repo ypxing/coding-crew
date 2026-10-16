@@ -9,7 +9,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - **setup-coding-crew / docs**: the solve-feature Actions workflow, once the session ends, approves the PR's
   `pull_request` runs GitHub held for approval, so its CI runs and shows on the PR; where GitHub refuses, it
   dispatches that workflow on the PR's branch as before (#523's dispatch alone left the PR showing a run awaiting
-  approval and none of the dispatched run's checks).
+  approval and none of the dispatched run's checks) (#527).
 - **setup-coding-crew / docs**: the solve-feature Actions workflow, once the session ends, starts the PR's CI by
   `workflow_dispatch` on its branch, for every workflow that has both `pull_request` and `workflow_dispatch`, so a
   bot-made PR's CI runs without someone approving it; add `workflow_dispatch:` to a PR workflow to opt it in. This
