@@ -8,10 +8,10 @@ RUN_CHECKS="$REPO_ROOT/lib/checks/run-checks.sh"
 
 setup() {
   TEMP_DIR=$(mktemp -d)
-  # solve-issue's scripts/ as installed: its own scripts, and its copy of the checks library.
+  # solve-issue's scripts/ as installed: its own scripts, and the checks library its committed link points to.
   mkdir -p "$TEMP_DIR/skill/scripts"
   cp "$REPO_ROOT"/skills/solve-issue/scripts/*.sh "$TEMP_DIR/skill/scripts/"
-  cp -R "$REPO_ROOT/skills/solve-issue/scripts/checks" "$TEMP_DIR/skill/scripts/checks"
+  cp -RL "$REPO_ROOT/skills/solve-issue/scripts/checks" "$TEMP_DIR/skill/scripts/checks"
   PREFLIGHT="$TEMP_DIR/skill/scripts/preflight.sh"
   WORK="$TEMP_DIR/work"
   mkdir -p "$WORK/.scratch/feat/issues/open" "$WORK/.scratch/feat/issues/done"

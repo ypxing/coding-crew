@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# crew-review is one SKILL.md and no script of its own (scripts/tracker/ is the rendered copy of lib/tracker/). These pin what solve-feature's fix step reads from its report, and that
+# crew-review is one SKILL.md and no script of its own (scripts/tracker is a link to lib/tracker/, copied through at install). These pin what solve-feature's fix step reads from its report, and that
 # it only reports.
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"

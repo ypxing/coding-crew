@@ -300,7 +300,7 @@ install_single_skill() {
     if [[ $status -eq 0 ]]; then
       echo "  $rel_dest"
     fi
-  done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -print0)
+  done < <(find -L "$SCRIPT_DIR/skills/$source_dir" -type f -print0)
 
   # Whatever this run did not write is a file an earlier version shipped: an agent listing the directory would read it.
   prune_unwritten "$skill_root"

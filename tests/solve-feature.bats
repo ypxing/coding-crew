@@ -25,7 +25,7 @@ setup() {
 
   INSTALL="$HOME/skill/scripts"
   mkdir -p "$HOME/skill"
-  cp -R "$REPO_ROOT/skills/solve-feature/scripts" "$INSTALL"
+  cp -RL "$REPO_ROOT/skills/solve-feature/scripts" "$INSTALL"
   mkdir -p "$INSTALL/tracker" "$INSTALL/checks"
   cp "$REPO_ROOT/lib/checks/commands-file.sh" "$INSTALL/checks/"
   : > "$INSTALL/tracker/cli.mjs"

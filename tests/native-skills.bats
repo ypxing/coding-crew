@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 
 # CLAUDE.md's native rule: a skill uses another skill by name, and reaches code shared between skills
-# only through the library copied into its own scripts/ directory (<skill-dir>/scripts/<lib>/), so an
-# installed skill can be read and run on its own. And every SKILL.md's frontmatter follows the
+# only through the library in its own scripts/ directory (<skill-dir>/scripts/<lib>/: committed as a link into
+# lib/, installed as a real directory), so an installed skill can be read and run on its own. And every SKILL.md's frontmatter follows the
 # Agent Skills spec, plus argument-hint and disable-model-invocation, which Claude Code reads.
 
 setup() {
@@ -13,8 +13,8 @@ teardown() { rm -rf "$T"; }
 
 # scan_skill_paths <root> — prints each line under <root>/skills that reaches into another skill's
 # directory or a library outside <skill-dir>/scripts/<lib>/, as `<path relative to root>:<n>: <line>`;
-# exits 1 when any does. A skill's scripts/<lib>/ is the committed copy of lib/<lib>/ (render-skill.sh), not
-# skill prose, so it is not scanned.
+# exits 1 when any does. A skill's scripts/<lib> is a link into lib/, not skill prose: `find -type f` does
+# not follow it, so it is not scanned.
 scan_skill_paths() {
   local root="$1" skills libs f hits=""
   skills=$(cd "$root/skills" && find . -mindepth 1 -maxdepth 1 -type d | sed 's|^\./||' | paste -sd'|' -)
@@ -27,7 +27,7 @@ scan_skill_paths() {
     hits+=$(grep -noE "$lib_token" "$root/$f" | while IFS=: read -r n tok; do
       [[ "$tok" =~ $lib_ok ]] || echo "$f:$n: $tok"
     done)$'\n'
-  done < <(cd "$root" && find skills -type f ! -name CHANGELOG.md | grep -vE "^skills/[^/]+/scripts/($libs)/" | LC_ALL=C sort)
+  done < <(cd "$root" && find skills -type f ! -name CHANGELOG.md | LC_ALL=C sort)
   hits=$(printf '%s' "$hits" | sed '/^$/d')
   [ -z "$hits" ] || { printf '%s\n' "$hits"; return 1; }
 }
@@ -39,11 +39,6 @@ scan_skill_paths() {
 
 @test "the path scan fails on a planted path into another skill or a library, naming the file" {
   cp -R "$REPO_ROOT/skills" "$T/skills"
-  run scan_skill_paths "$T"
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-
-  # A lib copy is not skill prose: what lib/ itself says is not scanned.
-  echo 'bash "<skill-dir>/../solve-issue/scripts/preflight.sh"' >> "$T/skills/solve-issue/scripts/tracker/README.md"
   run scan_skill_paths "$T"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 

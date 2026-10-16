@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 
-# dep-install's scripts are the checks library (lib/checks): committed as a copy at
-# skills/<skill>/scripts/checks in each skill whose registry `libs` names it, and installed with the
-# skill, so the skill text's "<skill-dir>/scripts/checks/<script>" runs the skill's own copy.
+# dep-install's scripts are the checks library (lib/checks): committed as a link to ../../../lib/checks at
+# skills/<skill>/scripts/checks in each skill whose registry `libs` names it, and copied through it at
+# install, so the skill text's "<skill-dir>/scripts/checks/<script>" runs the skill's own copy.
 
 setup_file() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

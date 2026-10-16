@@ -208,14 +208,15 @@ _skills_copied() {
   [ -z "$(find "$dir" -type l)" ] || { find "$dir" -type l >&2; return 1; }
 }
 
-@test "every installed skill is a copy of skills/<name>/, and each committed scripts/<lib> is lib/<lib>" {
+@test "every installed skill is a copy of skills/<name>/, its scripts/<lib> a real directory equal to lib/<lib>" {
   _skills_copied "$ALL/.claude/skills"
   [ -d "$ALL/.claude/skills/solve-issue/scripts/checks" ] && [ ! -L "$ALL/.claude/skills/solve-issue/scripts/checks" ]
   [ -f "$ALL/.claude/skills/solve-issue/scripts/checks/write-commands-cache.sh" ]
   [ -f "$ALL/.claude/skills/add-tests/scripts/checks/discover-commands.sh" ]
-  # One source per library, under lib/: a skill's scripts/<lib> is the renderer's copy of it
-  # (tests/rendered-tree.bats fails when one is stale), and no other copy sits elsewhere in skills/.
-  diff -r "$SCRIPT_DIR/lib/checks" "$SCRIPT_DIR/skills/dep-install/scripts/checks"
+  # One source per library, under lib/: a skill's committed scripts/<lib> is a link to it
+  # (tests/rendered-tree.bats checks each one), and the install copies through the link.
+  [ -L "$SCRIPT_DIR/skills/dep-install/scripts/checks" ]
+  diff -r "$SCRIPT_DIR/lib/checks" "$ALL/.claude/skills/dep-install/scripts/checks"
   [ ! -e "$SCRIPT_DIR/skills/solve-issue/scripts/run-checks.sh" ]
   [ -z "$(find "$SCRIPT_DIR/skills" \( -name write-commands-cache.sh -o -name cli.mjs \) | grep -vE '^'"$SCRIPT_DIR"'/skills/[^/]+/scripts/(checks|tracker)/')" ]
 }

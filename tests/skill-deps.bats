@@ -49,7 +49,7 @@ reach() {
 }
 
 # scan_skill_deps <root> — checks every registry skill under <root> (its registry.json and skills/; a
-# committed SKILL.md is the rendered body, and scripts/<lib>/ copies are lib/'s, not the skill's) and prints one line per failure, naming the skill and the name;
+# committed SKILL.md is the rendered body, and scripts/<lib> links point into lib/, not the skill) and prints one line per failure, naming the skill and the name;
 # exits 1 when any fails.
 scan_skill_deps() {
   local root="$1" reg="$1/registry.json" names alt s dir doc reachable named n fails=""
