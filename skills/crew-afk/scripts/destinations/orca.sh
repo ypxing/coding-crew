@@ -1,7 +1,5 @@
 # orca — an orca-managed worktree, and an interactive run in an orca terminal: uncapped, a person watches it.
 # Sourced by crew-afk.sh, which sets MAIN and die.
-MODE=interactive
-
 prepare() { # <slug> <base-branch>
   command -v orca >/dev/null || die "orca not found on PATH"
   local out path

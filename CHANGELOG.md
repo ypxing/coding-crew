@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **crew-afk / docs**: crew-afk no longer knows how to launch any agent CLI: the agent you run `/crew-afk` in
+  writes the command that starts a session of its own CLI, and `crew-afk.sh dispatch <slug> … -- <argv…>` runs it
+  as given (`local` under the 1h cap; `orca` and `herdr` in their terminal). The per-CLI launch table, parent-process
+  detection, `CREW_AGENT`, the `session=` line and status's `claude --resume` line are gone; the cost line now
+  appears for any local run whose command printed a JSON result with a cost last. The release smoke passes its own
+  per-platform command (#499).
 - **setup-coding-crew / docs**: the solve-feature Actions workflow, once the session ends, approves the PR's
   `pull_request` runs GitHub held for approval, so its CI runs and shows on the PR; where GitHub refuses, it
   dispatches that workflow on the PR's branch as before (#523's dispatch alone left the PR showing a run awaiting

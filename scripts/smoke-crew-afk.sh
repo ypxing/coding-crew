@@ -4,7 +4,8 @@ set -uo pipefail
 # smoke-crew-afk.sh — the release smoke: one real crew-afk run on the pinned demo repo, on one platform.
 # Usage: scripts/smoke-crew-afk.sh <platform>
 # Clones the demo repo (scripts/smoke-crew-afk/demo/{repo,sha,slug,check}, feature/) into $TMPDIR, installs every
-# skill at project level kept out of git, dispatches `crew-afk.sh dispatch <slug> --to local`, waits for the
+# skill at project level kept out of git, dispatches `crew-afk.sh dispatch <slug> --to local -- <the platform's
+# headless launch command>` (no host agent runs here to supply one), waits for the
 # run with `crew-afk.sh wait <slug>` and requires `ready pr=<n>`, then runs demo/check in the run's worktree. Appends one RESULTS.md row, closes
 # the PR and deletes its branch on a pass, and prints `crew-afk-commit: <sha>[-dirty]` and
 # `SMOKE: PASS (<platform>, demo)` — the lines cut-release.sh reads back — or `SMOKE: FAIL: <why>`.
@@ -21,8 +22,8 @@ PLATFORM="${1:-}"
 [[ $# -eq 1 && "|$PLATFORMS|" == *"|$PLATFORM|"* ]] || { echo "usage: $0 <$PLATFORMS>" >&2; exit 2; }
 
 RECORD=0 WT="" PR="" COST='?'
-# One results row once the run was dispatched: its cost from crew-afk.sh wait's line (`cost=$<n>`, a local claude
-# run only), and its finding count from the last review solve-feature saved (a re-review after fixes overwrites
+# One results row once the run was dispatched: its cost from crew-afk.sh wait's line (`cost=$<n>`, when the
+# platform's command ends the log with a JSON result carrying it: claude's does), and its finding count from the last review solve-feature saved (a re-review after fixes overwrites
 # the first one's report).
 record() {
   [[ $RECORD -eq 1 ]] || return 0
@@ -43,6 +44,16 @@ for f in repo sha slug check feature; do [[ -e "$DEMO_DIR/$f" ]] || { echo "smok
 firstline() { awk 'NF { print $1; exit }' "$1"; }
 DEMO_REPO=$(firstline "$DEMO_DIR/repo") PIN=$(firstline "$DEMO_DIR/sha") SLUG=$(firstline "$DEMO_DIR/slug")
 BRANCH="feature/$SLUG"
+# What a host agent on each platform would pass crew-afk after `--` for a local run: unattended, permission prompts off.
+case "$PLATFORM" in
+  claude) LAUNCH=(claude -p "/solve-feature $SLUG" --output-format json --dangerously-skip-permissions) ;;
+  # --allow-all, not --allow-all-tools: the skill's scripts are outside the worktree, and an unattended run's path
+  # check has no one to approve it.
+  copilot) LAUNCH=(copilot -p "Use the solve-feature skill on $SLUG" --allow-all) ;;
+  codex) LAUNCH=(codex exec --dangerously-bypass-approvals-and-sandbox "Use the solve-feature skill on $SLUG") ;;
+  pi) LAUNCH=(pi -p "/skill:solve-feature $SLUG") ;;
+  *) echo "smoke-crew-afk: no launch command for $PLATFORM" >&2; exit 2 ;;
+esac
 
 DIR="${TMPDIR:-/tmp}/crew-smoke-$PLATFORM"
 if [[ -e "$DIR" ]]; then
@@ -91,7 +102,7 @@ echo "SMOKE: repo ready at $DIR ($PLATFORM)"
 
 DISPATCH=(bash "$SKILLS/crew-afk/scripts/crew-afk.sh")
 [[ -n "${CREW_SMOKE_DISPATCH:-}" ]] && DISPATCH=("$CREW_SMOKE_DISPATCH")
-OUT=$(CREW_AGENT="$PLATFORM" "${DISPATCH[@]}" dispatch "$SLUG" --to local) || fail "crew-afk dispatch exited $?: $OUT"
+OUT=$("${DISPATCH[@]}" dispatch "$SLUG" --to local -- "${LAUNCH[@]}") || fail "crew-afk dispatch exited $?: $OUT"
 echo "$OUT"
 WT=$(sed -n 's/^worktree=//p' <<<"$OUT")
 [[ -n "$WT" ]] || fail "crew-afk dispatch printed no worktree="

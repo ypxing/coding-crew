@@ -1,7 +1,5 @@
 # local — a detached git worktree beside the main checkout, and a detached headless run capped at 1h.
 # Sourced by crew-afk.sh, which sets MAIN, WORKTREES and die.
-MODE=headless
-
 prepare() { # <slug> <base-branch>
   local wt="$WORKTREES/$1"
   if ! git -C "$MAIN" worktree list --porcelain | grep -qxF "worktree $wt"; then
