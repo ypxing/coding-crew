@@ -116,8 +116,8 @@ else
   ! grep -q '^WARNING: user-level copies exist' .git/crew-smoke/install.log ||
     fail "user-level skills shadow the project install (see $DIR/.git/crew-smoke/install.log)"
   SKILLS=$(jq -r --arg p "$PLATFORM" '.[$p].projectSkills' "$ROOT/platforms.json" | tr -d '\r')
-  printf '%s\n' .coding-crew/lib .coding-crew/manifest.json "$SKILLS" >.worktreeinclude
-  printf '%s\n' .coding-crew/lib .coding-crew/manifest.json "$SKILLS" .worktreeinclude .scratch/ >>.git/info/exclude
+  printf '%s\n' .coding-crew/manifest.json "$SKILLS" >.worktreeinclude
+  printf '%s\n' .coding-crew/manifest.json "$SKILLS" .worktreeinclude .scratch/ >>.git/info/exclude
 fi
 # The local tracker reads the feature from the main checkout.
 mkdir -p ".scratch/$SLUG" && cp -R "$DEMO_DIR/feature/." ".scratch/$SLUG/" || fail "cannot copy the feature"
