@@ -876,6 +876,8 @@ attention() { cat .solve-feature/pr-10.attention.md; }
 
 # --- describe: the PR body, readiness and the outcome ----------------------------------
 
+# The attribution line describe writes under the begin marker, whatever the writer subagent left.
+ATTRIBUTION='> Written by solve-feature (`feat`): its coder, reviewer and fixer were agents; no person has read this body.'
 # summary — what the writer subagent leaves: write-pr's title line and body.
 summary() { printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n\n**Tested:** checks pass\n' > .solve-feature/pr-10.summary.md; }
 # fixed [<report json>] — fix_ready, then fix: describe's input as SKILL.md leaves it.
@@ -894,6 +896,8 @@ fixed() {
   [ "$(cat "$STATE/pr-title")" = "Let users log in" ]
   [ "$(cat "$STATE/pr-body")" = "$(cat <<EOF
 <!-- solve-feature:begin -->
+$ATTRIBUTION
+
 ## Why
 
 Users need accounts.
@@ -930,6 +934,7 @@ EOF
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(sed -n '/^## Needs attention$/,/^<details>/p' "$STATE/pr-body")" = "$(printf '## Needs attention\n\n- no logout endpoint\n\n<details><summary>Spec</summary>')" ]
   [ "$(grep -n -m1 '^## Why$' "$STATE/pr-body" | cut -d: -f1)" -lt "$(grep -n -m1 '^## Needs attention$' "$STATE/pr-body" | cut -d: -f1)" ]
+  [ "$(sed -n 2p "$STATE/pr-body")" = "$ATTRIBUTION" ]
   ! grep -q '^pr ready' "$STATE/gh.log" || false
   [ "$(cat .solve-feature/outcome)" = "needs-attention pr=10" ]
 }
@@ -949,7 +954,7 @@ EOF
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   ! grep -q '^pr ready' "$STATE/gh.log" || false
   [ "$(cat "$STATE/pr-title")" = Feat ]
-  [ "$(head -2 "$STATE/pr-body")" = "$(printf '<!-- solve-feature:begin -->\n<details><summary>Spec</summary>')" ]
+  [ "$(head -4 "$STATE/pr-body")" = "$(printf '<!-- solve-feature:begin -->\n%s\n\n<details><summary>Spec</summary>' "$ATTRIBUTION")" ]
   [ "$(cat .solve-feature/outcome)" = "ready pr=10" ]
 }
 

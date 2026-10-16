@@ -379,7 +379,8 @@ It runs the feature's `ready-for-agent` issues in order on one branch (`feature/
 pass `--branch <name>`), each by a fresh coder subagent, and lands each one only when the project's
 checks pass. Then it reviews the whole feature and fixes the findings, at most twice: it reviews again
 only after fixing a CRITICAL, HIGH or MEDIUM finding. It writes the PR body and marks the draft PR ready
-when nothing needs a person. Run it where an unattended agent may change the
+when nothing needs a person. The body opens with a line saying solve-feature (naming the feature slug) wrote
+the PR with agents, so nobody reads it as a person's words. Run it where an unattended agent may change the
 checkout — a worktree or a container, not the one you work in. A stop names the step and how to
 recover; a re-run skips the issues already done and reuses the branch and the PR, merging the default
 branch into it first (a conflict stops the run for you to merge by hand).
