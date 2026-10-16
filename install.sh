@@ -367,17 +367,6 @@ remove_legacy_lib() {
   echo "  .coding-crew/lib/ (removed: each skill carries its own scripts/<lib>)"
 }
 
-# A skill this run left alone may still link scripts/<lib> into the removed .coding-crew/lib; name its dir.
-warn_old_layout_links() {
-  local dirs d
-  dirs=$(platform_skills_paths | sort -u | while IFS= read -r d; do
-    if [[ -d "$d" ]]; then find "$d" -mindepth 3 -maxdepth 3 -lname '*.coding-crew/lib/*'; fi
-  done | sed -e "s|^$REPO_ROOT/||" -e 's|/scripts/[^/]*$||' | sort -u)
-  [[ -n "$dirs" ]] || return 0
-  echo "WARNING: these skills still link to the removed .coding-crew/lib; run install.sh --update to refresh them:"
-  sed 's/^/  /' <<< "$dirs"
-}
-
 migrate_legacy_docs() {
   if [[ -f "$REPO_ROOT/.coding-crew/docs/issue-tracker.md" || -d "$REPO_ROOT/.coding-crew/docs/templates/trackers" ]]; then
     echo "Docs:"
@@ -466,8 +455,7 @@ write_manifest() {
 uninstall_skills() {
   local list="$1"
   [[ -n "$list" ]] || return 0
-  # CODING_CREW_NESTED: this run checks for old-layout links once it has reinstalled, so uninstall.sh skips it.
-  CODING_CREW_NESTED=1 TARGET_REPO="$REPO_ROOT" "$SCRIPT_DIR/uninstall.sh" --skills "$list" | sed 's/^/  /'
+  TARGET_REPO="$REPO_ROOT" "$SCRIPT_DIR/uninstall.sh" --skills "$list" | sed 's/^/  /'
 }
 
 # --skills a,b,c declares the full skill set: a skill a prior install recorded and this list leaves
@@ -535,7 +523,6 @@ if [[ "$UPDATE_MODE" == "true" ]]; then
   if [[ "${#MANIFEST_SKILLS[@]}" -gt 0 ]]; then
     write_manifest
   fi
-  warn_old_layout_links
   echo "Done."
   exit 0
 fi
@@ -579,6 +566,5 @@ echo "---"
 write_manifest
 
 warn_shadowing_user_installs
-warn_old_layout_links
 
 echo "Done."

@@ -733,35 +733,6 @@ _assert_old_lib_gone() {
   done
 }
 
-@test "a partial install or uninstall over the old layout names the skills still linked to .coding-crew/lib and says to run --update" {
-  local cmd
-  for cmd in "./install.sh claude --skill tdd" "./uninstall.sh --skill crew-review"; do
-    rm -rf "$TEMP_DIR" && mkdir -p "$TEMP_DIR"
-    _old_lib_install "$TEMP_DIR"
-    cd "$SCRIPT_DIR"
-    run env TARGET_REPO="$TEMP_DIR" $cmd
-    [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
-    _assert_old_lib_gone
-    [[ "$output" == *"install.sh --update"*".claude/skills/to-issues"* ]] || { echo "$cmd: $output" >&2; return 1; }
-  done
-  # A full update refreshes every skill, so nothing is left to name.
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
-  [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
-  [[ "$output" != *"install.sh --update"* ]] || { echo "$output" >&2; return 1; }
-}
-
-@test "a --skills install over the old layout that prunes a skill does not name the skills it reinstalls" {
-  _old_lib_install "$TEMP_DIR"
-  mkdir -p "$TEMP_DIR/.claude/skills/tdd"
-  echo old > "$TEMP_DIR/.claude/skills/tdd/SKILL.md"
-  jq '.skills += ["tdd"]' "$TEMP_DIR/.coding-crew/manifest.json" > "$TEMP_DIR/m" && mv "$TEMP_DIR/m" "$TEMP_DIR/.coding-crew/manifest.json"
-  cd "$SCRIPT_DIR"
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skills to-issues
-  [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
-  [ ! -e "$TEMP_DIR/.claude/skills/tdd" ]
-  [[ "$output" != *"install.sh --update"* ]] || { echo "$output" >&2; return 1; }
-}
-
 @test "uninstall over the old layout removes .coding-crew/lib, keeps config.json, and .coding-crew/ only goes when empty" {
   local libs
   for libs in "" with-libs; do
