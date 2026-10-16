@@ -10,7 +10,42 @@ description: >
 
 Break a plan into independently-grabbable issues using vertical slices (tracer bullets). An issue is read cold by an implementer who cannot talk to whoever wrote it: everything they would have to guess at is written down, and nothing they can decide themselves is.
 
-{{FRAGMENT:tracker-configuration}}
+<!-- fragment:tracker-configuration -->
+## Tracker Configuration
+
+Every tracker operation in this skill is an op of the tracker CLI — nothing else reads or writes
+the tracker. Before the first one, check for Node:
+
+```bash
+node --version
+```
+
+If that fails, stop and tell the user: "the tracker CLI needs Node — install Node, then re-run this
+skill." The CLI is `<skill-dir>/scripts/tracker/cli.mjs`, `<skill-dir>` being the directory you read
+this file from. Wherever this skill runs an op as `node "$TRACKER" <op> …`, run it with that path:
+
+```bash
+node "<skill-dir>/scripts/tracker/cli.mjs" <op> …
+```
+
+Before the first op, ask the CLI which tracker it talks to:
+
+```bash
+node "$TRACKER" config   # prints tracker=<kind> and configured=yes|no
+```
+
+On `configured=no`, no tracker was ever chosen for this repo. On an interactive run, invoke the
+`configure-tracker` skill now to choose one, then continue. On a non-interactive run
+(a headless/`-p` invocation or a subagent) never ask: proceed as `local`, which
+is what the CLI already uses. How the tracker works — its refs, statuses and labels — is in
+`<skill-dir>/scripts/tracker/docs/<kind>.md`.
+
+Exit codes, every op: 0 ok; 1 the op failed — stderr carries the tracker's own error, verbatim;
+2 a usage error or an invalid ref; 3 not found (`publish-issues` adds 4 and 5, described where it
+runs). On 1 or 2, report the stderr to the user and
+fix its cause (an input, auth, the network), then re-run the op —
+never perform the operation with the tracker's own tool instead.
+<!-- /fragment:tracker-configuration -->
 
 ## Process
 
@@ -54,7 +89,17 @@ Not optional. If you have not already explored the code each slice will touch, d
 - **Wrong assumption** — the PRD or plan assumes something the code rules out (a missing counterpart, a decision an ADR or the code contradicts): ask how to resolve it before drafting.
 - **Fails the design standard** — the slice, or the existing issue it came from, fails a criterion of the standard below (no cited problem; one check standing in for two questions; a lookup for a fact already known earlier): name the criterion and its `file:line` evidence, and ask how to reshape it before drafting. An auto-promoted issue (a column-0 `Source:` line, step 1) is exempt.
 
-{{FRAGMENT:design-standard}}
+<!-- fragment:design-standard -->
+**Design standard.** Size is fine; **unjustified** size is not. Judge every decision and component against five criteria, in priority order — necessary > correct > reusable along real axes > fewest moving parts > says what it does — and when two conflict, the earlier one wins. Each criterion names the evidence that shows it failing; cite that evidence (`file:line`, a count, a quote) rather than a taste.
+
+1. **Necessary** — it removes a measured, cited problem and nothing beyond it. Fails on: no cited problem; a need nobody has yet; completeness for its own sake.
+2. **Correct** — it does what it claims against the real code, and its rationale holds. Fails on: a rationale the code contradicts; a mechanism that cannot reach its target case; an edge case (signal, retry, concurrent run, early return) that breaks it.
+3. **Reusable along real axes** — a decision lives in one place, behind an abstraction, when it has two or more real callers or implementations now, or when it sits on one of the axes of variation the project's `CLAUDE.md` (or `AGENTS.md`) names; when that file names none, only two or more real callers or implementations now count. A good abstraction hides a decision, has an interface smaller than what it hides, and is named for what it does. It is never built for a caller or axis that does not exist yet. Fails on: the same decision coded in two or more places, or code that branches on which implementation it has; an abstraction with one implementation and no named axis, an unused parameter, or per-caller flags (generality for a hypothetical caller).
+4. **Fewest moving parts** — no dependency, network call, state or format the problem does not need. Fails on: a lookup for a fact already known earlier; a dependency, service, cache or file format the problem never asked for.
+5. **Says what it does** — names and text match behaviour, and a newcomer can state what it does in one sentence. Fails on: a name that contradicts what it does; one check standing in for two questions.
+
+Simplicity never cuts structure the design needs now: one owner per concern, no duplicated logic, a seam its tests need, the project's layer rules. Well-architected is a justification, overengineered is not. Logic that would otherwise be copied into several places gets one shared owner: that is structure, not a speculative layer, and dropping it to avoid "abstraction" leaves the design under-built.
+<!-- /fragment:design-standard -->
 
 While exploring, look for **prefactoring opportunities** — changes that would make the feature implementation significantly easier. "Make the change easy, then make the easy change." Prefactoring is sequenced first (at the start of the slice, or as its own first slice when the work is split) so the feature work builds on a clean foundation.
 
@@ -138,7 +183,75 @@ Write each approved slice with the template below and the rules that follow it, 
 
 **`ready-for-human` bodies.** Every slice published as `ready-for-human` (a HITL slice from step 5, or a failing `## Requires`) opens with this block:
 
-{{FRAGMENT:human-issue}}
+<!-- fragment:human-issue -->
+**A `ready-for-human` issue opens with a `## For a human` block**, placed right after `## What to build`. A person reads it cold, so write plain language that needs neither the PRD nor the codebase. It has exactly five `###` parts, in this order:
+
+1. `### Why a person` — why no agent can do this (a permission, a credential, a judgement call, a failing `## Requires` command and its output).
+2. `### What changes` — what is true today and what will be true after, in concrete names and values.
+3. `### Steps` — numbered. Each step says what to do, then a `Check:` line (how to see it worked) and an `Undo:` line (how to reverse it). Write `n/a — <why>` when a step has no check or no undo. Put commands and file contents in fenced blocks.
+4. `### If skipped or done wrong` — what breaks, in the reader's terms.
+5. `### Done when` — the observable end state.
+
+Write acceptance criteria unticked (`- [ ]`): the person ticks each one as they finish it, so a box ticked at publish says "done" before anything was done.
+
+**Kind A — the whole task is a person's.**
+
+- Drop `## Implements`, `## Interfaces` and the "Read this document before implementing" line; no agent will read this issue.
+- End `### Steps` with a fixed last step, "Mark it done", that reads: "Tell your coding agent: run the coding-crew tracker CLI (`scripts/tracker/cli.mjs` inside any coding-crew skill, for example `solve-issue`) with `mark-done <n>`". On the local tracker, write the issue file path instead of `<n>`. Never write an absolute path: it does not exist on the reader's machine.
+- That step's `Check:` is that the command exits 0 and prints no `REFUSED` line.
+- Its `Undo:` is the same request with "Reopen an issue" from the tracker doc `docs/<kind>.md` beside that `cli.mjs`, `<kind>` being the `tracker=` value the same CLI's `config` prints.
+- Name neither the tracker nor its labels or files in the step.
+
+**Kind B — agent work blocked on a person.** Keep the agent brief (`## What to build`, `## Implements`, acceptance criteria, …) below the block, and make the last step of `### Steps` relabel the issue `ready-for-agent` by following "Reopen an issue" in that same tracker doc, with `ready-for-agent` as the status, so an agent run picks it up.
+
+Trimmed example (Kind A):
+
+````markdown
+Status: ready-for-human
+
+## What to build
+
+Make the `main` branch ruleset require green test checks before a pull request merges.
+
+## For a human
+
+### Why a person
+
+Only a repository admin can edit rulesets, and the change is made on GitHub itself. An agent has no admin token and must not have one.
+
+### What changes
+
+Today the ruleset has no `required_status_checks` rule, so a PR can merge while its tests are red. After this change it has one, listing the four test jobs.
+
+### Steps
+
+1. Save the current ruleset. Check: the file is not empty. Undo: n/a — this step only reads.
+
+   ```bash
+   gh api repos/OWNER/REPO/rulesets/ID > ruleset.backup.json
+   ```
+
+2. Apply the edited ruleset. Check: the command prints JSON with no `message` error. Undo: send `ruleset.backup.json` back with the same command.
+
+   ```bash
+   gh api -X PUT repos/OWNER/REPO/rulesets/ID --input ruleset.json
+   ```
+
+3. Mark it done, once every acceptance criterion below is ticked. Tell your coding agent: run the coding-crew tracker CLI (`scripts/tracker/cli.mjs` inside any coding-crew skill, for example `solve-issue`) with `mark-done 42`. Check: the command exits 0 and prints no `REFUSED` line. Undo: tell your coding agent to follow "Reopen an issue" in the tracker doc `docs/<kind>.md` beside that `cli.mjs`, `<kind>` being the `tracker=` value the CLI's `config` prints.
+
+### If skipped or done wrong
+
+If skipped, a PR can merge with red tests. If `ruleset.json` leaves out an existing rule, that rule is silently removed.
+
+### Done when
+
+Reading the ruleset back lists `required_status_checks`, and a PR with a failing check cannot be merged.
+
+## Acceptance criteria
+
+- [ ] The ruleset has a `required_status_checks` rule
+````
+<!-- /fragment:human-issue -->
 
 **Acceptance criteria describe this slice's behaviour, not repo-wide hygiene.** A rule every change must follow that a check already enforces — a version bump, a changelog entry, lint — is not a criterion: the check holds it, and as a per-issue criterion each issue on the branch repeats it (a second version bump, a duplicate changelog entry).
 

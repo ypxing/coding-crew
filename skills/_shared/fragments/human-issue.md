@@ -11,9 +11,9 @@ Write acceptance criteria unticked (`- [ ]`): the person ticks each one as they 
 **Kind A — the whole task is a person's.**
 
 - Drop `## Implements`, `## Interfaces` and the "Read this document before implementing" line; no agent will read this issue.
-- End `### Steps` with a fixed last step, "Mark it done", that runs `node ~/.coding-crew/lib/tracker/cli.mjs mark-done <n>`, or `node .coding-crew/lib/tracker/cli.mjs mark-done <n>` from the repo root when this skill is installed in the repo (its `<skill-dir>` is inside it). On the local tracker, pass the issue file path instead of `<n>`. Never write an absolute path: it does not exist on the reader's machine.
+- End `### Steps` with a fixed last step, "Mark it done", that reads: "Tell your coding agent: run the coding-crew tracker CLI (`scripts/tracker/cli.mjs` inside any coding-crew skill, for example `solve-issue`) with `mark-done <n>`". On the local tracker, write the issue file path instead of `<n>`. Never write an absolute path: it does not exist on the reader's machine.
 - That step's `Check:` is that the command exits 0 and prints no `REFUSED` line.
-- Its `Undo:` is to follow "Reopen an issue" in the tracker doc `docs/<kind>.md` beside that `cli.mjs` (`~/.coding-crew/lib/tracker/docs/<kind>.md`, or `.coding-crew/lib/tracker/docs/<kind>.md`), with `<kind>` the `tracker=` value the same `cli.mjs config` prints.
+- Its `Undo:` is the same request with "Reopen an issue" from the tracker doc `docs/<kind>.md` beside that `cli.mjs`, `<kind>` being the `tracker=` value the same CLI's `config` prints.
 - Name neither the tracker nor its labels or files in the step.
 
 **Kind B — agent work blocked on a person.** Keep the agent brief (`## What to build`, `## Implements`, acceptance criteria, …) below the block, and make the last step of `### Steps` relabel the issue `ready-for-agent` by following "Reopen an issue" in that same tracker doc, with `ready-for-agent` as the status, so an agent run picks it up.
@@ -51,11 +51,7 @@ Today the ruleset has no `required_status_checks` rule, so a PR can merge while 
    gh api -X PUT repos/OWNER/REPO/rulesets/ID --input ruleset.json
    ```
 
-3. Mark it done, once every acceptance criterion below is ticked. Check: the command exits 0 and prints no `REFUSED` line. Undo: follow "Reopen an issue" in `~/.coding-crew/lib/tracker/docs/<kind>.md`, `<kind>` being the `tracker=` value `node ~/.coding-crew/lib/tracker/cli.mjs config` prints.
-
-   ```bash
-   node ~/.coding-crew/lib/tracker/cli.mjs mark-done 42
-   ```
+3. Mark it done, once every acceptance criterion below is ticked. Tell your coding agent: run the coding-crew tracker CLI (`scripts/tracker/cli.mjs` inside any coding-crew skill, for example `solve-issue`) with `mark-done 42`. Check: the command exits 0 and prints no `REFUSED` line. Undo: tell your coding agent to follow "Reopen an issue" in the tracker doc `docs/<kind>.md` beside that `cli.mjs`, `<kind>` being the `tracker=` value the CLI's `config` prints.
 
 ### If skipped or done wrong
 

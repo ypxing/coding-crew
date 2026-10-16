@@ -337,41 +337,35 @@ install_single_skill() {
   mkdir -p "$skill_root"
   _WRITTEN=()
 
+  local libs lib libs_arr=()
+  _skill_list "$skill_name" libs '.skills[$s].libs // [] | .[]'
+  libs="$_SKILL_LIST"
+  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && libs_arr+=("$_line"); done <<< "$libs"
+
+  # The committed SKILL.md is already rendered (scripts/render-skill.sh), so every file is copied as is.
   while IFS= read -r -d '' src_file; do
     local rel_path="${src_file#$SCRIPT_DIR/skills/$source_dir/}"
+    # The committed scripts/<lib>/ copy: link_lib puts the link to the installed library there instead.
+    if [[ "$rel_path" == scripts/*/* ]]; then
+      local sub="${rel_path#scripts/}"
+      [[ " ${libs_arr[*]-} " == *" ${sub%%/*} "* ]] && continue
+    fi
     local dest_file="$skill_root/$rel_path"
     local rel_dest="${dest_file#$REPO_ROOT/}"
     mkdir -p "$(dirname "$dest_file")"
 
-    local staged="$src_file" render_tmp=""
-    if [[ "$rel_path" == "SKILL.md" ]]; then
-      render_tmp=$(mktemp)
-      bash "$SCRIPT_DIR/scripts/render-skill.sh" "$skill_name" "$render_tmp" || {
-        rm -f "$render_tmp"; exit 1; }
-      staged="$render_tmp"
-    fi
-
     local status=0
-    check_dest_status "$staged" "$dest_file" || status=$?
-    cp "$staged" "$dest_file"
+    check_dest_status "$src_file" "$dest_file" || status=$?
+    cp "$src_file" "$dest_file"
     _WRITTEN["$dest_file"]=1
-    [[ -n "$render_tmp" ]] && rm -f "$render_tmp"
 
     if [[ $status -eq 0 ]]; then
       echo "  $rel_dest"
     fi
   done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -print0)
 
-  local libs lib libs_arr=()
-  _skill_list "$skill_name" libs '.skills[$s].libs // [] | .[]'
-  libs="$_SKILL_LIST"
-  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && libs_arr+=("$_line"); done <<< "$libs"
   for lib in "${libs_arr[@]+"${libs_arr[@]}"}"; do
     assert_identifier "$lib" "library"
-    if [[ -e "$SCRIPT_DIR/skills/$source_dir/scripts/$lib" ]]; then
-      echo "Error: skills/$source_dir/scripts/$lib exists, but the library $lib is linked there" >&2
-      exit 1
-    fi
     link_lib "$skill_root" "$lib"
   done
   # Whatever this run did not write is a file an earlier version shipped: an agent listing the directory would read it.
