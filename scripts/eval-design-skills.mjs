@@ -99,7 +99,8 @@ function readAt(ref, rel) {
   return execFileSync("git", ["show", `${ref}:${rel}`], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
-// The SKILL.md body as claude receives it, rendered as scripts/render-skill.sh does, from the same ref.
+// The SKILL.md body as claude receives it, from the same ref: a ref from before the committed tree was rendered in
+// place still has `{{FRAGMENT:<key>}}` lines, expanded here as the old installer did.
 function skillText(skill, ref) {
   const rel = `skills/${skill}/SKILL.md`;
   const out = readAt(ref, rel).split("\n").map((line) => {

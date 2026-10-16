@@ -22,7 +22,7 @@ THIS REPO (source)
 │   ├── solve-issue/
 │   ├── domain-modeling/
 │   ├── crew-grill/
-│   ├── _shared/fragments/  ← shared fragments ({{FRAGMENT:<key>}})
+│   ├── _shared/fragments/  ← shared fragments (rendered between <!-- fragment:<key> --> markers)
 │   └── ...
 ├── lib/                    ← libraries the skills share, linked into each skill that uses one
 │   ├── tracker/            ← tracker CLI and backends; docs/{local,github}.md
@@ -45,7 +45,7 @@ install.sh
     │
     ├── read registry.json
     ├── for each requested skill (every skill when none is named):
-    │     ├── install_single_skill() — render skills/<name>/ → <skills dir>/<name>/ ({{FRAGMENT:<key>}} expanded)
+    │     ├── install_single_skill() — copy skills/<name>/ (committed rendered) → <skills dir>/<name>/
     │     ├── link_lib() — <skills dir>/<name>/scripts/<lib> → <root>/.coding-crew/lib/<lib>, per `libs`
     │     ├── install_lib() — lib/<lib>/ → <root>/.coding-crew/lib/<lib>/, once per run, an exact copy
     │     └── install_single_skill(dep) — recurse for each dep
@@ -129,7 +129,7 @@ the last round did not fix is listed under `Needs attention` in the PR body, whi
 ### Security Rules for Contributors
 
 - **Never name a path in `registry.json`.** Skills and libraries are names (`[a-zA-Z0-9_.-]+`); `install.sh` rejects anything else.
-- **Never inline a fragment by hand** — keep the `{{FRAGMENT:<key>}}` line and let `install.sh` expand it. A hand-inlined copy drifts from the source.
+- **Never edit between fragment markers or under a skill's `scripts/<lib>/`** — edit `skills/_shared/fragments/<key>.md` or `lib/<lib>/`, then run `bash scripts/render-skill.sh` and commit what it rewrites. A hand edit there drifts from the source, and `tests/rendered-tree.bats` fails on it.
 
 ---
 

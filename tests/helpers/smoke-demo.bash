@@ -5,6 +5,7 @@
 # worktree and a short-lived pid, so no agent CLI is called (its argv, one per line, goes to
 # $BATS_TEST_TMPDIR/dispatch-argv); its `wait` prints crew-afk's status line for the run,
 # with $WAIT_COST (default ` cost=$1.25 (3 min)`) after the outcome. $GH_OPEN_PR is what `gh pr list` answers.
+# An `npx` stub stands in for `npx skills add` on the --via npx route.
 
 make_smoke_demo() {
   UP="$BATS_TEST_TMPDIR/upstream"
@@ -51,6 +52,17 @@ sleep 0.2 &
 echo "worktree=$wt"
 echo "log=$wt/.solve-feature/run.log"
 echo "pid=$!"
+SH
+  # `npx skills add`: logs its argv and dir, then writes what a single-agent install writes — the skills
+  # dir its -a agent reads and skills-lock.json at the repo root.
+  cat > "$STUB/npx" <<'SH'
+#!/usr/bin/env bash
+echo "npx $* (in $PWD) DISABLE_TELEMETRY=${DISABLE_TELEMETRY:-}" >> "$BATS_TEST_TMPDIR/calls"
+while [ $# -gt 0 ]; do [ "$1" = -a ] && agent=$2; shift; done
+case "$agent" in claude-code) dir=.claude/skills ;; *) dir=.agents/skills ;; esac
+mkdir -p "$dir/crew-afk/scripts" "$dir/solve-feature"
+echo '#!/usr/bin/env bash' > "$dir/crew-afk/scripts/crew-afk.sh"
+echo '{}' > skills-lock.json
 SH
   chmod +x "$STUB"/*
   export PATH="$STUB:$PATH" CREW_DEMO_DIR="$DEMO" CREW_SMOKE_DISPATCH="$STUB/dispatch"

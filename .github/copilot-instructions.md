@@ -50,7 +50,7 @@ There are no installable agents: `./install.sh <platform> <name>` with anything 
 
 1. Reads `registry.json` to determine what to install
 2. Resolves skill `deps` recursively
-3. Renders each skill to its platform dir (e.g. `.claude/skills/<name>/`, `.agents/skills/<name>/` for Codex), expanding `{{FRAGMENT:<key>}}`
+3. Copies each skill, committed already rendered (`scripts/render-skill.sh`), to its platform dir (e.g. `.claude/skills/<name>/`, `.agents/skills/<name>/` for Codex)
 4. Links `<skill-dir>/scripts/<lib>` for each library in the skill's `libs` (relative at project level), and writes each library once to `.coding-crew/lib/<lib>/` (always overwritten)
 5. Writes `.coding-crew/manifest.json`: the platform, skills and libraries, no versions
 

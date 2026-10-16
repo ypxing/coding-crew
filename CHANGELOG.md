@@ -6,6 +6,13 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **skills / install**: the committed `skills/<name>/` is now the installed tree: every SKILL.md carries its
+  fragments expanded between `<!-- fragment:<key> -->` markers and every skill's `scripts/<lib>/` is a committed
+  copy of `lib/<lib>/`, both written by `bash scripts/render-skill.sh` (no arguments; a test fails when they are
+  stale), so `npx skills add` installs working skills. `install.sh`'s installed layout is unchanged. A
+  `ready-for-human` issue's "Mark it done" step now asks your coding agent to run the tracker CLI's `mark-done`
+  instead of naming `.coding-crew/lib`. `scripts/smoke-crew-afk.sh <platform> --via npx` smoke-tests that route,
+  and RESULTS.md gains a `route` column (#537).
 - **solve-feature**: a `fix` re-run after you pushed the branch by hand (its own push failed) no longer adds a false
   "the fixer changed nothing": `fix` compares with the head it first saw that review round, and its stops now say
   pushing before the re-run is fine (#529).

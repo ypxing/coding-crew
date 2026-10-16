@@ -21,7 +21,7 @@ setup() {
   unset $(jq -r '.[].configDirEnv // empty' "$REPO_ROOT/platforms.json" | tr -d '\r')
   make_smoke_demo
   RESULTS="$BATS_TEST_TMPDIR/RESULTS.md"
-  printf '| commit | date | platform | result | cost | findings |\n|---|---|---|---|---|---|\n' > "$RESULTS"
+  printf '| commit | date | platform | route | result | cost | findings |\n|---|---|---|---|---|---|---|\n' > "$RESULTS"
   export CREW_SMOKE_RESULTS="$RESULTS"
 }
 
@@ -35,7 +35,7 @@ setup() {
   grep -qx 'gh pr close 9' "$BATS_TEST_TMPDIR/calls"
   grep -qx 'gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/feature/report-cli' "$BATS_TEST_TMPDIR/calls"
   [ "$(wc -l < "$RESULTS")" -eq 3 ]
-  [[ "$(tail -n 1 "$RESULTS")" =~ ^\|\ [0-9a-f]{12}(-dirty)?\ \|\ [0-9]{4}-[0-9]{2}-[0-9]{2}\ \|\ claude\ \|\ PASS\ \|\ \$1\.25\ \|\ 2\ \|$ ]]
+  [[ "$(tail -n 1 "$RESULTS")" =~ ^\|\ [0-9a-f]{12}(-dirty)?\ \|\ [0-9]{4}-[0-9]{2}-[0-9]{2}\ \|\ claude\ \|\ install\ \|\ PASS\ \|\ \$1\.25\ \|\ 2\ \|$ ]]
 }
 
 @test "each platform in platforms.json dispatches its own headless launch command after --" {
@@ -59,7 +59,7 @@ setup() {
 @test "a wait line with no cost records ? in the cost column" {
   WAIT_COST= run "$SMOKE" claude
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$(tail -n 1 "$RESULTS")" == *"| claude | PASS | ? | 2 |" ]]
+  [[ "$(tail -n 1 "$RESULTS")" == *"| claude | install | PASS | ? | 2 |" ]]
 }
 
 @test "the smoke script reads no cost from run.log and has no wait loop of its own" {
@@ -97,7 +97,7 @@ setup() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"SMOKE: FAIL: "*"needs-attention pr=9"* ]]
   [[ "$output" == *"crew-afk-commit: "* ]]
-  [[ "$(tail -n 1 "$RESULTS")" == *"| claude | FAIL |"* ]]
+  [[ "$(tail -n 1 "$RESULTS")" == *"| claude | install | FAIL |"* ]]
   ! grep -q 'gh pr close 9' "$BATS_TEST_TMPDIR/calls"
 }
 
@@ -139,7 +139,63 @@ setup() {
   ! grep -q '^dispatch ' "$BATS_TEST_TMPDIR/calls"
 }
 
-@test "an unknown platform is a usage error" {
+@test "an unknown platform or route is a usage error" {
   run "$SMOKE" nope
   [ "$status" -eq 2 ]
+  run "$SMOKE" claude --via pip
+  [ "$status" -eq 2 ]
+  run "$SMOKE" claude --via
+  [ "$status" -eq 2 ]
+}
+
+@test "--via install is the default route: install.sh, no npx" {
+  run "$SMOKE" claude --via install
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"SMOKE: PASS (claude, demo)"* ]]
+  ! grep -q '^npx ' "$BATS_TEST_TMPDIR/calls"
+  [ -L "$D/.claude/skills/solve-issue/scripts/tracker" ]
+  [[ "$(tail -n 1 "$RESULTS")" == *"| claude | install | PASS |"* ]]
+}
+
+@test "--via npx installs with npx skills add into the demo repo, keeps it clean and passes unchanged" {
+  run "$SMOKE" claude --via npx
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *$'\nSMOKE: PASS (claude, demo)' ]]
+  grep -qxF "npx -y skills@1.7.2 add $REPO_ROOT -a claude-code -y (in $D) DISABLE_TELEMETRY=1" "$BATS_TEST_TMPDIR/calls"
+  [ ! -e "$D/.coding-crew/manifest.json" ]
+  grep -qxF .claude/skills "$D/.worktreeinclude"
+  local p
+  for p in .claude/skills skills-lock.json .worktreeinclude .scratch/; do
+    grep -qxF "$p" "$D/.git/info/exclude" || { echo "exclude lacks $p"; return 1; }
+  done
+  [ -z "$(git -C "$D" status --porcelain)" ]
+  grep -qxF "dispatch dispatch report-cli --to local -- claude -p /solve-feature report-cli --output-format json --dangerously-skip-permissions (in $D)" "$BATS_TEST_TMPDIR/calls"
+  [[ "$(tail -n 1 "$RESULTS")" == *"| claude | npx | PASS |"* ]]
+}
+
+@test "--via npx passes each platform its npx skills agent id and excludes the dir that agent reads" {
+  local p agent dir
+  for p in $(jq -r 'keys[]' "$REPO_ROOT/platforms.json" | tr -d '\r'); do
+    case "$p" in
+      claude) agent=claude-code dir=.claude/skills ;;
+      copilot) agent=github-copilot dir=.agents/skills ;;
+      codex) agent=codex dir=.agents/skills ;;
+      pi) agent=pi dir=.agents/skills ;;
+      *) echo "no expected agent id for $p"; return 1 ;;
+    esac
+    run "$SMOKE" "$p" --via npx
+    [ "$status" -eq 0 ] || { echo "$p: $output"; return 1; }
+    grep -qF "npx -y skills@1.7.2 add $REPO_ROOT -a $agent -y (in $TMPDIR/crew-smoke-$p)" "$BATS_TEST_TMPDIR/calls" || { echo "$p"; cat "$BATS_TEST_TMPDIR/calls"; return 1; }
+    grep -qxF "$dir" "$TMPDIR/crew-smoke-$p/.git/info/exclude" || { echo "$p: exclude lacks $dir"; return 1; }
+    [[ "$output" == *"SMOKE: PASS ($p, demo)"* ]]
+  done
+}
+
+@test "--via npx fails before any dispatch when a user-level copy would shadow the project install" {
+  mkdir -p "$HOME/.claude/skills/solve-issue"
+  echo stale > "$HOME/.claude/skills/solve-issue/SKILL.md"
+  run "$SMOKE" claude --via npx
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"SMOKE: FAIL: user-level skills shadow the project install"*"$HOME/.claude/skills/solve-issue"* ]]
+  ! grep -q '^dispatch ' "$BATS_TEST_TMPDIR/calls"
 }
