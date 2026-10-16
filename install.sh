@@ -33,7 +33,7 @@ usage() {
   echo "              install that's missing from this list is uninstalled"
   echo "  --project:  install into a repo (<path>, else the current repo) instead of \$HOME;"
   echo "              TARGET_REPO=<path> does the same"
-  echo "  --update:   uninstall every skill and library the manifest lists, then install"
+  echo "  --update:   uninstall every skill the manifest lists, then install"
   echo "              those skills again from this checkout, for the same platform"
   echo ""
   echo "Examples:"
@@ -116,9 +116,7 @@ fi
 
 INSTALLED=""
 MANIFEST_SKILLS=()
-MANIFEST_LIBS=()
 MANIFEST_PLATFORMS=()
-LIB_DEST=".coding-crew/lib"
 
 _required_cmds=("jq" "git")
 for cmd in "${_required_cmds[@]}"; do
@@ -229,8 +227,7 @@ check_dest_status() {
 declare -A _WRITTEN
 
 # Make an installed tree an exact copy of what this run wrote into it. Prune after copy, never
-# wipe-then-copy: a run during an install still finds every file the new version ships. A library
-# link is a file to find (it is not followed), so a written one stays and a stale one goes.
+# wipe-then-copy: a run during an install still finds every file the new version ships.
 prune_unwritten() {
   local root="$1" f
   while IFS= read -r -d '' f; do
@@ -239,60 +236,6 @@ prune_unwritten() {
     echo "  ${f#"$REPO_ROOT/"} (removed)"
   done < <(find "$root" -mindepth 1 ! -type d -print0)
   find "$root" -mindepth 1 -depth -type d -empty -delete
-}
-
-# A library is installed once per run to <root>/.coding-crew/lib/<name>, an exact copy of lib/<name>,
-# and reached from each skill that uses it through a link (link_lib).
-install_lib() {
-  local name="$1" src lib_file rel_path dest_file status
-  if [[ "$INSTALLED" == *"|lib:$name|"* ]]; then return 0; fi
-  INSTALLED="${INSTALLED}|lib:$name|"
-  assert_identifier "$name" "library"
-  src="$SCRIPT_DIR/lib/$name"
-  [[ -d "$src" ]] || { echo "Error: library source not found: lib/$name" >&2; exit 1; }
-  _WRITTEN=()
-  while IFS= read -r -d '' lib_file; do
-    rel_path="${lib_file#$src/}"
-    dest_file="$REPO_ROOT/$LIB_DEST/$name/$rel_path"
-    mkdir -p "$(dirname "$dest_file")"
-    status=0
-    check_dest_status "$lib_file" "$dest_file" || status=$?
-    cp "$lib_file" "$dest_file"
-    # *.sh, and every file under a shim/ directory: a PATH shim has the name of the command it
-    # stands in for (`docker`), so there is no extension to go by.
-    [[ "$rel_path" == *.sh || "$rel_path" == shim/* || "$rel_path" == */shim/* ]] && chmod +x "$dest_file"
-    _WRITTEN["$dest_file"]=1
-    if [[ $status -eq 0 ]]; then echo "  $LIB_DEST/$name/$rel_path"; fi
-  done < <(find "$src" -type f -print0)
-  prune_unwritten "$REPO_ROOT/$LIB_DEST/$name"
-  MANIFEST_LIBS+=("$name")
-}
-
-# link_lib <skill-root> <name> — <skill-root>/scripts/<name> → the installed library. Relative at
-# project level, so a committed skills dir and .coding-crew/ survive a clone to another path.
-link_lib() {
-  local skill_root="$1" name="$2" link target rel up=""
-  link="$skill_root/scripts/$name"
-  if [[ "$REPO_ROOT" == "$HOME" ]]; then
-    target="$REPO_ROOT/$LIB_DEST/$name"
-  else
-    rel="${skill_root#"$REPO_ROOT"/}/scripts"
-    while [[ -n "$rel" ]]; do
-      up="../$up"
-      if [[ "$rel" == */* ]]; then rel="${rel#*/}"; else rel=""; fi
-    done
-    target="$up$LIB_DEST/$name"
-  fi
-  mkdir -p "$skill_root/scripts"
-  if [[ -L "$link" && "$(readlink "$link")" == "$target" ]]; then
-    _WRITTEN["$link"]=1
-    return 0
-  fi
-  # A real directory there would take the link inside it.
-  [[ -L "$link" || ! -e "$link" ]] || rm -rf "$link"
-  ln -sfn "$target" "$link"
-  _WRITTEN["$link"]=1
-  echo "  ${link#"$REPO_ROOT/"} -> $target"
 }
 
 install_single_skill() {
@@ -335,21 +278,13 @@ install_single_skill() {
   # Remove a stale symlink before mkdir -p; mkdir would succeed but cp into it would fail
   [[ -L "$skill_root" ]] && rm -f "$skill_root"
   mkdir -p "$skill_root"
+  # An older install linked scripts/<lib> into .coding-crew/lib: cp would write through the link.
+  find "$skill_root" -mindepth 1 -type l -delete
   _WRITTEN=()
 
-  local libs lib libs_arr=()
-  _skill_list "$skill_name" libs '.skills[$s].libs // [] | .[]'
-  libs="$_SKILL_LIST"
-  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && libs_arr+=("$_line"); done <<< "$libs"
-
-  # The committed SKILL.md is already rendered (scripts/render-skill.sh), so every file is copied as is.
+  # The committed tree is the installed tree: every file is copied as is, its libraries included.
   while IFS= read -r -d '' src_file; do
     local rel_path="${src_file#$SCRIPT_DIR/skills/$source_dir/}"
-    # The committed scripts/<lib>/ copy: link_lib puts the link to the installed library there instead.
-    if [[ "$rel_path" == scripts/*/* ]]; then
-      local sub="${rel_path#scripts/}"
-      [[ " ${libs_arr[*]-} " == *" ${sub%%/*} "* ]] && continue
-    fi
     local dest_file="$skill_root/$rel_path"
     local rel_dest="${dest_file#$REPO_ROOT/}"
     mkdir -p "$(dirname "$dest_file")"
@@ -364,17 +299,9 @@ install_single_skill() {
     fi
   done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -print0)
 
-  for lib in "${libs_arr[@]+"${libs_arr[@]}"}"; do
-    assert_identifier "$lib" "library"
-    link_lib "$skill_root" "$lib"
-  done
   # Whatever this run did not write is a file an earlier version shipped: an agent listing the directory would read it.
   prune_unwritten "$skill_root"
   MANIFEST_SKILLS+=("$skill_name")
-
-  for lib in "${libs_arr[@]+"${libs_arr[@]}"}"; do
-    install_lib "$lib"
-  done
 
   local deps
   _skill_list "$skill_name" deps '.skills[$s].deps // [] | .[]'
@@ -429,6 +356,14 @@ migrate_legacy_tracker_doc() {
   rmdir "$REPO_ROOT/.coding-crew/docs/templates" "$REPO_ROOT/.coding-crew/docs" 2>/dev/null || true
 }
 
+# .coding-crew/lib held the libraries every skill linked to; only install.sh ever wrote it, and each
+# skill now carries its own copy, so it is removed wherever it is found.
+remove_legacy_lib() {
+  [[ -e "$REPO_ROOT/.coding-crew/lib" || -L "$REPO_ROOT/.coding-crew/lib" ]] || return 0
+  rm -rf "${REPO_ROOT:?}/.coding-crew/lib"
+  echo "  .coding-crew/lib/ (removed: each skill carries its own scripts/<lib>)"
+}
+
 migrate_legacy_docs() {
   if [[ -f "$REPO_ROOT/.coding-crew/docs/issue-tracker.md" || -d "$REPO_ROOT/.coding-crew/docs/templates/trackers" ]]; then
     echo "Docs:"
@@ -466,8 +401,8 @@ warn_shadowing_user_installs() {
 
 MANIFEST="$REPO_ROOT/.coding-crew/manifest.json"
 
-# manifest_list <file> <key> — the names under .skills or .libs, one per line. An install made before
-# libraries keyed skills by name with a version each; both forms read the same.
+# manifest_list <file> <key> — the names under .skills, one per line. An older install keyed skills by
+# name with a version each; both forms read the same.
 manifest_list() {
   jq -r --arg k "$2" '.[$k] // [] | if type == "object" then keys[] else .[] end' "$1"
 }
@@ -478,20 +413,18 @@ manifest_platforms() {
   jq -r '.platforms // [.platform // empty] | .[]' "$1"
 }
 
-# The manifest records the platforms, the skills and the libraries installed, merged with what an
-# earlier install recorded: every platform installs into one root, so --update must reinstall each.
+# The manifest records the platforms and the skills installed, merged with what an earlier install
+# recorded: every platform installs into one root, so --update must reinstall each.
 # No versions: --update reinstalls everything it lists.
 write_manifest() {
   mkdir -p "$(dirname "$MANIFEST")"
 
-  local source_sha source_remote skills libs platforms
+  local source_sha source_remote skills platforms
   source_sha=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")
   source_remote=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo "local")
 
   skills=$( { printf '%s\n' "${MANIFEST_SKILLS[@]+"${MANIFEST_SKILLS[@]}"}"
               [[ ! -f "$MANIFEST" ]] || manifest_list "$MANIFEST" skills; } | tr -d '\r' | grep -v '^$' | LC_ALL=C sort -u || true)
-  libs=$( { printf '%s\n' "${MANIFEST_LIBS[@]+"${MANIFEST_LIBS[@]}"}"
-            [[ ! -f "$MANIFEST" ]] || manifest_list "$MANIFEST" libs; } | tr -d '\r' | grep -v '^$' | LC_ALL=C sort -u || true)
   # --update sets MANIFEST_PLATFORMS: its uninstall may have removed the manifest it read them from.
   platforms=$( { printf '%s\n' "${MANIFEST_PLATFORMS[@]:-$PLATFORM}"
                  [[ ! -f "$MANIFEST" ]] || manifest_platforms "$MANIFEST"; } | tr -d '\r' | grep -v '^$' | LC_ALL=C sort -u || true)
@@ -504,21 +437,18 @@ write_manifest() {
     --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
     --arg platforms "$platforms" \
     --arg skills "$skills" \
-    --arg libs "$libs" \
     '{
       source: $remote,
       source_sha: $sha,
       installed_at: $ts,
       platforms: ($platforms | split("\n") | map(select(. != ""))),
-      skills: ($skills | split("\n") | map(select(. != ""))),
-      libs: ($libs | split("\n") | map(select(. != "")))
+      skills: ($skills | split("\n") | map(select(. != "")))
     }' > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
 
   echo "  .coding-crew/manifest.json"
 }
 
-# uninstall.sh is the single remover of skills and libraries: it drops each from the manifest, and
-# a library no remaining skill uses.
+# uninstall.sh is the single remover of skills: it drops each from the manifest.
 uninstall_skills() {
   local list="$1"
   [[ -n "$list" ]] || return 0
@@ -526,7 +456,7 @@ uninstall_skills() {
 }
 
 # --skills a,b,c declares the full skill set: a skill a prior install recorded and this list leaves
-# out is uninstalled first, so the libraries the list needs are installed after any it removed.
+# out is uninstalled first.
 prune_skills_not_in() {
   local requested="$1" name prune=""
   [[ -f "$MANIFEST" ]] || return 0
@@ -540,7 +470,7 @@ prune_skills_not_in() {
   uninstall_skills "$prune"
 }
 
-# --update: uninstall every skill and library the manifest lists, then install the listed skills the
+# --update: uninstall every skill the manifest lists, then install the listed skills the
 # registry still has, for each of the manifest's platforms. A skill the registry dropped stays uninstalled.
 run_update() {
   if [[ ! -f "$MANIFEST" ]]; then
@@ -584,6 +514,7 @@ run_update() {
 echo "Target: $REPO_ROOT"
 
 if [[ "$UPDATE_MODE" == "true" ]]; then
+  remove_legacy_lib
   run_update
   migrate_legacy_docs
   if [[ "${#MANIFEST_SKILLS[@]}" -gt 0 ]]; then
@@ -594,6 +525,7 @@ if [[ "$UPDATE_MODE" == "true" ]]; then
 fi
 
 echo "Platform: $PLATFORM"
+remove_legacy_lib
 
 case "$SKILL_MODE" in
   skills)
