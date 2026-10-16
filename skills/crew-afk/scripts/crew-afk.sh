@@ -6,8 +6,9 @@
 #   status [<slug>]
 #       one line per worktree crew-afk dispatched to: the run's outcome line, or why there is none
 #   wait <slug>
-#       blocks until the slug's latest run has ended (an outcome written, or a local process gone), then prints what
-#       status prints for it
+#       blocks until the slug's latest run has ended, then prints what status prints for it: a run with a run.pid
+#       (local) once its process is gone, so the line carries the cost claude prints last; one without, once the
+#       outcome is written
 # A destination is scripts/destinations/<name>.sh: MODE=headless|interactive, the agent's mode there; `prepare
 # <slug> <base-branch>` prints the worktree path; `launch <slug> <worktree> <argv…>` starts the run there, and a
 # headless one writes its pid to <worktree>/.solve-feature/run.pid. Exit: 0 ok; 1 a stop; 2 a usage error.
@@ -115,10 +116,20 @@ dispatch() {
   [ -z "$SESSION" ] || echo "session=$SESSION"
 }
 
+# cost <logs-dir> — ` cost=$<n.nn> (<m> min)` from the claude JSON result that ends a local run's log, or nothing
+cost() {
+  local last usd ms
+  last=$(grep '^{' "$1/run.log" 2>/dev/null | tail -n 1) || return 0
+  usd=$(sed -n 's/.*"total_cost_usd":\([0-9.eE+-]*\).*/\1/p' <<<"$last")
+  [ -n "$usd" ] || return 0
+  ms=$(sed -n 's/.*"duration_ms":\([0-9]*\).*/\1/p' <<<"$last")
+  awk -v usd="$usd" -v ms="$ms" 'BEGIN { printf " cost=$%.2f", usd; if (ms != "") printf " (%d min)", (ms + 30000) / 60000 }'
+}
+
 # report <worktree> <slug> — what status prints for one worktree's run: its outcome line, or why there is none
 report() {
   local wt="$1" slug="$2" logs="$1/.solve-feature" pid branch
-  if [ -s "$logs/outcome" ]; then echo "$slug: $(head -n 1 "$logs/outcome")"
+  if [ -s "$logs/outcome" ]; then echo "$slug: $(head -n 1 "$logs/outcome")$(cost "$logs")"
   elif pid=$(live_pid "$logs"); then echo "$slug: running (pid $pid)"
   elif [ ! -f "$logs/run.pid" ]; then echo "$slug: no outcome yet — $(cat "$logs/run.dest") run, see its terminal"
   else
@@ -157,9 +168,11 @@ wait_for() {
   done < <(worktrees)
   [ -n "$run" ] || { echo "no crew-afk run for $slug"; return; }
   # report reads the outcome and run.pid as status does: keep asking until the run is neither live nor waiting
-  # on a terminal.
+  # on a terminal. solve-feature writes its outcome before claude prints the result with the cost, so a live
+  # process keeps the wait going past the outcome.
   while out=$(report "$run" "$slug"); do
-    case "$out" in *": running (pid "* | *": no outcome yet — "*) sleep "${CREW_AFK_WAIT_INTERVAL:-5}" ;; *) break ;; esac
+    case "$out" in *": running (pid "* | *": no outcome yet — "*) ;; *) live_pid "$run/.solve-feature" >/dev/null || break ;; esac
+    sleep "${CREW_AFK_WAIT_INTERVAL:-5}"
   done
   echo "$out"
 }

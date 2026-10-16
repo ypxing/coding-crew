@@ -35,7 +35,7 @@ setup() {
 printf '%s\n' "$@" > "$T/claude-argv"
 pwd > "$T/claude-cwd"
 for _ in $(seq 1 100); do [ -f "$T/release" ] && break; sleep 0.1; done
-echo '{"type":"result","subtype":"success","total_cost_usd":1.5,"session_id":"x"}'
+echo '{"type":"result","subtype":"success","total_cost_usd":1.734,"duration_ms":1380000,"session_id":"x"}'
 SH
   cat > "$STUB/timeout" <<'SH'
 #!/usr/bin/env bash
@@ -201,8 +201,38 @@ SH
   sleep 0.5
   kill -0 "$waiter"
   echo 'ready pr=7' > "$WT/.solve-feature/outcome"
+  touch "$T/release"
   wait "$waiter"
-  [ "$(cat "$T/wait-out")" = "report-cli: ready pr=7" ]
+  [ "$(cat "$T/wait-out")" = 'report-cli: ready pr=7 cost=$1.73 (23 min)' ]
+}
+
+@test "wait on a local run keeps blocking after the outcome until the run's process is gone, then prints its cost" {
+  export CREW_AFK_WAIT_INTERVAL=0.1
+  bash "$SCRIPT" dispatch report-cli >/dev/null
+  echo 'ready pr=7' > "$WT/.solve-feature/outcome"
+  bash "$SCRIPT" wait report-cli >"$T/wait-out" &
+  waiter=$!
+  sleep 0.5
+  kill -0 "$waiter"
+  [ ! -s "$T/wait-out" ]
+  touch "$T/release"
+  wait "$waiter"
+  [ "$(cat "$T/wait-out")" = 'report-cli: ready pr=7 cost=$1.73 (23 min)' ]
+}
+
+@test "status adds the cost and minutes from the claude result that ends run.log, and only when there is one" {
+  bash "$SCRIPT" dispatch report-cli >/dev/null
+  wait_run "$WT"
+  echo 'ready pr=7' > "$WT/.solve-feature/outcome"
+  printf 'x\n{"type":"result","total_cost_usd":1.734,"duration_ms":1380000}\n' > "$WT/.solve-feature/run.log"
+  run bash "$SCRIPT" status report-cli
+  [ "$output" = 'report-cli: ready pr=7 cost=$1.73 (23 min)' ]
+  printf 'claude: error\n' > "$WT/.solve-feature/run.log"
+  run bash "$SCRIPT" status report-cli
+  [ "$output" = 'report-cli: ready pr=7' ]
+  rm "$WT/.solve-feature/run.log"
+  run bash "$SCRIPT" status report-cli
+  [ "$output" = 'report-cli: ready pr=7' ]
 }
 
 @test "wait on a local run that ends without an outcome prints status's ended line and resume line" {
@@ -239,9 +269,10 @@ SH
   sleep 0.5
   kill -0 "$waiter"
   echo 'ready pr=7' > "$WT/.solve-feature/outcome"
+  touch "$T/release"
   for _ in $(seq 1 30); do kill -0 "$waiter" 2>/dev/null || break; sleep 0.1; done
   ! kill -0 "$waiter" 2>/dev/null || { kill "$waiter"; echo "wait did not return"; return 1; }
-  [ "$(cat "$T/wait-out")" = "report-cli: ready pr=7" ]
+  [ "$(cat "$T/wait-out")" = 'report-cli: ready pr=7 cost=$1.73 (23 min)' ]
 }
 
 @test "wait with no run for the slug exits at once with status's line; a missing slug is a usage error" {
