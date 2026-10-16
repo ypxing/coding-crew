@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **solve-feature / docs**: the PR body solve-feature writes opens, right under its begin marker, with a visible
+  line saying solve-feature wrote the PR and naming the feature slug, so a reviewer never reads agent prose as a
+  person's words (#521).
 - **setup-coding-crew / docs**: the solve-feature Actions workflow, once the session ends, starts the PR's CI by
   `workflow_dispatch` on its branch, for every workflow that has both `pull_request` and `workflow_dispatch`, so a
   bot-made PR's CI runs without someone approving it; add `workflow_dispatch:` to a PR workflow to opt it in. This
