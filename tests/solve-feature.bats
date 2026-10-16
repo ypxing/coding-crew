@@ -1030,7 +1030,7 @@ yaml_to_json() {
   fi
 }
 
-@test "setup-coding-crew's hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, four write permissions, a slug concurrency group, the skill launched by the agent, the logs kept, then a step reading the outcome" {
+@test "setup-coding-crew's hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, five write permissions (actions: write so it can dispatch PR CI), a slug concurrency group, the skill launched by the agent, the logs kept, then a step reading the outcome" {
   local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
   run yaml_to_json "$wf" "$json"
   [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
@@ -1040,7 +1040,7 @@ yaml_to_json() {
   [ "$(jq -c "$on.issues.types" "$json")" = '["labeled"]' ]
   [ "$(jq -r "$on.workflow_dispatch.inputs.slug.required" "$json")" = true ]
   grep -q '^ *# *schedule:' "$wf"
-  [ "$(jq -r '.permissions | "\(.contents) \(.issues) \(.["pull-requests"]) \(.["copilot-requests"])"' "$json")" = "write write write write" ]
+  [ "$(jq -r '.permissions | "\(.contents) \(.issues) \(.["pull-requests"]) \(.["copilot-requests"]) \(.actions)"' "$json")" = "write write write write write" ]
   jq -e '[.jobs[].if // empty] | any(test("github.event.label.name == .solve-feature."))' "$json" >/dev/null
   # The group holds the slug, so it is on the job that has it: a workflow-level group would only see the issue number.
   local conc; conc="$(jq -c '[.concurrency // empty, (.jobs[] | .concurrency // empty)]' "$json")"
@@ -1151,4 +1151,50 @@ SH
   [ "$status" -eq 0 ]
   [[ "$output" == *"ready pr=10"* ]]
   ! grep -q 'FAIL: test_x' "$GITHUB_STEP_SUMMARY" || false
+}
+
+@test "setup-coding-crew's hosts/github-actions.yml: after the run, the PR's branch gets a workflow_dispatch of every other workflow that has both pull_request and workflow_dispatch, warning on a failed one" {
+  command -v yq >/dev/null || skip "no yq on this machine"
+  local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
+  run yaml_to_json "$wf" "$json"
+  [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
+  [ "$status" -eq 0 ]
+  local i; i="$(jq '.jobs.solve.steps | map(.name) | index("Run solve-feature")' "$json")"
+  [ "$(jq -r ".jobs.solve.steps[$i + 1].if" "$json")" = "always()" ]
+  jq -r ".jobs.solve.steps[$i + 1].run" "$json" > "$TEMP_DIR/ci-step.sh"
+  grep -q 'gh workflow run' "$TEMP_DIR/ci-step.sh"
+
+  cat > "$STUB/gh" <<'SH'
+#!/usr/bin/env bash
+echo "gh $*" >> "$STATE/gh.log"
+case "$1 $2" in
+  "pr view") echo "feature/$3" ;;
+  "workflow run") [ -z "$GH_WF_FAIL" ] || { echo "HTTP 403" >&2; exit 1; } ;;
+esac
+SH
+  chmod +x "$STUB/gh"
+  mkdir -p .github/workflows .solve-feature
+  printf 'on:\n  push:\n  pull_request:\n  workflow_dispatch:\n' > .github/workflows/ci.yml
+  printf 'on: [pull_request]\n' > .github/workflows/lint.yml
+  printf 'on:\n  issues:\n  pull_request:\n  workflow_dispatch:\n' > .github/workflows/solve-feature.yml
+
+  for line in 'ready pr=12' 'needs-attention pr=12'; do
+    echo "$line" > .solve-feature/outcome
+    rm -f "$STATE/gh.log"
+    run bash -e "$TEMP_DIR/ci-step.sh"
+    [ "$status" -eq 0 ]
+    [ "$(grep 'workflow run' "$STATE/gh.log")" = "gh workflow run ci.yml --ref feature/12" ]
+  done
+
+  GH_WF_FAIL=1 run bash -e "$TEMP_DIR/ci-step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::warning::"*"ci.yml"* ]]
+
+  for line in 'stopped: 2 checks failed: x' ''; do
+    rm -f "$STATE/gh.log" .solve-feature/outcome
+    [ -z "$line" ] || echo "$line" > .solve-feature/outcome
+    run bash -e "$TEMP_DIR/ci-step.sh"
+    [ "$status" -eq 0 ]
+    ! grep -q 'workflow run' "$STATE/gh.log" 2>/dev/null || false
+  done
 }

@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **setup-coding-crew / docs**: the solve-feature Actions workflow, once the session ends, starts the PR's CI by
+  `workflow_dispatch` on its branch, for every workflow that has both `pull_request` and `workflow_dispatch`, so a
+  bot-made PR's CI runs without someone approving it; add `workflow_dispatch:` to a PR workflow to opt it in. This
+  repo's `ci.yml` does (#523).
 - **crew-afk / docs**: `crew-afk status` and `wait` end a finished local claude run's outcome line with its cost
   and duration (`ready pr=7 cost=$1.73 (23 min)`), and `wait` on a local run returns once the run's process is
   gone, not at the outcome. The release smoke takes its RESULTS cost from that line. `docs/guide.md`'s "What a

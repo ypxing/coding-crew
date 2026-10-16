@@ -15,9 +15,12 @@ name: solve-feature
 # flight rather than start a second one on the same branch.
 #
 # The agent runs the solve-feature skill, which runs each coder, the reviewer, the fixer and the
-# PR's writer as its own subagents. The review runs inside the same job, from the skill: a PR opened or marked ready
-# with the workflow's own GITHUB_TOKEN triggers no other workflow, so a `pull_request` job would never
-# fire. The session's exit code does not carry a stop, so the last step reads the run's one-line
+# PR's writer as its own subagents. The review runs inside the same job, from the skill. The PR is the
+# workflow's own GITHUB_TOKEN's, so its `pull_request` runs wait for someone to approve them, after every push;
+# that token may start `workflow_dispatch` (hence `actions: write`), so after the session the job dispatches, on
+# the PR's branch, every workflow in .github/workflows/ that has both triggers (add `workflow_dispatch:` to a PR
+# workflow to opt it in).
+# The session's exit code does not carry a stop, so the last step reads the run's one-line
 # .solve-feature/outcome and fails the job on anything but `ready pr=<n>`: `needs-attention pr=<n>`,
 # `stopped: <what> failed: <reason>`, or no file at all (the session ended before the run finished). The step before it
 # uploads .solve-feature/ (the checks logs a stop names, the coder's report) as the run's artifact. A stop at an
@@ -61,6 +64,7 @@ permissions:
   issues: write
   pull-requests: write
   copilot-requests: write
+  actions: write
 
 jobs:
   # The slug is a job of its own because a concurrency group can only read a job's outputs, never
@@ -182,6 +186,30 @@ jobs:
                       else empty end
                   ) catch empty' ;;
           esac
+
+      # Once, after the session, so CI tests the PR's final head, the fixer's commits included.
+      - name: Start the PR's CI
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr=$(sed -n 's/.*pr=\([0-9][0-9]*\).*/\1/p' .solve-feature/outcome 2>/dev/null || true)
+          [ -n "$pr" ] || { echo "No PR in .solve-feature/outcome: no CI to start."; exit 0; }
+          branch=$(gh pr view "$pr" --json headRefName --jq .headRefName) ||
+            { echo "::warning::could not read PR #$pr's branch: its CI waits for approval"; exit 0; }
+          for wf in .github/workflows/*.yml .github/workflows/*.yaml; do
+            name=${wf##*/}
+            [ -f "$wf" ] && [ "$name" != solve-feature.yml ] || continue
+            # `on:` is a map, a list or one event name.
+            events=$(yq '.on | ([select(tag == "!!map") | keys | .[]] + [select(tag == "!!seq") | .[]]
+              + [select(tag == "!!str")]) | .[]' "$wf" 2>/dev/null || true)
+            grep -qx pull_request <<<"$events" && grep -qx workflow_dispatch <<<"$events" || continue
+            if gh workflow run "$name" --ref "$branch"; then
+              echo "Started $name on $branch (PR #$pr)."
+            else
+              echo "::warning::could not dispatch $name on $branch: PR #$pr's run of it waits for approval"
+            fi
+          done
 
       - name: Keep the run's logs
         if: always()
