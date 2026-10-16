@@ -354,6 +354,22 @@ main_moves() {
   [ "$(git rev-parse --abbrev-ref '@{u}')" = origin/feature/feat ]
 }
 
+@test "start's push of a new branch, and its push after merging the default branch, quote git's reason" {
+  refuse_pushes
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [ "$(cat .solve-feature/outcome)" = "stopped: start failed: cannot push feature/feat: pre-receive hook declined" ]
+  rm "$TEMP_DIR/origin.git/hooks/pre-receive"
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ]
+  main_moves other.txt x
+  git checkout -q feature/feat
+  refuse_pushes
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [ "$(cat .solve-feature/outcome)" = "stopped: start failed: cannot push feature/feat after merging origin/main into it: pre-receive hook declined" ]
+}
+
 @test "start --branch naming the default branch exits 1 naming it" {
   git checkout -q -b topic
   run bash "$SCRIPT" start feat --branch main
@@ -564,6 +580,13 @@ handed_back() {
   stops_at checks "run-checks.sh exit 1; reopen 2 failed (see above): once fixed and committed, run land feat 2 feature/feat before a re-run"
 }
 
+@test "a checks stop whose push is refused quotes git's reason" {
+  land_ready
+  refuse_pushes
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  stops_at checks "run-checks.sh exit 1; 2 is ready again but git push failed: pre-receive hook declined; once it can push, fix the cause, then re-run"
+}
+
 # --- land: push and PR -----------------------------------------------------------------
 
 @test "the first land pushes and creates the draft PR with a one-line body; a later land edits nothing and no land comments" {
@@ -641,14 +664,38 @@ EOF
   ! grep -nE 'KIND|github|\.scratch|"\$CLI" config|\$REF" =~' "$SCRIPT" || false
 }
 
-@test "a rejected push stops land naming the land to re-run, since a plain re-run would skip the closed issue" {
+# refuse_pushes — origin's pre-receive hook declines every push, so git prints ` ! [remote rejected] … (pre-receive hook declined)`.
+refuse_pushes() { printf '#!/bin/sh\nexit 1\n' > "$TEMP_DIR/origin.git/hooks/pre-receive" && chmod +x "$TEMP_DIR/origin.git/hooks/pre-receive"; }
+
+@test "a refused land push reopens the issue, quotes git's reason and sends the user to re-run where git can push, not to land" {
   land_ready
-  printf '#!/bin/sh\nexit 1\n' > "$TEMP_DIR/origin.git/hooks/pre-receive" && chmod +x "$TEMP_DIR/origin.git/hooks/pre-receive"
+  refuse_pushes
   run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
-  [[ "$output" == *"solve-feature: 2 push failed: git push failed; once it can push, run land feat 2 feature/feat before a re-run"* ]]
-  [ ! -f "$STATE/pr-created" ]
-  grep -q 'run land feat 2 feature/feat' .solve-feature/outcome
+  stops_at push "git push failed: pre-receive hook declined; 2 is ready again: re-run where git can push (a re-run in this checkout starts from its unpushed commits)"
+  [[ "$output" != *"run land"* ]]
+  ! grep -q 'run land' .solve-feature/outcome || false
+  [ "$(node "$INSTALL/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
+  # git's own stderr still reaches the terminal.
+  [[ "$output" == *"! [remote rejected] feature/feat -> feature/feat (pre-receive hook declined)"* ]]
+}
+
+@test "with a file tracker, a refused land push commits the reopen's file move on the branch, unpushed, after the coder's commit" {
+  land_ready
+  local coded; coded=$(git rev-parse HEAD)
+  refuse_pushes
+  REOPEN_TOUCHES="$WORK/issue-state.md" run bash "$SCRIPT" land feat 2 feature/feat
+  stops_at push "git push failed: pre-receive hook declined; 2 is ready again"
+  [ "$(git log -1 --format=%s)" = "Reopen 2: its push failed" ]
+  [ "$(git show --name-only --format= HEAD)" = issue-state.md ]
+  [ "$(git rev-parse HEAD~1)" = "$coded" ]
+  [ -z "$(git status --porcelain)" ]
+}
+
+@test "a refused land push whose reopen fails names both failures and says to reopen the ref by hand before a re-run" {
+  land_ready
+  refuse_pushes
+  REOPEN_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  stops_at push "git push failed: pre-receive hook declined; reopen 2 failed (see above): reopen 2 by hand, then re-run where git can push"
 }
 
 @test "land with the checks library missing exits 1 naming it, before the checks" {
@@ -741,12 +788,34 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   [ "$(cat "$STATE/checks.status")" = 'A  fixed.txt' ]
 }
 
-@test "a rejected push stops fix naming the recovery" {
+@test "a rejected push stops fix quoting git's reason and naming the recovery" {
   fix_ready
   TIP=$(git rev-parse HEAD)
-  printf '#!/bin/sh\nexit 1\n' > "$TEMP_DIR/origin.git/hooks/pre-receive" && chmod +x "$TEMP_DIR/origin.git/hooks/pre-receive"
+  refuse_pushes
   run bash "$SCRIPT" fix feat 10 feature/feat
-  fix_stops "git push failed; once it can push, run fix feat 10 feature/feat, then describe feat 10"
+  fix_stops "git push failed: pre-receive hook declined; once it can push, run fix feat 10 feature/feat, then describe feat 10"
+}
+
+# push_says <stderr> — a git whose push prints <stderr> and fails; every other git command is the real one.
+push_says() {
+  local real; real=$(command -v git)
+  printf '#!/usr/bin/env bash\nif [ "$1" = push ]; then printf "%%s\\n" "$PUSH_SAYS" >&2; exit 1; fi\nexec "%s" "$@"\n' "$real" > "$STUB/git"
+  chmod +x "$STUB/git"
+  export PUSH_SAYS="$1"
+}
+
+@test "a push stop quotes the ! [rejected] line's reason, else git's last fatal:/error: line, else its last non-empty line" {
+  fix_ready
+  TIP=$(git rev-parse HEAD)
+  push_says "$(printf 'To github.com:o/r.git\n ! [rejected]        feature/feat -> feature/feat (fetch first)\nerror: failed to push some refs\nhint: pull first')"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  fix_stops "git push failed: fetch first; once it can push"
+  push_says "$(printf "fatal: unable to access 'x': Could not resolve host\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n")"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  fix_stops "git push failed: fatal: Could not read from remote repository.; once it can push"
+  push_says "$(printf 'something odd\nthe last word\n\n')"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  fix_stops "git push failed: the last word; once it can push"
 }
 
 @test "a fixer that changed nothing fixed nothing: the findings need attention" {
