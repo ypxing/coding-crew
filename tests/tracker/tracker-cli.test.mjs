@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -374,51 +374,13 @@ test("the CLI finds the main root from a linked worktree's cwd", () => {
   assert.equal(r.stdout, "the prd\n");
 });
 
-test("github.mjs's create-issue and link-blockers stay reachable through the CLI; create-issue files under the root", async () => {
+test("create-issue, feature-issues and link-blockers on a github repo are unknown ops, and the op list names no backend op", async () => {
   const dir = root({ github: true });
-  writeFileSync(join(dir, "body.md"), "body\n");
-  const exec = fakeGithub(ghFeature("feat", ghIssue(8)));
-  const r = await cli(dir, ["create-issue", "--title", "T", "--body-file", join(dir, "body.md"), "--feature-slug", "feat", "--label", "ready-for-agent"], exec);
-  assert.equal(r.code, 0, r.stderr);
-  assert.equal(r.stdout, "https://github.com/o/r/issues/9\n");
-  const create = exec.calls.find((c) => c[2] === "create");
-  assert.equal(create[create.indexOf("--parent") + 1], "8");
-  assert.equal(exec.issues.find((i) => i.number === 9).body, "body\n");
-
-  const links = await cli(dir, ["link-blockers", "--issue", "9"], fakeGh({ "issue view 9": { stdout: "no blockers" } }));
-  assert.equal(links.code, 0);
-  assert.equal(existsSync(join(dir, "known")), false);
-});
-
-// --- feature-issues ----------------------------------------------------------------
-
-test("feature-issues (github) prints the root, marked root: true, and its sub-issues as JSON, open ones only with --state open", async () => {
-  const dir = root({ github: true });
-  const exec = fakeGithub(
-    ghFeature("feat", ghIssue(3, { title: "PRD: Feat" }), ghIssue(4, { labels: ["awaiting-merge"] }), ghIssue(5, { state: "CLOSED", labels: ["in-progress"] })),
-  );
-  const all = await cli(dir, ["feature-issues", "--feature-slug", "feat"], exec);
-  assert.equal(all.code, 0, all.stderr);
-  assert.deepEqual(JSON.parse(all.stdout), [
-    { number: 3, title: "PRD: Feat", state: "OPEN", labels: [], root: true },
-    { number: 4, title: "Issue 4", state: "OPEN", labels: [{ name: "awaiting-merge" }] },
-    { number: 5, title: "Issue 5", state: "CLOSED", labels: [{ name: "in-progress" }] },
-  ]);
-  const open = await cli(dir, ["feature-issues", "--feature-slug", "feat", "--state", "open"], exec);
-  assert.deepEqual(JSON.parse(open.stdout).map((i) => i.number), [3, 4]);
-  for (const call of exec.calls) assert.ok(!call.some((a) => /milestone/i.test(a)), call.join(" "));
-});
-
-test("feature-issues (github) prints [] for a slug with no root, exits 1 naming duplicate roots, 2 on bad arguments", async () => {
-  const dir = root({ github: true });
-  const none = await cli(dir, ["feature-issues", "--feature-slug", "feat"], fakeGithub([ghIssue(1)]));
-  assert.equal(none.code, 0, none.stderr);
-  assert.equal(none.stdout, "[]\n");
-  const dup = await cli(dir, ["feature-issues", "--feature-slug", "feat"], fakeGithub([...ghFeature("feat", ghIssue(3)), ...ghFeature("feat", ghIssue(5))]));
-  assert.equal(dup.code, 1);
-  assert.match(dup.stderr, /#3, #5/);
-  for (const argv of [[], ["--feature-slug", "../x"], ["--feature-slug", "feat", "--state", "closed"], ["--feature-slug", "feat", "--bogus"]]) {
-    assert.equal((await cli(dir, ["feature-issues", ...argv])).code, 2, argv.join(" "));
+  for (const op of ["create-issue", "feature-issues", "link-blockers"]) {
+    const r = await cli(dir, [op, "--feature-slug", "feat"]);
+    assert.equal(r.code, 2, op);
+    assert.match(r.stderr, new RegExp(`^unknown op: ${op} — ops: `), op);
+    assert.doesNotMatch(r.stderr.replace(`unknown op: ${op}`, ""), /create-issue|feature-issues|link-blockers/, op);
   }
 });
 

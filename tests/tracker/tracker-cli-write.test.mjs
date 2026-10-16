@@ -368,7 +368,7 @@ test("publish-prd (github) under an existing root drops a Feature: line from the
   const r = await cli(dir, ["publish-prd", "--feature-slug", "feat", "--title", "Feat", "--body-file", join(dir, "prd.md")], exec);
   assert.equal(r.code, 0, r.stderr);
   assert.equal(issueOf(exec, 5).body, "## Decisions\n");
-  const again = await cli(dir, ["feature-issues", "--feature-slug", "feat"], exec);
+  const again = await cli(dir, ["prd", "--feature-slug", "feat"], exec);
   assert.equal(again.code, 0, again.stderr);
 });
 
