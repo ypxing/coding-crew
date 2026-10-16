@@ -248,6 +248,10 @@ from this checkout, for every platform the manifest names. An install made befor
 `.coding-crew/tracker/` or `.coding-crew/dep-install/`) updates the same way; remove what it left once:
 `rm -rf <root>/.coding-crew/{tracker,crew-afk,dep-install,solve-issue,to-issues,write-pr,skills}`.
 
+An install whose skills link into `.coding-crew/lib` updates with `--update` first: a partial run (`--skill`, one
+platform of several, `uninstall.sh --skill`) removes that directory too, and the skills it left alone stop with
+"re-install coding-crew" until `--update` copies their libraries in.
+
 #### What lands where
 
 At project level (`--project`), with claude; a user-level install writes the same under `~`:

@@ -13,7 +13,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - **install**: `install.sh` installs the same tree `npx skills add` writes: each `<skills-dir>/<name>/` is a
   byte-for-byte copy of `skills/<name>/`, its `scripts/<lib>/` a real directory, and `.coding-crew/lib` is no longer
   written. A plain `install.sh`, `install.sh --update` and `uninstall.sh` remove an existing `.coding-crew/lib` and
-  keep `config.json`; the manifest no longer has a `libs` key (an older one is accepted). The tracker docs name the
+  keep `config.json`. Upgrading an install whose skills link into `.coding-crew/lib`: run `install.sh --update`
+  first, since a partial run removes it from under the skills it leaves alone; the manifest no longer has a `libs` key (an older one is accepted). The tracker docs name the
   CLI at `<skills-dir>/solve-issue/scripts/tracker/cli.mjs` (#538).
 - **skills / install**: the committed `skills/<name>/` is now the installed tree: every SKILL.md carries its
   fragments expanded between `<!-- fragment:<key> -->` markers and every skill's `scripts/<lib>` is a committed
