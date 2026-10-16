@@ -1,0 +1,89 @@
+# Step 6: from approved slices to published issues
+
+Read this when step 5's quiz has approved the breakdown. Every command runs from the project root; `$TRACKER` is the tracker CLI path the Tracker Configuration section gives.
+
+## Drafts
+
+Render every approved slice as a draft in `.scratch/<feature-slug>/.drafts/` — the same files whatever the tracker is: `NN-<slug>.md`, numbered from `01` in dependency order (blockers first), opening with a `# <title>` line and a `Status:` line (`Status: ready-for-agent` unless the user specifies otherwise), then the issue body template from SKILL.md. `## Blocked by` names another draft by its filename, or an issue that already exists by the filename `known` gives it (below). The CLI turns each draft filename into the ref its issue is created under.
+
+Number the drafts working the **frontier**: any issue whose blockers are all done. For a linear chain that means top-to-bottom; for a DAG with multiple independent roots, number all currently unblocked issues before their dependents.
+
+## Known issues
+
+Write the feature's existing issues beside the drafts:
+
+```bash
+node "$TRACKER" known --feature-slug <feature-slug> --out .scratch/<feature-slug>/.drafts/known
+```
+
+One file per issue already in the feature, named by the ref a `## Blocked by` entry uses for it.
+
+## Dependency map
+
+Write `.scratch/<feature-slug>/.drafts/deps.json` with the drafts, before the lint below (its `--deps` compares the map with the `## Blocked by` prose) — a flat map from each draft's filename to the filenames of the drafts blocking it, e.g.:
+
+```json
+{
+  "01-first.md": [],
+  "02-second.md": ["01-first.md"],
+  "03-third.md": ["01-first.md", "02-second.md"]
+}
+```
+
+Source it from the same blocking edges the user confirmed in the quiz — do not re-derive it from the `## Blocked by` prose. `publish-issues` creates the issues in this map's order and records the same edges, under the issues' final refs, where the dispatcher's `next` reads them to decide whether an issue is ready. Include every draft, even ones with no blockers (`[]`); an edge to an issue that already exists lives only in the draft's `## Blocked by`.
+
+## Lint
+
+```bash
+bash <skill-dir>/scripts/lint-issues.sh --issue <draft> [--issue <draft> …] \
+  [--known <file> …] --deps .scratch/<feature-slug>/.drafts/deps.json [--prd .scratch/<feature-slug>/.drafts/PRD.md]
+```
+
+Pass every file `known` wrote as a `--known <file>` (never linted, but a `## Blocked by` ref resolves to it by basename, and an existing `--known` file's `## Implements` counts toward `--prd` coverage, so a PRD ID an earlier issue already implements is not reported uncovered), and `--prd` whenever `.scratch/<feature-slug>/.drafts/PRD.md` exists (step 2's PRD, or the one `to-prd` wrote).
+
+- Exit 1: publish nothing. Show the `ERROR` lines; return to the quiz (step 5) to fix them, then render and lint again.
+- Exit 0: at most `WARN` lines. Show them and continue. The shared-file `WARN` (two issues naming the same file with no `## Blocked by` path between them) is advisory: it is never by itself grounds for a `Blocked by` edge — only the edge rule's rows 1–2 are.
+- Exit 2: a usage error in how you called it. Fix the call.
+
+## Builder check
+
+After lint exits 0 and before publishing, a fresh subagent reads the drafts cold, the way their implementer will: the writer fills omissions from memory, and that is the blind spot this check exists for. Skip it when every draft carries a column-0 `Source:` line (findings already judged, step 1). When the session has no subagent tool, print `builder check skipped: no subagent tool` and publish: never read the drafts yourself in its place.
+
+Give the subagent only the paths of the drafts, `.scratch/<feature-slug>/.drafts/PRD.md` and `known/` when they exist, and read access to the repo. Never give it the conversation, a design summary or the quiz answers. Its prompt:
+
+```text
+You are the engineer who will implement these issues. You can read the repo but cannot talk to whoever wrote them. Read each draft in <drafts dir> and <PRD path> if one exists; known/ holds the feature's existing issues. Your job is the omissions and ambiguities you would have to guess at: report only the questions where a wrong guess changes what you build or how a criterion is checked. For each one, give the draft, the question, and why the answer matters. A contradiction between two drafts, or between a draft and the code, is a question like any other. Rank them by importance. Skip anything a draft leaves to the implementer, anything you could reasonably decide, and wording. If nothing important is left, say "nothing important left".
+```
+
+Sort each question it returns into one of three piles, once:
+
+- **Answered** — the conversation or the code settles it: write the answer into the draft.
+- **Minor** — a sensible implementer could settle it without changing what gets built: settle it and record one `(auto)` line as the last line of the draft's `## What to build`.
+- **Yours** — only the user can answer it, and it changes what gets built: return to step 5 the way a lint `ERROR` does, which asks only these, in one message ranked by importance, then re-render, re-lint and publish.
+
+Print `builder check: N answered, M (auto), K asked`. One round: dispatch no second check after the answers, and re-lint any draft you changed.
+
+## Publish
+
+```bash
+node "$TRACKER" publish-issues --feature-slug <feature-slug> --drafts .scratch/<feature-slug>/.drafts
+```
+
+It creates the issues in dependency order and prints one `<draft> <ref>` line per issue; the drafts directory (`known/` and `PRD.md` included) is deleted after a full publish. Two exits are questions for the user, and both write nothing:
+
+- **Exit 4** — the feature has completed issues: stop, and tell the user: "Some issues are already completed. Please reconcile manually (delete or archive the old issues directory) before re-running."
+- **Exit 5** — the feature already has open issues, which publishing would overwrite (stderr lists them): show them, warn they will be overwritten, and ask for confirmation. On yes, re-run the same command with `--replace`; on no, stop.
+
+Exit 1 before anything is created means a draft's `## Blocked by` names a file that is neither a draft nor a `known` issue, or (with `--replace`) an open issue `--replace` would delete: fix that draft's `## Blocked by` and `deps.json`, lint again and re-publish. On any other exit 1 the stderr names the issues created before the failure, and the drafts stay in place: report both, fix the cause, and ask the user before re-running — a re-run creates every draft again.
+
+## A source issue that stayed one slice
+
+It is rewritten in place instead of published (no `## Parent`): write it as a draft (title, `Status:` line and body, as above) to a file outside `.drafts/` and run
+
+```bash
+node "$TRACKER" rewrite <ref> --body-file <file> --status <status> --feature-slug <feature-slug>
+```
+
+where `<status>` is the slice's status (`ready-for-agent`, or `ready-for-human`). Pass the status: it is what dispatch picks an issue by, so a body-only rewrite would leave it `needs-triage`; `rewrite` also files the issue under the feature. Keep the source's title and its column-0 `Source:` line as `fetch` printed them, so the rewritten issue stays exempt from the design standard (step 1). A source that split into several slices keeps it open and gets one child issue per slice, each with `## Parent`.
+
+Do NOT close or modify any parent issue. A single-slice source rewritten in place is not a parent: it gets only this `rewrite` — its body and its status.
