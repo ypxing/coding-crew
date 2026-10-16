@@ -1,10 +1,10 @@
 # Demo smoke results
 
 One row per `scripts/smoke-crew-afk.sh <platform>` run that reached its crew-afk dispatch, appended by the
-script: the coding-crew commit it ran at, the platform, `cost` from the claude JSON result that ends the
-run's log (`?` on other platforms), and `findings` from the last review solve-feature saved for its PR:
-since solve-feature re-reviews after fixing CRITICAL/HIGH/MEDIUM findings (#497), later rows count that
-re-review's findings, not the first review's. Commit the new row before `scripts/cut-release.sh`, which
+script: the coding-crew commit it ran at, the platform, `cost` from the `cost=$<n>` that ends
+`crew-afk.sh wait`'s line for the run (`?` when it has none: other platforms, a capped run), and
+`findings` from the last review solve-feature saved for its PR: since solve-feature re-reviews after fixing
+CRITICAL/HIGH/MEDIUM findings (#497), later rows count that re-review's findings, not the first review's. Commit the new row before `scripts/cut-release.sh`, which
 needs a clean tree. Rows before the commit column were
 crew-afk-version / date / result / cost / dispatch-hours / findings.
 

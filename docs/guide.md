@@ -293,7 +293,60 @@ Other platforms get the same skills under their own skill dir (see the README's 
 
 ---
 
-### Issue Lifecycle
+### What a feature looks like on the tracker
+
+A feature is a slug and the issues filed under it. Where they live depends on the tracker
+(`.coding-crew/config.json`'s `tracker` section):
+
+- **github** — one root issue whose body carries a column-0 `Feature: <slug>` line (the feature's
+  `PRD:` issue, or for a single-slice feature the work issue itself), and every other issue a native
+  sub-issue of that root.
+- **local** — a directory, `.scratch/<slug>/`: an optional `PRD.md`, and the issues as
+  `issues/open/NN-<slug>.md`, moved to `issues/done/` once done.
+
+Every issue has the same body on either tracker. A local issue's first line is its `Status:`; a
+GitHub issue carries that status as a label instead:
+
+```markdown
+Status: ready-for-agent
+
+## What to build
+
+One paragraph — describe the end-to-end behavior, not layer-by-layer steps.
+
+## Acceptance criteria
+
+- [ ] Criterion one
+- [ ] Criterion two
+
+## Blocked by
+
+- 01-prior-issue.md ← github: Issue #<n>; or: None - can start immediately
+```
+
+`/to-prd` → `/to-issues` write these for you from a feature description.
+
+**Triage labels** — a local issue's `Status:` value, a GitHub issue's label:
+
+| Label             | Meaning                                                              |
+| ----------------- | -------------------------------------------------------------------- |
+| `needs-triage`    | Not yet evaluated — `/to-issues <ref>` moves it to `ready-for-agent` |
+| `needs-info`      | Waiting on reporter                                                  |
+| `ready-for-agent` | Fully specified — AFK can start                                      |
+| `ready-for-human` | Requires human implementation                                        |
+| `wontfix`         | Will not be actioned (github: closed as `not-planned`, not a label)  |
+
+GitHub adds two more. `blocked`, set by a person beside `ready-for-agent`, keeps an issue that needs a
+human out of the queue. `awaiting-merge` is what an issue's `done` looks like there: implemented on the
+feature branch, open until the PR that closes it merges. A local issue's `done` is `Status: done` in
+`issues/done/`.
+
+**What `next` and `land` read.** The feature is found by its slug — the `Feature:` line on github, the
+directory on local. `next` picks an open `ready-for-agent` issue (not `blocked`) whose every
+`## Blocked by` issue is done (on local, `issues-deps.json` takes the place of `## Blocked by` when
+`/to-issues` wrote one); `land` asks `next` again after the coder, and an issue still first was not
+closed. The status, `## Blocked by` and the `Feature:` line are all they read, so an issue missing one
+of them is never found or never starts.
 
 ```
  needs-triage  →  /to-issues <ref>  →  ready-for-agent  →  coder picks up
@@ -310,30 +363,9 @@ Other platforms get the same skills under their own skill dir (see the README's 
 one slice, or splits it into child issues with `## Parent`. An issue carrying a column-0 `Source:`
 line skips the check.
 
----
-
-### Writing Issues
-
-Create files under `.scratch/<feature>/issues/NN-slug.md`:
-
-```markdown
-Status: ready-for-agent
-
-## What to build
-
-One paragraph — describe the end-to-end behavior, not layer-by-layer steps.
-
-## Acceptance criteria
-
-- [ ] Criterion one
-- [ ] Criterion two
-
-## Blocked by
-
-- 01-prior-issue.md ← or: None - can start immediately
-```
-
-Use `/to-prd` → `/to-issues` to generate these from a feature description automatically.
+The mechanics — how `next` resolves blockers, what `mark-done` swaps, how to reopen an issue — are in
+the tracker doc every install ships beside the tracker CLI: `.coding-crew/lib/tracker/docs/<kind>.md`
+for a project-level install, `~/.coding-crew/lib/tracker/docs/<kind>.md` for a user-level one.
 
 ---
 
@@ -380,7 +412,10 @@ worktree per feature beside your checkout, at `<repo>/../<repo-name>-worktrees/<
 `/crew-afk status [<feature>]` prints each run's outcome line (`ready pr=<n>`, `needs-attention pr=<n>`
 or `stopped: …`), `running (pid <n>)`, or why there is none — for a local run that ended without one,
 `re-run /crew-afk <slug> to continue` (a re-run skips the issues already done) and the `claude --resume`
-line. A second `/crew-afk` on a feature whose local run is still going is refused; one to orca or herdr
+line. For a local claude run only, the outcome line ends with what the run cost and how long it took,
+from the result claude prints last: `ready pr=7 cost=$1.73 (23 min)` (`cost=$<n> (<m> min)`); other
+agents print no cost, and a run the 1h cap killed has none. `/crew-afk wait <feature>` on a local run
+returns once its process is gone, not at the outcome, so its line carries the cost too. A second `/crew-afk` on a feature whose local run is still going is refused; one to orca or herdr
 while its agent still works starts a second agent beside it.
 Nothing removes a worktree: `git worktree remove <path>` once you are done with it.
 
@@ -490,18 +525,6 @@ of the clone, never committed. To share them with your team or CI, run `/setup-c
 `.coding-crew/dev-commands.json` and prints the commit line. A tracked file there wins, and later discoveries
 update it. The installed tooling beside them (`lib/`, `manifest.json`) is what `install.sh` writes, not team
 state.
-
----
-
-### Triage Labels
-
-| Label             | Meaning                                                              |
-| ----------------- | -------------------------------------------------------------------- |
-| `needs-triage`    | Not yet evaluated — `/to-issues <ref>` moves it to `ready-for-agent` |
-| `needs-info`      | Waiting on reporter                                                  |
-| `ready-for-agent` | Fully specified — AFK can start                                      |
-| `ready-for-human` | Requires human implementation                                        |
-| `wontfix`         | Will not be actioned                                                 |
 
 ---
 

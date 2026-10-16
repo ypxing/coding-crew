@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **crew-afk / docs**: `crew-afk status` and `wait` end a finished local claude run's outcome line with its cost
+  and duration (`ready pr=7 cost=$1.73 (23 min)`), and `wait` on a local run returns once the run's process is
+  gone, not at the outcome. The release smoke takes its RESULTS cost from that line. `docs/guide.md`'s "What a
+  feature looks like on the tracker" replaces "Issue Lifecycle", "Writing Issues" and "Triage Labels", for both
+  trackers (#520).
 - **registry / to-issues / to-prd / upgrade-deps / solve-issue**: installing to-issues alone now brings to-prd and
   configure-tracker, upgrade-deps brings to-issues, and every skill that offers configure-tracker reaches it;
   deps no skill invokes are gone (solve-feature → dep-install, address-pr-comments → solve-issue, crew-grill and
