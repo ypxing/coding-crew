@@ -1035,7 +1035,7 @@ yaml_to_json() {
   fi
 }
 
-@test "setup-coding-crew's hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, five write permissions (actions: write so it can dispatch PR CI), a slug concurrency group, the skill launched by the agent, the logs kept, then a step reading the outcome" {
+@test "setup-coding-crew's hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, five write permissions (actions: write so it can approve or dispatch PR CI), a slug concurrency group, the skill launched by the agent, the logs kept, then a step reading the outcome" {
   local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
   run yaml_to_json "$wf" "$json"
   [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
@@ -1158,8 +1158,7 @@ SH
   ! grep -q 'FAIL: test_x' "$GITHUB_STEP_SUMMARY" || false
 }
 
-@test "setup-coding-crew's hosts/github-actions.yml: after the run, the PR's branch gets a workflow_dispatch of every other workflow that has both pull_request and workflow_dispatch, warning on a failed one" {
-  command -v yq >/dev/null || skip "no yq on this machine"
+@test "setup-coding-crew's hosts/github-actions.yml: after the run, the runs held on the PR's head are approved, a refused one's workflow dispatched on the PR's branch instead, warning when both fail" {
   local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
   run yaml_to_json "$wf" "$json"
   [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
@@ -1167,39 +1166,53 @@ SH
   local i; i="$(jq '.jobs.solve.steps | map(.name) | index("Run solve-feature")' "$json")"
   [ "$(jq -r ".jobs.solve.steps[$i + 1].if" "$json")" = "always()" ]
   jq -r ".jobs.solve.steps[$i + 1].run" "$json" > "$TEMP_DIR/ci-step.sh"
-  grep -q 'gh workflow run' "$TEMP_DIR/ci-step.sh"
 
   cat > "$STUB/gh" <<'SH'
 #!/usr/bin/env bash
 echo "gh $*" >> "$STATE/gh.log"
 case "$1 $2" in
-  "pr view") echo "feature/$3" ;;
+  "pr view") echo "feature/$3 sha$3" ;;
+  "api -X") [ -z "$GH_APPROVE_FAIL" ] || { echo "HTTP 403" >&2; exit 1; } ;;
+  "api "*) [ -z "$GH_HELD" ] || printf '%s\n' "$GH_HELD" ;;
   "workflow run") [ -z "$GH_WF_FAIL" ] || { echo "HTTP 403" >&2; exit 1; } ;;
 esac
 SH
   chmod +x "$STUB/gh"
-  mkdir -p .github/workflows .solve-feature
-  printf 'on:\n  push:\n  pull_request:\n  workflow_dispatch:\n' > .github/workflows/ci.yml
-  printf 'on: [pull_request]\n' > .github/workflows/lint.yml
-  printf 'on:\n  issues:\n  pull_request:\n  workflow_dispatch:\n' > .github/workflows/solve-feature.yml
+  mkdir -p .solve-feature
+  export GITHUB_REPOSITORY=o/r GH_HELD=$'7 .github/workflows/ci.yml\n8 .github/workflows/lint.yml'
 
   for line in 'ready pr=12' 'needs-attention pr=12'; do
     echo "$line" > .solve-feature/outcome
     rm -f "$STATE/gh.log"
     run bash -e "$TEMP_DIR/ci-step.sh"
     [ "$status" -eq 0 ]
-    [ "$(grep 'workflow run' "$STATE/gh.log")" = "gh workflow run ci.yml --ref feature/12" ]
+    grep -q 'gh api repos/o/r/actions/runs?head_sha=sha12&event=pull_request&status=action_required' "$STATE/gh.log"
+    [ "$(grep -c 'api -X POST' "$STATE/gh.log")" -eq 2 ]
+    grep -q 'api -X POST repos/o/r/actions/runs/7/approve' "$STATE/gh.log"
+    grep -q 'api -X POST repos/o/r/actions/runs/8/approve' "$STATE/gh.log"
+    ! grep -q 'workflow run' "$STATE/gh.log" || false
   done
 
-  GH_WF_FAIL=1 run bash -e "$TEMP_DIR/ci-step.sh"
+  rm -f "$STATE/gh.log"
+  GH_APPROVE_FAIL=1 run bash -e "$TEMP_DIR/ci-step.sh"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"::warning::"*"ci.yml"* ]]
+  [ "$(grep 'workflow run' "$STATE/gh.log")" = $'gh workflow run ci.yml --ref feature/12\ngh workflow run lint.yml --ref feature/12' ]
+  [[ "$output" == *"::warning::could not approve ci.yml"* ]]
+
+  GH_APPROVE_FAIL=1 GH_WF_FAIL=1 run bash -e "$TEMP_DIR/ci-step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::warning::could not approve or dispatch lint.yml"* ]]
+
+  rm -f "$STATE/gh.log"
+  GH_HELD= run bash -e "$TEMP_DIR/ci-step.sh"
+  [ "$status" -eq 0 ]
+  ! grep -q 'api -X POST\|workflow run' "$STATE/gh.log" || false
 
   for line in 'stopped: 2 checks failed: x' ''; do
     rm -f "$STATE/gh.log" .solve-feature/outcome
     [ -z "$line" ] || echo "$line" > .solve-feature/outcome
     run bash -e "$TEMP_DIR/ci-step.sh"
     [ "$status" -eq 0 ]
-    ! grep -q 'workflow run' "$STATE/gh.log" 2>/dev/null || false
+    [ ! -e "$STATE/gh.log" ]
   done
 }

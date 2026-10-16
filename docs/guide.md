@@ -489,10 +489,10 @@ finished. The same step writes the run's summary page: the outcome, the PR, the 
 artifact.
 
 The job pushes and opens the PR with the workflow's own `GITHUB_TOKEN`, so the PR's `pull_request` runs wait for
-someone with write access to approve them, after every push. To get CI on solve-feature PRs with no approval, add
-a `workflow_dispatch:` trigger to the PR workflow: after the session, the job dispatches every workflow in
-`.github/workflows/` that has both `pull_request` and `workflow_dispatch` on the PR's branch (a failed dispatch
-is a warning, and leaves the run waiting for approval).
+someone with write access to approve them, after every push. After the session, the job approves the runs held on
+the PR's head commit, so the PR's CI runs and shows on the PR. Where GitHub refuses the approval, the job dispatches
+that workflow on the PR's branch instead, which needs a `workflow_dispatch:` trigger in it; that run's checks are on
+the commit but not listed on the PR. A failure of both is a warning, and leaves the run waiting for approval.
 
 ---
 

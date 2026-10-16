@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **setup-coding-crew / docs**: the solve-feature Actions workflow, once the session ends, approves the PR's
+  `pull_request` runs GitHub held for approval, so its CI runs and shows on the PR; where GitHub refuses, it
+  dispatches that workflow on the PR's branch as before (#523's dispatch alone left the PR showing a run awaiting
+  approval and none of the dispatched run's checks) (#527).
 - **solve-feature / docs**: the PR body solve-feature writes opens, right under its begin marker, with a visible
   line saying solve-feature wrote the PR and naming the feature slug, so a reviewer never reads agent prose as a
   person's words (#521).
