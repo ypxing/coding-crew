@@ -106,7 +106,7 @@ The tracker is `.coding-crew/config.json`'s `tracker` section (`github` today); 
 - **CHANGELOG:** add one entry at the top of `[Unreleased]` (component prefix, what changed for a user, issue/PR number)
 - **Comments:** follow solve-issue's comment rule (`skills/solve-issue/SKILL.md`, Step 4)
 - **Layer ownership:** `solve-feature` → `solve-issue` → `tdd` / `dep-install`; `solve-issue` owns the procedure and must not know its caller, `tdd` / `dep-install` own one technique each (`tests/layer-ownership.bats`)
-- **Skills stay boring:** a skill uses another skill by name, and shares code through a library linked into its own `scripts/`, never a path into another skill's directory
+- **Skills stay boring:** a skill uses another skill by name, and shares code through a copy of a library in its own `scripts/`, never a path into another skill's directory
 
 ---
 
@@ -150,4 +150,4 @@ When modifying `install.sh` or registry handling:
 - Always validate paths before writing files
 - Use `set -euo pipefail` in all shell scripts
 - Sanitize user input from command-line arguments
-- Don't follow symlinks during installation (a library link is written, never read through)
+- Don't follow symlinks during installation

@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 
 # CLAUDE.md's native rule: a skill uses another skill by name, and reaches code shared between skills
-# only through the library linked into its own scripts/ directory (<skill-dir>/scripts/<lib>/), so an
+# only through the library copied into its own scripts/ directory (<skill-dir>/scripts/<lib>/), so an
 # installed skill can be read and run on its own. And every SKILL.md's frontmatter follows the
 # Agent Skills spec, plus argument-hint and disable-model-invocation, which Claude Code reads.
 

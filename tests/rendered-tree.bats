@@ -46,11 +46,26 @@ planted line' "$T/skills/to-prd/SKILL.md" && rm "$T/skills/to-prd/SKILL.md.bak"
   [[ "$output" != *"cli.mjs"* ]] || { echo "$output"; return 1; }
 }
 
+@test "render-skill.sh removes a skill's scripts/<lib> copy once registry.json no longer lists that lib" {
+  local T="$BATS_TEST_TMPDIR/dropped"
+  mkdir -p "$T/scripts"
+  cp "$REPO_ROOT/scripts/render-skill.sh" "$T/scripts/"
+  cp -Rp "$REPO_ROOT/skills" "$REPO_ROOT/lib" "$T/"
+  jq '.skills["solve-issue"].libs -= ["tracker"]' "$REPO_ROOT/registry.json" > "$T/registry.json"
+  [ -d "$T/skills/solve-issue/scripts/tracker" ]
+  run bash "$T/scripts/render-skill.sh"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ ! -e "$T/skills/solve-issue/scripts/tracker" ]
+  [ -d "$T/skills/solve-issue/scripts/checks" ]
+}
+
 @test "npx skills add <checkout> --all -g installs every skill working, into a temp HOME" {
   command -v npx >/dev/null 2>&1 || skip "npx is not on PATH: the npx skills route needs Node's npx"
   local home="$BATS_TEST_TMPDIR/home" n
   mkdir -p "$home"
-  run env DISABLE_TELEMETRY=1 HOME="$home" npm_config_cache="$BATS_TEST_TMPDIR/npm-cache" \
+  # env -i: skills builds some global dirs from XDG_CONFIG_HOME, CLAUDE_CONFIG_DIR and the like, not HOME,
+  # so any of them inherited would link skills into the developer's real config, dangling after the test.
+  run env -i PATH="$PATH" HOME="$home" DISABLE_TELEMETRY=1 npm_config_cache="$BATS_TEST_TMPDIR/npm-cache" \
     npx -y skills@1.7.2 add "$REPO_ROOT" --all -g -y
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   n=$(find "$home/.agents/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')

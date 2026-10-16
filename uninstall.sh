@@ -138,6 +138,17 @@ remove_legacy_lib() {
   echo "  removed .coding-crew/lib/"
 }
 
+# A skill this run left alone may still link scripts/<lib> into the removed .coding-crew/lib; name its dir.
+warn_old_layout_links() {
+  local dirs d
+  dirs=$(platform_skills_paths | sort -u | while IFS= read -r d; do
+    if [[ -d "$d" ]]; then find "$d" -mindepth 3 -maxdepth 3 -lname '*.coding-crew/lib/*'; fi
+  done | sed -e "s|^$REPO_ROOT/||" -e 's|/scripts/[^/]*$||' | sort -u)
+  [[ -n "$dirs" ]] || return 0
+  echo "WARNING: these skills still link to the removed .coding-crew/lib; run install.sh --update to refresh them:"
+  sed 's/^/  /' <<< "$dirs"
+}
+
 # manifest_list <key> — the names under the manifest's .skills, one per line. An older install keyed
 # skills by name with a version each; both forms read the same.
 manifest_list() {
@@ -205,4 +216,5 @@ else
 fi
 
 echo "---"
+warn_old_layout_links
 echo "Done."

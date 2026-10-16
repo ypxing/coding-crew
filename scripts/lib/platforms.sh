@@ -111,6 +111,15 @@ resolve_skill_dest() {
   resolve_dest "$1" "$_SKILL_DEST"
 }
 
+# platform_skills_paths — every platform's skills dir at this scope, absolute and relocated, one per line.
+platform_skills_paths() {
+  local p
+  for p in "${PLATFORMS[@]}"; do
+    resolve_skill_dest "$p" . || continue
+    printf '%s\n' "${_DEST_ROOT}/${_DEST_REL%/.}"
+  done
+}
+
 # platform_user_dirs — the user-level dirs a host may resolve a skill or agent from, one per line.
 platform_user_dirs() {
   local i env_name env_val config user

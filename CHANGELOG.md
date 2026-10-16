@@ -9,12 +9,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - **install**: `install.sh` installs the same tree `npx skills add` writes: each `<skills-dir>/<name>/` is a
   byte-for-byte copy of `skills/<name>/`, its `scripts/<lib>/` a real directory, and `.coding-crew/lib` is no longer
   written. A plain `install.sh`, `install.sh --update` and `uninstall.sh` remove an existing `.coding-crew/lib` and
-  keep `config.json`; the manifest no longer has a `libs` key (an older one is accepted). The tracker docs name the
+  keep `config.json`, and name any skill still linked to it with a hint to run `install.sh --update`; the manifest no longer has a `libs` key (an older one is accepted). The tracker docs name the
   CLI at `<skills-dir>/solve-issue/scripts/tracker/cli.mjs` (#538).
 - **skills / install**: the committed `skills/<name>/` is now the installed tree: every SKILL.md carries its
   fragments expanded between `<!-- fragment:<key> -->` markers and every skill's `scripts/<lib>/` is a committed
   copy of `lib/<lib>/`, both written by `bash scripts/render-skill.sh` (no arguments; a test fails when they are
-  stale), so `npx skills add` installs working skills. `install.sh`'s installed layout is unchanged. A
+  stale), so `npx skills add` installs working skills. A
   `ready-for-human` issue's "Mark it done" step now asks your coding agent to run the tracker CLI's `mark-done`
   instead of naming `.coding-crew/lib`. `scripts/smoke-crew-afk.sh <platform> --via npx` smoke-tests that route,
   and RESULTS.md gains a `route` column (#537).

@@ -4,7 +4,8 @@
 # For every skill in registry.json:
 #   - the text between each `<!-- fragment:<key> -->` and `<!-- /fragment:<key> -->` line in its SKILL.md
 #     becomes skills/_shared/fragments/<key>.md;
-#   - skills/<skill>/scripts/<lib>/ becomes an exact copy of lib/<lib>/ for each name in its `libs`.
+#   - skills/<skill>/scripts/<lib>/ becomes an exact copy of lib/<lib>/ for each name in its `libs`,
+#     and is removed for each lib/<lib>/ its `libs` does not name.
 # A missing fragment, an unmatched marker or a `{{` left in a body is a hard error naming the file: it would
 # ship an instruction hole to the model.
 set -euo pipefail
@@ -94,7 +95,16 @@ while IFS= read -r skill; do
   [[ -f "$ROOT/$rel" ]] || { echo "Error: skill body not found: $rel" >&2; exit 1; }
   render_body "$rel"
   cmp -s "$TMP" "$ROOT/$rel" || cp "$TMP" "$ROOT/$rel"
+  libs=$(jq -r --arg s "$skill" '.skills[$s].libs // [] | .[]' "$REGISTRY")
+  for lib_dir in "$ROOT"/lib/*/; do
+    lib=$(basename "$lib_dir")
+    if grep -qxF "$lib" <<< "$libs"; then
+      copy_lib "$lib" "$ROOT/skills/$dir/scripts/$lib"
+    else
+      rm -rf "${ROOT:?}/skills/$dir/scripts/$lib"
+    fi
+  done
   while IFS= read -r lib; do
-    [[ -n "$lib" ]] && copy_lib "$lib" "$ROOT/skills/$dir/scripts/$lib"
-  done < <(jq -r --arg s "$skill" '.skills[$s].libs // [] | .[]' "$REGISTRY")
+    [[ -z "$lib" || -d "$ROOT/lib/$lib" ]] || { echo "Error: library source not found: lib/$lib" >&2; exit 1; }
+  done <<< "$libs"
 done < <(jq -r '.skills | keys[]' "$REGISTRY")
