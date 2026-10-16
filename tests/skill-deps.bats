@@ -20,12 +20,14 @@ crew-afk crew-brainstorm        # tells the person to plan the feature first
 crew-afk to-issues              # tells the person to plan the feature first
 setup-coding-crew solve-feature # what setup prepares the repo for, and its workflow file
 setup-coding-crew solve-issue   # says which earlier run discovered the dev commands file
+to-issues solve-issue           # human-issue: where a person finds the tracker CLI (scripts/tracker/)
 to-issues add-tests             # a caller: names the findings file add-tests hands over
 to-issues crew-grill            # a caller: hands over its design summary
 to-issues crew-brainstorm       # a caller: hands over its design summary
 to-prd crew-grill               # a caller: its summary holds settled decisions
 to-prd crew-brainstorm          # a caller: its summary holds settled decisions
 to-prd to-issues                # a caller: it hands over the slug
+upgrade-deps solve-issue        # human-issue: where a person finds the tracker CLI (scripts/tracker/)
 '
 
 # named_skills <names-regex> — the registry names stdin names as a skill, one per line: a whole
@@ -46,8 +48,8 @@ reach() {
       walk([$s])[]' "$1"
 }
 
-# scan_skill_deps <root> — checks every registry skill under <root> (its registry.json, skills/
-# and scripts/render-skill.sh) and prints one line per failure, naming the skill and the name;
+# scan_skill_deps <root> — checks every registry skill under <root> (its registry.json and skills/; a
+# committed SKILL.md is the rendered body, and scripts/<lib>/ copies are lib/'s, not the skill's) and prints one line per failure, naming the skill and the name;
 # exits 1 when any fails.
 scan_skill_deps() {
   local root="$1" reg="$1/registry.json" names alt s dir doc reachable named n fails=""
@@ -55,7 +57,7 @@ scan_skill_deps() {
   alt=$(printf '%s\n' "$names" | paste -sd'|' -)
   for s in $names; do
     dir="$root/skills/$(jq -r --arg s "$s" '.skills[$s]["source-dir"] // $s' "$reg")"
-    doc=$(bash "$root/scripts/render-skill.sh" "$s") || { fails+="$s: render-skill.sh failed"$'\n'; continue; }
+    doc=$(cat "$dir/SKILL.md")
     [ -d "$dir/references" ] && doc+=$'\n'$(cat "$dir"/references/*.md)
     reachable=$(reach "$reg" "$s")
     for n in $(printf '%s\n' "$doc" | named_skills "$alt"); do
@@ -63,7 +65,7 @@ scan_skill_deps() {
       grep -qE "^$s $n( |\$)" <<<"$ALLOWLIST" && continue
       fails+="$s: names $n, which its deps do not reach"$'\n'
     done
-    named=$( { printf '%s\n' "$doc"; [ -d "$dir/scripts" ] && find "$dir/scripts" -type f -exec cat {} +; } | named_skills "$alt")
+    named=$( { printf '%s\n' "$doc"; [ -d "$dir/scripts" ] && find "$dir/scripts" -type f | grep -vE "^$dir/scripts/($(jq -r --arg s "$s" '.skills[$s].libs // [] | join("|")' "$reg"))/" | while IFS= read -r f; do cat "$f"; done; } | named_skills "$alt")
     for n in $(jq -r --arg s "$s" '.skills[$s].deps // [] | .[]' "$reg"); do
       grep -qxF "$n" <<<"$named" || fails+="$s: dep $n is not named in its SKILL.md, references/ or scripts/"$'\n'
     done
@@ -86,10 +88,8 @@ scan_skill_deps() {
 }
 
 @test "the deps scan fails on a planted undeclared skill and a planted unnamed dep, naming both" {
-  mkdir -p "$T/scripts"
   cp -R "$REPO_ROOT/skills" "$T/skills"
   cp "$REPO_ROOT/registry.json" "$T/registry.json"
-  cp "$REPO_ROOT/scripts/render-skill.sh" "$T/scripts/"
   run scan_skill_deps "$T"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 

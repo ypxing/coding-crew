@@ -13,8 +13,8 @@ teardown() { rm -rf "$T"; }
 
 # scan_skill_paths <root> — prints each line under <root>/skills that reaches into another skill's
 # directory or a library outside <skill-dir>/scripts/<lib>/, as `<path relative to root>:<n>: <line>`;
-# exits 1 when any does. The human-issue fragment's mark-done command is run by a person from their
-# shell, so it names the installed library and is exempt from the library check only.
+# exits 1 when any does. A skill's scripts/<lib>/ is the committed copy of lib/<lib>/ (render-skill.sh), not
+# skill prose, so it is not scanned.
 scan_skill_paths() {
   local root="$1" skills libs f hits=""
   skills=$(cd "$root/skills" && find . -mindepth 1 -maxdepth 1 -type d | sed 's|^\./||' | paste -sd'|' -)
@@ -24,11 +24,10 @@ scan_skill_paths() {
   local lib_ok="(^|/)scripts/($libs)/|\\\$\{?SELF[A-Z_]*\}?/($libs)/"
   while IFS= read -r f; do
     hits+=$(grep -nE "$into_skill" "$root/$f" | sed "s|^|$f:|")$'\n'
-    [ "$f" = skills/_shared/fragments/human-issue.md ] && continue
     hits+=$(grep -noE "$lib_token" "$root/$f" | while IFS=: read -r n tok; do
       [[ "$tok" =~ $lib_ok ]] || echo "$f:$n: $tok"
     done)$'\n'
-  done < <(cd "$root" && find skills -type f ! -name CHANGELOG.md | LC_ALL=C sort)
+  done < <(cd "$root" && find skills -type f ! -name CHANGELOG.md | grep -vE "^skills/[^/]+/scripts/($libs)/" | LC_ALL=C sort)
   hits=$(printf '%s' "$hits" | sed '/^$/d')
   [ -z "$hits" ] || { printf '%s\n' "$hits"; return 1; }
 }
@@ -43,18 +42,25 @@ scan_skill_paths() {
   run scan_skill_paths "$T"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 
-  local f=skills/tdd/references/mocking.md planted
-  cp "$T/$f" "$T/$f.orig"
-  for planted in 'bash "<skill-dir>/../solve-issue/scripts/preflight.sh"' \
-                 'node "$SELF/../../tracker/cli.mjs" config' \
-                 'bash .coding-crew/dep-install/scripts/run.sh' \
-                 'node "$(git rev-parse --show-toplevel)/.coding-crew/lib/tracker/cli.mjs" fetch 1' \
-                 'bash lib/checks/run-checks.sh'; do
-    echo "$planted" >> "$T/$f"
-    run scan_skill_paths "$T"
-    [ "$status" -eq 1 ] || { echo "not caught: $planted"; return 1; }
-    [[ "$output" == *"$f:"* ]] || { echo "$output"; return 1; }
-    cp "$T/$f.orig" "$T/$f"
+  # A lib copy is not skill prose: what lib/ itself says is not scanned.
+  echo 'bash "<skill-dir>/../solve-issue/scripts/preflight.sh"' >> "$T/skills/solve-issue/scripts/tracker/README.md"
+  run scan_skill_paths "$T"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+
+  local f planted
+  for f in skills/tdd/references/mocking.md skills/solve-issue/SKILL.md; do
+    cp "$T/$f" "$T/$f.orig"
+    for planted in 'bash "<skill-dir>/../solve-issue/scripts/preflight.sh"' \
+                   'node "$SELF/../../tracker/cli.mjs" config' \
+                   'bash .coding-crew/dep-install/scripts/run.sh' \
+                   'node "$(git rev-parse --show-toplevel)/.coding-crew/lib/tracker/cli.mjs" fetch 1' \
+                   'bash lib/checks/run-checks.sh'; do
+      echo "$planted" >> "$T/$f"
+      run scan_skill_paths "$T"
+      [ "$status" -eq 1 ] || { echo "not caught: $planted"; return 1; }
+      [[ "$output" == *"$f:"* ]] || { echo "$output"; return 1; }
+      cp "$T/$f.orig" "$T/$f"
+    done
   done
 }
 

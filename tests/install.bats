@@ -210,14 +210,15 @@ _libs_linked() {
   done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json" | tr -d '\r')
 }
 
-@test "a skill reaches a library only through its own scripts/<lib> link, and the libraries are not in skills/" {
+@test "a skill reaches a library only through its own scripts/<lib> link, and each committed scripts/<lib> is lib/<lib>" {
   _libs_linked "$ALL/.claude/skills"
   [ -f "$ALL/.claude/skills/solve-issue/scripts/checks/write-commands-cache.sh" ]
   [ -f "$ALL/.claude/skills/add-tests/scripts/checks/discover-commands.sh" ]
-  # One source per library, under lib/: none is copied by hand into a skill's source-dir.
+  # One source per library, under lib/: a skill's scripts/<lib> is the renderer's copy of it
+  # (tests/rendered-tree.bats fails when one is stale), and no other copy sits elsewhere in skills/.
+  diff -r "$SCRIPT_DIR/lib/checks" "$SCRIPT_DIR/skills/dep-install/scripts/checks"
   [ ! -e "$SCRIPT_DIR/skills/solve-issue/scripts/run-checks.sh" ]
-  [ ! -e "$SCRIPT_DIR/skills/dep-install/scripts" ]
-  [ -z "$(find "$SCRIPT_DIR/skills" -name write-commands-cache.sh -o -name cli.mjs)" ]
+  [ -z "$(find "$SCRIPT_DIR/skills" \( -name write-commands-cache.sh -o -name cli.mjs \) | grep -vE '^'"$SCRIPT_DIR"'/skills/[^/]+/scripts/(checks|tracker)/')" ]
 }
 
 @test "HOME=<tmp> ./install.sh claude installs at user level: skills, one copy of each library, links only where libs names one" {
