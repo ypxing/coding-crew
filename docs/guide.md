@@ -45,8 +45,8 @@ install.sh
     │
     ├── read registry.json
     ├── for each requested skill (every skill when none is named):
-    │     ├── install_single_skill() — copy skills/<name>/ as committed, its scripts/<lib>/ copies
-    │     │                              included → <skills dir>/<name>/, an exact copy
+    │     ├── install_single_skill() — copy skills/<name>/ as committed, through its scripts/<lib>
+    │     │                              links into lib/ → <skills dir>/<name>/, real directories only
     │     └── install_single_skill(dep) — recurse for each dep
     │
     └── write_manifest() — <root>/.coding-crew/manifest.json: the platforms and skills
@@ -73,7 +73,7 @@ There are no agents. No per-platform agent file is written under `.claude/agents
       "source": "...", // optional attribution for a skill adapted from elsewhere
       // installs to <projectSkills|userSkills>/<name> from platforms.json
       "deps": ["tdd", "dep-install"], // other skills, installed recursively
-      "libs": ["tracker", "checks"], // lib/<lib>, copied by the renderer to skills/<name>/scripts/<lib>
+      "libs": ["tracker", "checks"], // lib/<lib>, committed as the link skills/<name>/scripts/<lib> -> ../../../lib/<lib>
     },
   },
 }
@@ -83,7 +83,9 @@ There are no agents. No per-platform agent file is written under `.claude/agents
 
 - No versions: only the release (CHANGELOG / tag) has one, and `--update` reinstalls everything.
 - A skill reaches shared code only through a library its `libs` names, run as
-  `<skill-dir>/scripts/<lib>/<file>`; its own `scripts/` holds no file named like a library.
+  `<skill-dir>/scripts/<lib>/<file>`; its own `scripts/` holds no file named like a library. Adding a lib to a
+  skill is a `libs` entry plus `ln -s ../../../lib/<lib> skills/<name>/scripts/<lib>`; `tests/rendered-tree.bats`
+  names the skill when the two disagree.
 - Skill and library names must match `[a-zA-Z0-9_.-]+` — used as filesystem path components.
 - Skills listed under another skill's `deps` are installed with it. A skill no installed skill depends on is only installed by name or by a full install (`./install.sh [platform]`).
 - `deps` match what the skill's text invokes: every skill its rendered SKILL.md or `references/` names is reachable through its `deps`, and every direct dep is named in its SKILL.md, `references/` or `scripts/`. `tests/skill-deps.bats` checks both; a mention that only points a person at another skill goes on its allowlist with a reason.
@@ -128,7 +130,7 @@ the last round did not fix is listed under `Needs attention` in the PR body, whi
 ### Security Rules for Contributors
 
 - **Never name a path in `registry.json`.** Skills and libraries are names (`[a-zA-Z0-9_.-]+`); `install.sh` rejects anything else.
-- **Never edit between fragment markers or under a skill's `scripts/<lib>/`** — edit `skills/_shared/fragments/<key>.md` or `lib/<lib>/`, then run `bash scripts/render-skill.sh` and commit what it rewrites. A hand edit there drifts from the source, and `tests/rendered-tree.bats` fails on it.
+- **Never edit between fragment markers** — edit `skills/_shared/fragments/<key>.md`, then run `bash scripts/render-skill.sh` and commit what it rewrites; a hand edit there drifts from the source, and `tests/rendered-tree.bats` fails on it. Edit a library under `lib/<lib>/` and the links follow: a skill's `scripts/<lib>` is a committed link to it.
 
 ---
 
@@ -151,6 +153,7 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 ```
 
 `bootstrap.sh` takes the same arguments as `install.sh`. Needs `bash` 4+, `git`, `jq`, `curl` and `tar` (on Windows, use WSL2).
+A checkout of this repo needs symlink support: on Windows, WSL2, or Git for Windows with `core.symlinks=true`.
 
 | Argument                              | Effect                                              |
 | ------------------------------------- | --------------------------------------------------- |
@@ -171,7 +174,7 @@ Runtime requirements:
 
 - **Node.js on `PATH`** for the skills that touch the issue tracker — `/to-issues`, `/to-prd`, `/solve-issue`,
   `/solve-feature` and `/upgrade-deps`. They reach the tracker (local or GitHub) through the tracker CLI,
-  `<skill-dir>/scripts/tracker/cli.mjs`, the copy of the tracker library each of those skills ships.
+  `<skill-dir>/scripts/tracker/cli.mjs`, the tracker library each of those skills ships (a link into `lib/` in this repo, a real directory once installed).
 
 #### Prerequisites
 
@@ -249,8 +252,8 @@ YOUR_PROJECT/
     └── manifest.json
 ```
 
-Each skill's `scripts/<lib>/` is its own copy of the library (`tracker/` with its docs, `checks/`,
-`git-workflow/`). A gitignored project install reaches a worktree only through `.worktreeinclude`.
+Each installed skill's `scripts/<lib>/` is its own copy of the library (`tracker/` with its docs, `checks/`,
+`git-workflow/`), copied through the committed link into `lib/`. A gitignored project install reaches a worktree only through `.worktreeinclude`.
 
 Other platforms get the same skills under their own skill dir (see the README's install table); no agent files are written for any platform.
 

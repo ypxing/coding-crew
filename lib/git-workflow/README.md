@@ -12,8 +12,8 @@ These scripts provide consistent git workflow operations across multiple skills:
 
 ## How It Works
 
-`scripts/render-skill.sh` copies this directory to `skills/<skill>/scripts/git-workflow/` for every skill
-whose `libs` in `registry.json` names it, and an install copies the skill with it:
+Every skill whose `libs` in `registry.json` names it commits `skills/<skill>/scripts/git-workflow` as a link to
+`../../../lib/git-workflow`, and an install copies the skill through it, this directory included:
 
 ```json
 "solve-issue": {
@@ -114,17 +114,15 @@ bash scripts/git-workflow/commit-changes.sh \
 - **Testability**: Scripts can be tested independently
 - **Clarity**: Skills focus on workflow, not git implementation details
 - **Reusability**: New skills can leverage existing scripts
-- **One source**: edited only here; each skill that uses it carries a rendered copy at `<skill-dir>/scripts/git-workflow`
+- **One source**: edited only here; each skill that uses it links to it at `<skill-dir>/scripts/git-workflow`, a real copy once installed
 
 ## Maintenance
 
 To update scripts:
 1. Edit scripts in `lib/git-workflow/`
-2. Run `bash scripts/render-skill.sh` to refresh the copy in each skill whose registry `libs` names it
-3. Run `install.sh` in consuming repos to get updates
+2. Run `install.sh` in consuming repos to get updates
 
 ## See Also
 
-- `scripts/render-skill.sh` - writes the per-skill copies
 - `registry.json` - each skill's `libs`
 - Individual skill SKILL.md files for usage context

@@ -14,7 +14,7 @@ The tracker this repo uses is the `tracker` section of `.coding-crew/config.json
 `tracker` section means `local`, so this tracker needs no config at all. `configure-tracker`
 writes the section, and `node "$TRACKER" config` prints what is in effect (`tracker=<kind>`,
 `configured=yes|no`). This doc ships beside the tracker CLI in every coding-crew skill that uses it
-(`<skill-dir>/scripts/tracker/docs/`) and is refreshed by every install — edit `config.json`, not this file.
+(`<skill-dir>/scripts/tracker/docs/`, copied through the skill's link into `lib/`) and is refreshed by every install — edit `config.json`, not this file.
 
 ## Tracker CLI
 

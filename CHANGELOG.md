@@ -12,9 +12,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   keep `config.json`, and name any skill still linked to it with a hint to run `install.sh --update`; the manifest no longer has a `libs` key (an older one is accepted). The tracker docs name the
   CLI at `<skills-dir>/solve-issue/scripts/tracker/cli.mjs` (#538).
 - **skills / install**: the committed `skills/<name>/` is now the installed tree: every SKILL.md carries its
-  fragments expanded between `<!-- fragment:<key> -->` markers and every skill's `scripts/<lib>/` is a committed
-  copy of `lib/<lib>/`, both written by `bash scripts/render-skill.sh` (no arguments; a test fails when they are
-  stale), so `npx skills add` installs working skills. A
+  fragments expanded between `<!-- fragment:<key> -->` markers and every skill's `scripts/<lib>` is a committed
+  link to `lib/<lib>/` that every install copies through as a real directory (the SKILL.md text is written by
+  `bash scripts/render-skill.sh`, no arguments; a test fails when it is stale or a link is wrong), so
+  `npx skills add` installs working skills. A checkout of this repo needs symlink support (on Windows, WSL2 or
+  `core.symlinks=true`). A
   `ready-for-human` issue's "Mark it done" step now asks your coding agent to run the tracker CLI's `mark-done`
   instead of naming `.coding-crew/lib`. `scripts/smoke-crew-afk.sh <platform> --via npx` smoke-tests that route,
   and RESULTS.md gains a `route` column (#537).

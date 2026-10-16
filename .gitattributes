@@ -14,8 +14,3 @@
 # Every PR adds its entry at the top of [Unreleased], so any two branches conflict there; union keeps both
 # (ours first). solve-feature's start merges the default branch into a resumed branch and stops on a conflict.
 CHANGELOG.md merge=union
-
-# Copies of lib/<lib>/ that scripts/render-skill.sh writes: collapsed in PR diffs, edited only through lib/.
-skills/*/scripts/checks/** linguist-generated=true
-skills/*/scripts/tracker/** linguist-generated=true
-skills/*/scripts/git-workflow/** linguist-generated=true
