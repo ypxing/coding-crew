@@ -1105,7 +1105,7 @@ yaml_to_json() {
 }
 
 @test "setup-coding-crew's hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, five write permissions (actions: write so it can approve or dispatch PR CI), a slug concurrency group, the skill launched by the agent, the logs kept, then a step reading the outcome" {
-  local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
+  local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json" line
   run yaml_to_json "$wf" "$json"
   [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
   [ "$status" -eq 0 ]
@@ -1183,7 +1183,7 @@ SH
   run bash -e "$TEMP_DIR/last-step.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"never finished"* ]]
-  grep -qF '### solve-feature feat: `never finished' "$GITHUB_STEP_SUMMARY"
+  grep -qF '### solve-feature feat: `` never finished' "$GITHUB_STEP_SUMMARY"
   grep -qxF -- '- Agent: claude, model unpinned (the CLI default)' "$GITHUB_STEP_SUMMARY"
   mkdir -p .solve-feature
   echo 'needs-attention pr=10' > .solve-feature/outcome
@@ -1219,6 +1219,12 @@ SH
   run bash -e "$TEMP_DIR/last-step.sh"
   grep -qxF 'FAIL: test_after_fix' "$GITHUB_STEP_SUMMARY"
   ! grep -q 'report of the last coder' "$GITHUB_STEP_SUMMARY" || false
+  # git's reason for a refused workflow-file push quotes names in backticks: the heading stays one code span.
+  line='stopped: 3 land push refused: refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission'
+  echo "$line" > .solve-feature/outcome
+  : > "$GITHUB_STEP_SUMMARY"
+  run bash -e "$TEMP_DIR/last-step.sh"
+  grep -qxF "### solve-feature feat: \`\` $line \`\`" "$GITHUB_STEP_SUMMARY"
   echo 'ready pr=10' > .solve-feature/outcome
   : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"
