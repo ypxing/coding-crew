@@ -43,16 +43,16 @@ There are no installable agents: `./install.sh <platform> <name>` with anything 
 - **`registry.json`** — Source of truth for the skills, their dependencies and the libraries each uses (`libs`)
 - **`install.sh`** — Single installer that reads `registry.json` and copies files into target repos
 - **`platforms.json`** — Every platform's skill dirs and config-dir override, read by `install.sh` and `uninstall.sh`
-- **`lib/`** — Libraries the skills share: `tracker/` (the tracker CLI, backends and `docs/{local,github}.md`), `checks/` (run-checks.sh and dep-install's scripts), `git-workflow/`; each installed once to `.coding-crew/lib/<name>/` and linked as `<skill-dir>/scripts/<name>`. The tracker choice is `.coding-crew/config.json`'s `tracker` section
+- **`lib/`** — Libraries the skills share: `tracker/` (the tracker CLI, backends and `docs/{local,github}.md`), `checks/` (run-checks.sh and dep-install's scripts), `git-workflow/`; `scripts/render-skill.sh` copies each into `skills/<skill>/scripts/<name>/` for every skill whose `libs` names it, and the copy is committed. The tracker choice is `.coding-crew/config.json`'s `tracker` section
 - **`docs/templates/`** — Optional workflows
 
 ### How Install Works
 
 1. Reads `registry.json` to determine what to install
 2. Resolves skill `deps` recursively
-3. Copies each skill, committed already rendered (`scripts/render-skill.sh`), to its platform dir (e.g. `.claude/skills/<name>/`, `.agents/skills/<name>/` for Codex)
-4. Links `<skill-dir>/scripts/<lib>` for each library in the skill's `libs` (relative at project level), and writes each library once to `.coding-crew/lib/<lib>/` (always overwritten)
-5. Writes `.coding-crew/manifest.json`: the platform, skills and libraries, no versions
+3. Copies each skill as committed — rendered, its `scripts/<lib>/` copies included (`scripts/render-skill.sh`) — to its platform dir (e.g. `.claude/skills/<name>/`, `.agents/skills/<name>/` for Codex), an exact copy
+4. Removes the shared library directory an older install linked every skill to (`remove_legacy_lib`)
+5. Writes `.coding-crew/manifest.json`: the platforms and skills, no versions
 
 No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`, `.codex/agents/`) is ever written.
 
@@ -69,7 +69,7 @@ No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`,
   "description": "...",
   // installs to <projectSkills|userSkills>/<name> from platforms.json
   "deps": ["tdd", "dep-install"],      // other skills, installed recursively
-  "libs": ["tracker", "checks"],       // lib/<name>, linked as <skill-dir>/scripts/<name> (optional)
+  "libs": ["tracker", "checks"],       // lib/<name>, copied to skills/<skill>/scripts/<name> (optional)
   "source": "mattpocock/skills"                  // attribution (optional)
 }
 ```

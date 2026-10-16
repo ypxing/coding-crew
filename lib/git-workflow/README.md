@@ -1,6 +1,6 @@
 # Git Workflow Scripts
 
-**A library: shared scripts, linked into the skills that use them**
+**A library: shared scripts, copied into the skills that use them**
 
 These scripts are **not skills themselves** — they are infrastructure utilities that skills use for git/branch/commit operations.
 
@@ -12,8 +12,8 @@ These scripts provide consistent git workflow operations across multiple skills:
 
 ## How It Works
 
-`install.sh` writes this directory once to `<root>/.coding-crew/lib/git-workflow/` and links it as
-`<skill-dir>/scripts/git-workflow` into every skill whose `libs` in `registry.json` names it:
+`scripts/render-skill.sh` copies this directory to `skills/<skill>/scripts/git-workflow/` for every skill
+whose `libs` in `registry.json` names it, and an install copies the skill with it:
 
 ```json
 "solve-issue": {
@@ -22,7 +22,7 @@ These scripts provide consistent git workflow operations across multiple skills:
 }
 ```
 
-Skills run them through the link:
+Skills run them from their own copy:
 ```bash
 bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" --message "..." --files "..."
 ```
@@ -114,17 +114,17 @@ bash scripts/git-workflow/commit-changes.sh \
 - **Testability**: Scripts can be tested independently
 - **Clarity**: Skills focus on workflow, not git implementation details
 - **Reusability**: New skills can leverage existing scripts
-- **One copy**: installed once, linked as `<skill-dir>/scripts/git-workflow` into each skill that uses it
+- **One source**: edited only here; each skill that uses it carries a rendered copy at `<skill-dir>/scripts/git-workflow`
 
 ## Maintenance
 
 To update scripts:
 1. Edit scripts in `lib/git-workflow/`
-2. Run `install.sh` in consuming repos to get updates
-3. One installed copy, linked into each skill whose registry `libs` names it
+2. Run `bash scripts/render-skill.sh` to refresh the copy in each skill whose registry `libs` names it
+3. Run `install.sh` in consuming repos to get updates
 
 ## See Also
 
-- `install.sh` - library install and links
+- `scripts/render-skill.sh` - writes the per-skill copies
 - `registry.json` - each skill's `libs`
 - Individual skill SKILL.md files for usage context

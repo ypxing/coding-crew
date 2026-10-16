@@ -45,17 +45,16 @@ install.sh
     │
     ├── read registry.json
     ├── for each requested skill (every skill when none is named):
-    │     ├── install_single_skill() — copy skills/<name>/ (committed rendered) → <skills dir>/<name>/
-    │     ├── link_lib() — <skills dir>/<name>/scripts/<lib> → <root>/.coding-crew/lib/<lib>, per `libs`
-    │     ├── install_lib() — lib/<lib>/ → <root>/.coding-crew/lib/<lib>/, once per run, an exact copy
+    │     ├── install_single_skill() — copy skills/<name>/ as committed, its scripts/<lib>/ copies
+    │     │                              included → <skills dir>/<name>/, an exact copy
     │     └── install_single_skill(dep) — recurse for each dep
     │
-    └── write_manifest() — <root>/.coding-crew/manifest.json: the platforms, skills and libraries
+    └── write_manifest() — <root>/.coding-crew/manifest.json: the platforms and skills
 ```
 
-A library link is relative at project level, so a committed skills dir and `.coding-crew/` survive a
-clone; at user level it is absolute. `install.sh --update` uninstalls every skill and library the
-manifest lists, then installs the listed skills the registry still has, for every platform it lists.
+An installed skill is a byte-for-byte copy of `skills/<name>/`, the same tree `npx skills add` writes,
+with no link into anything outside it. `install.sh --update` uninstalls every skill the manifest lists,
+then installs the listed skills the registry still has, for every platform it lists.
 
 #### No agent files
 
@@ -74,7 +73,7 @@ There are no agents. No per-platform agent file is written under `.claude/agents
       "source": "...", // optional attribution for a skill adapted from elsewhere
       // installs to <projectSkills|userSkills>/<name> from platforms.json
       "deps": ["tdd", "dep-install"], // other skills, installed recursively
-      "libs": ["tracker", "checks"], // lib/<lib>, linked as <skill-dir>/scripts/<lib>
+      "libs": ["tracker", "checks"], // lib/<lib>, copied by the renderer to skills/<name>/scripts/<lib>
     },
   },
 }
@@ -172,7 +171,7 @@ Runtime requirements:
 
 - **Node.js on `PATH`** for the skills that touch the issue tracker — `/to-issues`, `/to-prd`, `/solve-issue`,
   `/solve-feature` and `/upgrade-deps`. They reach the tracker (local or GitHub) through the tracker CLI,
-  `<skill-dir>/scripts/tracker/cli.mjs`, a link to the one copy in `.coding-crew/lib/tracker/`.
+  `<skill-dir>/scripts/tracker/cli.mjs`, the copy of the tracker library each of those skills ships.
 
 #### Prerequisites
 
@@ -246,16 +245,12 @@ YOUR_PROJECT/
 │       ├── to-prd/            ← installed with "all"
 │       └── crew-grill/              ← installed with "all"
 └── .coding-crew/
-    ├── lib/                        ← one copy of each library, for every platform
-    │   ├── tracker/                ← the tracker CLI and its docs (docs/local.md, docs/github.md)
-    │   ├── checks/                 ← run-checks.sh and dep-install's scripts
-    │   └── git-workflow/
     ├── config.json                 ← your settings; `tracker` picks the issue tracker
     └── manifest.json
 ```
 
-Each skill's `scripts/<lib>` is a link to `.coding-crew/lib/<lib>`. A gitignored project install reaches
-a worktree only through `.worktreeinclude`.
+Each skill's `scripts/<lib>/` is its own copy of the library (`tracker/` with its docs, `checks/`,
+`git-workflow/`). A gitignored project install reaches a worktree only through `.worktreeinclude`.
 
 Other platforms get the same skills under their own skill dir (see the README's install table); no agent files are written for any platform.
 
@@ -364,8 +359,8 @@ one slice, or splits it into child issues with `## Parent`. An issue carrying a 
 line skips the check.
 
 The mechanics — how `next` resolves blockers, what `mark-done` swaps, how to reopen an issue — are in
-the tracker doc every install ships beside the tracker CLI: `.coding-crew/lib/tracker/docs/<kind>.md`
-for a project-level install, `~/.coding-crew/lib/tracker/docs/<kind>.md` for a user-level one.
+the tracker doc every install ships beside the tracker CLI: `<skill-dir>/scripts/tracker/docs/<kind>.md`
+in any coding-crew skill that uses the tracker (e.g. `solve-issue`).
 
 ---
 
@@ -436,7 +431,7 @@ every thread it handled. It never resolves a thread — you do.
 1. Copy [`docs/templates/workflows/crew-rework.yml`](templates/workflows/crew-rework.yml) to
    `.github/workflows/` in your repo.
 2. Install the skills per project and commit them (`./install.sh claude --skill
-   address-pr-comments --project`, with `.coding-crew/lib/`): the runner has no `$HOME` install.
+   address-pr-comments --project`): the runner has no `$HOME` install.
 3. Add the repo secret `ANTHROPIC_API_KEY`.
 4. Make sure your CI workflow is `ci.yml` (or edit `--ci-workflow` in the template) and has
    `workflow_dispatch:` if you want the re-trigger below.
