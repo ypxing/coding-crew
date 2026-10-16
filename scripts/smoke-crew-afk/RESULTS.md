@@ -14,3 +14,4 @@ crew-afk-version / date / result / cost / dispatch-hours / findings; rows before
 | 2.21.0 | 2026-10-05 | PASS | $0.74 | 0.04 | 0 |
 | 2.41.4 | 2026-10-12 | PASS | $0.94 | 0.05 | 0 |
 | 0850c1523431 | 2026-10-14 | claude | PASS | $1.73 | 0 |
+| 71a8034d95fd | 2026-10-16 | claude | npx | PASS | $0.23 | 0 |
