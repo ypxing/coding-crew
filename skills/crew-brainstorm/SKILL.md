@@ -27,7 +27,7 @@ Complete these in order:
 
 1. **Explore project context** — check files, docs, recent commits
 2. **Judge the light path** — if the source is already one complete change, skip to step 6
-3. **Ask clarifying questions** — one at a time; size the problem first, then purpose, constraints and success criteria
+3. **Ask clarifying questions** — one at a time; size the problem first (look up how often it happens and what it costs in git history, merged PRs and the tracker; ask only what no source holds), then purpose, constraints and success criteria
 4. **Propose 2-3 approaches** — with trade-offs and your recommendation; one is always the do-least option
 5. **Present design** — in sections scaled to their complexity, get user approval after each section
 6. **Hand off** — invoke `to-issues`, passing the agreed design (decisions, `(auto)` lines, facts, cut list)
@@ -45,7 +45,7 @@ Complete these in order:
 - Each question carries options and your recommended answer. An open question is for when the user has not found the words yet: their own description carries intent your options can't.
 - Only one question per message - if a topic needs more exploration, break it into multiple questions
 - Ground to cover — territory, not a script; never read these out as questions: purpose, constraints, success criteria, and anti-goals (what would make this a failure even if it technically works)
-- Size the problem before any solution: how often it happens, what the manual workaround costs today, and what goes wrong if nothing is done. Look these up (git history, the tracker, the code) before asking. Solutions the user arrives with are inputs, not the menu.
+- Size the problem before any solution: how often it happens, what the manual workaround costs today, and what goes wrong if nothing is done. Look these up (git history, the tracker, the code) before asking; never ask the user for a count the history holds. Solutions the user arrives with are inputs, not the menu.
 
 ### Exploring approaches
 
