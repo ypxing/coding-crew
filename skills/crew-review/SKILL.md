@@ -62,8 +62,9 @@ Answer three questions.
    build that the spec did not ask for (a flag, an option, a guard, an abstraction no requirement
    needs)? Quote the spec line, or name the addition. With no spec, skip this question.
 2. **What breaks.** A defect is something a real run hits: name the input or sequence and the bad
-   outcome. Reproduce it where that is cheap, else trace it in the code; a reproduction that does not trigger it
-   is not evidence it is absent, so trace it then too. Look past the diff: callers, what it calls,
+   outcome. Reproduce it where a few commands can — a test, a run of the script, a small experiment in the scratch
+   copy — else trace it in the code; a reproduction that does not trigger it is not evidence it is absent, so trace
+   it then too. Look past the diff: callers, what it calls,
    state an older version or an earlier run left, re-runs, error and recovery paths, and how the
    change's commits combine. For each thing the change renames, removes or moves, find whatever still names
    or relies on the old form — code, docs, prompts, tests — and read it as it stands now. A spec decision can be
