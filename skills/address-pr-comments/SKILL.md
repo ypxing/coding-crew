@@ -161,15 +161,8 @@ checks:
 bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT"
 ```
 
-- It prints `DISCOVER` — the dev commands file has no checks yet. Run discovery, answer every field
-  its prompt lists by reading the files it names, save the answer, then run `run-checks.sh` again:
-
-  ```bash
-  (cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")
-  # write the JSON answer to $PROJECT_ROOT/.discovered-commands.json, then:
-  (cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .discovered-commands.json)
-  rm -f "$PROJECT_ROOT/.discovered-commands.json"
-  ```
+- It prints `DISCOVER` — the dev commands file has no checks yet. Run
+  `(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")`, follow its prompt, then run `run-checks.sh` again.
 
 - It prints `CHECKS: pass` — run a plain `git push`: never forced, no `--force` or
   `--force-with-lease`. A rejected push is reported in the Summary, never retried with force.

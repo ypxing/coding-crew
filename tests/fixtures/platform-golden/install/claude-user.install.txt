@@ -209,8 +209,6 @@ HOME/.claude/skills/solve-feature/scripts/tracker/local.mjs exec=0
 HOME/.claude/skills/solve-feature/scripts/tracker/tracker-config.mjs exec=0
 HOME/.claude/skills/solve-issue/ /
 HOME/.claude/skills/solve-issue/SKILL.md exec=0 unrendered=0
-HOME/.claude/skills/solve-issue/references/ /
-HOME/.claude/skills/solve-issue/references/verification.md exec=0
 HOME/.claude/skills/solve-issue/scripts/ /
 HOME/.claude/skills/solve-issue/scripts/checks/ /
 HOME/.claude/skills/solve-issue/scripts/checks/commands-file.sh exec=1
@@ -250,7 +248,6 @@ HOME/.claude/skills/tdd/references/ /
 HOME/.claude/skills/tdd/references/deep-modules.md exec=0
 HOME/.claude/skills/tdd/references/interface-design.md exec=0
 HOME/.claude/skills/tdd/references/mocking.md exec=0
-HOME/.claude/skills/tdd/references/refactoring.md exec=0
 HOME/.claude/skills/tdd/references/tests.md exec=0
 HOME/.claude/skills/to-issues/ /
 HOME/.claude/skills/to-issues/SKILL.md exec=0 unrendered=0

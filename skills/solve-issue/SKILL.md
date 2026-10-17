@@ -57,38 +57,16 @@ it as a literal: each bash call is a fresh shell.
 <!-- fragment:tracker-configuration -->
 ## Tracker Configuration
 
-Every tracker operation in this skill is an op of the tracker CLI — nothing else reads or writes
-the tracker. Before the first one, check for Node:
-
-```bash
-node --version
-```
-
-If that fails, stop and tell the user: "the tracker CLI needs Node — install Node, then re-run this
-skill." The CLI is `<skill-dir>/scripts/tracker/cli.mjs`, `<skill-dir>` being the directory you read
-this file from. Wherever this skill runs an op as `node "$TRACKER" <op> …`, run it with that path:
-
-```bash
-node "<skill-dir>/scripts/tracker/cli.mjs" <op> …
-```
-
-Before the first op, ask the CLI which tracker it talks to:
-
-```bash
-node "$TRACKER" config   # prints tracker=<kind> and configured=yes|no
-```
-
-On `configured=no`, no tracker was ever chosen for this repo. On an interactive run, invoke the
-`configure-tracker` skill now to choose one, then continue. On a non-interactive run
-(a headless/`-p` invocation or a subagent) never ask: proceed as `local`, which
-is what the CLI already uses. How the tracker works — its refs, statuses and labels — is in
+Every tracker op runs through the tracker CLI, `TRACKER=<skill-dir>/scripts/tracker/cli.mjs` (`<skill-dir>` being the
+directory you read this file from), as `node "$TRACKER" <op> …`; nothing else reads or writes the tracker. Before the
+first op run `node "$TRACKER" config` (prints `tracker=<kind>` and `configured=yes|no`). On `configured=no` on an
+interactive run, invoke the `configure-tracker` skill, then continue; on a non-interactive run (a headless/`-p`
+invocation or a subagent) never ask: proceed as `local`. The tracker's refs, statuses and labels are in
 `<skill-dir>/scripts/tracker/docs/<kind>.md`.
 
-Exit codes, every op: 0 ok; 1 the op failed — stderr carries the tracker's own error, verbatim;
-2 a usage error or an invalid ref; 3 not found (`publish-issues` adds 4 and 5, described where it
-runs). On 1 or 2, report the stderr to the user and
-fix its cause (an input, auth, the network), then re-run the op —
-never perform the operation with the tracker's own tool instead.
+Exit codes, every op: 0 ok; 3 not found; on 1 (the op failed) or 2 (a usage error or an invalid ref), report the
+stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, never performing it with the tracker's
+own tool. `publish-issues` adds 4 and 5, described in to-issues' `references/publish.md`.
 <!-- /fragment:tracker-configuration -->
 
 This skill uses four ops: `fetch` (Step 1), `tick` and `mark-done` (Step 7), and `write-section`
@@ -247,21 +225,14 @@ It runs every check in the dev commands file (`scripts/checks/commands-file.sh` 
 command found` means no local command exists: report it, do not re-check CLAUDE.md/Makefile.
 
 - `CHECKS: pass` — continue.
-- `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
-  Except `<key>: modified files:` — the check rewrote files this change didn't touch, which a
+- `CHECKS: fail` — fix the code and re-run. When the same check still fails after 2 distinct fix
+  attempts, whether or not its error changed, stop: the run is `partial`, naming the check and its
+  output. Except `<key>: modified files:` — the check rewrote files this change didn't touch, which a
   human commits — and a failure naming what no repo file can provide (§ Outcome): report
   `blocked` with that output. The modified-files line's "run it, commit the result, and re-run" is
   for that person, not for you.
-- `DISCOVER` — no dev commands file yet. STOP. Read `references/verification.md` now and discover every check
-  as it describes, persist what you found, pass or fail, then re-run `run-checks.sh`:
-
-  ```bash
-  cat > "$PROJECT_ROOT/.discovered-commands.json" <<'JSON'
-  {"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>"}
-  JSON
-  (cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .discovered-commands.json)
-  rm -f "$PROJECT_ROOT/.discovered-commands.json"
-  ```
+- `DISCOVER` — no dev commands file yet. Run `(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")`,
+  follow its prompt, then re-run `run-checks.sh`.
 
 A check that still fails, or an acceptance criterion from Step 1 that is unmet, makes the run
 `partial`: commit it as Step 6 says and report it, recording an unmet criterion in Step 8 — never run

@@ -104,9 +104,12 @@ Rules:
 
 ### 4. Refactor
 
-After all tests pass, look for refactor candidates (see `references/refactoring.md` alongside this skill file):
+After all tests pass, look for refactor candidates:
 
 - [ ] Extract duplication
+- [ ] Break long methods into private helpers (keep tests on the public interface)
+- [ ] Move logic that envies another module's data to where that data lives
+- [ ] Replace primitive obsession with value objects
 - [ ] Deepen modules (move complexity behind simple interfaces)
 - [ ] Apply SOLID principles where natural
 - [ ] Consider what new code reveals about existing code

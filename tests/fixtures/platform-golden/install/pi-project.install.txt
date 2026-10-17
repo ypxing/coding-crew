@@ -211,8 +211,6 @@ REPO/.pi/skills/solve-feature/scripts/tracker/local.mjs exec=0
 REPO/.pi/skills/solve-feature/scripts/tracker/tracker-config.mjs exec=0
 REPO/.pi/skills/solve-issue/ /
 REPO/.pi/skills/solve-issue/SKILL.md exec=0 unrendered=0
-REPO/.pi/skills/solve-issue/references/ /
-REPO/.pi/skills/solve-issue/references/verification.md exec=0
 REPO/.pi/skills/solve-issue/scripts/ /
 REPO/.pi/skills/solve-issue/scripts/checks/ /
 REPO/.pi/skills/solve-issue/scripts/checks/commands-file.sh exec=1
@@ -252,7 +250,6 @@ REPO/.pi/skills/tdd/references/ /
 REPO/.pi/skills/tdd/references/deep-modules.md exec=0
 REPO/.pi/skills/tdd/references/interface-design.md exec=0
 REPO/.pi/skills/tdd/references/mocking.md exec=0
-REPO/.pi/skills/tdd/references/refactoring.md exec=0
 REPO/.pi/skills/tdd/references/tests.md exec=0
 REPO/.pi/skills/to-issues/ /
 REPO/.pi/skills/to-issues/SKILL.md exec=0 unrendered=0

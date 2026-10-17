@@ -210,8 +210,6 @@ CONFIG/skills/solve-feature/scripts/tracker/local.mjs exec=0
 CONFIG/skills/solve-feature/scripts/tracker/tracker-config.mjs exec=0
 CONFIG/skills/solve-issue/ /
 CONFIG/skills/solve-issue/SKILL.md exec=0 unrendered=0
-CONFIG/skills/solve-issue/references/ /
-CONFIG/skills/solve-issue/references/verification.md exec=0
 CONFIG/skills/solve-issue/scripts/ /
 CONFIG/skills/solve-issue/scripts/checks/ /
 CONFIG/skills/solve-issue/scripts/checks/commands-file.sh exec=1
@@ -251,7 +249,6 @@ CONFIG/skills/tdd/references/ /
 CONFIG/skills/tdd/references/deep-modules.md exec=0
 CONFIG/skills/tdd/references/interface-design.md exec=0
 CONFIG/skills/tdd/references/mocking.md exec=0
-CONFIG/skills/tdd/references/refactoring.md exec=0
 CONFIG/skills/tdd/references/tests.md exec=0
 CONFIG/skills/to-issues/ /
 CONFIG/skills/to-issues/SKILL.md exec=0 unrendered=0

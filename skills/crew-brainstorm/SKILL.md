@@ -11,26 +11,26 @@ description: >
 
 Help turn ideas into fully formed designs through natural collaborative dialogue.
 
-Start by understanding the current project context. If the source already passes the four light-path checks, hand it to `to-issues`; otherwise ask questions one at a time to refine the idea, and once you understand what you're building, present the design and get user approval.
+Start by understanding the current project context, then ask questions one at a time to refine the idea, and once you understand what you're building, present the design and get user approval.
 
 <HARD-GATE>
-Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until the design is settled: either you presented it and the user approved it, or the source passed all four light-path checks and went to `to-issues`, whose quiz is the single review. Nothing else skips the design.
+Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until the user approved the design you presented. The light path below is the one exception: there `to-issues`' quiz is the single review.
 </HARD-GATE>
 
 ## Anti-Pattern: "This Is Too Simple To Need A Design"
 
-"Simple" is not the exemption; only the four light-path checks are. A todo list, a single-function utility, a config change: "simple" projects are where unexamined assumptions cause the most wasted work. The design can be short (a few sentences for truly simple projects), but it is presented and approved.
+"Simple" is not an exemption. A todo list, a single-function utility, a config change: "simple" projects are where unexamined assumptions cause the most wasted work. The design can be short (a few sentences for truly simple projects), but it is presented and approved.
 
 ## Checklist
 
 Complete these in order:
 
 1. **Explore project context** — check files, docs, recent commits
-2. **Judge the light path** — if the source is already one complete change, skip to step 6
+2. **Judge the light path** — below; when it holds, skip to step 6
 3. **Ask clarifying questions** — one at a time; size the problem first (look up how often it happens and what it costs in git history, merged PRs and the tracker; ask only what no source holds), then purpose, constraints and success criteria
 4. **Propose 2-3 approaches** — with trade-offs and your recommendation; one is always the do-least option
 5. **Present design** — in sections scaled to their complexity, get user approval after each section
-6. **Hand off** — invoke `to-issues`, passing the agreed design (decisions, `(auto)` lines, facts, cut list)
+6. **Hand off** — as After the Design says
 
 ## The Process
 

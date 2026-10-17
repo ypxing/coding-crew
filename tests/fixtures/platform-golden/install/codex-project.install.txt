@@ -209,8 +209,6 @@ REPO/.agents/skills/solve-feature/scripts/tracker/local.mjs exec=0
 REPO/.agents/skills/solve-feature/scripts/tracker/tracker-config.mjs exec=0
 REPO/.agents/skills/solve-issue/ /
 REPO/.agents/skills/solve-issue/SKILL.md exec=0 unrendered=0
-REPO/.agents/skills/solve-issue/references/ /
-REPO/.agents/skills/solve-issue/references/verification.md exec=0
 REPO/.agents/skills/solve-issue/scripts/ /
 REPO/.agents/skills/solve-issue/scripts/checks/ /
 REPO/.agents/skills/solve-issue/scripts/checks/commands-file.sh exec=1
@@ -250,7 +248,6 @@ REPO/.agents/skills/tdd/references/ /
 REPO/.agents/skills/tdd/references/deep-modules.md exec=0
 REPO/.agents/skills/tdd/references/interface-design.md exec=0
 REPO/.agents/skills/tdd/references/mocking.md exec=0
-REPO/.agents/skills/tdd/references/refactoring.md exec=0
 REPO/.agents/skills/tdd/references/tests.md exec=0
 REPO/.agents/skills/to-issues/ /
 REPO/.agents/skills/to-issues/SKILL.md exec=0 unrendered=0

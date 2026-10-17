@@ -28,6 +28,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- skills: shared instructions are stated once. The `ready-for-human` block lives only in to-issues (upgrade-deps
+  hands its drafts there), the tracker-configuration block is 10 lines, and `discover-commands.sh`'s prompt now ends
+  with the commands that save the answer, so every skill that discovers dev commands runs it and follows the prompt;
+  solve-issue's `DISCOVER` now asks all eight fields. `solve-issue/references/verification.md` and
+  `tdd/references/refactoring.md` are folded into their SKILL.md (#557).
 - checks: the generated compose override passes `HTTPS_PROXY` and the ecosystem's CA variable (plus
   `YARN_HTTPS_PROXY` for node) into every service by name, and mounts the host's
   `/etc/ssl/certs/ca-certificates.crt` read-only when it exists, so `npm install`/`pip install` in a service started

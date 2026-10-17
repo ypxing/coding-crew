@@ -107,7 +107,7 @@ the last round did not fix is listed under `Needs attention` in the PR body, whi
 
 ### Adding a New Skill
 
-1. Create `skills/<name>/SKILL.md` (required). Add supporting files in the same directory as needed (`verification.md`, `mocking.md`, etc.).
+1. Create `skills/<name>/SKILL.md` (required). Add supporting files in the same directory as needed (`references/mocking.md`, `references/publish.md`, etc.).
 
 2. Add the entry to `registry.json` under `.skills`:
 

@@ -209,8 +209,6 @@ HOME/.agents/skills/solve-feature/scripts/tracker/local.mjs exec=0
 HOME/.agents/skills/solve-feature/scripts/tracker/tracker-config.mjs exec=0
 HOME/.agents/skills/solve-issue/ /
 HOME/.agents/skills/solve-issue/SKILL.md exec=0 unrendered=0
-HOME/.agents/skills/solve-issue/references/ /
-HOME/.agents/skills/solve-issue/references/verification.md exec=0
 HOME/.agents/skills/solve-issue/scripts/ /
 HOME/.agents/skills/solve-issue/scripts/checks/ /
 HOME/.agents/skills/solve-issue/scripts/checks/commands-file.sh exec=1
@@ -250,7 +248,6 @@ HOME/.agents/skills/tdd/references/ /
 HOME/.agents/skills/tdd/references/deep-modules.md exec=0
 HOME/.agents/skills/tdd/references/interface-design.md exec=0
 HOME/.agents/skills/tdd/references/mocking.md exec=0
-HOME/.agents/skills/tdd/references/refactoring.md exec=0
 HOME/.agents/skills/tdd/references/tests.md exec=0
 HOME/.agents/skills/to-issues/ /
 HOME/.agents/skills/to-issues/SKILL.md exec=0 unrendered=0

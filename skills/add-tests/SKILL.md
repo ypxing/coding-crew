@@ -18,20 +18,8 @@ Turn a coverage gap into `ready-for-agent` issues.
 
 `PROJECT_ROOT` is the repo root, `git rev-parse --show-toplevel`; carry it as a literal, since each
 bash call is a fresh shell. The commands come from the dev commands file
-(`.coding-crew/dev-commands.json`, or the clone's own copy when the repo commits none):
-
-```bash
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")
-```
-
-This prints either a skip message (the dev commands file already has all eight fields) or a
-discovery prompt. For a prompt, answer every field it lists by reading the files it names, write the
-JSON to `$PROJECT_ROOT/.discovered-commands.json`, and save it:
-
-```bash
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .discovered-commands.json)
-rm -f "$PROJECT_ROOT/.discovered-commands.json"
-```
+(`.coding-crew/dev-commands.json`, or the clone's own copy when the repo commits none). Run
+`(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")` and follow its prompt, if it prints one.
 
 Then read the two fields this skill needs:
 
@@ -46,7 +34,7 @@ exists) or is absent (discovery had no files to read), tell the user plainly and
 
 > "This project has no coverage command configured, so I can't find coverage gaps. Set
 > `"coverage"` in the dev commands file (`<the path COMMANDS_FILE holds>`) to the command that
-> produces a coverage report, or rerun discovery with `discover-commands.sh --refresh` once the
+> produces a coverage report, or rerun step 1's discovery with `--refresh` once the
 > project documents one, then re-run `/add-tests`."
 
 Do not fall back to a file-existence heuristic and do not attempt to bootstrap coverage tooling
@@ -73,9 +61,7 @@ bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<cov
 Read whatever report format it produces (lcov,
 Cobertura XML, a JS test runner's JSON summary, `go tool cover`'s profile, …) yourself, as a
 model — extract per-file statement/branch coverage from the raw report. Do not write or invoke a
-parser per format; the report formats vary too much for that to stay maintainable, and reading
-the raw text directly is the same reasoning `discover-commands.sh` already uses for reading
-CLAUDE.md/Makefile instead of regexing them.
+parser per format; the report formats vary too much for that to stay maintainable.
 
 ### 4. Score and cap under-covered files
 
@@ -102,8 +88,7 @@ A module with many small gaps is one issue; a module with one large gap is still
 
 ### 6. Resolve the mocking convention per ecosystem
 
-For each ecosystem present in the repo (detected the same way `discover-commands.sh` already
-scans manifests: `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemfile`,
+For each ecosystem present in the repo (detected by its manifest: `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemfile`,
 `composer.json`), resolve one mocking convention, in this order:
 
 1. **Existing repo precedent** — if the repo already depends on or uses a mocking/test-double
@@ -181,8 +166,7 @@ Two more things per finding, each cheap here and expensive for a coder to redisc
 Then invoke the `to-issues` skill with that findings file as its source, to slice, quiz, and publish
 `ready-for-agent` issues. `to-issues` alone decides whether the work needs a PRD and publishes it
 through `to-prd`. Do not slice, size, or publish issues yourself — that responsibility
-belongs entirely to `to-issues`. `crew-grill` follows the same pattern: it hands its design to
-`to-issues` rather than slicing it itself.
+belongs entirely to `to-issues`.
 
 Once `to-issues` has published the issues, delete `findings.md`: nothing else does, and an
 untracked file left in the checkout fails a later run that needs a clean tree. If it stopped before

@@ -22,38 +22,16 @@ stop and ask the user before proceeding.
 <!-- fragment:tracker-configuration -->
 ## Tracker Configuration
 
-Every tracker operation in this skill is an op of the tracker CLI — nothing else reads or writes
-the tracker. Before the first one, check for Node:
-
-```bash
-node --version
-```
-
-If that fails, stop and tell the user: "the tracker CLI needs Node — install Node, then re-run this
-skill." The CLI is `<skill-dir>/scripts/tracker/cli.mjs`, `<skill-dir>` being the directory you read
-this file from. Wherever this skill runs an op as `node "$TRACKER" <op> …`, run it with that path:
-
-```bash
-node "<skill-dir>/scripts/tracker/cli.mjs" <op> …
-```
-
-Before the first op, ask the CLI which tracker it talks to:
-
-```bash
-node "$TRACKER" config   # prints tracker=<kind> and configured=yes|no
-```
-
-On `configured=no`, no tracker was ever chosen for this repo. On an interactive run, invoke the
-`configure-tracker` skill now to choose one, then continue. On a non-interactive run
-(a headless/`-p` invocation or a subagent) never ask: proceed as `local`, which
-is what the CLI already uses. How the tracker works — its refs, statuses and labels — is in
+Every tracker op runs through the tracker CLI, `TRACKER=<skill-dir>/scripts/tracker/cli.mjs` (`<skill-dir>` being the
+directory you read this file from), as `node "$TRACKER" <op> …`; nothing else reads or writes the tracker. Before the
+first op run `node "$TRACKER" config` (prints `tracker=<kind>` and `configured=yes|no`). On `configured=no` on an
+interactive run, invoke the `configure-tracker` skill, then continue; on a non-interactive run (a headless/`-p`
+invocation or a subagent) never ask: proceed as `local`. The tracker's refs, statuses and labels are in
 `<skill-dir>/scripts/tracker/docs/<kind>.md`.
 
-Exit codes, every op: 0 ok; 1 the op failed — stderr carries the tracker's own error, verbatim;
-2 a usage error or an invalid ref; 3 not found (`publish-issues` adds 4 and 5, described where it
-runs). On 1 or 2, report the stderr to the user and
-fix its cause (an input, auth, the network), then re-run the op —
-never perform the operation with the tracker's own tool instead.
+Exit codes, every op: 0 ok; 3 not found; on 1 (the op failed) or 2 (a usage error or an invalid ref), report the
+stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, never performing it with the tracker's
+own tool. `publish-issues` adds 4 and 5, described in to-issues' `references/publish.md`.
 <!-- /fragment:tracker-configuration -->
 
 ## Running commands
@@ -72,19 +50,8 @@ Do not install up front. Only when a command fails for a missing dependency (mod
 package manager or tool not found) invoke the `dep-install` skill, with `PROJECT_ROOT` set, then
 retry that command once.
 
-Resolve the `test`, `lint` and `typecheck` commands from the dev commands file now:
-
-```bash
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")
-```
-
-A prompt means some fields are unanswered: answer every field it lists by reading the files it
-names, write the JSON to `$PROJECT_ROOT/.discovered-commands.json`, and save it:
-
-```bash
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .discovered-commands.json)
-rm -f "$PROJECT_ROOT/.discovered-commands.json"
-```
+Resolve the `test`, `lint` and `typecheck` commands from the dev commands file now: run
+`(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")` and follow its prompt, if it prints one.
 
 `bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT"` prints the dev
 commands file's path. Step 6 needs `typecheck` to get a mechanical breaking-change signal on major
