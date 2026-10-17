@@ -42,7 +42,7 @@ teardown() { cd /; rm -rf "$WORK"; }
 }
 
 @test "any argument is unknown: exit 2, before the branch is looked at" {
-  run bash "$CHECK" --allow-default
+  run bash "$CHECK" --not-a-flag
   [ "$status" -eq 2 ]
-  [[ "$output" == *"unknown argument: --allow-default"* ]]
+  [[ "$output" == *"unknown argument: --not-a-flag"* ]]
 }

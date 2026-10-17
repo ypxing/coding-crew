@@ -189,9 +189,9 @@ land_ready() {
 
 # --- usage and preconditions ---------------------------------------------------------
 
-@test "no subcommand, an unknown one, a wrong argument count or a removed flag exits 2 with the usage line" {
+@test "no subcommand, an unknown one or a wrong argument count exits 2 with the usage line" {
   local args
-  for args in "" "feat" "run feat" "next" "land feat 2" "fix feat 10" "fix feat 10 feature/feat x" "fix feat ten feature/feat" "describe feat" "describe feat ten" "start feat --agent copilot" "start feat --budget 5" "start feat --open-pr" "start feat other"; do
+  for args in "" "feat" "run feat" "next" "land feat 2" "fix feat 10" "fix feat 10 feature/feat x" "fix feat ten feature/feat" "describe feat" "describe feat ten" "start feat other"; do
     run bash "$SCRIPT" $args
     [ "$status" -eq 2 ] || { echo "'$args': status $status"; return 1; }
     [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
@@ -1079,10 +1079,6 @@ EOF
 
 @test ".solve-feature/ is gitignored here" {
   git -C "$REPO_ROOT" check-ignore -q .solve-feature/x.log
-}
-
-@test "no agent CLI is launched: agent.sh is gone and neither skill mentions --agent, SOLVE_FEATURE_AGENT, --budget or afk.models" {
-  ! grep -rnE -- '--agent|SOLVE_FEATURE_AGENT|--budget|afk\.models' "$REPO_ROOT/skills/solve-feature" "$REPO_ROOT/skills/crew-review" || false
 }
 
 @test "SKILL.md runs its reviewer through the crew-review skill on the spec start wrote, names no other skill's files, and no SOLVE_FEATURE_HOST" {

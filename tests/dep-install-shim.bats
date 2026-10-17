@@ -173,7 +173,7 @@ logged() { tr '\n' ' ' < "$LOG" | sed 's/ $//'; }
 }
 
 @test "two shim copies on PATH (two installs): the real docker is reached, with the override added once" {
-  # A user's shell exporting one install's shim while the sprint runs another's: each copy used to
+  # A user's shell exporting one install's shim while the run uses another's: each copy used to
   # find the other as "the real docker" and exec it forever.
   OTHER="$TEMP_DIR/other-install/shim"
   mkdir -p "$OTHER"
