@@ -68,13 +68,15 @@ export function parseCase(name, text) {
   if (!["feature", "branch"].includes(meta.mode)) throw new Error(`${name}: unknown mode ${meta.mode}`);
   const misses = (sections["Expected misses"] ?? "").split("\n")
     .map((l) => /^\s*-\s+([\w-]+):\s*(.+)$/.exec(l)).filter(Boolean).map((x) => ({ id: x[1], text: x[2] }));
-  if (!misses.length || !sections["Reference judgement"] || !sections.PRD) {
+  // A clean case (no known defect) says so, so a case that forgot its misses still fails here.
+  const clean = meta.clean === "true";
+  if ((!misses.length && !clean) || !sections["Reference judgement"] || !sections.PRD) {
     throw new Error(`${name}: needs ## PRD, ## Expected misses and ## Reference judgement`);
   }
   if (meta.mode === "branch" && !sections["Acceptance criteria"]) throw new Error(`${name}: a branch case needs ## Acceptance criteria`);
   const notes = (sections.Notes ?? "").split("\n")
     .map((l) => /^\s*-\s+`([^`]+)`\s+—\s+(.+)$/.exec(l)).filter(Boolean).map((x) => ({ location: x[1], concern: x[2] }));
-  return { name, ...meta, intro, prd: sections.PRD, misses, notes, reference: sections["Reference judgement"],
+  return { name, ...meta, clean, intro, prd: sections.PRD, misses, notes, reference: sections["Reference judgement"],
     issue: sections.Issue ?? name, criteria: sections["Acceptance criteria"] ?? "" };
 }
 
@@ -112,17 +114,21 @@ export function judgePrompt(rubric, c, labelled) {
 
 export { parseJudge };
 
-/** Findings reported in one reviewer output: the `findings` of its last fenced json block that has them; null when none parses. */
-export function countFindings(text) {
+/** One reviewer output's report findings: the `findings` of its last fenced json block that has them; null when none parses. */
+function reportFindings(text) {
   const blocks = [...String(text).matchAll(/```(?:json)?[ \t]*\n([\s\S]*?)\n[ \t]*```/g)];
   for (let i = blocks.length - 1; i >= 0; i--) {
     try {
       const v = JSON.parse(blocks[i][1]);
-      if (Array.isArray(v?.findings)) return v.findings.length;
+      if (Array.isArray(v?.findings)) return v.findings;
     } catch { /* previous block */ }
   }
   return null;
 }
+
+export const countFindings = (text) => reportFindings(text)?.length ?? null;
+/** CRITICAL and HIGH findings in one reviewer output's report; null when none parses. */
+export const countSevere = (text) => reportFindings(text)?.filter((f) => ["CRITICAL", "HIGH"].includes(f?.severity)).length ?? null;
 
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 const fmt = (n) => (n === null ? "n/a" : n.toFixed(1));
@@ -145,6 +151,7 @@ export function aggregate(rows, cases) {
       entry[v] = {
         meanFindings: mean(rs.map((r) => r.findings).filter((n) => typeof n === "number")),
         meanDistinct: mean(rs.map((r) => r.distinct).filter((n) => typeof n === "number")),
+        ...(c.clean ? { meanCritHigh: mean(rs.map((r) => r.critHigh).filter((n) => typeof n === "number")) } : {}),
       };
     }
     const base = entry.base?.meanDistinct, head = entry.head?.meanDistinct;
@@ -160,7 +167,7 @@ export function summarize(rows, cases) {
     const rs = rows.filter((r) => r.version === v);
     return `${v} ${rs.filter((r) => r.treeChanged).length}/${rs.length}`;
   }).join(", ");
-  const lines = ["| case | version | runs ok | caught (per expected miss) | mean findings (raw) | mean findings (distinct) | cost |", "|---|---|---|---|---|---|---|"];
+  const lines = ["| case | version | runs ok | caught (per expected miss) | mean findings (raw) | mean findings (distinct) | mean CRITICAL+HIGH | cost |", "|---|---|---|---|---|---|---|---|"];
   const means = {};
   for (const c of cases) {
     for (const v of ["base", "head"]) {
@@ -170,8 +177,10 @@ export function summarize(rows, cases) {
       const caught = c.misses.map((x) => `${x.id} ${judged.filter((r) => r.caught[x.id]).length}/${judged.length}`).join("; ");
       const m = mean(rs.map((r) => r.findings).filter((n) => typeof n === "number"));
       const d = mean(rs.map((r) => r.distinct).filter((n) => typeof n === "number"));
+      // Only a clean case has no defect to tell a false CRITICAL or HIGH finding from a real one.
+      const severe = c.clean ? fmt(mean(rs.map((r) => r.critHigh).filter((n) => typeof n === "number"))) : "-";
       (means[c.name] ??= {})[v] = d;
-      lines.push(`| ${c.name} | ${v} | ${rs.filter((r) => r.ok).length}/${rs.length} | ${caught} | ${fmt(m)} | ${fmt(d)} | $${rs.reduce((a, r) => a + (r.cost || 0), 0).toFixed(2)} |`);
+      lines.push(`| ${c.name} | ${v} | ${rs.filter((r) => r.ok).length}/${rs.length} | ${caught || "none (clean case)"} | ${fmt(m)} | ${fmt(d)} | ${severe} | $${rs.reduce((a, r) => a + (r.cost || 0), 0).toFixed(2)} |`);
     }
   }
   lines.push("", "Mean distinct findings, head / base: " + cases.map((c) => {
@@ -296,8 +305,10 @@ async function main() {
       const ok = !failure;
       const counts = outs.map(countFindings);
       const findings = ok && counts.every((n) => n !== null) ? counts.reduce((a, n) => a + n, 0) : null;
+      const severe = c.clean ? outs.map(countSevere) : [];
+      const critHigh = ok && c.clean && severe.every((n) => n !== null) ? severe.reduce((a, n) => a + n, 0) : null;
       console.log(`  ${id}: ${stop.hit && !ok ? "LIMIT" : change ? "CHANGED TREE" : !ok ? "FAILED" : reused ? "reused" : "ok"} $${cost.toFixed(2)}`);
-      return { case: c.name, version: v, run: i, ok, failure, treeChanged: !!change, text: outs.join("\n\n"), findings, cost };
+      return { case: c.name, version: v, run: i, ok, failure, treeChanged: !!change, text: outs.join("\n\n"), findings, critHigh, cost };
     }), o.parallel, stop);
     if (stop.hit) {
       console.error(`\nSTOPPED: "${stop.why}". ${runs.filter((r) => r?.ok).length} of ${plan.length} runs finished; nothing was judged. ` +
@@ -333,7 +344,7 @@ async function main() {
         const caught = vd ? Object.fromEntries(c.misses.map((x) => [x.id, vd.caught?.[x.id] === true])) : null;
         const distinct = Number.isFinite(vd?.distinct) ? vd.distinct : null;
         rows.push({ case: c.name, version: r.version, run: r.run, ok: r.ok && !!caught, failure: r.failure ?? (r.ok && !caught ? "judge gave no verdict" : null),
-          treeChanged: r.treeChanged, findings: r.findings, distinct, caught, note: vd?.note ?? null, cost: r.cost });
+          treeChanged: r.treeChanged, findings: r.findings, critHigh: r.critHigh, distinct, caught, note: vd?.note ?? null, cost: r.cost });
       }
       if (rows.length) rows.at(-1).cost += judgeCost;
     }

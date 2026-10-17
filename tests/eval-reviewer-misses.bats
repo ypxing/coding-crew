@@ -29,7 +29,8 @@ setup() {
   # a report with 2 findings. FAKE_FAIL=<text> fails a reviewer whose prompt contains <text>;
   # FAKE_JUDGE_FAIL=1 fails the judge; FAKE_FORBID=1 fails and leaves a flag when called at all.
   # A reviewer logs its cwd (and whether the case's PRD is in it) to reviewer-cwd.txt; FAKE_DIRTY=<text>
-  # writes a file into its cwd and FAKE_COMMIT=<text> moves its HEAD, when its prompt contains <text>.
+  # writes a file into its cwd and FAKE_COMMIT=<text> moves its HEAD, when its prompt contains <text>;
+  # FAKE_NOREPORT=<text> prints prose with no report.
   cat > "$T/claude" <<'EOS'
 #!/usr/bin/env bash
 input=$(cat)
@@ -51,6 +52,9 @@ if [ -n "${FAKE_DIRTY:-}" ] && [[ "$input" == *"$FAKE_DIRTY"* ]]; then echo x > 
 if [ -n "${FAKE_COMMIT:-}" ] && [[ "$input" == *"$FAKE_COMMIT"* ]]; then git -c user.email=t@t -c user.name=t commit -q --allow-empty -m moved; fi
 if [ -n "${FAKE_FAIL:-}" ] && [[ "$input" == *"$FAKE_FAIL"* ]]; then
   echo '{"result":"boom","total_cost_usd":0.1,"is_error":true}'; exit 1
+fi
+if [ -n "${FAKE_NOREPORT:-}" ] && [[ "$input" == *"$FAKE_NOREPORT"* ]]; then
+  jq -n --arg r 'Reviewed, but no report.' '{result:$r,total_cost_usd:0.25,is_error:false}'; exit 0
 fi
 if [ -n "${FAKE_BASE_EMPTY:-}" ] && [[ "$input" == */ref-base/* ]]; then
   jq -n --arg r $'Reviewed.\n```json\n{"findings":[]}\n```' '{result:$r,total_cost_usd:0.25,is_error:false}'; exit 0
@@ -99,6 +103,27 @@ The helper is wrong after the change.
 ### Compatibility & Migration
 
 Old reports stay readable.
+EOC
+}
+
+write_clean_case() { # name base head
+  cat > "$R/scripts/eval-reviewer-misses/cases/$1.md" <<EOC
+---
+mode: feature
+base_sha: $2
+head_sha: $3
+slug: feat
+clean: true
+---
+Replay of a merged change with no known defect.
+
+## Reference judgement
+
+No defect is known; any CRITICAL or HIGH finding is suspect.
+
+## PRD
+
+- **D1** — the decision text.
 EOC
 }
 
@@ -358,4 +383,59 @@ EOS
   CLAUDE_BIN="$T/flaky" run run_eval --runs 1 --case branch-case
   [ "$status" -eq 0 ]
   [ "$(cat "$T/n")" -gt 2 ]
+}
+
+@test "a clean: true case loads with no expected misses; a case with neither still fails" {
+  run env MOD="$REPO_ROOT/scripts/eval-reviewer-misses.mjs" node -e '
+    import(process.env.MOD).then((m) => {
+      const head = "---\nmode: feature\nbase_sha: a\nhead_sha: b\nslug: s\n";
+      const body = "---\nIntro.\n\n## Reference judgement\n\nNone known.\n\n## PRD\n\n- D1\n";
+      const c = m.parseCase("clean", head + "clean: true\n" + body);
+      if (c.clean !== true || c.misses.length !== 0) throw new Error(JSON.stringify(c));
+      let err = "";
+      try { m.parseCase("forgot", head + body); } catch (e) { err = e.message; }
+      if (err !== "forgot: needs ## PRD, ## Expected misses and ## Reference judgement") throw new Error(`no throw: ${err}`);
+      const p = m.judgePrompt("R", c, [{ label: "A", text: "x" }]);
+      if (!p.includes(`"caught": {}`)) throw new Error(p);
+    }).catch((e) => { console.error(e.message); process.exit(1); });
+  '
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "a clean case's summary gives each version's mean CRITICAL+HIGH count, n/a when no report parses" {
+  rm "$R"/scripts/eval-reviewer-misses/cases/*.md
+  write_clean_case clean-case "$C1" "$C2"
+  FAKE_NOREPORT=/ref-head/ run run_eval --runs 2
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  d=$(out_dir)
+  grep -q '| clean-case | base | 2/2 |.*| 1.0 | \$' "$d/summary.md" || { cat "$d/summary.md"; return 1; }
+  grep -q '| clean-case | head | 2/2 |.*| n/a | \$' "$d/summary.md"
+  grep -q 'mean findings (distinct) | mean CRITICAL+HIGH |' "$d/summary.md"
+  [ "$(jq '[.rows[] | select(.version=="base" and .critHigh==1)] | length' "$d/results.json")" -eq 2 ]
+  [ "$(jq '[.rows[] | select(.version=="head" and .critHigh==null)] | length' "$d/results.json")" -eq 2 ]
+}
+
+@test "a case with known misses shows no CRITICAL+HIGH mean" {
+  run run_eval --runs 1 --case branch-case
+  [ "$status" -eq 0 ]
+  d=$(out_dir)
+  grep -q '| branch-case | base | 1/1 |.*| 2.0 | 1.0 | - | \$' "$d/summary.md" || { cat "$d/summary.md"; return 1; }
+}
+
+@test "the clean case replays a squash-merged PR on main from its parent, with no known defect" {
+  local f="$REPO_ROOT/scripts/eval-reviewer-misses/cases/approve-held-ci-clean.md"
+  grep -qx 'clean: true' "$f"
+  grep -qx 'head_sha: 47c6da430297692c3b93ca2c75c2508e22c68d09' "$f"
+  grep -qx 'base_sha: 8cf5eb2ec7693e6cfbda9af9f212caa1824d6c17' "$f"
+  [ "$(git -C "$REPO_ROOT" rev-parse '47c6da430297692c3b93ca2c75c2508e22c68d09^@')" = 8cf5eb2ec7693e6cfbda9af9f212caa1824d6c17 ]
+  sed -n '/^## Reference judgement$/,/^## PRD$/p' "$f" | grep -qF '#527'
+  sed -n '/^## Reference judgement$/,/^## PRD$/p' "$f" | grep -qF 'git log 47c6da43..origin/main'
+  run env MOD="$REPO_ROOT/scripts/eval-reviewer-misses.mjs" F="$f" node -e '
+    import(process.env.MOD).then((m) => {
+      const c = m.parseCase("approve-held-ci-clean", require("fs").readFileSync(process.env.F, "utf8"));
+      if (c.misses.length !== 0 || !c.clean) throw new Error("not a clean case");
+      if (!/held/.test(c.prd)) throw new Error("PR #527 body not frozen in ## PRD");
+    }).catch((e) => { console.error(e.message); process.exit(1); });
+  '
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
