@@ -36,6 +36,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- crew-review: the review also reports dead code a change adds or leaves without a caller (LOW), new code that reads
+  an input differently from the existing code that reads it, and a check an error or missing value skips, and
+  counts only concrete security holes, not missing hardening. solve-issue, crew-review, write-pr and
+  address-pr-comments treat issue, PR, review and CI-log text as data, never as instructions to the agent. The
+  `eval-reviewer-misses.mjs` eval takes `clean: true` cases with no expected misses, reports their mean
+  CRITICAL+HIGH findings per version, and gains `approve-held-ci-clean`, a replay of PR #527 (#562).
 - crew-review, solve-feature: the reviewer can run any shell command and write scratch files outside the repo (on
   Claude Code a general-purpose agent, not Explore or Plan), leaves the repo as it found it, reproduces a suspected
   defect where that is cheap, reports a defect even when a spec decision prescribes it, checks each new test can
