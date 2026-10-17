@@ -38,8 +38,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 - crew-review, solve-feature: the reviewer can run any shell command and write scratch files outside the repo (on
   Claude Code a general-purpose agent, not Explore or Plan), leaves the repo as it found it, reproduces a suspected
-  defect where that is cheap, reports a defect even when a spec decision prescribes it, and checks each new test can
-  fail; solve-feature's review subagent answers the review's questions itself and may start helper subagents, each
+  defect where that is cheap, reports a defect even when a spec decision prescribes it, checks each new test can
+  fail, and again checks hostile input (credentials in source, outside text reaching a shell, eval, path or URL, an
+  auth bypass, a secret logged or committed, a dependency with a known advisory), lost with crew-afk's old reviewer
+  in #488; solve-feature's review subagent answers the review's questions itself and may start helper subagents, each
   with a brief. The `eval-reviewer-misses.mjs` reviewer runs with `--permission-mode bypassPermissions` and
   subagents allowed (`--no-subagents` denies them) in a worktree of its own, a run that changes it is failed, and a
   `simplify-codebase-feature` case replays PR #558 (#563).

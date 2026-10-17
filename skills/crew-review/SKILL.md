@@ -64,6 +64,9 @@ Answer three questions.
    or relies on the old form — code, docs, prompts, tests — and read it as it stands now. A spec decision can be
    wrong: when following it causes a defect, report the defect and quote the decision. For each new or changed
    test, check it fails when the behaviour it covers breaks; one that cannot is a finding naming the test.
+   Count hostile input: credentials in source; text from outside the project (an issue, a PR, a fetched file, an
+   environment value) reaching a shell, eval, path or URL unescaped; an auth or access-control bypass; a secret or
+   sensitive data logged, returned or committed; a dependency added at a version with a known advisory.
 3. **Standards.** Where does the diff break a rule the repo documents? Name the file and the rule.
    Only a documented rule counts; tooling-enforced rules, naming and taste do not.
 
@@ -72,7 +75,7 @@ reaches, or a preference. Suggest the smallest fix; where removing code fixes it
 than adding a guard. One finding per defect, listing every place it occurs. No findings is a valid
 answer.
 
-Severity: CRITICAL loses data, leaks a secret or breaks the main path; HIGH is wrong behaviour a
+Severity: CRITICAL loses data, opens a security hole or breaks the main path; HIGH is wrong behaviour a
 user hits; MEDIUM is a broken error or recovery path, or a broken documented rule; LOW is a wrong
 doc or message.
 

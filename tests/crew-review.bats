@@ -17,9 +17,11 @@ SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
   jq -e '.skills["solve-feature"].deps | index("crew-review") and (index("review-pr") | not)' "$REPO_ROOT/registry.json" >/dev/null
 }
 
-@test "the review asks the three questions leaving the repo as found, gaps against the code at HEAD, and names the report fields fix reads" {
+@test "the review asks the three questions, hostile input included, leaving the repo as found, gaps against the code at HEAD, and names the report fields fix reads" {
   grep -qF '1. **Spec.**' "$SKILL"
   grep -qF '2. **What breaks.**' "$SKILL"
+  grep -qF 'Count hostile input' "$SKILL"
+  grep -qF 'opens a security hole' "$SKILL"
   grep -qF '3. **Standards.**' "$SKILL"
   grep -qF 'Leave the repo as you found it' "$SKILL"
   grep -qF 'the spec require that the code at HEAD lacks' "$SKILL"
