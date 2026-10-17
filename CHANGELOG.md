@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.2.0]
+
 - **docs**: the README and guide lead with `npx skills add ypxing/coding-crew --all` (`-g` for user level), keep
   `bootstrap.sh` for pinned/offline installs, config-dir relocation and the shadowing warning, and name the agents
   that read `.agents/skills` — the `codex` install target (#540).
