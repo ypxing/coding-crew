@@ -18,18 +18,25 @@ teardown() {
   return 0
 }
 
-# fixture <dir> — a minimal node project (one manifest, one lockfile) in <dir>
+# fixture <dir> — a minimal node project (one manifest, one lockfile) in <dir>, a git checkout to hold its override
 fixture() {
   local dir="$1"
   mkdir -p "$dir"
+  git init -q "$dir"
   printf 'services:\n  app:\n    build: .\n    volumes:\n      - .:/opt/app\n' > "$dir/docker-compose.yml"
   echo '{"name":"fixture"}' > "$dir/package.json"
   echo '{"lock":"A"}' > "$dir/package-lock.json"
 }
 
+# override <project-root> — writes the override and prints it
+override() {
+  bash "$SCRIPT" --project-root "$1" >/dev/null || return 1
+  cat "$1/.git/crew-compose.override.yml"
+}
+
 # names <project-root> — the dependency volume names the override carries, one per line
 names() {
-  bash "$SCRIPT" --project-root "$1" --dry-run | sed -n 's/^    name: //p'
+  override "$1" | sed -n 's/^    name: //p'
 }
 
 @test "every dependency volume is named wt_<proj>_<owner4>_<eco>_<dir>_<lock8>, as an explicit name:" {
@@ -46,7 +53,7 @@ names() {
   # one install writes every volume, so every name carries the same lock hash
   [ "${root##*_}" = "${lines[1]##*_}" ]
   # the services mount the same name
-  run bash "$SCRIPT" --project-root "$PARENT/product-services" --dry-run
+  run override "$PARENT/product-services"
   grep -qx "      - $root:/opt/app/node_modules" <<<"$output"
 }
 
@@ -57,16 +64,6 @@ names() {
   b="$(names "$PARENT/b/proj" | head -1)"
   [ -n "$a" ] && [ "$a" != "$b" ]
   [ "$(names "$PARENT/a/proj" | head -1)" = "$a" ]
-}
-
-@test "--main-root, --sandbox and --query owner-prefix are gone" {
-  fixture "$PARENT/proj"
-  run bash "$SCRIPT" --project-root "$PARENT/proj" --main-root "$PARENT/proj" --dry-run
-  [ "$status" -eq 1 ]
-  run bash "$SCRIPT" --project-root "$PARENT/proj" --sandbox --dry-run
-  [ "$status" -eq 1 ]
-  run bash "$SCRIPT" --project-root "$PARENT/proj" --query owner-prefix
-  [ "$status" -eq 1 ]
 }
 
 @test "<lock8> changes when the lockfile changes" {
@@ -114,8 +111,7 @@ names() {
 
 @test "the volume key and the explicit name are the same, and the git hooks/info volumes are not hashed" {
   fixture "$PARENT/proj"
-  git -C "$PARENT/proj" init -q
-  run bash "$SCRIPT" --project-root "$PARENT/proj" --dry-run
+  run override "$PARENT/proj"
   [ "$status" -eq 0 ]
   name="$(sed -n 's/^    name: //p' <<<"$output" | head -1)"
   grep -qx "  $name:" <<<"$output"

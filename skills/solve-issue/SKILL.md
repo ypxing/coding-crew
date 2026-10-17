@@ -242,8 +242,8 @@ This is the one full-suite run:
 bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT"
 ```
 
-It runs every check in the dev commands file (`scripts/checks/commands-file.sh` names it) — `typecheck`, `lint`, `test`, then every other
-key with a command (coverage, integration) — each through `run.sh`, and reports each. `NOT RUN: no
+It runs every check in the dev commands file (`scripts/checks/commands-file.sh` names it) — `typecheck`, `lint`, `test`, then
+`coverage` and `integration` when the file has them — each through `run.sh`, and reports each. `NOT RUN: no
 command found` means no local command exists: report it, do not re-check CLAUDE.md/Makefile.
 
 - `CHECKS: pass` — continue.

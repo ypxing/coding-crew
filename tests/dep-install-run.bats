@@ -179,14 +179,6 @@ _docker_ready() {
   for vol in ${volsets[0]}; do [[ " ${volsets[1]} " != *" $vol "* ]]; done
 }
 
-@test "--describe, --via and --main-root are unknown flags" {
-  _docker_ready
-  for flag in --describe "--via host" "--main-root $WORK"; do
-    run bash "$SCRIPT" --project-root "$WORK" $flag -- true
-    [ "$status" -eq 2 ]
-  done
-}
-
 @test "no command is a usage error" {
   run bash "$SCRIPT" --project-root "$WORK"
   [ "$status" -eq 2 ]
@@ -249,11 +241,4 @@ _docker_ready() {
   [ "$(cat "$WORK/where")" = "$WORK" ]
   [ "$(wc -l < "$CALLS")" -eq 1 ]
   [[ "$(cat "$CALLS")" == "compose "*"-f $OVERRIDE version" ]]
-}
-
-@test "run-checks: --main-root and --dep-scripts are unknown arguments" {
-  run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK"
-  [ "$status" -eq 2 ]
-  run bash "$RUN_CHECKS" --project-root "$WORK" --dep-scripts "$LIB"
-  [ "$status" -eq 2 ]
 }

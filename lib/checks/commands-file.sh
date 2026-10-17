@@ -3,7 +3,7 @@
 # command and install mode): <root>/.coding-crew/dev-commands.json when the tree has one (a team commits it to share
 # the commands), else dev-commands.json in the clone's git common dir, which every worktree of the clone shares, no
 # tree holds and nothing commits. The file need not exist yet. Sourced, it defines commands_file <root> instead,
-# and the only readers of the file's fields: commands_field, commands_field_present and commands_keys.
+# and the only readers of the file's fields: commands_field and commands_field_present.
 
 commands_file() { # <project-root>
   local tracked="$1/.coding-crew/dev-commands.json" common
@@ -27,12 +27,6 @@ commands_field() { # <file> <key> — the string value; empty for null or an abs
 
 commands_field_present() { # <file> <key> — exit 0 when the key is there, null included
   [ -n "$(_commands_token "$1" "$2")" ]
-}
-
-commands_keys() { # <file> — every key with a string or null value, in file order
-  [ -f "$1" ] || return 0
-  grep -oE '"[a-z][a-z0-9_]*"[[:space:]]*:[[:space:]]*("|null)' "$1" 2>/dev/null \
-    | sed -E 's/^"([a-z0-9_]+)".*/\1/' | awk '!seen[$0]++'
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then

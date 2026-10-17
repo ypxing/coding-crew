@@ -6,6 +6,26 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+### Upgrading
+
+- Run `/setup-coding-crew redo commands` once: the dev commands file's `credential_target` is now `registry_auth`,
+  and a file written before this keeps the old key, which nothing reads (#551).
+
+### Breaking
+
+- checks: the dev commands field `credential_target` is renamed `registry_auth` (and `ensure-env.sh`/
+  `docker-install.sh --credential-target` is `--registry-auth`), with no fallback read of the old name; run
+  `/setup-coding-crew redo commands` to rewrite the file (#551).
+
+### Changed
+
+- checks: the host install runs the dev commands file's `install` command and no longer probes the Makefile for
+  `install`/`deps` (nor `ensure-env.sh` for an `env` target): a cached `null` means discovery looked and found none.
+  One field reader in `commands-file.sh` replaces six copies; `run-checks.sh` runs typecheck, lint, test, coverage
+  and integration only. Removed: `gen-override.sh --dry-run` and `CREW_GIT_MOUNT`, `docker-install.sh --install-cmd`,
+  `manifest-fingerprint.sh --max-depth` and its `compute` word, `CREW_COMMANDS_REFRESH`, `CREW_CHECK_TAIL_LINES`, the
+  dangling `.env` symlink heal; `gen-override.sh --query` no longer hashes every lockfile (#551).
+
 ## [2.2.0]
 
 ### Highlights

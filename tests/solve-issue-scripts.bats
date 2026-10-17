@@ -140,6 +140,14 @@ _cache() {
   [[ "$output" != *"=== install"* ]]
 }
 
+@test "run-checks: registry_auth and a key it does not know are never run as checks" {
+  _cache "{\"test\": \"echo T\", \"registry_auth\": \"touch $TEMP_DIR/auth\", \"old_key\": \"touch $TEMP_DIR/old\"}"
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 0 ]
+  [ ! -e "$TEMP_DIR/auth" ] && [ ! -e "$TEMP_DIR/old" ]
+  [[ "$output" != *registry_auth* && "$output" != *old_key* ]]
+}
+
 @test "run-checks: each check writes its log through a pipe, and reports its own exit code" {
   # a log file on overlayfs can hang a bats load error forever (#266); a pipe never does
   _cache '{"typecheck": null, "lint": "if [ -p /dev/stdout ]; then echo PIPED; else echo FILE; fi; exit 3", "test": "echo T"}'

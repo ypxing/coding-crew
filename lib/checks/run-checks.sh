@@ -5,7 +5,7 @@
 # Usage:
 #   bash scripts/run-checks.sh --project-root <path>
 #
-# Order: typecheck, lint, test, then every other key with a command. In docker mode with no override
+# Order: typecheck, lint, test, coverage, integration: the checks write-commands-cache.sh writes. In docker mode with no override
 # yet, the dependency install runs once first; if it fails, no check runs (CHECKS: fail).
 # Prints per check `<key>: pass`, `<key>: fail (exit N)` (then its output tail and log path), `<key>: NOT
 # RUN: no command found` (the cache's null), or `<key>: modified files: <list>` (the check rewrote files;
@@ -45,13 +45,7 @@ if [ ! -f "$CACHE" ] || ! grep -q '"test"' "$CACHE" 2>/dev/null; then
   exit 3
 fi
 
-# Keys of dev-commands.json that are not checks.
-NOT_CHECKS=" test lint typecheck install install_mode env registry_auth docker_service "
-
-KEYS=(typecheck lint test)
-while IFS= read -r key; do
-  [[ "$NOT_CHECKS" == *" $key "* ]] || KEYS+=("$key")
-done < <(commands_keys "$CACHE")
+KEYS=(typecheck lint test coverage integration)
 
 # A check must leave the tree as it found it; prior dirt is in the before snapshot.
 _tree_state() {
@@ -79,6 +73,7 @@ fi
 
 OVERALL=0
 for key in "${KEYS[@]}"; do
+  case "$key" in coverage|integration) commands_field_present "$CACHE" "$key" || continue ;; esac
   cmd="$(commands_field "$CACHE" "$key")"
   if [ -z "$cmd" ]; then
     echo "$key: NOT RUN: no command found"

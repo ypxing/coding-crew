@@ -127,10 +127,6 @@ logged() { tr '\n' ' ' < "$LOG" | sed 's/ $//'; }
   done
 }
 
-@test "there is no docker-compose (v1) shim" {
-  [ ! -e "$SHIM_DIR/docker-compose" ]
-}
-
 @test "a non-compose docker command passes through unchanged" {
   run docker ps -a --format '{{.ID}}'
   [ "$(logged)" = "ps -a --format {{.ID}}" ]

@@ -62,8 +62,9 @@ _sha256() {
 }
 
 PROJ_SLUG=$(basename "$PROJECT_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_*$//')
-OWNER4="$(printf '%s\n%s\n' "$(hostname 2>/dev/null || uname -n)" "$(cd "$PROJECT_ROOT" && pwd -P)" | _sha256 | awk '{print substr($1, 1, 4)}')"
-OWNER_PREFIX="wt_${PROJ_SLUG}_${OWNER4}_"
+_owner4() { # host + this checkout's path, hashed
+  printf '%s\n%s\n' "$(hostname 2>/dev/null || uname -n)" "$(cd "$PROJECT_ROOT" && pwd -P)" | _sha256 | awk '{print substr($1, 1, 4)}'
+}
 
 GIT_DIR_ABS="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
 OVERRIDE_PATH=""
@@ -208,7 +209,7 @@ if [[ -z "$PROJECT_NAME" ]]; then
 fi
 _common="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
 if [[ -n "$GIT_DIR_ABS" && -n "$_common" && "$GIT_DIR_ABS" != "$_common" ]]; then
-  PROJECT_NAME="${PROJECT_NAME}-${OWNER4}"
+  PROJECT_NAME="${PROJECT_NAME}-$(_owner4)"
 fi
 
 MANIFEST_DIRS=()
@@ -275,6 +276,7 @@ if [[ -n "$QUERY" ]]; then
 fi
 
 # After the query exit: hashing every lockfile is only needed for the volume names.
+OWNER_PREFIX="wt_${PROJ_SLUG}_$(_owner4)_"
 LOCK8="$(bash "$(dirname "${BASH_SOURCE[0]}")/manifest-fingerprint.sh" --project-root "$PROJECT_ROOT" | cut -c1-8)"
 VOL_NAMES=()
 for suffix in "${VOL_SUFFIXES[@]}"; do

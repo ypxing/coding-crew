@@ -48,13 +48,6 @@ _cache() {
   [ "$output" = $'INSTALL_MODE=host\nDOCKER_SERVICE=' ]
 }
 
-@test "--deps, --main-root and --no-heuristic are unknown arguments" {
-  for args in "--deps present" "--main-root $WORK" "--no-heuristic"; do
-    run bash "$SCRIPT" --project-root "$WORK" $args
-    [ "$status" -eq 2 ]
-  done
-}
-
 @test "dep-install's recorded answer lands in a tracked file in the current checkout, keeps the discovered checks, and is what this reads" {
   local write="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks/write-commands-cache.sh"
   git -C "$WORK" -c user.email=t@t -c user.name=T commit -q --allow-empty -m init

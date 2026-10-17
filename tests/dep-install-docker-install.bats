@@ -97,11 +97,20 @@ YML
   [ "$output" = "$(printf '/opt/app/node_modules\n/opt/app/packages/web/node_modules')" ]
 }
 
-@test "gen-override.sh --query rejects an unknown field, and platform, state-path and owner-prefix are gone" {
-  for q in bogus platform state-path owner-prefix; do
-    run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --query "$q"
-    [ "$status" -ne 0 ]
-  done
+@test "gen-override.sh --query rejects an unknown field" {
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --query bogus
+  [ "$status" -ne 0 ]
+}
+
+@test "gen-override.sh --query never hashes the lockfiles" {
+  printf '#!/usr/bin/env bash\ntouch "%s/hashed"\nexit 1\n' "$TEMP_DIR" > "$STUB/manifest-stub"
+  for b in sha256sum shasum openssl; do cp "$STUB/manifest-stub" "$STUB/$b"; chmod +x "$STUB/$b"; done
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --query services
+  [ "$status" -eq 0 ]
+  [ "$output" = "app" ]
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --query vendor-paths
+  [ "$output" = "/opt/app/node_modules" ]
+  [ ! -e "$TEMP_DIR/hashed" ]
 }
 
 # ─── gen-override.sh: where the override goes, and what it holds ─────────────
@@ -113,13 +122,6 @@ YML
   run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK"
   [ "$status" -eq 0 ]
   [ -f "$OVERRIDE" ]
-  [ ! -e "$WORK/docker-compose.override.yml" ]
-}
-
-@test "--dry-run prints YAML but writes nothing" {
-  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --dry-run
-  [ "$status" -eq 0 ]
-  [ ! -e "$OVERRIDE" ]
   [ ! -e "$WORK/docker-compose.override.yml" ]
 }
 
@@ -162,33 +164,27 @@ stub_uname_m() {
 
 # The override's later -f wins the compose merge, so its platform key overrides a project's own
 # linux/amd64 pin: an arm64 host then runs native images instead of flaky qemu emulation.
-@test "the override pins every service to the host's architecture, whatever CREW_DOCKER_PLATFORM says" {
+@test "the override pins every service to the host's architecture" {
+  _two_services
   stub_uname_m aarch64
-  local services
-  services=$(bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --query services | wc -l)
-  run env CREW_DOCKER_PLATFORM=amd64 bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --dry-run
-  [ "$status" -eq 0 ]
-  [ "$(grep -c '^    platform: linux/arm64$' <<<"$output")" -eq "$services" ]
-  [[ "$output" != *"linux/amd64"* ]]
+  bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" >/dev/null
+  [ "$(grep -c '^    platform: linux/arm64$' "$OVERRIDE")" -eq 2 ]
   stub_uname_m x86_64
-  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --dry-run
-  [[ "$output" == *"    platform: linux/amd64"* ]]
+  bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" >/dev/null
+  grep -q '^    platform: linux/amd64$' "$OVERRIDE"
 }
 
 @test "an unrecognised host architecture pins no platform, leaving the project's own" {
   stub_uname_m riscv64
-  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --dry-run
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"platform:"* ]]
+  ! grep -q 'platform:' "$OVERRIDE"
 }
 
-@test "the override mounts no CA bundle and passes no proxy variables" {
-  run env IS_SANDBOX=1 bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --dry-run
+@test "the override passes NPM_TOKEN by name, so a project's .npmrc \${NPM_TOKEN} resolves from the invoking shell" {
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"ca-certificates"* ]]
-  [[ "$output" != *"PROXY"* && "$output" != *"CA_CERTS"* ]]
-  # a project's .npmrc ${NPM_TOKEN} still resolves from the invoking shell
-  [[ "$output" == *"      - NPM_TOKEN"* ]]
+  grep -qx '      - NPM_TOKEN' "$OVERRIDE"
 }
 
 # ─── docker-install.sh: detection and argument construction ─────────────────
@@ -211,10 +207,9 @@ stub_uname_m() {
   [[ "$output" == *"--rm worker"* ]]
 }
 
-@test "the checkout's dev-commands.json docker_service wins over the first-service default; git config is not read" {
+@test "the checkout's dev-commands.json docker_service wins over the first-service default" {
   _two_services
   _cache '{"docker_service": "worker"}'
-  git -C "$WORK" config --local agent.install-service app
   stub_docker 0
   run bash "$SCRIPT" --project-root "$WORK"
   [ "$status" -eq 0 ]
@@ -230,34 +225,20 @@ stub_uname_m() {
   [[ "$output" == *"pip install --quiet . --group dev"* ]]
 }
 
-@test "--install-cmd overrides the per-manifest lockfile table" {
-  stub_docker 0
-  run bash "$SCRIPT" --project-root "$WORK" --install-cmd "make deps"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"make deps"* ]]
-  [[ "$output" != *"npm ci"* ]]
-}
-
-@test "the cached install command is the default --install-cmd" {
+@test "the cached install command replaces the per-manifest lockfile table" {
   _cache '{"install": "make deps"}'
   stub_docker 0
   run bash "$SCRIPT" --project-root "$WORK"
   [ "$status" -eq 0 ]
   [[ "$output" == *"cd /opt/app && make deps"* ]]
-}
-
-@test "--install-cmd runs even when no lockfile the per-manifest table recognises is present" {
-  rm -f "$WORK/package-lock.json"
-  stub_docker 0
-  run bash "$SCRIPT" --project-root "$WORK" --install-cmd "make deps"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"make deps"* ]]
+  [[ "$output" != *"npm ci"* ]]
 }
 
 @test "an install command that runs docker itself is refused before anything runs (exit 5)" {
   printf 'deps:\n\tdocker compose run --rm app npm ci\n' > "$WORK/Makefile"
+  _cache '{"install": "make deps"}'
   use_fake_docker
-  run bash "$SCRIPT" --project-root "$WORK" --install-cmd "make deps"
+  run bash "$SCRIPT" --project-root "$WORK"
   [ "$status" -eq 5 ]
   [[ "$output" == *"runs docker itself"* ]]
   [[ "$output" == *"docker-install: failed — service app, step install command, exit 5"* ]]
@@ -383,7 +364,7 @@ _installs() { grep -c . "$FAKE/install.calls" || true; }
   [[ "$output" == *"npm ERR! boom"* ]]
 }
 
-# ─── .env and the credential target ──────────────────────────────────────────
+# ─── .env and registry_auth ──────────────────────────────────────────────
 
 @test "a missing .env is generated in the checkout itself" {
   echo "FOO=bar" > "$WORK/.env.example"
@@ -394,23 +375,23 @@ _installs() { grep -c . "$FAKE/install.calls" || true; }
   diff "$WORK/.env.example" "$WORK/.env"
 }
 
-@test "--credential-target, or the cached one, is forwarded to ensure-env.sh" {
+@test "--registry-auth, or the cached registry_auth, is forwarded to ensure-env.sh" {
   cat > "$WORK/Makefile" <<'MK'
 .npmrc:
 	echo "TOKEN=x" > .npmrc
 MK
   stub_docker 0
-  run bash "$SCRIPT" --project-root "$WORK" --credential-target "make .npmrc"
+  run bash "$SCRIPT" --project-root "$WORK" --registry-auth "make .npmrc"
   [ "$status" -eq 0 ]
   [ -f "$WORK/.npmrc" ]
   rm "$WORK/.npmrc"
-  _cache '{"credential_target": "make .npmrc"}'
+  _cache '{"registry_auth": "make .npmrc"}'
   run bash "$SCRIPT" --project-root "$WORK"
   [ "$status" -eq 0 ]
   [ -f "$WORK/.npmrc" ]
 }
 
-@test "no credential target leaves ensure-env.sh to its own template-only fallback" {
+@test "no registry_auth leaves ensure-env.sh to its own template-only fallback" {
   stub_docker 0
   run bash "$SCRIPT" --project-root "$WORK"
   [ "$status" -eq 0 ]
@@ -419,12 +400,8 @@ MK
 
 # ─── usage ────────────────────────────────────────────────────────────────────
 
-@test "--project-root is required; --main-root and --lock-timeout are unknown" {
+@test "--project-root is required" {
   run bash "$SCRIPT"
-  [ "$status" -eq 1 ]
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$WORK"
-  [ "$status" -eq 1 ]
-  run bash "$SCRIPT" --project-root "$WORK" --lock-timeout 1
   [ "$status" -eq 1 ]
 }
 
