@@ -19,7 +19,42 @@ Plan safe dependency upgrades and hand them off as issues. This skill never edit
 Ecosystem support: npm, yarn, pnpm (Node.js). If the repo uses another package manager,
 stop and ask the user before proceeding.
 
-{{FRAGMENT:tracker-configuration}}
+<!-- fragment:tracker-configuration -->
+## Tracker Configuration
+
+Every tracker operation in this skill is an op of the tracker CLI — nothing else reads or writes
+the tracker. Before the first one, check for Node:
+
+```bash
+node --version
+```
+
+If that fails, stop and tell the user: "the tracker CLI needs Node — install Node, then re-run this
+skill." The CLI is `<skill-dir>/scripts/tracker/cli.mjs`, `<skill-dir>` being the directory you read
+this file from. Wherever this skill runs an op as `node "$TRACKER" <op> …`, run it with that path:
+
+```bash
+node "<skill-dir>/scripts/tracker/cli.mjs" <op> …
+```
+
+Before the first op, ask the CLI which tracker it talks to:
+
+```bash
+node "$TRACKER" config   # prints tracker=<kind> and configured=yes|no
+```
+
+On `configured=no`, no tracker was ever chosen for this repo. On an interactive run, invoke the
+`configure-tracker` skill now to choose one, then continue. On a non-interactive run
+(a headless/`-p` invocation or a subagent) never ask: proceed as `local`, which
+is what the CLI already uses. How the tracker works — its refs, statuses and labels — is in
+`<skill-dir>/scripts/tracker/docs/<kind>.md`.
+
+Exit codes, every op: 0 ok; 1 the op failed — stderr carries the tracker's own error, verbatim;
+2 a usage error or an invalid ref; 3 not found (`publish-issues` adds 4 and 5, described where it
+runs). On 1 or 2, report the stderr to the user and
+fix its cause (an input, auth, the network), then re-run the op —
+never perform the operation with the tracker's own tool instead.
+<!-- /fragment:tracker-configuration -->
 
 ## Running commands
 
@@ -330,7 +365,75 @@ blocked on a person's review. It opens with this block; `### Steps` is the revie
 call sites listed in the earlier steps, and its last step relabels the issue `ready-for-agent` so a
 coder makes the bump:
 
-{{FRAGMENT:human-issue}}
+<!-- fragment:human-issue -->
+**A `ready-for-human` issue opens with a `## For a human` block**, placed right after `## What to build`. A person reads it cold, so write plain language that needs neither the PRD nor the codebase. It has exactly five `###` parts, in this order:
+
+1. `### Why a person` — why no agent can do this (a permission, a credential, a judgement call, a failing `## Requires` command and its output).
+2. `### What changes` — what is true today and what will be true after, in concrete names and values.
+3. `### Steps` — numbered. Each step says what to do, then a `Check:` line (how to see it worked) and an `Undo:` line (how to reverse it). Write `n/a — <why>` when a step has no check or no undo. Put commands and file contents in fenced blocks.
+4. `### If skipped or done wrong` — what breaks, in the reader's terms.
+5. `### Done when` — the observable end state.
+
+Write acceptance criteria unticked (`- [ ]`): the person ticks each one as they finish it, so a box ticked at publish says "done" before anything was done.
+
+**Kind A — the whole task is a person's.**
+
+- Drop `## Implements`, `## Interfaces` and the "Read this document before implementing" line; no agent will read this issue.
+- End `### Steps` with a fixed last step, "Mark it done", that reads: "Tell your coding agent: run the coding-crew tracker CLI (`scripts/tracker/cli.mjs` inside any coding-crew skill, for example `solve-issue`) with `mark-done <n>`". On the local tracker, write the issue file path instead of `<n>`. Never write an absolute path: it does not exist on the reader's machine.
+- That step's `Check:` is that the command exits 0 and prints no `REFUSED` line.
+- Its `Undo:` is the same request with "Reopen an issue" from the tracker doc `docs/<kind>.md` beside that `cli.mjs`, `<kind>` being the `tracker=` value the same CLI's `config` prints.
+- Name neither the tracker nor its labels or files in the step.
+
+**Kind B — agent work blocked on a person.** Keep the agent brief (`## What to build`, `## Implements`, acceptance criteria, …) below the block, and make the last step of `### Steps` relabel the issue `ready-for-agent` by following "Reopen an issue" in that same tracker doc, with `ready-for-agent` as the status, so an agent run picks it up.
+
+Trimmed example (Kind A):
+
+````markdown
+Status: ready-for-human
+
+## What to build
+
+Make the `main` branch ruleset require green test checks before a pull request merges.
+
+## For a human
+
+### Why a person
+
+Only a repository admin can edit rulesets, and the change is made on GitHub itself. An agent has no admin token and must not have one.
+
+### What changes
+
+Today the ruleset has no `required_status_checks` rule, so a PR can merge while its tests are red. After this change it has one, listing the four test jobs.
+
+### Steps
+
+1. Save the current ruleset. Check: the file is not empty. Undo: n/a — this step only reads.
+
+   ```bash
+   gh api repos/OWNER/REPO/rulesets/ID > ruleset.backup.json
+   ```
+
+2. Apply the edited ruleset. Check: the command prints JSON with no `message` error. Undo: send `ruleset.backup.json` back with the same command.
+
+   ```bash
+   gh api -X PUT repos/OWNER/REPO/rulesets/ID --input ruleset.json
+   ```
+
+3. Mark it done, once every acceptance criterion below is ticked. Tell your coding agent: run the coding-crew tracker CLI (`scripts/tracker/cli.mjs` inside any coding-crew skill, for example `solve-issue`) with `mark-done 42`. Check: the command exits 0 and prints no `REFUSED` line. Undo: tell your coding agent to follow "Reopen an issue" in the tracker doc `docs/<kind>.md` beside that `cli.mjs`, `<kind>` being the `tracker=` value the CLI's `config` prints.
+
+### If skipped or done wrong
+
+If skipped, a PR can merge with red tests. If `ruleset.json` leaves out an existing rule, that rule is silently removed.
+
+### Done when
+
+Reading the ruleset back lists `required_status_checks`, and a PR with a failing check cannot be merged.
+
+## Acceptance criteria
+
+- [ ] The ruleset has a `required_status_checks` rule
+````
+<!-- /fragment:human-issue -->
 
 Either way, state the reasoning in the issue body — what was checked and what the finding
 was — so whoever picks it up (human or coder) knows what's already been verified. Use the

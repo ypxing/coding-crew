@@ -1,22 +1,18 @@
 #!/usr/bin/env bash
-# render-skill.sh — render a skill's SKILL.md body, the same for every platform.
-# Usage: render-skill.sh <skill-name> [<outfile>]   (stdout without <outfile>)
-# A whole `{{FRAGMENT:<key>}}` line becomes skills/_shared/fragments/<key>.md. A missing fragment or
-# any placeholder left over is a hard error: it would ship an instruction hole to the model.
+# render-skill.sh — render the committed SKILL.md bodies in place, so skills/<name>/ is what every installer copies.
+# Usage: render-skill.sh   (no arguments; run after editing a fragment or a SKILL.md's markers)
+# For every skill in registry.json, the text between each `<!-- fragment:<key> -->` and
+# `<!-- /fragment:<key> -->` line in its SKILL.md becomes skills/_shared/fragments/<key>.md.
+# A skill's scripts/<lib> is a committed link to ../../../lib/<lib>, copied through at install; this
+# script never touches it.
+# A missing fragment, an unmatched marker or a `{{` left in a body is a hard error naming the file: it would
+# ship an instruction hole to the model.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REGISTRY="$SCRIPT_DIR/registry.json"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REGISTRY="$ROOT/registry.json"
 
-usage() {
-  echo "Usage: render-skill.sh <skill-name> [outfile]" >&2
-  exit 2
-}
-
-[[ $# -ge 1 && $# -le 2 ]] || usage
-SKILL="$1"
-OUTFILE="${2:-}"
-
+[[ $# -eq 0 ]] || { echo "Usage: render-skill.sh   (no arguments)" >&2; exit 2; }
 [[ -f "$REGISTRY" ]] || { echo "Error: registry not found: $REGISTRY" >&2; exit 1; }
 
 # jq on Windows (Git Bash) leaves a \r inside every value, so "tdd\r" names no directory; normalise
@@ -33,45 +29,46 @@ if [[ "$_jq_probe" == *$'\r' ]]; then
   }
 fi
 
-SOURCE_DIR=$(jq -r --arg s "$SKILL" '.skills[$s]["source-dir"] // $s' "$REGISTRY")
-SKILL_SRC="$SCRIPT_DIR/skills/$SOURCE_DIR"
-[[ -d "$SKILL_SRC" ]] || { echo "Error: skill source not found: skills/$SOURCE_DIR" >&2; exit 1; }
-
-BODY="SKILL.md"
-[[ -f "$SKILL_SRC/$BODY" ]] || { echo "Error: skill body not found: skills/$SOURCE_DIR/$BODY" >&2; exit 1; }
-
-render() {
-  local line key fragment
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    if [[ "$line" =~ ^[[:space:]]*\{\{FRAGMENT:([A-Za-z0-9_-]+)\}\}[[:space:]]*$ ]]; then
-      key="${BASH_REMATCH[1]}"
-      fragment="$SCRIPT_DIR/skills/_shared/fragments/$key.md"
-      if [[ ! -f "$fragment" ]]; then
-        echo "Error: $SKILL/$BODY needs fragment '$key', but skills/_shared/fragments/$key.md does not exist" >&2
-        exit 1
-      fi
-      # Fragments are stored with a trailing newline; strip it so the body's own
-      # blank-line spacing decides the layout.
-      printf '%s\n' "$(cat "$fragment")"
-    else
-      printf '%s\n' "$line"
-    fi
-  done < "$SKILL_SRC/$BODY"
-}
-
 TMP=$(mktemp)
 trap 'rm -f "$TMP"' EXIT
-render > "$TMP"
 
-if grep -n '{{[A-Z]' "$TMP" >/dev/null 2>&1; then
-  echo "Error: unexpanded placeholder in rendered $SKILL:" >&2
-  grep -n '{{[A-Z]' "$TMP" >&2
-  exit 1
-fi
+# render_body <rel> — writes <rel>'s body, its marker pairs refreshed, to $TMP.
+render_body() {
+  local rel="$1" line key="" n=0 fragment
+  local open_re='^<!-- fragment:([A-Za-z0-9_-]+) -->$' close_re='^<!-- /fragment:([A-Za-z0-9_-]+) -->$'
+  : > "$TMP"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    n=$((n + 1))
+    if [[ "$line" =~ $open_re ]]; then
+      [[ -z "$key" ]] || { echo "Error: $rel:$n: fragment '${BASH_REMATCH[1]}' opens inside fragment '$key'" >&2; exit 1; }
+      key="${BASH_REMATCH[1]}"
+      fragment="$ROOT/skills/_shared/fragments/$key.md"
+      [[ -f "$fragment" ]] || {
+        echo "Error: $rel:$n needs fragment '$key', but skills/_shared/fragments/$key.md does not exist" >&2; exit 1; }
+      # Stored with a trailing newline; stripped so the body's own spacing decides the layout.
+      printf '%s\n%s\n' "$line" "$(cat "$fragment")" >> "$TMP"
+    elif [[ "$line" =~ $close_re ]]; then
+      [[ "${BASH_REMATCH[1]}" == "$key" ]] || {
+        echo "Error: $rel:$n: closing marker for fragment '${BASH_REMATCH[1]}' has no matching opening marker" >&2; exit 1; }
+      key=""
+      printf '%s\n' "$line" >> "$TMP"
+    elif [[ -z "$key" ]]; then
+      printf '%s\n' "$line" >> "$TMP"
+    fi
+  done < "$ROOT/$rel"
+  [[ -z "$key" ]] || { echo "Error: $rel: fragment '$key' is never closed" >&2; exit 1; }
+  if grep -n '{{' "$TMP" >/dev/null; then
+    echo "Error: unexpanded placeholder in $rel:" >&2
+    grep -n '{{' "$TMP" >&2
+    exit 1
+  fi
+}
 
-if [[ -n "$OUTFILE" ]]; then
-  mkdir -p "$(dirname "$OUTFILE")"
-  cp "$TMP" "$OUTFILE"
-else
-  cat "$TMP"
-fi
+while IFS= read -r skill; do
+  [[ -n "$skill" ]] || continue
+  dir=$(jq -r --arg s "$skill" '.skills[$s]["source-dir"] // $s' "$REGISTRY")
+  rel="skills/$dir/SKILL.md"
+  [[ -f "$ROOT/$rel" ]] || { echo "Error: skill body not found: $rel" >&2; exit 1; }
+  render_body "$rel"
+  cmp -s "$TMP" "$ROOT/$rel" || cp "$TMP" "$ROOT/$rel"
+done < <(jq -r '.skills | keys[]' "$REGISTRY")

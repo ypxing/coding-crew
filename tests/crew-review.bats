@@ -1,12 +1,16 @@
 #!/usr/bin/env bats
-# crew-review is one SKILL.md and no script. These pin what solve-feature's fix step reads from its report, and that
+# crew-review is one SKILL.md and no script of its own (scripts/tracker is a link to lib/tracker/, copied through at install). These pin what solve-feature's fix step reads from its report, and that
 # it only reports.
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
 SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
 
 @test "crew-review is one file, review-pr is gone, and the registry ships crew-review as solve-feature's dep" {
-  [ "$(ls "$REPO_ROOT/skills/crew-review")" = SKILL.md ]
+  # LC_ALL=C: under a UTF-8 locale ls may sort case-insensitively, scripts before SKILL.md.
+  run bash -c 'cd "$1" && LC_ALL=C ls | paste -sd" " -' _ "$REPO_ROOT/skills/crew-review"
+  [ "$output" = "SKILL.md scripts" ] || { echo "got: $output"; return 1; }
+  [ "$(ls "$REPO_ROOT/skills/crew-review/scripts")" = tracker ]
+  jq -e '.skills["crew-review"].libs == ["tracker"]' "$REPO_ROOT/registry.json" >/dev/null
   [ ! -e "$REPO_ROOT/skills/review-pr" ]
   jq -e '.skills["crew-review"]["source-dir"] == "crew-review"' "$REPO_ROOT/registry.json" >/dev/null
   jq -e '.skills | has("review-pr") | not' "$REPO_ROOT/registry.json" >/dev/null

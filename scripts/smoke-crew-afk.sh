@@ -2,9 +2,10 @@
 set -uo pipefail
 
 # smoke-crew-afk.sh — the release smoke: one real crew-afk run on the pinned demo repo, on one platform.
-# Usage: scripts/smoke-crew-afk.sh <platform>
+# Usage: scripts/smoke-crew-afk.sh <platform> [--via install|npx]
 # Clones the demo repo (scripts/smoke-crew-afk/demo/{repo,sha,slug,check}, feature/) into $TMPDIR, installs every
-# skill at project level kept out of git, dispatches `crew-afk.sh dispatch <slug> --to local -- <the platform's
+# skill at project level kept out of git — with install.sh (the default) or, with `--via npx`, with
+# `npx skills add <this checkout>` — dispatches `crew-afk.sh dispatch <slug> --to local -- <the platform's
 # headless launch command>` (no host agent runs here to supply one), waits for the
 # run with `crew-afk.sh wait <slug>` and requires `ready pr=<n>`, then runs demo/check in the run's worktree. Appends one RESULTS.md row, closes
 # the PR and deletes its branch on a pass, and prints `crew-afk-commit: <sha>[-dirty]` and
@@ -18,8 +19,10 @@ DEMO_DIR="${CREW_DEMO_DIR:-$SCRIPT_DIR/smoke-crew-afk/demo}"
 RESULTS="${CREW_SMOKE_RESULTS:-$SCRIPT_DIR/smoke-crew-afk/RESULTS.md}"
 PLATFORMS=$(jq -r 'keys_unsorted | join("|")' "$ROOT/platforms.json" | tr -d '\r')
 
-PLATFORM="${1:-}"
-[[ $# -eq 1 && "|$PLATFORMS|" == *"|$PLATFORM|"* ]] || { echo "usage: $0 <$PLATFORMS>" >&2; exit 2; }
+PLATFORM="${1:-}" VIA=install
+if [[ $# -eq 3 && "$2" == --via ]]; then VIA="$3"; elif [[ $# -ne 1 ]]; then PLATFORM=""; fi
+[[ "|$PLATFORMS|" == *"|$PLATFORM|"* && "$VIA" =~ ^(install|npx)$ ]] ||
+  { echo "usage: $0 <$PLATFORMS> [--via install|npx]" >&2; exit 2; }
 
 RECORD=0 WT="" PR="" COST='?'
 # One results row once the run was dispatched: its cost from crew-afk.sh wait's line (`cost=$<n>`, when the
@@ -30,7 +33,7 @@ record() {
   RECORD=0
   local findings
   findings=$(jq '.findings // [] | length' "$WT/.solve-feature/pr-$PR.review.json" 2>/dev/null) || findings='?'
-  echo "| $SHORT | $(date -u +%Y-%m-%d) | $PLATFORM | $1 | $COST | ${findings:-?} |" >>"$RESULTS" ||
+  echo "| $SHORT | $(date -u +%Y-%m-%d) | $PLATFORM | $VIA | $1 | $COST | ${findings:-?} |" >>"$RESULTS" ||
     echo "SMOKE: warning: cannot append to $RESULTS" >&2
 }
 fail() { record FAIL; echo "SMOKE: FAIL: $*"; exit 1; }
@@ -53,6 +56,12 @@ case "$PLATFORM" in
   codex) LAUNCH=(codex exec --dangerously-bypass-approvals-and-sandbox "Use the solve-feature skill on $SLUG") ;;
   pi) LAUNCH=(pi -p "/skill:solve-feature $SLUG") ;;
   *) echo "smoke-crew-afk: no launch command for $PLATFORM" >&2; exit 2 ;;
+esac
+# The npx route: the platform's agent id in `npx skills`, and the dir a single-agent install writes to.
+case "$PLATFORM" in
+  claude) NPX_AGENT=claude-code NPX_SKILLS=.claude/skills ;;
+  copilot) NPX_AGENT=github-copilot NPX_SKILLS=.agents/skills ;;
+  *) NPX_AGENT=$PLATFORM NPX_SKILLS=.agents/skills ;;
 esac
 
 DIR="${TMPDIR:-/tmp}/crew-smoke-$PLATFORM"
@@ -85,15 +94,31 @@ DEFAULT=${DEFAULT:-main}
 HEAD_SHA=$(git rev-parse "origin/$DEFAULT" 2>/dev/null)
 [[ "$HEAD_SHA" == "$PIN" ]] || fail "demo repo moved: origin/$DEFAULT is $HEAD_SHA, pinned $PIN"
 
-"$ROOT/install.sh" "$PLATFORM" --project "$DIR" >.git/crew-smoke/install.log 2>&1 ||
-  fail "install.sh failed — see $DIR/.git/crew-smoke/install.log"
 # A host resolves a user-level skill ahead of a project one, so the run would test a stale copy, not HEAD.
-! grep -q '^WARNING: user-level copies exist' .git/crew-smoke/install.log ||
-  fail "user-level skills shadow the project install (see $DIR/.git/crew-smoke/install.log)"
-SKILLS=$(jq -r --arg p "$PLATFORM" '.[$p].projectSkills' "$ROOT/platforms.json" | tr -d '\r')
-# Installed, never committed: excluded here, and linked into every worktree through .worktreeinclude.
-printf '%s\n' .coding-crew/lib .coding-crew/manifest.json "$SKILLS" >.worktreeinclude
-printf '%s\n' .coding-crew/lib .coding-crew/manifest.json "$SKILLS" .worktreeinclude .scratch/ >>.git/info/exclude
+if [[ "$VIA" == npx ]]; then
+  DISABLE_TELEMETRY=1 npx -y skills@1.7.2 add "$ROOT" -a "$NPX_AGENT" -y >.git/crew-smoke/install.log 2>&1 ||
+    fail "npx skills add failed — see $DIR/.git/crew-smoke/install.log"
+  # npx skills has no shadowing warning: probe the dirs install.sh's warn_shadowing_user_installs walks.
+  SHADOW=$(SCRIPT_DIR="$ROOT" REPO_ROOT="$HOME" bash -c 'source "$SCRIPT_DIR/scripts/lib/platforms.sh" && platform_user_dirs' |
+    while IFS= read -r d; do
+      for n in solve-feature solve-issue; do
+        for f in "$d/$n" "$d/$n.md" "$d/$n.toml" "$d/$n.agent.md"; do [[ -e "$f" ]] && echo "$f"; done
+      done
+    done)
+  [[ -z "$SHADOW" ]] || fail "user-level skills shadow the project install: $SHADOW"
+  SKILLS=$NPX_SKILLS
+  # Installed, never committed: excluded here, and linked into every worktree through .worktreeinclude.
+  printf '%s\n' "$SKILLS" >.worktreeinclude
+  printf '%s\n' "$SKILLS" skills-lock.json .worktreeinclude .scratch/ >>.git/info/exclude
+else
+  "$ROOT/install.sh" "$PLATFORM" --project "$DIR" >.git/crew-smoke/install.log 2>&1 ||
+    fail "install.sh failed — see $DIR/.git/crew-smoke/install.log"
+  ! grep -q '^WARNING: user-level copies exist' .git/crew-smoke/install.log ||
+    fail "user-level skills shadow the project install (see $DIR/.git/crew-smoke/install.log)"
+  SKILLS=$(jq -r --arg p "$PLATFORM" '.[$p].projectSkills' "$ROOT/platforms.json" | tr -d '\r')
+  printf '%s\n' .coding-crew/manifest.json "$SKILLS" >.worktreeinclude
+  printf '%s\n' .coding-crew/manifest.json "$SKILLS" .worktreeinclude .scratch/ >>.git/info/exclude
+fi
 # The local tracker reads the feature from the main checkout.
 mkdir -p ".scratch/$SLUG" && cp -R "$DEMO_DIR/feature/." ".scratch/$SLUG/" || fail "cannot copy the feature"
 DIRTY=$(git status --porcelain)

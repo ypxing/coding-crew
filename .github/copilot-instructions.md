@@ -1,13 +1,16 @@
 # Copilot Instructions — Coding Crew
 
-This repo is a **distributable collection** of AI skills. Nothing runs here directly — this is the source; consuming projects install skills via `./install.sh`.
+This repo is a **distributable collection** of AI skills. Nothing runs here directly — this is the source; consuming projects install skills via `npx skills add ypxing/coding-crew --all` or `./install.sh`.
 
 ---
 
 ## Installation
 
 ```bash
-# Install everything at user level ($HOME)
+# Any Agent-Skills agent: from inside the consuming repo (add -g for user level); re-run to update
+npx skills add ypxing/coding-crew --all
+
+# From a clone: install everything at user level ($HOME)
 ./install.sh
 
 # Install everything for one platform
@@ -29,7 +32,7 @@ This repo is a **distributable collection** of AI skills. Nothing runs here dire
 
 **Prerequisites**: `bash` ≥ 4, `git`, `jq`
 
-**Platforms**: `all` (default), `claude`, `copilot`, `pi`, `codex`
+**Platforms**: `all` (default), `claude`, `copilot`, `pi`, `codex` (`codex` is the shared `.agents/skills` location most Agent-Skills agents read)
 
 There are no installable agents: `./install.sh <platform> <name>` with anything but `--skill`/`--skills` is refused, and so is `uninstall.sh --agent`.
 
@@ -43,16 +46,16 @@ There are no installable agents: `./install.sh <platform> <name>` with anything 
 - **`registry.json`** — Source of truth for the skills, their dependencies and the libraries each uses (`libs`)
 - **`install.sh`** — Single installer that reads `registry.json` and copies files into target repos
 - **`platforms.json`** — Every platform's skill dirs and config-dir override, read by `install.sh` and `uninstall.sh`
-- **`lib/`** — Libraries the skills share: `tracker/` (the tracker CLI, backends and `docs/{local,github}.md`), `checks/` (run-checks.sh and dep-install's scripts), `git-workflow/`; each installed once to `.coding-crew/lib/<name>/` and linked as `<skill-dir>/scripts/<name>`. The tracker choice is `.coding-crew/config.json`'s `tracker` section
+- **`lib/`** — Libraries the skills share: `tracker/` (the tracker CLI, backends and `docs/{local,github}.md`), `checks/` (run-checks.sh and dep-install's scripts), `git-workflow/`; each skill whose `libs` names one commits `skills/<skill>/scripts/<name>` as a link to `../../../lib/<name>`, and every install copies through it. The tracker choice is `.coding-crew/config.json`'s `tracker` section
 - **`docs/templates/`** — Optional workflows
 
 ### How Install Works
 
 1. Reads `registry.json` to determine what to install
 2. Resolves skill `deps` recursively
-3. Renders each skill to its platform dir (e.g. `.claude/skills/<name>/`, `.agents/skills/<name>/` for Codex), expanding `{{FRAGMENT:<key>}}`
-4. Links `<skill-dir>/scripts/<lib>` for each library in the skill's `libs` (relative at project level), and writes each library once to `.coding-crew/lib/<lib>/` (always overwritten)
-5. Writes `.coding-crew/manifest.json`: the platform, skills and libraries, no versions
+3. Copies each skill as committed — rendered (`scripts/render-skill.sh`), through its `scripts/<lib>` links into `lib/` — to its platform dir (e.g. `.claude/skills/<name>/`, `.agents/skills/<name>/` for Codex), with real directories and no links
+4. Removes the shared library directory an older install linked every skill to (`remove_legacy_lib`)
+5. Writes `.coding-crew/manifest.json`: the platforms and skills, no versions
 
 No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`, `.codex/agents/`) is ever written.
 
@@ -69,7 +72,7 @@ No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`,
   "description": "...",
   // installs to <projectSkills|userSkills>/<name> from platforms.json
   "deps": ["tdd", "dep-install"],      // other skills, installed recursively
-  "libs": ["tracker", "checks"],       // lib/<name>, linked as <skill-dir>/scripts/<name> (optional)
+  "libs": ["tracker", "checks"],       // lib/<name>, linked from skills/<skill>/scripts/<name> (optional)
   "source": "mattpocock/skills"                  // attribution (optional)
 }
 ```
@@ -106,7 +109,7 @@ The tracker is `.coding-crew/config.json`'s `tracker` section (`github` today); 
 - **CHANGELOG:** add one entry at the top of `[Unreleased]` (component prefix, what changed for a user, issue/PR number)
 - **Comments:** follow solve-issue's comment rule (`skills/solve-issue/SKILL.md`, Step 4)
 - **Layer ownership:** `solve-feature` → `solve-issue` → `tdd` / `dep-install`; `solve-issue` owns the procedure and must not know its caller, `tdd` / `dep-install` own one technique each (`tests/layer-ownership.bats`)
-- **Skills stay boring:** a skill uses another skill by name, and shares code through a library linked into its own `scripts/`, never a path into another skill's directory
+- **Skills stay boring:** a skill uses another skill by name, and shares code through a library linked into its own `scripts/` (a committed link into `lib/`, copied through at install), never a path into another skill's directory
 
 ---
 
@@ -150,4 +153,4 @@ When modifying `install.sh` or registry handling:
 - Always validate paths before writing files
 - Use `set -euo pipefail` in all shell scripts
 - Sanitize user input from command-line arguments
-- Don't follow symlinks during installation (a library link is written, never read through)
+- Follow only the committed `skills/<skill>/scripts/<lib>` links into `lib/` (`find -L` on the source), never a link in the destination; install writes no link

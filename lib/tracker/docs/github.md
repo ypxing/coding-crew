@@ -14,8 +14,9 @@ The tracker this repo uses is the `tracker` section of `.coding-crew/config.json
 
 `configure-tracker` writes it when you choose `github` (other sections of the file are kept), and
 `node "$TRACKER" config` prints what is in effect. `gh` targets the repo of the current
-directory's git remote; there is no override. This doc ships with the tracker CLI in
-`.coding-crew/lib/tracker/docs/` and is refreshed by every install — edit `config.json`, not this file.
+directory's git remote; there is no override. This doc ships beside the tracker CLI in every coding-crew
+skill that uses it (`<skill-dir>/scripts/tracker/docs/`, copied through the skill's link into `lib/`) and is refreshed by every install — edit
+`config.json`, not this file.
 
 ## Tracker CLI
 
@@ -23,7 +24,7 @@ Skills read and write this tracker only through the tracker CLI, which runs `gh`
 for them. To run an op by hand, from the repo root (needs Node and an authenticated `gh`):
 
 ```bash
-TRACKER="$HOME/.coding-crew/lib/tracker/cli.mjs"   # a project-level install: .coding-crew/lib/tracker/cli.mjs
+TRACKER="<skills-dir>/solve-issue/scripts/tracker/cli.mjs"   # e.g. ~/.claude/skills/…, or .agents/skills/… in the repo
 ```
 
 ```bash

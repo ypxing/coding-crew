@@ -14,8 +14,10 @@ For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → solve-fea
 # Install into a scratch repo to see what a platform actually receives (no --project: $HOME, the default)
 ./install.sh claude --skill solve-feature --project /tmp/test-repo
 
-# Render a skill body without a full install
-bash scripts/render-skill.sh solve-issue | less
+# After editing a fragment (skills/_shared/fragments/) or a marker pair: re-render the SKILL.md text between
+# <!-- fragment:<key> --> markers and commit the result. skills/<skill>/scripts/<lib> is a committed link into lib/,
+# copied through at install: edit lib/<lib>/ and the links follow
+bash scripts/render-skill.sh
 
 # Run tests: one bats process per file, CPU-count at a time, heaviest first (plain `bats tests/*.bats` runs files one by one, ~6x slower)
 bash scripts/ci-run-bats.sh tests/*.bats

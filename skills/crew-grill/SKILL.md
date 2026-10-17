@@ -13,7 +13,20 @@ Run the full design pipeline in two phases. Pause for user feedback within each 
 
 Interview the user relentlessly until you reach shared understanding. Map the plan as a **design tree**: every decision branches into the decisions that hang off it.
 
-{{FRAGMENT:light-path}}
+<!-- fragment:light-path -->
+### Light path: is the source already one complete change?
+
+Before any question, judge the source — the issue (`node "<skill-dir>/scripts/tracker/cli.mjs" fetch <ref> --comments`, `<skill-dir>` being the directory you read this skill from; if it fails, show its stderr and judge the user's message) or the user's message. Four checks; answer each with evidence, a quote from the source or a `file:line`:
+
+1. **Problem** — the source states the problem with its cost or evidence.
+2. **One slice** — one vertical slice looks likely.
+3. **Criteria** — acceptance criteria are testable, or derivable from the code.
+4. **No fork** — no open fork in the "annoyed" lane remains: a decision the user would be annoyed to learn you made without asking — schema, migrations or data model; auth, permissions or PII; anything that costs money or moves scope; user-visible behaviour; breaking an external contract already shipped; conflicting in-repo precedent.
+
+All four hold: print one line, `Light path: <reason per check>`, then go straight to this skill's hand-off to `to-issues`, passing the ref (if any) and the facts gathered. Ask no question, write no summary, run no verification pass: `to-issues` grounds every assumption.
+
+Any check fails: the light path does not apply. Print nothing about it, and continue with the Q&A below as if it did not exist. Never ask the user whether to take the light path.
+<!-- /fragment:light-path -->
 
 ### Root: size the problem before any solution
 
@@ -65,9 +78,25 @@ Silent decisions are not reported in-flight; they appear in the summary. More th
 
 ### What you recommend is judged by the design standard
 
-{{FRAGMENT:design-standard}}
+<!-- fragment:design-standard -->
+**Design standard.** Size is fine; **unjustified** size is not. Judge every decision and component against five criteria, in priority order — necessary > correct > reusable along real axes > fewest moving parts > says what it does — and when two conflict, the earlier one wins. Each criterion names the evidence that shows it failing; cite that evidence (`file:line`, a count, a quote) rather than a taste.
 
-{{FRAGMENT:size-test}}
+1. **Necessary** — it removes a measured, cited problem and nothing beyond it. Fails on: no cited problem; a need nobody has yet; completeness for its own sake.
+2. **Correct** — it does what it claims against the real code, and its rationale holds. Fails on: a rationale the code contradicts; a mechanism that cannot reach its target case; an edge case (signal, retry, concurrent run, early return) that breaks it.
+3. **Reusable along real axes** — a decision lives in one place, behind an abstraction, when it has two or more real callers or implementations now, or when it sits on one of the axes of variation the project's `CLAUDE.md` (or `AGENTS.md`) names; when that file names none, only two or more real callers or implementations now count. A good abstraction hides a decision, has an interface smaller than what it hides, and is named for what it does. It is never built for a caller or axis that does not exist yet. Fails on: the same decision coded in two or more places, or code that branches on which implementation it has; an abstraction with one implementation and no named axis, an unused parameter, or per-caller flags (generality for a hypothetical caller).
+4. **Fewest moving parts** — no dependency, network call, state or format the problem does not need. Fails on: a lookup for a fact already known earlier; a dependency, service, cache or file format the problem never asked for.
+5. **Says what it does** — names and text match behaviour, and a newcomer can state what it does in one sentence. Fails on: a name that contradicts what it does; one check standing in for two questions.
+
+Simplicity never cuts structure the design needs now: one owner per concern, no duplicated logic, a seam its tests need, the project's layer rules. Well-architected is a justification, overengineered is not. Logic that would otherwise be copied into several places gets one shared owner: that is structure, not a speculative layer, and dropping it to avoid "abstraction" leaves the design under-built.
+<!-- /fragment:design-standard -->
+
+<!-- fragment:size-test -->
+**The size test.** Wherever you offer choices about how much to build, one option is the smallest change — down to "do it by hand" or "leave it" — priced in the terms of the problem size. Recommending anything larger needs evidence that the smaller option falls short: on the measured problem, or because it would leave what is built worse structured (the design standard's last paragraph). "It doesn't cover every case" is not that evidence unless the uncovered case is costly; "another component needs it" is not either — follow the chain to its root and judge the root against the problem size. An option that drags in follow-on components or decisions names them ("(b) brings a workflow, a selector and a label protocol"): they are part of its price, and the user never sees them one by one.
+
+The do-least option is one choice *inside* a question, not a reason to skip it and not a verdict: ask every question only the user can answer that would change the design — who it is for, what is at stake, which constraint is real, which of two live patterns wins. What the user stated as a requirement is a given: price it, never relitigate it, and challenge it only with a question ("is X enough, or do you need Y?"), never by quietly deciding for them.
+
+**The subtraction pass** — before the design goes to the user for its summary or final approval — applies the same test to every decision and component already in the design: name the part of the measured problem, or the structural property of what is built now, that breaks without it. "Nothing breaks" is a claim of fact: check it like one and cite it, or keep the item; where it holds, propose the cut. When a chain's root only saves what the do-least option covers cheaply, show the chain with its total price and ask once whether to keep it, even if the user approved the root earlier. Show the cut list with the design, so the user can restore anything they want back; what stays cut goes to Out of Scope through `to-issues`, with the reason. Alternatives never proposed are not cuts — they go straight to Out of Scope.
+<!-- /fragment:size-test -->
 
 ### Ask
 
@@ -98,7 +127,15 @@ If the user's invocation included "with docs" or "with documents", also invoke t
 
 Before the summary, run the subtraction pass (the size test above), then the verification pass:
 
-{{FRAGMENT:verification-pass}}
+<!-- fragment:verification-pass -->
+**Verification pass.** Before the design goes back to the user, re-check what it rests on against its source, never against memory. Necessity is not re-checked here.
+
+- **Facts** — for every count, `path:line`, list and "nothing else reads/does X" claim, re-run the grep, line read or command behind it and compare its output with what you said.
+- **Correct** — check each decision against criterion 2 (**Correct**) of the design standard: it does what it claims against the real code, and its rationale holds. Cite the evidence (`file:line`, a command's output) either way.
+- **Coherence** — check the decisions against each other: two that contradict, one that depends on something no decision provides, an `(auto)` line that conflicts with an answer the user gave.
+
+Report every change as "said X → actually Y (source)". Fix each decision built on a corrected fact before the user sees the design, and show the corrections with it, so the user sees what moved.
+<!-- /fragment:verification-pass -->
 
 Then:
 

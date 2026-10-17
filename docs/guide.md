@@ -22,7 +22,7 @@ THIS REPO (source)
 │   ├── solve-issue/
 │   ├── domain-modeling/
 │   ├── crew-grill/
-│   ├── _shared/fragments/  ← shared fragments ({{FRAGMENT:<key>}})
+│   ├── _shared/fragments/  ← shared fragments (rendered between <!-- fragment:<key> --> markers)
 │   └── ...
 ├── lib/                    ← libraries the skills share, linked into each skill that uses one
 │   ├── tracker/            ← tracker CLI and backends; docs/{local,github}.md
@@ -45,17 +45,16 @@ install.sh
     │
     ├── read registry.json
     ├── for each requested skill (every skill when none is named):
-    │     ├── install_single_skill() — render skills/<name>/ → <skills dir>/<name>/ ({{FRAGMENT:<key>}} expanded)
-    │     ├── link_lib() — <skills dir>/<name>/scripts/<lib> → <root>/.coding-crew/lib/<lib>, per `libs`
-    │     ├── install_lib() — lib/<lib>/ → <root>/.coding-crew/lib/<lib>/, once per run, an exact copy
+    │     ├── install_single_skill() — copy skills/<name>/ as committed, through its scripts/<lib>
+    │     │                              links into lib/ → <skills dir>/<name>/, real directories only
     │     └── install_single_skill(dep) — recurse for each dep
     │
-    └── write_manifest() — <root>/.coding-crew/manifest.json: the platforms, skills and libraries
+    └── write_manifest() — <root>/.coding-crew/manifest.json: the platforms and skills
 ```
 
-A library link is relative at project level, so a committed skills dir and `.coding-crew/` survive a
-clone; at user level it is absolute. `install.sh --update` uninstalls every skill and library the
-manifest lists, then installs the listed skills the registry still has, for every platform it lists.
+An installed skill is a byte-for-byte copy of `skills/<name>/`, the same tree `npx skills add` writes,
+with no link into anything outside it. `install.sh --update` uninstalls every skill the manifest lists,
+then installs the listed skills the registry still has, for every platform it lists.
 
 #### No agent files
 
@@ -74,7 +73,7 @@ There are no agents. No per-platform agent file is written under `.claude/agents
       "source": "...", // optional attribution for a skill adapted from elsewhere
       // installs to <projectSkills|userSkills>/<name> from platforms.json
       "deps": ["tdd", "dep-install"], // other skills, installed recursively
-      "libs": ["tracker", "checks"], // lib/<lib>, linked as <skill-dir>/scripts/<lib>
+      "libs": ["tracker", "checks"], // lib/<lib>, committed as the link skills/<name>/scripts/<lib> -> ../../../lib/<lib>
     },
   },
 }
@@ -84,7 +83,9 @@ There are no agents. No per-platform agent file is written under `.claude/agents
 
 - No versions: only the release (CHANGELOG / tag) has one, and `--update` reinstalls everything.
 - A skill reaches shared code only through a library its `libs` names, run as
-  `<skill-dir>/scripts/<lib>/<file>`; its own `scripts/` holds no file named like a library.
+  `<skill-dir>/scripts/<lib>/<file>`; its own `scripts/` holds no file named like a library. Adding a lib to a
+  skill is a `libs` entry plus `ln -s ../../../lib/<lib> skills/<name>/scripts/<lib>`; `tests/rendered-tree.bats`
+  names the skill when the two disagree.
 - Skill and library names must match `[a-zA-Z0-9_.-]+` — used as filesystem path components.
 - Skills listed under another skill's `deps` are installed with it. A skill no installed skill depends on is only installed by name or by a full install (`./install.sh [platform]`).
 - `deps` match what the skill's text invokes: every skill its rendered SKILL.md or `references/` names is reachable through its `deps`, and every direct dep is named in its SKILL.md, `references/` or `scripts/`. `tests/skill-deps.bats` checks both; a mention that only points a person at another skill goes on its allowlist with a reason.
@@ -129,7 +130,7 @@ the last round did not fix is listed under `Needs attention` in the PR body, whi
 ### Security Rules for Contributors
 
 - **Never name a path in `registry.json`.** Skills and libraries are names (`[a-zA-Z0-9_.-]+`); `install.sh` rejects anything else.
-- **Never inline a fragment by hand** — keep the `{{FRAGMENT:<key>}}` line and let `install.sh` expand it. A hand-inlined copy drifts from the source.
+- **Never edit between fragment markers** — edit `skills/_shared/fragments/<key>.md`, then run `bash scripts/render-skill.sh` and commit what it rewrites; a hand edit there drifts from the source, and `tests/rendered-tree.bats` fails on it. Edit a library under `lib/<lib>/` and the links follow: a skill's `scripts/<lib>` is a committed link to it.
 
 ---
 
@@ -141,7 +142,24 @@ For developers who have installed the skills into their project and want to use 
 
 ### Install
 
-#### One-line install
+#### `npx skills add`
+
+From inside the repo:
+
+```bash
+npx skills add ypxing/coding-crew --all      # this project (writes skills-lock.json: commit it)
+npx skills add ypxing/coding-crew --all -g   # user level
+```
+
+The project install also writes `.agents/skills/`, `.claude/skills/` and `agent/skills/` (link dirs for agents
+that create their own project dir). The tool sends telemetry to
+skills.sh unless `DISABLE_TELEMETRY` is set. To update, re-run the same command; `npx skills update` misses
+changes inside the skills' library directories.
+
+#### `bootstrap.sh`
+
+For a pinned or offline install from a clone (`./install.sh`), the per-platform config-dir relocation in the
+table below, and a warning when user-level copies shadow a project install:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash                             # every platform, into $HOME
@@ -152,6 +170,7 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 ```
 
 `bootstrap.sh` takes the same arguments as `install.sh`. Needs `bash` 4+, `git`, `jq`, `curl` and `tar` (on Windows, use WSL2).
+A checkout of this repo needs symlink support: on Windows, WSL2, or Git for Windows with `core.symlinks=true`.
 
 | Argument                              | Effect                                              |
 | ------------------------------------- | --------------------------------------------------- |
@@ -168,11 +187,14 @@ Where files land:
 | pi          | `.pi/`            | `~/.pi/agent/` (`PI_CODING_AGENT_DIR`) |
 | Codex       | `.agents/skills/` | `~/.agents/skills/` (`CODEX_HOME`)     |
 
+The `codex` target is the shared `.agents/skills` location that most Agent-Skills agents read (Copilot, pi,
+Cursor, Gemini CLI, OpenCode and more; the README lists them), not Codex alone.
+
 Runtime requirements:
 
 - **Node.js on `PATH`** for the skills that touch the issue tracker — `/to-issues`, `/to-prd`, `/solve-issue`,
   `/solve-feature` and `/upgrade-deps`. They reach the tracker (local or GitHub) through the tracker CLI,
-  `<skill-dir>/scripts/tracker/cli.mjs`, a link to the one copy in `.coding-crew/lib/tracker/`.
+  `<skill-dir>/scripts/tracker/cli.mjs`, inside the `scripts/tracker/` directory each of those skills ships (a link into `lib/` in this repo, a real directory once installed).
 
 #### Prerequisites
 
@@ -226,6 +248,10 @@ from this checkout, for every platform the manifest names. An install made befor
 `.coding-crew/tracker/` or `.coding-crew/dep-install/`) updates the same way; remove what it left once:
 `rm -rf <root>/.coding-crew/{tracker,crew-afk,dep-install,solve-issue,to-issues,write-pr,skills}`.
 
+An install whose skills link into `.coding-crew/lib` updates with `--update` first: a partial run (`--skill`, one
+platform of several, `uninstall.sh --skill`) removes that directory too, and the skills it left alone stop with
+"re-install coding-crew" until `--update` copies their libraries in.
+
 #### What lands where
 
 At project level (`--project`), with claude; a user-level install writes the same under `~`:
@@ -246,16 +272,12 @@ YOUR_PROJECT/
 │       ├── to-prd/            ← installed with "all"
 │       └── crew-grill/              ← installed with "all"
 └── .coding-crew/
-    ├── lib/                        ← one copy of each library, for every platform
-    │   ├── tracker/                ← the tracker CLI and its docs (docs/local.md, docs/github.md)
-    │   ├── checks/                 ← run-checks.sh and dep-install's scripts
-    │   └── git-workflow/
     ├── config.json                 ← your settings; `tracker` picks the issue tracker
     └── manifest.json
 ```
 
-Each skill's `scripts/<lib>` is a link to `.coding-crew/lib/<lib>`. A gitignored project install reaches
-a worktree only through `.worktreeinclude`.
+Each installed skill's `scripts/<lib>/` is its own copy of the library (`tracker/` with its docs, `checks/`,
+`git-workflow/`), copied through the committed link into `lib/`. A gitignored project install reaches a worktree only through `.worktreeinclude`.
 
 Other platforms get the same skills under their own skill dir (see the README's install table); no agent files are written for any platform.
 
@@ -364,8 +386,8 @@ one slice, or splits it into child issues with `## Parent`. An issue carrying a 
 line skips the check.
 
 The mechanics — how `next` resolves blockers, what `mark-done` swaps, how to reopen an issue — are in
-the tracker doc every install ships beside the tracker CLI: `.coding-crew/lib/tracker/docs/<kind>.md`
-for a project-level install, `~/.coding-crew/lib/tracker/docs/<kind>.md` for a user-level one.
+the tracker doc every install ships beside the tracker CLI: `<skill-dir>/scripts/tracker/docs/<kind>.md`
+in any coding-crew skill that uses the tracker (e.g. `solve-issue`).
 
 ---
 
@@ -436,7 +458,7 @@ every thread it handled. It never resolves a thread — you do.
 1. Copy [`docs/templates/workflows/crew-rework.yml`](templates/workflows/crew-rework.yml) to
    `.github/workflows/` in your repo.
 2. Install the skills per project and commit them (`./install.sh claude --skill
-   address-pr-comments --project`, with `.coding-crew/lib/`): the runner has no `$HOME` install.
+   address-pr-comments --project`): the runner has no `$HOME` install.
 3. Add the repo secret `ANTHROPIC_API_KEY`.
 4. Make sure your CI workflow is `ci.yml` (or edit `--ci-workflow` in the template) and has
    `workflow_dispatch:` if you want the re-trigger below.

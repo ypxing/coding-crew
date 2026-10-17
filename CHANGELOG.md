@@ -6,6 +6,25 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **docs**: the README and guide lead with `npx skills add ypxing/coding-crew --all` (`-g` for user level), keep
+  `bootstrap.sh` for pinned/offline installs, config-dir relocation and the shadowing warning, and name the agents
+  that read `.agents/skills` — the `codex` install target (#540).
+
+- **install**: `install.sh` installs the same tree `npx skills add` writes: each `<skills-dir>/<name>/` is a
+  byte-for-byte copy of `skills/<name>/`, its `scripts/<lib>/` a real directory, and `.coding-crew/lib` is no longer
+  written. A plain `install.sh`, `install.sh --update` and `uninstall.sh` remove an existing `.coding-crew/lib` and
+  keep `config.json`. Upgrading an install whose skills link into `.coding-crew/lib`: run `install.sh --update`
+  first, since a partial run removes it from under the skills it leaves alone; the manifest no longer has a `libs` key (an older one is accepted). The tracker docs name the
+  CLI at `<skills-dir>/solve-issue/scripts/tracker/cli.mjs` (#538).
+- **skills / install**: the committed `skills/<name>/` is now the installed tree: every SKILL.md carries its
+  fragments expanded between `<!-- fragment:<key> -->` markers and every skill's `scripts/<lib>` is a committed
+  link to `lib/<lib>/` that every install copies through as a real directory (the SKILL.md text is written by
+  `bash scripts/render-skill.sh`, no arguments; a test fails when it is stale or a link is wrong), so
+  `npx skills add` installs working skills. A checkout of this repo needs symlink support (on Windows, WSL2 or
+  `core.symlinks=true`). A
+  `ready-for-human` issue's "Mark it done" step now asks your coding agent to run the tracker CLI's `mark-done`
+  instead of naming `.coding-crew/lib`. `scripts/smoke-crew-afk.sh <platform> --via npx` smoke-tests that route,
+  and RESULTS.md gains a `route` column (#537).
 - **solve-feature**: a `fix` re-run after you pushed the branch by hand (its own push failed) no longer adds a false
   "the fixer changed nothing": `fix` compares with the head it first saw that review round, and its stops now say
   pushing before the re-run is fine (#529).

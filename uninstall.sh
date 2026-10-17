@@ -10,9 +10,9 @@ usage() {
   echo ""
   echo "  --project: uninstall from a repo (<path>, else the current repo); default \$HOME."
   echo "             TARGET_REPO=<path> does the same"
-  echo "  --skill:   remove a single skill, and each library no skill left in the manifest uses"
+  echo "  --skill:   remove a single skill and drop it from the manifest"
   echo "  --skills:  remove multiple skills (comma-separated), the same way"
-  echo "  (no args)  remove every skill and library, and .coding-crew/manifest.json"
+  echo "  (no args)  remove every skill, and .coding-crew/manifest.json"
   echo ""
   echo "Examples:"
   echo "  ./uninstall.sh                               # remove all from \$HOME"
@@ -53,7 +53,6 @@ LEVEL="project"
 [[ "$REPO_ROOT" != "$HOME" ]] || LEVEL="user"
 
 MANIFEST="$REPO_ROOT/.coding-crew/manifest.json"
-LIB_DEST=".coding-crew/lib"
 
 for cmd in jq; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Error: required command '$cmd' not found" >&2; exit 1; }
@@ -131,57 +130,44 @@ remove_skill() {
   if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
 }
 
-remove_lib() {
-  local name="$1"
-  plain_name "$name" || return 0
-  if [[ -e "$REPO_ROOT/$LIB_DEST/$name" || -L "$REPO_ROOT/$LIB_DEST/$name" ]]; then
-    rm -rf "${REPO_ROOT:?}/$LIB_DEST/$name"
-    echo "  removed $LIB_DEST/$name/"
-  fi
+# .coding-crew/lib held the libraries an older install.sh linked every skill to; only install.sh ever
+# wrote it, and each skill now carries its own copy, so it is removed wherever it is found.
+remove_legacy_lib() {
+  [[ -e "$REPO_ROOT/.coding-crew/lib" || -L "$REPO_ROOT/.coding-crew/lib" ]] || return 0
+  rm -rf "${REPO_ROOT:?}/.coding-crew/lib"
+  echo "  removed .coding-crew/lib/"
 }
 
-# manifest_list <key> — the names under the manifest's .skills or .libs, one per line. An install made
-# before libraries keyed skills by name with a version each; both forms read the same.
+# manifest_list <key> — the names under the manifest's .skills, one per line. An older install keyed
+# skills by name with a version each; both forms read the same.
 manifest_list() {
   [[ -f "$MANIFEST" ]] || return 0
   jq -r --arg k "$1" '.[$k] // [] | if type == "object" then keys[] else .[] end' "$MANIFEST" | tr -d '\r'
 }
 
-# Drop .coding-crew/lib/ and .coding-crew/ only when empty: config.json is the user's and must survive.
+# Drop .coding-crew/ only when empty: config.json is the user's and must survive.
 prune_coding_crew_dirs() {
-  if [[ -d "$REPO_ROOT/$LIB_DEST" ]]; then
-    rmdir_if_empty "$REPO_ROOT/$LIB_DEST" && echo "  removed $LIB_DEST/" || true
-  fi
   if [[ -d "$REPO_ROOT/.coding-crew" ]]; then
     rmdir_if_empty "$REPO_ROOT/.coding-crew" && echo "  removed .coding-crew/" || true
   fi
 }
 
-# After removing <names> (one per line): drop them from the manifest, and remove each library it lists
-# that no remaining skill's registry entry names. No skill left removes the manifest itself.
+# After removing <names> (one per line): drop them from the manifest. No skill left removes the
+# manifest itself.
 update_manifest() {
-  local removed="$1" remaining="" needed="" keep_libs="" name lib
-  [[ -f "$MANIFEST" ]] || return 0
+  local removed="$1" remaining="" name
+  if [[ ! -f "$MANIFEST" ]]; then prune_coding_crew_dirs; return 0; fi
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
     grep -qxF "$name" <<< "$removed" || remaining+="$name"$'\n'
   done < <(manifest_list skills)
-  while IFS= read -r name; do
-    [[ -n "$name" ]] || continue
-    needed+="$(jq -r --arg s "$name" '.skills[$s].libs // [] | .[]' "$SCRIPT_DIR/registry.json" | tr -d '\r')"$'\n'
-  done <<< "$remaining"
-  while IFS= read -r lib; do
-    [[ -n "$lib" ]] || continue
-    if grep -qxF "$lib" <<< "$needed"; then keep_libs+="$lib"$'\n'; else remove_lib "$lib"; fi
-  done < <(manifest_list libs)
   if [[ -z "$remaining" ]]; then
     rm -f "$MANIFEST"
     echo "  removed .coding-crew/manifest.json"
     prune_coding_crew_dirs
     return 0
   fi
-  jq --arg s "$remaining" --arg l "$keep_libs" \
-    '.skills = ($s | split("\n") | map(select(. != ""))) | .libs = ($l | split("\n") | map(select(. != "")))' \
+  jq --arg s "$remaining" '.skills = ($s | split("\n") | map(select(. != "")))' \
     "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
   prune_coding_crew_dirs
 }
@@ -198,6 +184,7 @@ if [[ "$MODE" == "skills" ]]; then
     remove_skill "$_s"
     _removed+="$_s"$'\n'
   done
+  remove_legacy_lib
   update_manifest "$_removed"
 else
   _skill_names=()
@@ -209,13 +196,7 @@ else
       jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json"; } | tr -d '\r' | sort -u
   )
   for name in "${_skill_names[@]+"${_skill_names[@]}"}"; do remove_skill "$name"; done
-
-  while IFS= read -r name; do
-    [[ -n "$name" ]] && remove_lib "$name"
-  done < <(
-    { manifest_list libs
-      jq -r '[.skills[] | (.libs // [])[]] | unique[]' "$SCRIPT_DIR/registry.json"; } | tr -d '\r' | sort -u
-  )
+  remove_legacy_lib
 
   if [[ -f "$MANIFEST" ]]; then
     rm -f "$MANIFEST"
