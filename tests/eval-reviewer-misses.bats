@@ -28,6 +28,8 @@ setup() {
   # save the prompt; anything else is a reviewer, which prints
   # a report with 2 findings. FAKE_FAIL=<text> fails a reviewer whose prompt contains <text>;
   # FAKE_JUDGE_FAIL=1 fails the judge; FAKE_FORBID=1 fails and leaves a flag when called at all.
+  # A reviewer logs its cwd (and whether the case's PRD is in it) to reviewer-cwd.txt; FAKE_DIRTY=<text>
+  # writes a file into its cwd and FAKE_COMMIT=<text> moves its HEAD, when its prompt contains <text>.
   cat > "$T/claude" <<'EOS'
 #!/usr/bin/env bash
 input=$(cat)
@@ -44,6 +46,9 @@ if [[ "$input" == *"## Expected misses"* ]]; then
   jq -n --arg r "[$arr]" '{result:$r,total_cost_usd:0.5,is_error:false}'; exit 0
 fi
 printf '%s\n' "$*" >> "$FAKE_DIR/reviewer-args.txt"
+printf '%s %s\n' "$PWD" "$([ -f .scratch/feat/PRD.md ] && echo prd || echo no-prd)" >> "$FAKE_DIR/reviewer-cwd.txt"
+if [ -n "${FAKE_DIRTY:-}" ] && [[ "$input" == *"$FAKE_DIRTY"* ]]; then echo x > stray.txt; fi
+if [ -n "${FAKE_COMMIT:-}" ] && [[ "$input" == *"$FAKE_COMMIT"* ]]; then git -c user.email=t@t -c user.name=t commit -q --allow-empty -m moved; fi
 if [ -n "${FAKE_FAIL:-}" ] && [[ "$input" == *"$FAKE_FAIL"* ]]; then
   echo '{"result":"boom","total_cost_usd":0.1,"is_error":true}'; exit 1
 fi
@@ -244,10 +249,11 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   [ "$(jq -r .model "$d/results.json")" = opus ]
 }
 
-@test "the reviewer gets read-only --tools and --settings, no Agent or --effort by default; --effort and --subagents reach its CLI and the results" {
+@test "the reviewer gets --permission-mode bypassPermissions, --tools and --settings, no Agent or --effort by default; --effort and --subagents reach its CLI and the results" {
   local settings='--settings {"disableClaudeAiConnectors":true,"disableBundledSkills":true}'
   run run_eval --runs 1 --case feature-case
   [ "$status" -eq 0 ]
+  [ "$(grep -c -- '--permission-mode bypassPermissions' "$T/reviewer-args.txt")" -eq "$(wc -l < "$T/reviewer-args.txt")" ]
   ! grep -q -- '--effort' "$T/reviewer-args.txt"
   [ "$(grep -c -- '--disallowedTools' "$T/reviewer-args.txt")" -eq 0 ]
   [ "$(grep -cF -- "$settings" "$T/reviewer-args.txt")" -eq "$(wc -l < "$T/reviewer-args.txt")" ]
@@ -261,6 +267,43 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   d=$(out_dir)
   [ "$(jq -r '"\(.effort) \(.subagents)"' "$d/results.json")" = "high true" ]
   grep -q 'Reviewers on opus (effort high, sub-agents allowed)' "$d/summary.md"
+}
+
+@test "each reviewer run gets a detached worktree of its own with the case's PRD inside it" {
+  run run_eval --runs 2 --case feature-case
+  [ "$status" -eq 0 ]
+  [ "$(wc -l < "$T/reviewer-cwd.txt")" -eq 4 ]
+  [ "$(cut -d' ' -f1 "$T/reviewer-cwd.txt" | sort -u | wc -l)" -eq 4 ]
+  [ "$(grep -c ' prd$' "$T/reviewer-cwd.txt")" -eq 4 ]
+  d=$(out_dir)
+  while read -r cwd _; do
+    grep -qF "The PRD is at $cwd/.scratch/feat/PRD.md" "$d"/*.prompt.md
+  done < "$T/reviewer-cwd.txt"
+  [ "$(git -C "$R" worktree list | wc -l)" -eq 1 ]
+}
+
+@test "a reviewer that writes into its worktree is a failed run, whatever it printed, and is not judged" {
+  FAKE_DIRTY=/ref-head/ run run_eval --runs 1 --case branch-case
+  [ "$status" -ne 0 ]
+  d=$(out_dir)
+  [ "$(jq -r '.rows[] | select(.version=="head") | .ok' "$d/results.json")" = "false" ]
+  [ "$(jq -r '.rows[] | select(.version=="head") | .caught' "$d/results.json")" = "null" ]
+  [[ "$(jq -r '.rows[] | select(.version=="head") | .failure' "$d/results.json")" == "changed its worktree"* ]]
+  [ "$(jq -r '.rows[] | select(.version=="base") | .caught.m1' "$d/results.json")" = "true" ]
+  [ "$(grep -c '^### Output' "$T/judge-prompt.txt")" -eq 1 ]
+  head -1 "$d/branch-case-head-1.crew-review.out.md" | grep -q '^RUN FAILED: changed its worktree'
+  grep -q 'Runs that changed their worktree: base 0/1, head 1/1' "$d/summary.md"
+  [ "$(git -C "$R" worktree list | wc -l)" -eq 1 ]
+}
+
+@test "a reviewer that moves its worktree's HEAD is a failed run" {
+  FAKE_COMMIT=/ref-base/ run run_eval --runs 1 --case branch-case
+  [ "$status" -ne 0 ]
+  d=$(out_dir)
+  [ "$(jq -r '.rows[] | select(.version=="base") | .ok' "$d/results.json")" = "false" ]
+  [[ "$(jq -r '.rows[] | select(.version=="base") | .failure' "$d/results.json")" == "changed its worktree"*"HEAD"* ]]
+  [ "$(jq -r '.rows[] | select(.version=="head") | .caught.m1' "$d/results.json")" = "true" ]
+  grep -q 'Runs that changed their worktree: base 1/1, head 0/1' "$d/summary.md"
 }
 
 @test "--effort rejects a level the CLI does not have" {

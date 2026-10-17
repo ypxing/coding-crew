@@ -4,7 +4,8 @@
 // Usage: node scripts/eval-reviewer-misses.mjs [--base <git ref>] [--head <git ref>|worktree]
 //   [--case <name>]... [--runs N] [--model opus] [--effort <level>] [--subagents]
 //   [--judge-model opus] [--parallel 4] [--dry-run] [--resume <out dir>]
-// Each ref builds its prompts from its own files; a reviewer or judge CLI failure is a failed run.
+// Each ref builds its prompts from its own files; a reviewer or judge CLI failure is a failed run, and so is
+// a reviewer that changed its worktree (each run has its own, detached at the case's tip).
 
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -17,9 +18,9 @@ const HERE = path.join(ROOT, "scripts", "eval-reviewer-misses");
 const HEADLESS_SETTINGS = JSON.stringify({ disableClaudeAiConnectors: true, disableBundledSkills: true });
 
 const EVAL_NOTE = (prdPath) =>
-  "EVAL MODE (non-interactive): you cannot write files. Where the protocol says to write the report " +
-  "file, print that JSON object in a fenced ```json block as the last thing in your final message. " +
-  `Modify nothing. The PRD is at ${prdPath}.`;
+  "EVAL MODE (non-interactive): write nothing in the repo; scratch files outside it are fine. Where the " +
+  "protocol says to write the report file, print that JSON object in a fenced ```json block as the last " +
+  `thing in your final message. The PRD is at ${prdPath}.`;
 
 function parseArgs(argv) {
   const o = { base: "main", head: "worktree", cases: [], runs: 2, model: "opus", judgeModel: "opus",
@@ -78,6 +79,18 @@ export function parseCase(name, text) {
 }
 
 const git = (args, cwd = ROOT) => spawnSync("git", args, { cwd, encoding: "utf8" });
+const treeStatus = (dir) => git(["status", "--porcelain", "--untracked-files=all"], dir).stdout;
+
+/** How a reviewer changed its worktree since `before` (its status once set up), or null when it did not. */
+function treeChange(dir, tip, before) {
+  const head = git(["rev-parse", "HEAD"], dir).stdout.trim();
+  if (head !== tip) return `changed its worktree: HEAD moved from ${tip.slice(0, 12)} to ${head.slice(0, 12) || "nothing"}`;
+  const now = treeStatus(dir);
+  if (now === before) return null;
+  const was = new Set(before.split("\n"));
+  const diff = now.split("\n").filter((l) => l && !was.has(l));
+  return `changed its worktree: ${diff.slice(0, 3).join("; ") || "files it found are gone"}`;
+}
 const resolveSha = (sha) => {
   const r = git(["rev-parse", "--verify", "-q", `${sha}^{commit}`]);
   return r.status === 0 ? r.stdout.trim() : null;
@@ -143,6 +156,10 @@ export function aggregate(rows, cases) {
 }
 
 export function summarize(rows, cases) {
+  const changed = ["base", "head"].map((v) => {
+    const rs = rows.filter((r) => r.version === v);
+    return `${v} ${rs.filter((r) => r.treeChanged).length}/${rs.length}`;
+  }).join(", ");
   const lines = ["| case | version | runs ok | caught (per expected miss) | mean findings (raw) | mean findings (distinct) | cost |", "|---|---|---|---|---|---|---|"];
   const means = {};
   for (const c of cases) {
@@ -163,6 +180,7 @@ export function summarize(rows, cases) {
     const within = base != null && head != null ? (head <= Math.max(2 * base, base + 2) ? "within" : "over") : "n/a";
     return `${c.name} ${ratio} (${within} max(2x, +2))`;
   }).join("; "));
+  lines.push("", `Runs that changed their worktree: ${changed}.`);
   return lines.join("\n");
 }
 
@@ -213,26 +231,23 @@ async function main() {
         throw new Error(`--${v} ${ref} has no skills/crew-review/SKILL.md: the ref predates crew-review; pick a later one`);
       }
     }
-    const caseTree = {};
-    // The case's PRD as a file: in its tree when the reviewer runs there, beside the prompts on a dry run.
-    const prdFile = {};
-    const input = (c) => ({ mode: c.mode, base: c.base, tip: c.tip, branch: c.tip, slug: c.slug, issue: c.issue,
-      criteria: c.criteria, notes: c.notes, prdPath: prdFile[c.name], prdText: c.prd, reportPath: "(print it in your final message)" });
-    const prompt = (c, name, body, role) => `${role ? `${role}\n\n=== THIS DISPATCH ===\n\n` : ""}${body}\n\n${EVAL_NOTE(prdFile[c.name])}\n`;
-
-    for (const c of cases) {
-      if (!o.dryRun) caseTree[c.name] = addTree(`tree-${c.name}`, c.tip);
-      prdFile[c.name] = o.dryRun ? path.join(outDir, `${c.name}.PRD.md`) : path.join(caseTree[c.name], ".scratch", c.slug, "PRD.md");
-      fs.mkdirSync(path.dirname(prdFile[c.name]), { recursive: true });
-      fs.writeFileSync(prdFile[c.name], c.prd + "\n");
-    }
+    // The case's PRD as a file: in the run's own tree when a reviewer runs there, beside the prompts on a dry run.
+    const writePrd = (c, file) => {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, c.prd + "\n");
+    };
+    const input = (c, prdPath) => ({ mode: c.mode, base: c.base, tip: c.tip, branch: c.tip, slug: c.slug, issue: c.issue,
+      criteria: c.criteria, notes: c.notes, prdPath, prdText: c.prd, reportPath: "(print it in your final message)" });
+    const prompt = (body, role, prdPath) => `${role ? `${role}\n\n=== THIS DISPATCH ===\n\n` : ""}${body}\n\n${EVAL_NOTE(prdPath)}\n`;
 
     if (o.dryRun) {
       for (const c of cases) {
         console.log(`  ${c.name}`);
+        const prdPath = path.join(outDir, `${c.name}.PRD.md`);
+        writePrd(c, prdPath);
         for (const v of Object.keys(versions)) {
-          const b = buildPrompts(refTree[v], input(c));
-          for (const r of b.reviews) fs.writeFileSync(path.join(outDir, `${c.name}-${v}.${r.name}.prompt.md`), prompt(c, r.name, r.prompt, b.role));
+          const b = buildPrompts(refTree[v], input(c, prdPath));
+          for (const r of b.reviews) fs.writeFileSync(path.join(outDir, `${c.name}-${v}.${r.name}.prompt.md`), prompt(r.prompt, b.role, prdPath));
         }
       }
       console.log(`\nDry run: prompts written to ${path.relative(ROOT, outDir)}/. No model was called.`);
@@ -245,31 +260,44 @@ async function main() {
     const note = (r) => { if (!r.ok && LIMIT_RE.test(`${r.text}\n${r.err}`) && !stop.hit) { stop.hit = true; stop.why = (r.text || r.err).trim().split("\n")[0]; } };
     const claude = (model, turns, inputText, cwd, flags) => runClaude(["-p", "--model", model,
       "--output-format", "json", "--max-turns", String(turns), ...flags], inputText, cwd);
-    // A read-only reviewer: it reads and runs commands, and starts subagents only with --subagents. `--tools` is variadic: it goes last.
-    const reviewerFlags = ["--settings", HEADLESS_SETTINGS, ...(o.effort ? ["--effort", o.effort] : []),
-      "--tools", "Bash", "Read", ...(o.subagents ? ["Agent"] : []), "ToolSearch"];
+    // The reviewer has production's powers: any shell command without a prompt, as the Actions reviewer runs;
+    // subagents only with --subagents. `--tools` is variadic: it goes last.
+    const reviewerFlags = ["--settings", HEADLESS_SETTINGS, "--permission-mode", "bypassPermissions",
+      ...(o.effort ? ["--effort", o.effort] : []), "--tools", "Bash", "Read", ...(o.subagents ? ["Agent"] : []), "ToolSearch"];
 
     const runs = await pool(plan.map(({ c, v, i }) => async () => {
       const id = `${c.name}-${v}-${i}`;
       let cost = 0, failure = null, reused = false;
-      const b = buildPrompts(refTree[v], input(c));
+      // Its own tree, set up only when a reviewer runs in it (not for outputs --resume reuses).
+      const tree = path.join(outDir, `tree-${id}`), prdPath = path.join(tree, ".scratch", c.slug, "PRD.md");
+      let before = null;
+      const written = [];
+      const b = buildPrompts(refTree[v], input(c, prdPath));
       const outs = await Promise.all(b.reviews.map(async (r) => {
-        const text = prompt(c, r.name, r.prompt, b.role);
+        const text = prompt(r.prompt, b.role, prdPath);
         const outFile = path.join(outDir, `${id}.${r.name}.out.md`);
         const prior = o.resume && fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : null;
         if (prior !== null && !prior.startsWith("RUN FAILED")) { reused = true; return prior; }
+        if (before === null) { addTree(`tree-${id}`, c.tip); writePrd(c, prdPath); before = treeStatus(tree); }
         fs.writeFileSync(path.join(outDir, `${id}.${r.name}.prompt.md`), text);
-        const res = await claude(o.model, 40, text, caseTree[c.name], reviewerFlags);
+        const res = await claude(o.model, 40, text, tree, reviewerFlags);
         cost += res.cost; note(res);
         fs.writeFileSync(outFile, res.ok ? res.text : `RUN FAILED: ${res.err}\n${res.text}`);
+        written.push({ outFile, res });
         if (!res.ok) failure ??= (res.err || res.text).trim().split("\n")[0];
         return res.text;
       }));
+      // A reviewer that changed its tree failed, whatever it printed: RUN FAILED, so --resume retries it.
+      const change = before === null ? null : treeChange(tree, c.tip, before);
+      if (change) {
+        failure = change;
+        for (const { outFile, res } of written) fs.writeFileSync(outFile, `RUN FAILED: ${change}\n${res.text}`);
+      }
       const ok = !failure;
       const counts = outs.map(countFindings);
       const findings = ok && counts.every((n) => n !== null) ? counts.reduce((a, n) => a + n, 0) : null;
-      console.log(`  ${id}: ${stop.hit && !ok ? "LIMIT" : !ok ? "FAILED" : reused ? "reused" : "ok"} $${cost.toFixed(2)}`);
-      return { case: c.name, version: v, run: i, ok, failure, text: outs.join("\n\n"), findings, cost };
+      console.log(`  ${id}: ${stop.hit && !ok ? "LIMIT" : change ? "CHANGED TREE" : !ok ? "FAILED" : reused ? "reused" : "ok"} $${cost.toFixed(2)}`);
+      return { case: c.name, version: v, run: i, ok, failure, treeChanged: !!change, text: outs.join("\n\n"), findings, cost };
     }), o.parallel, stop);
     if (stop.hit) {
       console.error(`\nSTOPPED: "${stop.why}". ${runs.filter((r) => r?.ok).length} of ${plan.length} runs finished; nothing was judged. ` +
@@ -305,7 +333,7 @@ async function main() {
         const caught = vd ? Object.fromEntries(c.misses.map((x) => [x.id, vd.caught?.[x.id] === true])) : null;
         const distinct = Number.isFinite(vd?.distinct) ? vd.distinct : null;
         rows.push({ case: c.name, version: r.version, run: r.run, ok: r.ok && !!caught, failure: r.failure ?? (r.ok && !caught ? "judge gave no verdict" : null),
-          findings: r.findings, distinct, caught, note: vd?.note ?? null, cost: r.cost });
+          treeChanged: r.treeChanged, findings: r.findings, distinct, caught, note: vd?.note ?? null, cost: r.cost });
       }
       if (rows.length) rows.at(-1).cost += judgeCost;
     }
