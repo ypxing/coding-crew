@@ -28,6 +28,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- checks: the generated compose override passes `HTTPS_PROXY` and the ecosystem's CA variable (plus
+  `YARN_HTTPS_PROXY` for node) into every service by name, and mounts the host's
+  `/etc/ssl/certs/ca-certificates.crt` read-only when it exists, so `npm install`/`pip install` in a service started
+  from a proxied agent sandbox reach the registry again; no value is written to the file (#556).
 - CI: one macOS job replaces the three macOS shards; `scripts/ci-test-shard.sh`, `scripts/ci-weights.sh` and
   `tests/ci-shard-weights.tsv` are gone, and `ci-run-bats.sh` starts files heaviest first by `@test` count. Also
   removed: `bootstrap.sh`'s `PLATFORM`/`SKILLS`/`PROJECT`/`UPDATE` env-var aliases for its arguments (pass the
