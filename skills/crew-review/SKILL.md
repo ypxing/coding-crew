@@ -2,7 +2,7 @@
 name: crew-review
 description: >
   Reviews a change — a branch's commits or a pull request — against the spec its caller names, for what breaks
-  and for the repo's documented rules, in a fresh subagent that can run what it reviews, and writes one JSON report. Report-only:
+  and for the repo's documented rules, from a context that did not write it and can run what it reviews, and writes one JSON report. Report-only:
   it posts nothing and marks nothing ready. Use when a branch or PR needs a review against its spec before it
   is merged or marked ready. Trigger with /crew-review [<pr-number> | branch <name>] [against <spec>].
 argument-hint: "[<pr-number> | branch <name> [base <ref>]] [against <spec file | issue ref>] [report <path>]"
@@ -30,24 +30,21 @@ Your caller names them; a bare number is a PR, nothing at all is the current bra
 
 ## Run
 
-Run the review in a **fresh subagent** — none of this conversation, the repo's working directory — with this
-prompt: `Review <the change> against <the spec, or: no spec> following the Review section of
-<skill-dir>/SKILL.md. You are the reviewer: answer its three questions yourself. Write the report to <path>`
-(or `print the report`). Give it tools to read files,
+Review from a context that did not write the change. When you were started to review it, do the review below
+yourself. Otherwise — this conversation wrote or discussed the change — run the review in one **fresh subagent**:
+none of this conversation, the repo's working directory, the prompt `Use the crew-review skill on <the change>
+against <the spec, or: no spec>; write the report to <path>` (or `print the report`), and tools to read files,
 run any shell command and write scratch files outside the repo (it writes its report with one). On Claude Code that
 is a general-purpose agent: Explore and Plan cannot write. Wait for it to finish.
-If HEAD moved or the tree changed, say so: the reviewer did not leave the repo as it found it.
-
-When you cannot start a subagent — you are one yourself, or your host has none — do the review below yourself.
+If HEAD moved or the tree changed, say so: the reviewer did not leave the repo as it found it. With no subagent on
+your host, do the review yourself.
 
 ## Review
 
 Leave the repo as you found it: never edit, commit or change its tree. Run what helps — the tests, the scripts
 under review, experiments — in a scratch copy when they would write to it, in a new directory from `mktemp -d`, never
 a fixed path such as `/tmp/<name>`: other reviews share the machine. Start helper subagents when
-they help, each with a brief naming what to run or check and what to return (the command and its output, or the
-trace). A helper gets the tools you have and none of your conclusions; you judge what it returns and write every
-finding yourself.
+they help; you write every finding yourself.
 
 Gather it yourself: the change's diff (`git diff <base>..HEAD`, or `gh pr diff <n>`) and the spec as Inputs
 describes it. Read the code at HEAD, not only the diff, and the repo's CLAUDE.md, AGENTS.md and CONTRIBUTING.md
