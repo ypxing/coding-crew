@@ -26,13 +26,12 @@ function root({ github = false } = {}) {
   return dir;
 }
 
-async function cli(mainRoot, argv, exec = () => assert.fail("gh must not be called"), env = {}) {
+async function cli(mainRoot, argv, exec = () => assert.fail("gh must not be called")) {
   let stdout = "";
   let stderr = "";
   const code = await run([...argv, "--main-root", mainRoot], {
     exec,
     cwd: mainRoot,
-    env,
     out: (s) => (stdout += s),
     err: (s) => (stderr += s),
   });
@@ -670,7 +669,7 @@ test("mark-done exits 4 while a criterion is unchecked in a fresh read, on both 
 
   // Fetched live on each call: the same ref refuses on the unmet body, then succeeds once it is met.
   let body = UNMET;
-  const exec = fakeGh({ "issue view 12": () => ({ stdout: body }), "label create": {}, "issue edit 12": {} });
+  const exec = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": () => ({ stdout: body }), "label create": {}, "issue edit 12": {} });
   const ghRoot = root({ github: true });
   const gh = await cli(ghRoot, ["mark-done", "12"], exec);
   assert.equal(gh.code, 4);
@@ -704,14 +703,14 @@ test("reopen (local) moves a done issue back to open/ as ready-for-agent, by eit
 
 test("reopen (github) swaps awaiting-merge for ready-for-agent, reopening a closed issue first; exits 3 for none", async () => {
   const dir = root({ github: true });
-  const open = fakeGh({ "issue view 12": { stdout: '{"state":"OPEN","labels":[{"name":"awaiting-merge"}]}' }, "issue edit 12": {} });
+  const open = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: '{"state":"OPEN","labels":[{"name":"awaiting-merge"}]}' }, "issue edit 12": {} });
   const r = await cli(dir, ["reopen", "12"], open);
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.stdout, "REOPENED: issue #12 labelled ready-for-agent\n");
   assert.deepEqual(open.find("issue edit")[0][0], ["gh", "issue", "edit", "12", "--add-label", "ready-for-agent", "--remove-label", "awaiting-merge"]);
   assert.equal(open.find("issue reopen").length, 0);
 
-  const closed = fakeGh({ "issue view 12": { stdout: '{"state":"CLOSED","labels":[]}' }, "issue reopen 12": {}, "issue edit 12": {} });
+  const closed = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: '{"state":"CLOSED","labels":[]}' }, "issue reopen 12": {}, "issue edit 12": {} });
   assert.equal((await cli(dir, ["reopen", "12"], closed)).code, 0);
   assert.deepEqual(closed.calls.map((c) => c[2]), ["view", "reopen", "edit"]);
   assert.deepEqual(closed.find("issue edit")[0][0], ["gh", "issue", "edit", "12", "--add-label", "ready-for-agent"]);
@@ -754,7 +753,7 @@ test("tick exits 3 for a missing issue and 2 for a ref outside .scratch/ or no r
 });
 
 test("tick (github) fetches the body live, edits it back ticked, and skips the edit when nothing is unchecked", async () => {
-  const exec = fakeGh({ "issue view 12": { stdout: TWO_UNMET }, "issue edit 12": {} });
+  const exec = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: TWO_UNMET }, "issue edit 12": {} });
   const dir = root({ github: true });
   const r = await cli(dir, ["tick", "12"], exec);
   assert.equal(r.code, 0, r.stderr);
@@ -764,7 +763,7 @@ test("tick (github) fetches the body live, edits it back ticked, and skips the e
   assert.deepEqual(edit.slice(0, 4), ["gh", "issue", "edit", "12"]);
   assert.equal(exec.bodies[i], TWO_TICKED);
 
-  const met = fakeGh({ "issue view 12": { stdout: TWO_TICKED } });
+  const met = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: TWO_TICKED } });
   assert.equal((await cli(dir, ["tick", "12"], met)).stdout, "TICKED: issue #12 — 0 criteria\n");
   assert.equal(met.find("issue edit").length, 0);
 
@@ -818,7 +817,7 @@ test("mark-done exits 4 for a body with no acceptance-criteria section, on both 
   assert.match(local.stderr, /--force is only for a descope a person approved/);
   assert.equal(existsSync(path), true);
 
-  const exec = fakeGh({ "issue view 12": { stdout: NO_SECTION }, "label create": {}, "issue edit 12": {} });
+  const exec = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: NO_SECTION }, "label create": {}, "issue edit 12": {} });
   const gh = await cli(root({ github: true }), ["mark-done", "12"], exec);
   assert.equal(gh.code, 4);
   assert.match(gh.stderr, /^REFUSED: .*no '## Acceptance criteria' section/);
@@ -854,7 +853,7 @@ test("mark-done --force closes a body with no acceptance-criteria section, on bo
   assert.equal(local.code, 0, local.stderr);
   assert.equal(existsSync(join(dir, ".scratch/feat/issues/done/01-t.md")), true);
 
-  const exec = fakeGh({ "issue view 12": { stdout: NO_SECTION }, "label create": {}, "issue edit 12": {} });
+  const exec = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: NO_SECTION }, "label create": {}, "issue edit 12": {} });
   const gh = await cli(root({ github: true }), ["mark-done", "12", "--force"], exec);
   assert.equal(gh.code, 0, gh.stderr);
   assert.equal(exec.find("issue edit 12").length, 1);
@@ -873,14 +872,15 @@ test("mark-done --force skips the criteria guards", async () => {
   assert.equal(r.code, 0, r.stderr);
   assert.equal(existsSync(join(dir, ".scratch/feat/issues/done/01-t.md")), true);
 
-  const exec = fakeGh({ "issue view 12": { stdout: UNMET }, "label create": {}, "issue edit 12": {} });
+  const exec = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: UNMET }, "label create": {}, "issue edit 12": {} });
   const gh = await cli(root({ github: true }), ["mark-done", "12", "--force"], exec);
   assert.equal(gh.code, 0, gh.stderr);
   assert.equal(exec.find("issue edit 12").length, 1);
 });
 
-test("mark-done (github) adds awaiting-merge, removes the ready labels, and leaves the issue open", async () => {
-  const exec = fakeGh({ "issue view 12": { stdout: MET }, "label create": {}, "issue edit 12": {} });
+test("mark-done (github) adds awaiting-merge, removes the ready labels it carries, and leaves the issue open", async () => {
+  const labels = '{"labels":[{"name":"ready-for-agent"},{"name":"ready-for-human"},{"name":"bug"}]}';
+  const exec = fakeGh({ "issue view 12 --json labels": { stdout: labels }, "issue view 12": { stdout: MET }, "label create": {}, "issue edit 12": {} });
   const r = await cli(root({ github: true }), ["mark-done", "12"], exec);
   assert.equal(r.code, 0, r.stderr);
   const [[edit]] = exec.find("issue edit 12");

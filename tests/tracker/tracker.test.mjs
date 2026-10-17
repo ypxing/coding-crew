@@ -4,10 +4,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { appendToSection, sectionBody, spliceSection } from "../../lib/tracker/body-format.mjs";
+import { sectionBody, spliceSection } from "../../lib/tracker/body-format.mjs";
 import {
   blockers,
-  branchFor,
   issueNumber,
   issueSlug,
   listFeatureIssues,
@@ -39,7 +38,6 @@ test("issueSlug strips leading digits and extension", () => {
   assert.equal(issueSlug("/x/01-add-widget.md"), "add-widget");
   assert.equal(issueSlug("/x/12_add_widget.md"), "add_widget");
   assert.equal(issueSlug("/x/add-widget.md"), "add-widget");
-  assert.equal(branchFor("feat", issueSlug("07-thing.md")), "crew/feat/thing");
 });
 
 test("issueNumber reads the filename's leading digits, or null when there are none", () => {
@@ -48,7 +46,7 @@ test("issueNumber reads the filename's leading digits, or null when there are no
   assert.equal(issueNumber("/x/add-widget.md"), null);
 });
 
-test("parseIssue reads status, criteria, blockers and section presence", () => {
+test("parseIssue reads status, title and blockers, and derives no section fields", () => {
   const root = repo();
   issuesDeps(root, "feat", { "02-second.md": ["01-first.md"] });
   const p = issue(
@@ -81,16 +79,7 @@ test("parseIssue reads status, criteria, blockers and section presence", () => {
   assert.equal(i.number, "02");
   assert.equal(i.title, "Second thing");
   assert.deepEqual(i.blockedBy, ["01-first.md"]);
-  assert.match(i.criteria, /does the thing/);
-  assert.equal(i.hasProgress, true);
-  assert.equal(i.hasBlocked, false);
-  assert.equal(i.sourceGuarded, false);
-});
-
-test("parseIssue detects a Source: line (the promotion depth bound)", () => {
-  const root = repo();
-  const p = issue(root, "feat", "09-fix.md", "# Fix\n\nStatus: deferred-findings\nSource: crew/feat/thing review\n");
-  assert.equal(parseIssue(p).sourceGuarded, true);
+  for (const key of ["criteria", "sourceGuarded", "hasProgress", "hasBlocked"]) assert.equal(key in i, false, key);
 });
 
 test("parseIssue prefers issues-deps.json over the Blocked by prose when both are present", () => {
@@ -130,7 +119,7 @@ test("selectDispatchable returns an issue whose Blocked by names an open issue w
   issuesDeps(root, "feat", { "01-first.md": [], "02-second.md": [] });
   issue(root, "feat", "01-first.md", "# F\n\nStatus: ready-for-agent\n");
   issue(root, "feat", "02-second.md", "# S\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 01-first.md\n");
-  assert.deepEqual(selectDispatchable(root).map((i) => i.slug), ["first", "second"]);
+  assert.deepEqual(selectDispatchable(root, { featureSlug: "feat" }).map((i) => i.slug), ["first", "second"]);
 });
 
 test("readIssueDeps returns null when issues-deps.json is absent or unparseable", () => {
@@ -151,7 +140,7 @@ test("selectDispatchable gates on issues-deps.json even when the prose is unreso
     "02-second.md",
     "# S\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- see the schema work\n",
   );
-  const picked = selectDispatchable(root).map((i) => i.slug);
+  const picked = selectDispatchable(root, { featureSlug: "feat" }).map((i) => i.slug);
   assert.deepEqual(picked, ["first"]);
 });
 
@@ -181,16 +170,8 @@ test("selectDispatchable keeps ready+unblocked and skips every other status", ()
     "04-blocked.md",
     "# D\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 01-ready.md\n",
   );
-  const picked = selectDispatchable(root).map((i) => i.slug);
+  const picked = selectDispatchable(root, { featureSlug: "feat" }).map((i) => i.slug);
   assert.deepEqual(picked, ["ready"]);
-});
-
-test("listOpenIssueFiles spans feature dirs and is sorted", () => {
-  const root = repo();
-  issue(root, "zeta", "01-z.md", "# Z\n\nStatus: ready-for-agent\n");
-  issue(root, "alpha", "01-a.md", "# A\n\nStatus: ready-for-agent\n");
-  const files = listOpenIssueFiles(root).map((f) => f.split("/").slice(-4, -3)[0]);
-  assert.deepEqual(files, ["alpha", "zeta"]);
 });
 
 test("listOpenIssueFiles scopes to one feature dir when given a featureSlug", () => {
@@ -226,7 +207,7 @@ test("listOpenIssueFiles returns nothing for a featureSlug with no issues/open d
 });
 
 test("selectDispatchable with featureSlug never dispatches another feature's ready issue", () => {
-  // Regression: a sprint scoped to one feature must not pick up a ready-for-agent issue
+  // Regression: a run scoped to one feature must not pick up a ready-for-agent issue
   // that merely happens to live in a different .scratch/<feature>/ dir — that issue would
   // be dispatched, merged, and closed against the wrong feature branch.
   const root = repo();
@@ -254,11 +235,4 @@ test("spliceSection replaces in place and never creates a second heading", () =>
 test("spliceSection appends when the section is absent", () => {
   const next = spliceSection("# T\n\nStatus: ready-for-agent\n", "Progress", "first note");
   assert.match(next, /## Progress\n\nfirst note/);
-});
-
-test("appendToSection adds a round line under an existing heading", () => {
-  const text = "# T\n\n## Blocked\n\nRound 1: stuck on auth\n";
-  const next = appendToSection(text, "Blocked", "Round 2: still stuck");
-  assert.equal((next.match(/^## Blocked$/gm) || []).length, 1);
-  assert.match(next, /Round 1: stuck on auth\nRound 2: still stuck/);
 });
