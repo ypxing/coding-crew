@@ -16,9 +16,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - checks: the dev commands field `credential_target` is renamed `registry_auth` (and `ensure-env.sh`/
   `docker-install.sh --credential-target` is `--registry-auth`), with no fallback read of the old name; run
   `/setup-coding-crew redo commands` to rewrite the file (#551).
+- solve-issue: an issue's `## Requires` section is no longer read — preflight no longer runs its commands or
+  stops with `BLOCKED: requires:`, `check-requires.sh` is gone, and to-issues no longer writes the section. An
+  issue that still carries one stays valid and the section is ignored; nothing to migrate (#553).
 
 ### Changed
 
+- tracker: `mark-done` on a GitHub issue no longer creates a `ready-for-human` label to remove it; it reads the
+  issue's labels and removes only the ready labels the issue carries (#553).
 - to-issues: `lint-issues.sh` is retired; `publish-issues` now refuses a draft whose `deps.json` edges differ from
   its `## Blocked by`, naming the draft and both lists, before it creates anything (#552).
 - tracker: the local tracker reads blockers from `issues-deps.json` only, which `publish-issues` now writes for every
