@@ -41,12 +41,12 @@ scan_prompt_files() {
 
 @test "the file scan fails naming the file that names feature/<slug>" {
   mkdir -p "$T/skills/_shared/fragments" "$T/skills/tdd/references"
-  cp "$REPO_ROOT/skills/_shared/fragments/human-issue.md" "$T/skills/_shared/fragments/"
+  cp "$REPO_ROOT/skills/_shared/fragments/light-path.md" "$T/skills/_shared/fragments/"
   cp "$REPO_ROOT/skills/tdd/references/mocking.md" "$T/skills/tdd/references/"
   run scan_prompt_files "$T"
   [ "$status" -eq 0 ]
 
-  for f in skills/_shared/fragments/human-issue.md skills/tdd/references/mocking.md; do
+  for f in skills/_shared/fragments/light-path.md skills/tdd/references/mocking.md; do
     cp "$T/$f" "$T/$f.orig"
     echo 'Take <slug> from a `feature/<slug>` head branch.' >> "$T/$f"
     run scan_prompt_files "$T"

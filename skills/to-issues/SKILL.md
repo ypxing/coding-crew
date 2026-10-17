@@ -181,7 +181,6 @@ Write each approved slice with the template below and the rules that follow it, 
 
 **`ready-for-human` bodies.** Every slice published as `ready-for-human` (a HITL slice from step 5) opens with this block:
 
-<!-- fragment:human-issue -->
 **A `ready-for-human` issue opens with a `## For a human` block**, placed right after `## What to build`. A person reads it cold, so write plain language that needs neither the PRD nor the codebase. It has exactly five `###` parts, in this order:
 
 1. `### Why a person` — why no agent can do this (a permission, a credential, a judgement call).
@@ -249,7 +248,6 @@ Reading the ruleset back lists `required_status_checks`, and a PR with a failing
 
 - [ ] The ruleset has a `required_status_checks` rule
 ````
-<!-- /fragment:human-issue -->
 
 **Acceptance criteria describe this slice's behaviour, not repo-wide hygiene.** A rule every change must follow that a check already enforces — a version bump, a changelog entry, lint — is not a criterion: the check holds it, and as a per-issue criterion each issue on the branch repeats it (a second version bump, a duplicate changelog entry).
 

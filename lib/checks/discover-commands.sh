@@ -5,7 +5,8 @@ set -euo pipefail
 # commands (test, lint, typecheck, install, env, registry_auth, coverage, integration), listing
 # file paths, not contents; prints "skipped" when no candidate exists or every field is cached.
 # A cached field, even null, is never re-asked: a fresh guess must not overwrite a hand-edited
-# answer. --refresh re-asks all eight.
+# answer. --refresh re-asks all eight. The prompt ends with the commands that save the answer
+# (write-commands-cache.sh), so every skill that discovers the commands saves them the same way.
 
 REFRESH=0
 while [ $# -gt 0 ]; do
@@ -98,7 +99,8 @@ of the categories below only:
 PROMPT
 
 _in_ask test && cat <<'PROMPT'
-- test
+- test (the bare command, e.g. `pnpm test`, never a `docker compose run …` wrapper: the checks
+  run it inside the project's container themselves when the project is set up that way)
 PROMPT
 _in_ask lint && cat <<'PROMPT'
 - lint (one that reports, not one that rewrites files: every check fails when it leaves the
@@ -246,20 +248,29 @@ if [ -f "$ROOT/composer.json" ]; then
   _runner_rule composer.json "PHP tools" "vendor/bin" "vendor/bin/" "vendor/bin/phpunit" phpunit
 fi
 
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ANSWER="$ROOT/.discovered-commands.json"
 cat <<'PROMPT'
 
-Respond with **only** this JSON shape, no other prose:
+On an interactive run, show the person your answer, one command per line, and take their
+corrections before you save it. On a non-interactive run (a headless/-p invocation or a subagent),
+save it without asking.
+
+Save it by running these commands with your answer as the JSON:
+
 PROMPT
 
 JSON_SHAPE=""
 for key in "${CACHE_FIELDS[@]}"; do
   _in_ask "$key" || continue
   [ -n "$JSON_SHAPE" ] && JSON_SHAPE="$JSON_SHAPE, "
-  if [ "$key" = "registry_auth" ]; then
-    JSON_SHAPE="${JSON_SHAPE}\"registry_auth\": "'"<command or null, e.g. \"make _registry\">"'
-  else
-    JSON_SHAPE="$JSON_SHAPE\"$key\": \"<command or null>\""
-  fi
+  JSON_SHAPE="$JSON_SHAPE\"$key\": \"<command or null>\""
 done
-printf '{%s}\n' "$JSON_SHAPE"
-echo "--- end command discovery prompt ---"
+cat <<PROMPT
+cat > $(printf '%q' "$ANSWER") <<'JSON'
+{$JSON_SHAPE}
+JSON
+(cd $(printf '%q' "$ROOT") && bash $(printf '%q' "$SELF_DIR/write-commands-cache.sh") --response-file .discovered-commands.json)
+rm -f $(printf '%q' "$ANSWER")
+--- end command discovery prompt ---
+PROMPT
