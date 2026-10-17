@@ -157,8 +157,6 @@ Before writing issues, read the PRD's `## Decisions` and `## Testing Decisions` 
 
 Write each approved slice with the template below and the rules that follow it, then take it through `<skill-dir>/references/publish.md`, in this order: drafts in `.scratch/<feature-slug>/.drafts/` → the feature's known issues → `deps.json` → the builder check → `publish-issues` (or `rewrite`, for a source issue that stayed one slice). A `publish-issues` refusal or a builder-check question only the user can answer returns to step 5 with just that question.
 
-**`ready-for-human` bodies.** Every slice published as `ready-for-human` (a HITL slice from step 5) opens with this block:
-
 **A `ready-for-human` issue opens with a `## For a human` block**, placed right after `## What to build`. A person reads it cold, so write plain language that needs neither the PRD nor the codebase. It has exactly five `###` parts, in this order:
 
 1. `### Why a person` — why no agent can do this (a permission, a credential, a judgement call).

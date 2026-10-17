@@ -9,10 +9,10 @@ set -euo pipefail
 
 REPO="https://github.com/ypxing/coding-crew"
 BRANCH="${BRANCH:-main}"
-PLATFORM=all
-SKILLS=""
-PROJECT=""
-UPDATE=""
+PLATFORM="${PLATFORM:-all}"
+SKILLS="${SKILLS:-}"
+PROJECT="${PROJECT:-}"
+UPDATE="${UPDATE:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

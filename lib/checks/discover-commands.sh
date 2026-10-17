@@ -3,7 +3,8 @@ set -euo pipefail
 
 # discover-commands.sh [--refresh] — prints the prompt asking a model for this repo's dev-loop
 # commands (test, lint, typecheck, install, env, registry_auth, coverage, integration), listing
-# file paths, not contents; prints "skipped" when no candidate exists or every field is cached.
+# file paths, not contents; with no candidate file, asks for the ecosystem's conventional
+# test/lint/typecheck commands instead; prints "skipped" when every field asked about is cached.
 # A cached field, even null, is never re-asked: a fresh guess must not overwrite a hand-edited
 # answer. --refresh re-asks all eight. The prompt ends with the commands that save the answer
 # (write-commands-cache.sh), so every skill that discovers the commands saves them the same way.
@@ -61,8 +62,62 @@ for f in "${CANDIDATE_FILES[@]}"; do
   fi
 done
 
+_in_ask() {
+  local key="$1" f
+  for f in "${ASK_FIELDS[@]}"; do
+    [ "$f" = "$key" ] && return 0
+  done
+  return 1
+}
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ANSWER="$ROOT/.discovered-commands.json"
+# _print_save_commands — the prompt's closing lines: the commands that save the answer for ASK_FIELDS.
+_print_save_commands() {
+  cat <<'PROMPT'
+
+On an interactive run, show the person your answer, one command per line, and take their
+corrections before you save it. On a non-interactive run (a headless/-p invocation or a subagent),
+save it without asking.
+
+Save it by running these commands with your answer as the JSON:
+
+PROMPT
+  local key json_shape=""
+  for key in "${CACHE_FIELDS[@]}"; do
+    _in_ask "$key" || continue
+    [ -n "$json_shape" ] && json_shape="$json_shape, "
+    json_shape="$json_shape\"$key\": \"<command or null>\""
+  done
+  cat <<PROMPT
+cat > $(printf '%q' "$ANSWER") <<'JSON'
+{$json_shape}
+JSON
+(cd $(printf '%q' "$ROOT") && bash $(printf '%q' "$SELF_DIR/write-commands-cache.sh") --response-file .discovered-commands.json)
+rm -f $(printf '%q' "$ANSWER")
+--- end command discovery prompt ---
+PROMPT
+}
+
+# No file names the commands: the checks still need test/lint/typecheck saved (null included), or
+# run-checks.sh keeps answering DISCOVER, so ask for the ecosystem's conventional commands.
 if [ "${#FOUND_FILES[@]}" -eq 0 ]; then
-  echo "Command discovery: skipped (no CLAUDE.md, AGENTS.md, README.md, Makefile, or manifest found — ecosystem-convention fallback applies)"
+  if [ "$REFRESH" = "0" ] && [ -f "$CACHE_FILE" ] && commands_field_present "$CACHE_FILE" test; then
+    echo "Command discovery: skipped (no CLAUDE.md, AGENTS.md, README.md, Makefile, or manifest found; already cached at $CACHE_FILE)"
+    exit 0
+  fi
+  ASK_FIELDS=(test lint typecheck)
+  cat <<'PROMPT'
+Command discovery: no CLAUDE.md, AGENTS.md, README.md, Makefile, or known manifest found — ecosystem-convention fallback
+
+--- command discovery prompt ---
+No file in this repository documents its dev-loop commands. Look at the build files it does have
+(pom.xml, build.gradle, *.csproj, mix.exs, …) and give the ecosystem's conventional local command
+for each of test, lint (one that reports, never one that rewrites files) and typecheck — e.g.
+`mvn test`, `./gradlew test`, `dotnet test`, `mix test`, `go test ./...`, `pytest`. Use null for
+a category the ecosystem has no conventional command for, or that its tool is not set up for here.
+PROMPT
+  _print_save_commands
   exit 0
 fi
 
@@ -81,14 +136,6 @@ fi
 
 echo "Command discovery: ${#FOUND_FILES[@]} source file(s) found — building discovery prompt for ${#ASK_FIELDS[@]} of eight categories"
 echo
-
-_in_ask() {
-  local key="$1" f
-  for f in "${ASK_FIELDS[@]}"; do
-    [ "$f" = "$key" ] && return 0
-  done
-  return 1
-}
 
 cat <<'PROMPT'
 --- command discovery prompt (do not run this on a cheap model tier — it is genuine reasoning) ---
@@ -248,29 +295,4 @@ if [ -f "$ROOT/composer.json" ]; then
   _runner_rule composer.json "PHP tools" "vendor/bin" "vendor/bin/" "vendor/bin/phpunit" phpunit
 fi
 
-SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ANSWER="$ROOT/.discovered-commands.json"
-cat <<'PROMPT'
-
-On an interactive run, show the person your answer, one command per line, and take their
-corrections before you save it. On a non-interactive run (a headless/-p invocation or a subagent),
-save it without asking.
-
-Save it by running these commands with your answer as the JSON:
-
-PROMPT
-
-JSON_SHAPE=""
-for key in "${CACHE_FIELDS[@]}"; do
-  _in_ask "$key" || continue
-  [ -n "$JSON_SHAPE" ] && JSON_SHAPE="$JSON_SHAPE, "
-  JSON_SHAPE="$JSON_SHAPE\"$key\": \"<command or null>\""
-done
-cat <<PROMPT
-cat > $(printf '%q' "$ANSWER") <<'JSON'
-{$JSON_SHAPE}
-JSON
-(cd $(printf '%q' "$ROOT") && bash $(printf '%q' "$SELF_DIR/write-commands-cache.sh") --response-file .discovered-commands.json)
-rm -f $(printf '%q' "$ANSWER")
---- end command discovery prompt ---
-PROMPT
+_print_save_commands

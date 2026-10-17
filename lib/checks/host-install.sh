@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Detect and run the right host install command for PROJECT_ROOT.
-# Checks (in order): the dev commands file's "install" command, then the lockfile table.
+# Checks (in order): the dev commands file's "install" command, then install-cmd.sh's lockfile table.
 # Usage: host-install.sh --project-root <path>
 # Exit codes: 0 installed, 1 argument error, 2 no install method, 3 install failed
 
@@ -40,35 +40,12 @@ if [[ -n "$cached" ]]; then
   exit 0
 fi
 
-run() {
-  echo "Running: $*"
-  "$@"
-  exit 0
-}
-
-[[ -f uv.lock            ]] && run uv sync --frozen
-[[ -f bun.lockb          ]] && run bun install --frozen-lockfile
-[[ -f pnpm-lock.yaml     ]] && run pnpm install --frozen-lockfile
-[[ -f package-lock.json  ]] && run npm ci
-[[ -f yarn.lock          ]] && run yarn install --frozen-lockfile
-[[ -f poetry.lock        ]] && run poetry install --no-root
-[[ -f go.sum             ]] && run go mod download
-[[ -f go.mod             ]] && run go mod download
-# Python with no uv/poetry lockfile: python-install-cmd.sh adds the dev tools pip would leave out.
-python_cmd=$(bash "$SELF_DIR/python-install-cmd.sh" "$PROJECT_ROOT")
-if [[ -n "$python_cmd" ]]; then
-  echo "Running: $python_cmd"
-  bash -c "$python_cmd"
+cmd=$(bash "$SELF_DIR/install-cmd.sh" "$PROJECT_ROOT")
+if [[ -n "$cmd" ]]; then
+  echo "Running: $cmd"
+  bash -c "$cmd" || exit 3
   exit 0
 fi
-[[ -f Gemfile.lock       ]] && run bundle install
-[[ -f Cargo.toml         ]] && run cargo fetch
-[[ -f composer.json      ]] && run composer install --no-interaction
-[[ -f pom.xml            ]] && run mvn dependency:resolve dependency:resolve-plugins -q
-[[ -f mix.exs            ]] && run mix deps.get
-
-csproj=$(find . -maxdepth 2 -name "*.csproj" | head -1)
-[[ -n "$csproj" ]] && run dotnet restore
 
 echo "No install method found in $PROJECT_ROOT" >&2
 exit 2

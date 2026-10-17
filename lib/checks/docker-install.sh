@@ -94,25 +94,9 @@ else
   mapfile -t MANIFEST_DIRS < <(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query manifest-dirs 2>/dev/null)
   [[ ${#MANIFEST_DIRS[@]} -gt 0 ]] || _fail 2 detect "No manifest directories detected at $PROJECT_ROOT"
 
-  _install_cmd_for_dir() {
-    local d="$1"
-    if   [[ -f "$d/uv.lock"           ]]; then echo "uv sync --frozen"
-    elif [[ -f "$d/bun.lockb"         ]]; then echo "bun install --frozen-lockfile"
-    elif [[ -f "$d/pnpm-lock.yaml"    ]]; then echo "pnpm install --frozen-lockfile"
-    elif [[ -f "$d/package-lock.json" ]]; then echo "npm ci"
-    elif [[ -f "$d/yarn.lock"         ]]; then echo "yarn install --frozen-lockfile"
-    elif [[ -f "$d/poetry.lock"       ]]; then echo "poetry install --no-root"
-    elif [[ -f "$d/requirements.txt" || -f "$d/pyproject.toml" ]]; then bash "$SELF_DIR/python-install-cmd.sh" "$d"
-    elif [[ -f "$d/Gemfile.lock"      ]]; then echo "bundle install"
-    elif [[ -f "$d/Cargo.toml"        ]]; then echo "cargo fetch"
-    elif [[ -f "$d/composer.json"     ]]; then echo "composer install --no-interaction"
-    elif [[ -f "$d/go.sum" || -f "$d/go.mod" ]]; then echo "go mod download"
-    fi
-  }
-
   STEPS=()
   for dir in "${MANIFEST_DIRS[@]}"; do
-    cmd="$(_install_cmd_for_dir "$dir")"
+    cmd="$(bash "$SELF_DIR/install-cmd.sh" "$dir")"
     [[ -n "$cmd" ]] || continue
     rel="${dir#"$PROJECT_ROOT"}"
     rel="${rel#/}"

@@ -35,3 +35,19 @@ teardown() {
   run bash -c 'cd "$1" && bash "$2/discover-commands.sh"' _ "$REPO" "$LIB"
   [[ "$output" == "Command discovery: skipped (already cached"* ]]
 }
+
+@test "a repo with no doc or known manifest gets convention-based save commands, and saving them ends discovery" {
+  rm "$REPO/Makefile"
+  touch "$REPO/pom.xml"
+  run bash -c 'cd "$1" && bash "$2/discover-commands.sh"' _ "$REPO" "$LIB"
+  [ "$status" -eq 0 ]
+  block=$(printf '%s\n' "$output" | awk '/^cat > /{f=1} f{print} /^rm -f /{f=0}' \
+    | sed -e 's/"<command or null[^"]*>"/null/g' -e 's/"test": null/"test": "mvn test"/')
+  [ -n "$block" ]
+  (cd "$TEMP_DIR" && bash -c "$block")
+  grep -q '"test": "mvn test"' "$REPO/.git/coding-crew/dev-commands.json"
+  run bash "$LIB/run-checks.sh" --project-root "$REPO"
+  [[ "$output" != *"DISCOVER"* ]]
+  run bash -c 'cd "$1" && bash "$2/discover-commands.sh"' _ "$REPO" "$LIB"
+  [[ "$output" == "Command discovery: skipped"* ]]
+}

@@ -47,7 +47,6 @@ There are no installable agents: `./install.sh <platform> <name>` with anything 
 - **`install.sh`** — Single installer that reads `registry.json` and copies files into target repos
 - **`platforms.json`** — Every platform's skill dirs and config-dir override, read by `install.sh` and `uninstall.sh`
 - **`lib/`** — Libraries the skills share: `tracker/` (the tracker CLI, backends and `docs/{local,github}.md`), `checks/` (run-checks.sh and dep-install's scripts), `git-workflow/`; each skill whose `libs` names one commits `skills/<skill>/scripts/<name>` as a link to `../../../lib/<name>`, and every install copies through it. The tracker choice is `.coding-crew/config.json`'s `tracker` section
-- **`docs/templates/`** — Optional workflows
 
 ### How Install Works
 

@@ -28,6 +28,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- checks: one lockfile → install-command table (`install-cmd.sh`) serves host and docker installs, so a docker install
+  now also covers `pom.xml`, `mix.exs` and `*.csproj` and picks Go before pip as host installs do; a repo with no doc or
+  known manifest gets a discovery prompt for its ecosystem's test/lint/typecheck commands instead of a skip line, so
+  the checks stop asking for discovery once it is saved (#558).
 - skills: shared instructions are stated once. The `ready-for-human` block lives only in to-issues (upgrade-deps
   hands its drafts there), the tracker-configuration block is 10 lines, and `discover-commands.sh`'s prompt now ends
   with the commands that save the answer, so every skill that discovers dev commands runs it and follows the prompt;
@@ -39,8 +43,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   from a proxied agent sandbox reach the registry again; no value is written to the file (#556).
 - CI: one macOS job replaces the three macOS shards; `scripts/ci-test-shard.sh`, `scripts/ci-weights.sh` and
   `tests/ci-shard-weights.tsv` are gone, and `ci-run-bats.sh` starts files heaviest first by `@test` count. Also
-  removed: `bootstrap.sh`'s `PLATFORM`/`SKILLS`/`PROJECT`/`UPDATE` env-var aliases for its arguments (pass the
-  arguments), the eval runners' handling of a `--base` from before the committed tree was rendered or before
+  removed: the eval runners' handling of a `--base` from before the committed tree was rendered or before
   crew-review, and the unlinked top-level requirements document (#555).
 - tracker: `mark-done` on a GitHub issue no longer creates a `ready-for-human` label to remove it; it reads the
   issue's labels and removes only the ready labels the issue carries (#553).
