@@ -33,7 +33,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
 3. **Review, fix and describe**, on `<n>`, the last `pr=` printed (by `land`, else `start`). With none, `next`
    printed why nothing landed: report it and end.
    1. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working directory —
-     with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.solve-feature/spec.md; you are the reviewer: start no subagent; write the report to <repo>/.solve-feature/pr-<n>.review.json`.
+     with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.solve-feature/spec.md; you are the reviewer: do the review yourself; write the report to <repo>/.solve-feature/pr-<n>.review.json`.
      When `reviewer-model=` is non-empty and your host accepts that model name, run it on that model; otherwise on
      your own. Wait for it to finish.
    2. Only when `jq '.findings // [] | length' .solve-feature/pr-<n>.review.json` prints more than 0:

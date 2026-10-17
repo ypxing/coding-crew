@@ -37,5 +37,7 @@ SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
   ! grep -qi 'read-only' "$SKILL" || false
   grep -qF 'If HEAD moved or the tree changed, say so' "$SKILL"
   grep -qF 'When you cannot start a subagent' "$SKILL"
+  grep -qF 'You are the reviewer: do the review yourself.' "$SKILL"
+  grep -qF 'Start helper subagents when' "$SKILL"
   grep -qF 'print it' "$SKILL"
 }

@@ -2,7 +2,7 @@
 // eval-reviewer-misses.mjs — replay eval: does crew-review report bugs in unchanged code a change
 // affected? Base and head review each case; a judge checks outputs blind. Maintainer-only, costs API money.
 // Usage: node scripts/eval-reviewer-misses.mjs [--base <git ref>] [--head <git ref>|worktree]
-//   [--case <name>]... [--runs N] [--model opus] [--effort <level>] [--subagents]
+//   [--case <name>]... [--runs N] [--model opus] [--effort <level>] [--no-subagents]
 //   [--judge-model opus] [--parallel 4] [--dry-run] [--resume <out dir>]
 // Each ref builds its prompts from its own files; a reviewer or judge CLI failure is a failed run, and so is
 // a reviewer that changed its worktree (each run has its own, detached at the case's tip).
@@ -24,7 +24,7 @@ const EVAL_NOTE = (prdPath) =>
 
 function parseArgs(argv) {
   const o = { base: "main", head: "worktree", cases: [], runs: 2, model: "opus", judgeModel: "opus",
-    effort: null, subagents: false, parallel: 4, dryRun: false, resume: null };
+    effort: null, subagents: true, parallel: 4, dryRun: false, resume: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], v = () => {
       if (i + 1 >= argv.length) throw new Error(`${a} needs a value`);
@@ -37,7 +37,7 @@ function parseArgs(argv) {
       case "--runs": o.runs = Number(v()); break;
       case "--model": o.model = v(); break;
       case "--effort": o.effort = v(); break;
-      case "--subagents": o.subagents = true; break;
+      case "--no-subagents": o.subagents = false; break;
       case "--judge-model": o.judgeModel = v(); break;
       case "--parallel": o.parallel = Number(v()); break;
       case "--dry-run": o.dryRun = true; break;
@@ -261,7 +261,7 @@ async function main() {
     const claude = (model, turns, inputText, cwd, flags) => runClaude(["-p", "--model", model,
       "--output-format", "json", "--max-turns", String(turns), ...flags], inputText, cwd);
     // The reviewer has production's powers: any shell command without a prompt, as the Actions reviewer runs;
-    // subagents only with --subagents. `--tools` is variadic: it goes last.
+    // subagents unless --no-subagents. `--tools` is variadic: it goes last.
     const reviewerFlags = ["--settings", HEADLESS_SETTINGS, "--permission-mode", "bypassPermissions",
       ...(o.effort ? ["--effort", o.effort] : []), "--tools", "Bash", "Read", ...(o.subagents ? ["Agent"] : []), "ToolSearch"];
 

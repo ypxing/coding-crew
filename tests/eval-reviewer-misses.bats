@@ -261,12 +261,12 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   run run_eval --runs 1
   d=$(out_dir)
   grep -q '"distinct"' "$T/judge-prompt.txt"
-  grep -q 'Reviewers on opus (effort default, sub-agents denied), judge on opus' "$d/summary.md"
+  grep -q 'Reviewers on opus (effort default, sub-agents allowed), judge on opus' "$d/summary.md"
   grep -q 'mean findings (raw) | mean findings (distinct)' "$d/summary.md"
   [ "$(jq -r .model "$d/results.json")" = opus ]
 }
 
-@test "the reviewer gets --permission-mode bypassPermissions, --tools and --settings, no Agent or --effort by default; --effort and --subagents reach its CLI and the results" {
+@test "the reviewer gets --permission-mode bypassPermissions, --tools and --settings, Agent and no --effort by default; --effort and --no-subagents reach its CLI and the results" {
   local settings='--settings {"disableClaudeAiConnectors":true,"disableBundledSkills":true}'
   run run_eval --runs 1 --case feature-case
   [ "$status" -eq 0 ]
@@ -274,16 +274,16 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   ! grep -q -- '--effort' "$T/reviewer-args.txt"
   [ "$(grep -c -- '--disallowedTools' "$T/reviewer-args.txt")" -eq 0 ]
   [ "$(grep -cF -- "$settings" "$T/reviewer-args.txt")" -eq "$(wc -l < "$T/reviewer-args.txt")" ]
-  [ "$(grep -c -- '--tools Bash Read ToolSearch$' "$T/reviewer-args.txt")" -eq "$(wc -l < "$T/reviewer-args.txt")" ]
+  [ "$(grep -c -- '--tools Bash Read Agent ToolSearch$' "$T/reviewer-args.txt")" -eq "$(wc -l < "$T/reviewer-args.txt")" ]
   rm "$T/reviewer-args.txt"
-  run run_eval --runs 1 --case feature-case --effort high --subagents
+  run run_eval --runs 1 --case feature-case --effort high --no-subagents
   [ "$status" -eq 0 ]
   [ "$(grep -c -- '--effort high' "$T/reviewer-args.txt")" -eq "$(wc -l < "$T/reviewer-args.txt")" ]
-  [ "$(grep -c -- '--tools Bash Read Agent ToolSearch$' "$T/reviewer-args.txt")" -eq "$(wc -l < "$T/reviewer-args.txt")" ]
+  [ "$(grep -c -- '--tools Bash Read ToolSearch$' "$T/reviewer-args.txt")" -eq "$(wc -l < "$T/reviewer-args.txt")" ]
   [ "$(grep -c -- '--disallowedTools' "$T/reviewer-args.txt")" -eq 0 ]
   d=$(out_dir)
-  [ "$(jq -r '"\(.effort) \(.subagents)"' "$d/results.json")" = "high true" ]
-  grep -q 'Reviewers on opus (effort high, sub-agents allowed)' "$d/summary.md"
+  [ "$(jq -r '"\(.effort) \(.subagents)"' "$d/results.json")" = "high false" ]
+  grep -q 'Reviewers on opus (effort high, sub-agents denied)' "$d/summary.md"
 }
 
 @test "each reviewer run gets a detached worktree of its own with the case's PRD inside it" {

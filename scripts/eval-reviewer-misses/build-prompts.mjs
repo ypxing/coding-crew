@@ -18,7 +18,7 @@ function crewReviewPrompt() {
   fs.writeFileSync(spec, [inp.prdText, inp.criteria && `## Acceptance criteria\n\n${inp.criteria}`].filter(Boolean).join("\n\n") + "\n");
   const skill = path.join(tree, "skills", "crew-review", "SKILL.md");
   return `Review branch HEAD, base ${inp.base} (the change is \`git diff ${inp.base}..HEAD\`), against the spec in ${spec} ` +
-    `following the Review section of ${skill}. You are the reviewer: start no subagent. Write the report to ${inp.reportPath}.`;
+    `following the Review section of ${skill}. You are the reviewer: do the review yourself. Write the report to ${inp.reportPath}.`;
 }
 
 process.stdout.write(JSON.stringify({ role: "", reviews: [{ name: "crew-review", prompt: crewReviewPrompt() }] }));
