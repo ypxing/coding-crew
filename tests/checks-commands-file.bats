@@ -71,3 +71,20 @@ teardown() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(cat "$TEMP_DIR/ran")" = T ]
 }
+
+@test "commands_field reads a string, empty for null or absent; commands_field_present counts null as present" {
+  printf '{"install": "npm ci", "env": null}\n' > "$TEMP_DIR/c.json"
+  run bash -c '. "$1/commands-file.sh"; commands_field "$2" install' _ "$LIB" "$TEMP_DIR/c.json"
+  [ "$output" = "npm ci" ]
+  run bash -c '. "$1/commands-file.sh"; commands_field "$2" env; commands_field "$2" lint; commands_field "$3" install' _ "$LIB" "$TEMP_DIR/c.json" "$TEMP_DIR/missing.json"
+  [ -z "$output" ]
+  run bash -c '. "$1/commands-file.sh"; commands_field_present "$2" env && commands_field_present "$2" install' _ "$LIB" "$TEMP_DIR/c.json"
+  [ "$status" -eq 0 ]
+  run bash -c '. "$1/commands-file.sh"; commands_field_present "$2" lint' _ "$LIB" "$TEMP_DIR/c.json"
+  [ "$status" -eq 1 ]
+}
+
+@test "only commands-file.sh parses a dev-commands field" {
+  run grep -ln -E '"[a-z_]*"\[\[:space:\]\]\*:|\[\[:space:\]\]\*:\[\[:space:\]\]\*' "$LIB"/*.sh
+  [ "$output" = "$LIB/commands-file.sh" ]
+}

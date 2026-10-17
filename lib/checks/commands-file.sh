@@ -2,13 +2,37 @@
 # commands-file.sh --project-root <path> — prints the path of the checkout's dev commands file (its checks, install
 # command and install mode): <root>/.coding-crew/dev-commands.json when the tree has one (a team commits it to share
 # the commands), else dev-commands.json in the clone's git common dir, which every worktree of the clone shares, no
-# tree holds and nothing commits. The file need not exist yet. Sourced, it defines commands_file <root> instead.
+# tree holds and nothing commits. The file need not exist yet. Sourced, it defines commands_file <root> instead,
+# and the only readers of the file's fields: commands_field, commands_field_present and commands_keys.
 
 commands_file() { # <project-root>
   local tracked="$1/.coding-crew/dev-commands.json" common
   [ ! -f "$tracked" ] || { echo "$tracked"; return; }
   common=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || { echo "$tracked"; return; }
   echo "$common/coding-crew/dev-commands.json"
+}
+
+# _commands_token <file> <key> — the raw value of "<key>": a quoted string or null; empty when absent. Matched
+# anywhere in the file, so a model's response with prose or a code fence around the object reads the same.
+_commands_token() {
+  [ -f "$1" ] || return 0
+  grep -o "\"$2\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" "$1" 2>/dev/null | head -1 \
+    | sed -E "s/^\"$2\"[[:space:]]*:[[:space:]]*//" || true
+}
+
+commands_field() { # <file> <key> — the string value; empty for null or an absent key
+  local raw; raw=$(_commands_token "$1" "$2")
+  case "$raw" in \"*\") raw="${raw#\"}"; printf '%s' "${raw%\"}" ;; esac
+}
+
+commands_field_present() { # <file> <key> — exit 0 when the key is there, null included
+  [ -n "$(_commands_token "$1" "$2")" ]
+}
+
+commands_keys() { # <file> — every key with a string or null value, in file order
+  [ -f "$1" ] || return 0
+  grep -oE '"[a-z][a-z0-9_]*"[[:space:]]*:[[:space:]]*("|null)' "$1" 2>/dev/null \
+    | sed -E 's/^"([a-z0-9_]+)".*/\1/' | awk '!seen[$0]++'
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then

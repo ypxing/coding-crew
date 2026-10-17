@@ -16,7 +16,6 @@ set -uo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_SCRIPT="$SELF_DIR/run.sh"
 PROJECT_ROOT=""
-TAIL_LINES="${CREW_CHECK_TAIL_LINES:-80}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,22 +46,12 @@ if [ ! -f "$CACHE" ] || ! grep -q '"test"' "$CACHE" 2>/dev/null; then
 fi
 
 # Keys of dev-commands.json that are not checks.
-NOT_CHECKS=" test lint typecheck install install_mode env credential_target docker_service "
-
-# _cached <key> — its command; empty for `null` or an absent key.
-_cached() {
-  local raw
-  raw=$(grep -o "\"$1\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" "$CACHE" 2>/dev/null | head -1 | sed -E "s/\"$1\"[[:space:]]*:[[:space:]]*//")
-  case "$raw" in
-    \"*\") raw="${raw#\"}"; printf '%s' "${raw%\"}" ;;
-  esac
-}
+NOT_CHECKS=" test lint typecheck install install_mode env registry_auth docker_service "
 
 KEYS=(typecheck lint test)
 while IFS= read -r key; do
   [[ "$NOT_CHECKS" == *" $key "* ]] || KEYS+=("$key")
-done < <(grep -oE '"[a-z][a-z0-9_]*"[[:space:]]*:[[:space:]]*("|null)' "$CACHE" 2>/dev/null \
-  | sed -E 's/^"([a-z0-9_]+)".*/\1/' | awk '!seen[$0]++')
+done < <(commands_keys "$CACHE")
 
 # A check must leave the tree as it found it; prior dirt is in the before snapshot.
 _tree_state() {
@@ -90,7 +79,7 @@ fi
 
 OVERALL=0
 for key in "${KEYS[@]}"; do
-  cmd="$(_cached "$key")"
+  cmd="$(commands_field "$CACHE" "$key")"
   if [ -z "$cmd" ]; then
     echo "$key: NOT RUN: no command found"
     continue
@@ -106,7 +95,7 @@ for key in "${KEYS[@]}"; do
   after="$(_tree_state)"
   changed=""
   [ "$before" = "$after" ] || changed="$(_changed_files "$before" "$after")"
-  tail -n "$TAIL_LINES" "$log"
+  tail -n 80 "$log"
   if [ -n "$changed" ]; then
     echo "$key: modified files: $changed — the check rewrote them: run it, commit the result, and re-run (a check that rewrites files on every run needs a non-mutating command in $CACHE)"
     echo "$key: fail (exit $rc, modified files)"

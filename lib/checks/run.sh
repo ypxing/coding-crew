@@ -73,7 +73,7 @@ SERVICE="$(sed -n 's/^DOCKER_SERVICE=//p' <<< "$verdict")"
 if [ ! -f "$OVERRIDE" ]; then
   log="$_gitdir/crew-docker-install.log"
   echo "run.sh: docker mode, no override yet — installing dependencies first (log: $log)" >&2
-  if ! bash "$SELF_DIR/docker-install.sh" --project-root "$PROJECT_ROOT" ${SERVICE:+--service "$SERVICE"} \
+  if ! bash "$SELF_DIR/docker-install.sh" --project-root "$PROJECT_ROOT" \
       </dev/null >"$log" 2>&1; then
     summary="$(sed -n 's/^docker-install: failed — //p' "$log" | tail -1)"
     tail -n 20 "$log" >&2

@@ -33,16 +33,10 @@ if [ ! -d "$PROJECT_ROOT" ]; then echo "Error: directory does not exist: $PROJEC
 . "$(dirname "${BASH_SOURCE[0]}")/commands-file.sh"
 CACHE=$(commands_file "$PROJECT_ROOT")
 
-_cached() {
-  [ -f "$CACHE" ] || return 0
-  grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$CACHE" 2>/dev/null \
-    | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/' || true
-}
-
-MODE="$(_cached install_mode)"
+MODE="$(commands_field "$CACHE" install_mode)"
 SERVICE=""
 if [ "$MODE" = docker ]; then
-  SERVICE="$(_cached docker_service)"
+  SERVICE="$(commands_field "$CACHE" docker_service)"
 else
   MODE=host
 fi

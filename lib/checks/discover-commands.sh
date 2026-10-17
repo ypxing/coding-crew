@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # discover-commands.sh [--refresh] — prints the prompt asking a model for this repo's dev-loop
-# commands (test, lint, typecheck, install, env, credential_target, coverage, integration), listing
+# commands (test, lint, typecheck, install, env, registry_auth, coverage, integration), listing
 # file paths, not contents; prints "skipped" when no candidate exists or every field is cached.
 # A cached field, even null, is never re-asked: a fresh guess must not overwrite a hand-edited
-# answer. --refresh (or CREW_COMMANDS_REFRESH=1) re-asks all eight.
+# answer. --refresh re-asks all eight.
 
-REFRESH="${CREW_COMMANDS_REFRESH:-0}"
+REFRESH=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --refresh) REFRESH=1; shift ;;
@@ -21,15 +21,8 @@ ROOT=$(git rev-parse --show-toplevel)
 CACHE_FILE=$(commands_file "$ROOT")
 
 # A key is "already discovered" once present with any value; JSON `null` means a model looked and
-# found none. Other fields (install_mode, credential_target) share the file, so the file existing proves nothing.
-CACHE_FIELDS=(test lint typecheck install env credential_target coverage integration)
-
-# _cache_field_present <file> <key> — same regex as write-commands-cache.sh's _extract_field.
-_cache_field_present() {
-  local file="$1" key="$2"
-  [ -f "$file" ] || return 1
-  grep -q "\"$key\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" "$file"
-}
+# found none. Other fields (install_mode, docker_service) share the file, so the file existing proves nothing.
+CACHE_FIELDS=(test lint typecheck install env registry_auth coverage integration)
 
 # Fixed order keeps the hash stable and is the priority handed to the model: docs, build files, manifests.
 CANDIDATE_FILES=(
@@ -75,7 +68,7 @@ fi
 # ASK_FIELDS — the fields this run asks about: every field absent from the cache, or all eight under --refresh.
 ASK_FIELDS=()
 for key in "${CACHE_FIELDS[@]}"; do
-  if [ "$REFRESH" = "1" ] || [ ! -f "$CACHE_FILE" ] || ! _cache_field_present "$CACHE_FILE" "$key"; then
+  if [ "$REFRESH" = "1" ] || [ ! -f "$CACHE_FILE" ] || ! commands_field_present "$CACHE_FILE" "$key"; then
     ASK_FIELDS+=("$key")
   fi
 done
@@ -130,8 +123,8 @@ _in_ask env && cat <<'PROMPT'
   file) elsewhere, so guessing one here would only override that convention with a worse
   guess.
 PROMPT
-_in_ask credential_target && cat <<'PROMPT'
-- credential_target (the build target — if any — whose recipe generates package-manager
+_in_ask registry_auth && cat <<'PROMPT'
+- registry_auth (the build target — if any — whose recipe generates package-manager
   credential config files such as `.npmrc`, `pip.conf`, or `.cargo/credentials.toml` from a
   template or env vars — not the `.env` bootstrap itself, that's env above). Report the full
   command that runs it (e.g. `make _registry`), not just the bare target name — same shape as
@@ -173,32 +166,32 @@ exists" — for every category listed above; you do not need to open every file 
 earlier one already answers them all.
 PROMPT
 
-if _in_ask install && _in_ask env && _in_ask credential_target; then
+if _in_ask install && _in_ask env && _in_ask registry_auth; then
   cat <<'PROMPT'
-The three exceptions are install, env, and credential_target:
+The three exceptions are install, env, and registry_auth:
 you MUST open any Makefile in the list above before concluding any of the three is null —
 see the rule below. This overrides the "stop once confident" instruction; do not skip it just
 because the docs already answered the other three, and do not treat a confident-sounding
-silence in the docs as answering install, env, or credential_target on its own.
+silence in the docs as answering install, env, or registry_auth on its own.
 
 Rules:
 - install and env are the categories prose docs are least likely to mention — each is far more
   often only an explicit target in a Makefile (install/deps/bootstrap, or env/setup) than a
-  sentence in the docs listed above. credential_target is stricter still: it is *only* ever a
+  sentence in the docs listed above. registry_auth is stricter still: it is *only* ever a
   Makefile target, never something prose docs state. If a Makefile appears in the list above,
   you MUST open it and check it for a matching target before answering null for install, null
-  for env, or null for credential_target — this is a required step, not a suggestion, even if
+  for env, or null for registry_auth — this is a required step, not a suggestion, even if
   the docs already answered test/lint/typecheck confidently. You may only answer null for
-  install, null for env, or null for credential_target once you have either (a) opened every
+  install, null for env, or null for registry_auth once you have either (a) opened every
   Makefile in the list and found no matching target, or (b) confirmed no Makefile appears in
   the list above at all. Silence in the docs alone never justifies null for these three
   categories.
 PROMPT
-elif _in_ask install || _in_ask env || _in_ask credential_target; then
+elif _in_ask install || _in_ask env || _in_ask registry_auth; then
   NAMES=""
   _in_ask install && NAMES="${NAMES:+$NAMES, }install"
   _in_ask env && NAMES="${NAMES:+$NAMES, }env"
-  _in_ask credential_target && NAMES="${NAMES:+$NAMES, }credential_target"
+  _in_ask registry_auth && NAMES="${NAMES:+$NAMES, }registry_auth"
   cat <<PROMPT
 The exception is $NAMES: you MUST open any Makefile in the list above before concluding it is
 null — this overrides the "stop once confident" instruction; do not treat a confident-sounding
@@ -230,7 +223,7 @@ cat <<'PROMPT'
   (won't overwrite a file that's already there), a prerequisite chain, or an environment
   conditional (CI vs local) that a paraphrased "equivalent" command silently drops. This applies
   even if the recipe's final line is a single simple command — report the target invocation, not
-  that line. This is not limited to install/env/credential_target: a "test" or "lint" target is
+  that line. This is not limited to install/env/registry_auth: a "test" or "lint" target is
   eval'd the same way downstream and loses the same guards if paraphrased.
 PROMPT
 
@@ -262,8 +255,8 @@ JSON_SHAPE=""
 for key in "${CACHE_FIELDS[@]}"; do
   _in_ask "$key" || continue
   [ -n "$JSON_SHAPE" ] && JSON_SHAPE="$JSON_SHAPE, "
-  if [ "$key" = "credential_target" ]; then
-    JSON_SHAPE="${JSON_SHAPE}\"credential_target\": "'"<command or null, e.g. \"make _registry\">"'
+  if [ "$key" = "registry_auth" ]; then
+    JSON_SHAPE="${JSON_SHAPE}\"registry_auth\": "'"<command or null, e.g. \"make _registry\">"'
   else
     JSON_SHAPE="$JSON_SHAPE\"$key\": \"<command or null>\""
   fi

@@ -7,7 +7,7 @@ set -uo pipefail
 # "nobody asked yet"; null means "a model looked and found none", which is never re-asked, so a
 # caller must not name a field it did not check.
 
-FIELDS=(test lint typecheck install env credential_target coverage integration install_mode docker_service)
+FIELDS=(test lint typecheck install env registry_auth coverage integration install_mode docker_service)
 
 RESPONSE_FILE=""
 while [ $# -gt 0 ]; do
@@ -37,22 +37,20 @@ if [ ! -f "$RESPONSE_FILE" ]; then
   exit 1
 fi
 
-RESPONSE_TEXT=$(cat "$RESPONSE_FILE")
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/commands-file.sh"
 
-# _extract_field <text> <key> — the raw value token for "<key>" anywhere in <text> (a quoted string
-# or null), so prose or a code fence around the object does not matter; empty when not found.
-_extract_field() {
-  local text="$1" key="$2"
-  printf '%s\n' "$text" \
-    | grep -o "\"$key\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" \
-    | head -1 \
-    | sed -E "s/\"$key\"[[:space:]]*:[[:space:]]*//"
+# _json_value <file> <key> — the value as JSON ("<command>" or null); empty when the key is absent.
+_json_value() {
+  commands_field_present "$1" "$2" || return 0
+  local v; v=$(commands_field "$1" "$2")
+  if [ -n "$v" ]; then printf '"%s"' "$v"; else printf null; fi
 }
 
 declare -A RESP_VAL
 ANY_FOUND=0
 for f in "${FIELDS[@]}"; do
-  v="$(_extract_field "$RESPONSE_TEXT" "$f" || true)"
+  v="$(_json_value "$RESPONSE_FILE" "$f")"
   RESP_VAL["$f"]="$v"
   [ -n "$v" ] && ANY_FOUND=1
 done
@@ -60,17 +58,12 @@ done
 if [ "$ANY_FOUND" -eq 0 ]; then
   echo "ERROR: could not find any of ${FIELDS[*]} in the response — leaving any existing cache untouched" >&2
   echo "--- response was ---" >&2
-  printf '%s\n' "$RESPONSE_TEXT" >&2
+  cat "$RESPONSE_FILE" >&2
   exit 1
 fi
 
 ROOT=$(git rev-parse --show-toplevel) || exit 1
-# shellcheck source=/dev/null
-. "$(dirname "${BASH_SOURCE[0]}")/commands-file.sh"
 CACHE_FILE=$(commands_file "$ROOT")
-
-OLD_TEXT=""
-[ -f "$CACHE_FILE" ] && OLD_TEXT=$(cat "$CACHE_FILE")
 
 declare -A FINAL_VAL
 declare -A HAVE_VAL
@@ -80,8 +73,7 @@ for f in "${FIELDS[@]}"; do
     HAVE_VAL["$f"]=1
     continue
   fi
-  ov=""
-  [ -n "$OLD_TEXT" ] && ov="$(_extract_field "$OLD_TEXT" "$f" || true)"
+  ov="$(_json_value "$CACHE_FILE" "$f")"
   if [ -n "$ov" ]; then
     FINAL_VAL["$f"]="$ov"
     HAVE_VAL["$f"]=1

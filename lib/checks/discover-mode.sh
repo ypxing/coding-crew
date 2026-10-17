@@ -36,7 +36,7 @@ fi
 # shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/commands-file.sh"
 CACHE=$(commands_file "$PROJECT_ROOT")
-if grep -q '"install_mode"[[:space:]]*:[[:space:]]*"[^"]*"' "$CACHE" 2>/dev/null; then
+if [ -n "$(commands_field "$CACHE" install_mode)" ]; then
   echo "Mode discovery: skipped (already recorded at $CACHE)"
   exit 0
 fi

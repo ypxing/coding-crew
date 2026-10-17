@@ -2,31 +2,26 @@
 # Generate this worktree's crew compose override deterministically from the project's manifest files.
 #
 # Usage:
-#   bash scripts/gen-override.sh --project-root /path/to/checkout [--dry-run] [--query <field>]
+#   bash scripts/gen-override.sh --project-root /path/to/checkout [--query <field>]
 #
-#   --dry-run        Print generated YAML to stdout instead of writing the file.
 #   --query <field>  Print one detected fact and exit: services | ecosystem | container-src |
 #                    manifest-dirs | project-name | vendor-paths
 # Writes <project-root's git dir>/crew-compose.override.yml; the docker shim adds it as the last -f.
 # Everything derives from this one checkout, so two worktrees never share a compose project, network
 # or volume. Volumes are named wt_<proj>_<owner4>_<eco>_<dir>_<lock8>: <owner4> hashes host + this
 # checkout's path, <lock8> every manifest and lockfile, so a changed lockfile names fresh volumes.
-# CREW_GIT_MOUNT=on (default)|off mounts the repo's shared .git read-only at /git-common (with GIT_DIR
-# for a linked worktree, whose .git names a host path no container has).
-# GIT_CONFIG_COUNT/KEY_<n> are never passed: a count without its keys aborts every git command.
+# The repo's shared .git is mounted read-only at /git-common (with GIT_DIR for a linked worktree, whose
+# .git names a host path no container has).
 # Exit codes: 0 success, 1 argument or filesystem error, 2 no compose file, 3 no supported ecosystem
 
 set -euo pipefail
 
 PROJECT_ROOT=""
-GIT_MOUNT="${CREW_GIT_MOUNT:-on}"
-DRY_RUN=0
 QUERY=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project-root) PROJECT_ROOT="$2"; shift 2 ;;
-    --dry-run)      DRY_RUN=1;         shift   ;;
     --query)        QUERY="$2";        shift 2 ;;
     --help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
@@ -46,14 +41,6 @@ case "$QUERY" in
   ""|services|ecosystem|container-src|manifest-dirs|project-name|vendor-paths) ;;
   *)
     echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, project-name, vendor-paths" >&2
-    exit 1
-    ;;
-esac
-
-case "$GIT_MOUNT" in
-  on|off) ;;
-  *)
-    echo "Error: CREW_GIT_MOUNT must be on or off (got: $GIT_MOUNT)" >&2
     exit 1
     ;;
 esac
@@ -81,7 +68,7 @@ OWNER_PREFIX="wt_${PROJ_SLUG}_${OWNER4}_"
 GIT_DIR_ABS="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
 OVERRIDE_PATH=""
 [[ -z "$GIT_DIR_ABS" ]] || OVERRIDE_PATH="$GIT_DIR_ABS/crew-compose.override.yml"
-if [[ -z "$OVERRIDE_PATH" && -z "$QUERY" && "$DRY_RUN" -eq 0 ]]; then
+if [[ -z "$OVERRIDE_PATH" && -z "$QUERY" ]]; then
   echo "Error: $PROJECT_ROOT is not a git checkout — the override is written to its git dir" >&2
   exit 1
 fi
@@ -186,11 +173,8 @@ detect_ecosystem() {
 
 detect_ecosystem
 
-GIT_COMMON_DIR_ABS=""
-if [[ "$GIT_MOUNT" == "on" ]]; then
-  GIT_COMMON_DIR_ABS="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-  [[ -n "$GIT_COMMON_DIR_ABS" && -d "$GIT_COMMON_DIR_ABS" ]] || GIT_COMMON_DIR_ABS=""
-fi
+GIT_COMMON_DIR_ABS="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+[[ -n "$GIT_COMMON_DIR_ABS" && -d "$GIT_COMMON_DIR_ABS" ]] || GIT_COMMON_DIR_ABS=""
 GIT_ENV_LINES=()
 if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
   case "$GIT_DIR_ABS" in
@@ -200,7 +184,7 @@ if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
   esac
 fi
 # docker cannot create a mount point inside a read-only mount.
-if [[ -n "$GIT_COMMON_DIR_ABS" && "$DRY_RUN" -eq 0 ]]; then
+if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
   mkdir -p "$GIT_COMMON_DIR_ABS/hooks" "$GIT_COMMON_DIR_ABS/info" 2>/dev/null || true
 fi
 
@@ -254,9 +238,7 @@ else
   )
 fi
 
-LOCK8="$(bash "$(dirname "${BASH_SOURCE[0]}")/manifest-fingerprint.sh" compute --project-root "$PROJECT_ROOT" | cut -c1-8)"
-
-VOL_NAMES=()
+VOL_SUFFIXES=()
 VOL_PATHS=()
 for dir in "${MANIFEST_DIRS[@]}"; do
   rel="${dir#"$PROJECT_ROOT"}"
@@ -268,7 +250,7 @@ for dir in "${MANIFEST_DIRS[@]}"; do
     suffix=$(echo "$rel" | tr '/.-' '___')
     container_path="${CONTAINER_SRC}/${rel}/${ECO_VENDOR}"
   fi
-  VOL_NAMES+=("${OWNER_PREFIX}${ECO_PREFIX}_${suffix}_${LOCK8}")
+  VOL_SUFFIXES+=("$suffix")
   VOL_PATHS+=("$container_path")
 done
 
@@ -291,6 +273,13 @@ if [[ -n "$QUERY" ]]; then
   esac
   exit 0
 fi
+
+# After the query exit: hashing every lockfile is only needed for the volume names.
+LOCK8="$(bash "$(dirname "${BASH_SOURCE[0]}")/manifest-fingerprint.sh" --project-root "$PROJECT_ROOT" | cut -c1-8)"
+VOL_NAMES=()
+for suffix in "${VOL_SUFFIXES[@]}"; do
+  VOL_NAMES+=("${OWNER_PREFIX}${ECO_PREFIX}_${suffix}_${LOCK8}")
+done
 
 generate_yaml() {
   echo "name: ${PROJECT_NAME}"
@@ -328,22 +317,16 @@ generate_yaml() {
   fi
 }
 
-if [[ "$DRY_RUN" -eq 1 ]]; then
-  generate_yaml
+# Written beside the final name and renamed in: a compose call reading it never sees half a file.
+generate_yaml > "$OVERRIDE_PATH.tmp.$$"
+mv -f "$OVERRIDE_PATH.tmp.$$" "$OVERRIDE_PATH"
+echo "Written: $OVERRIDE_PATH"
+echo "  project:   $PROJECT_NAME (this checkout's own compose project)"
+echo "  ecosystem: $ECO_NAME"
+echo "  services:  $(IFS=', '; echo "${SERVICES[*]}")"
+echo "  platform:  ${HOST_PLATFORM:-unset, project pin unchanged}"
+if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
+  echo "  git:       the shared .git mounted read-only at /git-common (hooks/ and info/ writable via wt_${PROJ_SLUG}_git_hooks and wt_${PROJ_SLUG}_git_info)${GIT_ENV_LINES[0]:+; GIT_DIR=${GIT_ENV_LINES[1]#GIT_DIR=}}"
 else
-  # Written beside the final name and renamed in: a compose call reading it never sees half a file.
-  generate_yaml > "$OVERRIDE_PATH.tmp.$$"
-  mv -f "$OVERRIDE_PATH.tmp.$$" "$OVERRIDE_PATH"
-  echo "Written: $OVERRIDE_PATH"
-  echo "  project:   $PROJECT_NAME (this checkout's own compose project)"
-  echo "  ecosystem: $ECO_NAME"
-  echo "  services:  $(IFS=', '; echo "${SERVICES[*]}")"
-  echo "  platform:  ${HOST_PLATFORM:-unset, project pin unchanged}"
-  if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
-    echo "  git:       the shared .git mounted read-only at /git-common (hooks/ and info/ writable via wt_${PROJ_SLUG}_git_hooks and wt_${PROJ_SLUG}_git_info)${GIT_ENV_LINES[0]:+; GIT_DIR=${GIT_ENV_LINES[1]#GIT_DIR=}}"
-  elif [[ "$GIT_MOUNT" == "off" ]]; then
-    echo "  git:       not mounted (CREW_GIT_MOUNT=off)"
-  else
-    echo "  git:       not mounted (no git checkout detected at $PROJECT_ROOT)"
-  fi
+  echo "  git:       not mounted (no git checkout detected at $PROJECT_ROOT)"
 fi

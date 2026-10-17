@@ -26,9 +26,9 @@ no install command. Still apply the retry rule if a later command fails with a m
 error: a package installed into the volume since the stamp was written (an in-container `npm install
 foo`) is not in the lockfile, and `--force` reinstalls.
 
-`docker-install.sh` reads `docker_service`, `install` and `credential_target` from the dev commands
+`docker-install.sh` reads `docker_service`, `install` and `registry_auth` from the dev commands
 file itself (`scripts/checks/commands-file.sh` names it); dep-install's Step 1 has already made sure
-they were asked. Do not look for an install command or a credential target yourself.
+they were asked. Do not look for an install command or a registry auth command yourself.
 
 ### 1. Run `docker-install.sh`
 
@@ -72,18 +72,3 @@ bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<com
 
 Never hand-build that `docker compose` command for a check. Any other ad-hoc command, a one-off
 `docker compose` one included, goes through `run.sh -- <cmd>` the same way.
-
-## Install failures
-
-If install fails because the container's entrypoint ignores the command, check the compose file for an `entrypoint:` key and override it:
-
-```bash
-PATH="<skill-dir>/scripts/checks/shim:$PATH" docker compose \
-  run --rm --entrypoint sh <service> -c "<install-command>"
-```
-
-If install fails due to missing auth tokens, network errors, or Docker not running — stop immediately and report blocked with the verbatim error. Do not attempt workarounds.
-
-If install fails with `fatal: not a git repository: .../worktrees/<name>` from a postinstall hook (lefthook, husky, simple-git-hooks, etc.), that is a linked worktree's `.git` file pointing at an absolute host path the container can't see. `gen-override.sh` already mounts the repo's shared `.git` read-only in the override (`/git-common`, plus writable `hooks/` and `info/` overlays for the hook installer's own writes there) and sets this worktree's `GIT_DIR`/`GIT_COMMON_DIR` in it; the failure almost always means the call did not go through the shim, so the override was never loaded — check that the shim dir is first on `PATH` (`command -v docker`) and that `<git dir>/crew-compose.override.yml` exists (re-run `gen-override.sh` if not). If it was loaded and the failure persists, the project's tooling is likely resolving git some other way (e.g. `GIT_WORK_TREE`, a submodule) that `GIT_DIR`/`GIT_COMMON_DIR` don't cover. Report blocked with the verbatim error rather than hand-editing the override.
-
-In a linked worktree, `error: could not lock config file /git-common/config: Read-only file system` from husky (or any installer running `git config`) is expected and harmless: the shared `.git/config` is mounted read-only on purpose, the installer ignores that exit code, and hooks never run in the container. Only a non-zero install exit is a failure.

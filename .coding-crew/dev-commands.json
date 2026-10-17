@@ -1,1 +1,1 @@
-{"test": "bash scripts/ci-run-bats.sh tests/*.bats", "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null, "coverage": null, "integration": null}
+{"test": "bash scripts/ci-run-bats.sh tests/*.bats", "lint": null, "typecheck": null, "install": null, "env": null, "registry_auth": null, "coverage": null, "integration": null}
