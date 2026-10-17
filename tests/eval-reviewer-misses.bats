@@ -131,7 +131,7 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   export GIT_INDEX_FILE="$T/old-index"
   git -C "$R" read-tree HEAD
   git -C "$R" update-index --force-remove skills/crew-review/SKILL.md
-  OLD=$(git -C "$R" commit-tree "$(git -C "$R" write-tree)" -p HEAD -m old)
+  OLD=$(git -C "$R" -c user.email=t@t -c user.name=t commit-tree "$(git -C "$R" write-tree)" -p HEAD -m old)
   unset GIT_INDEX_FILE
   BASEREF="$OLD" FAKE_FORBID=1 run run_eval --dry-run
   [ "$status" -ne 0 ]
