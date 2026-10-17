@@ -86,33 +86,6 @@ run_eval() {
   [ "$(grep -c '  c1 ' <<<"$output")" -eq 6 ]
 }
 
-@test "dry run writes each version's prompt with fragments rendered: base from the ref, head from the worktree" {
-  mkdir -p "$R/skills/_shared/fragments"
-  echo "FRAG-V1-LINE" > "$R/skills/_shared/fragments/design-standard.md"
-  printf 'SKILL-V1-SECRET\n{{FRAGMENT:design-standard}}\nend {{PLATFORM}}\n' > "$R/skills/crew-grill/SKILL.md"
-  git -C "$R" add -A
-  git -C "$R" -c user.email=t@t -c user.name=t commit -qm frag
-  echo "FRAG-V2-LINE" > "$R/skills/_shared/fragments/design-standard.md"
-  printf 'SKILL-V2-SECRET\n  {{FRAGMENT:design-standard}}\n' > "$R/skills/crew-grill/SKILL.md"
-  run run_eval --skill crew-grill --dry-run --runs 1
-  [ "$status" -eq 0 ]
-  [ ! -e "$T/judge-prompt.txt" ]
-  d=$(ls -d "$R"/.scratch/eval-design-skills/*/)
-  [[ "$output" == *"Prompts: .scratch/eval-design-skills/"* ]]
-  grep -qx 'FRAG-V1-LINE' "$d/c1-base-1.prompt.txt"
-  grep -qx 'end claude' "$d/c1-base-1.prompt.txt"
-  grep -qx 'FRAG-V2-LINE' "$d/c1-head-1.prompt.txt"
-  ! grep -q '{{' "$d/c1-base-1.prompt.txt" "$d/c1-head-1.prompt.txt"
-  [ "$(git -C "$R" worktree list | wc -l)" -eq 1 ]
-}
-
-@test "a skill naming a fragment that does not exist fails, naming it" {
-  printf 'x\n{{FRAGMENT:nope}}\n' > "$R/skills/crew-grill/SKILL.md"
-  run run_eval --skill crew-grill --dry-run --runs 1
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"nope"* ]]
-}
-
 @test "the committed crew-grill dry run renders the design-standard fragment" {
   run bash -c "cd '$REPO_ROOT' && node scripts/eval-design-skills.mjs --skill crew-grill --base HEAD --dry-run --runs 1"
   [ "$status" -eq 0 ]

@@ -123,24 +123,6 @@ for cmd in "${_required_cmds[@]}"; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Error: required command '$cmd' not found" >&2; exit 1; }
 done
 
-# jq on Windows (Git Bash) leaves a trailing \r inside every value, so a skill read as 'tdd\r'
-# silently misses registry.json: normalise once, after the dependency check (`command -v jq`).
-# Command substitution, not `| tr -d '\r'`: Git Bash emulates fork(), so extra processes over
-# ~1,500 jq calls dominate an install; `$?` after the assignment is still jq's own status.
-# The probe reads through `read`: `$(…)` strips the CR itself, so it would never see one.
-_jq_probe=""
-IFS= read -r _jq_probe < <(command jq -rn '"probe"' 2>/dev/null) || true
-if [[ "$_jq_probe" == *$'\r' ]]; then
-  jq() {
-    local _jq_out _jq_rc
-    _jq_out=$(command jq "$@")
-    _jq_rc=$?
-    # No output must stay no output, or every `while read` loop gets one blank iteration.
-    [[ -n "$_jq_out" ]] && printf '%s\n' "${_jq_out//$'\r'/}"
-    return "$_jq_rc"
-  }
-fi
-
 source "$SCRIPT_DIR/scripts/lib/platforms.sh"
 
 if [[ "$PLATFORM" != "all" ]] && ! platform_known "$PLATFORM"; then
@@ -177,7 +159,7 @@ assert_identifier() {
 
 # install_single_skill recurses once per platform under PLATFORM=all, and most registry fields do
 # not vary by platform, so they are memoized by skill: a full install would spawn ~2,400 jq
-# processes otherwise, and Git Bash has no real fork().
+# processes otherwise.
 declare -A _SKILL_META_SCALAR
 declare -A _SKILL_META_LIST
 
@@ -310,7 +292,7 @@ install_single_skill() {
   _skill_list "$skill_name" deps '.skills[$s].deps // [] | .[]'
   deps="$_SKILL_LIST"
   local deps_arr=()
-  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && deps_arr+=("$_line"); done <<< "$deps"
+  while IFS= read -r _line; do [[ -n "$_line" ]] && deps_arr+=("$_line"); done <<< "$deps"
   for dep in "${deps_arr[@]+"${deps_arr[@]}"}"; do
     install_single_skill "$dep"
   done
@@ -427,10 +409,10 @@ write_manifest() {
   source_remote=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo "local")
 
   skills=$( { printf '%s\n' "${MANIFEST_SKILLS[@]+"${MANIFEST_SKILLS[@]}"}"
-              [[ ! -f "$MANIFEST" ]] || manifest_list "$MANIFEST" skills; } | tr -d '\r' | grep -v '^$' | LC_ALL=C sort -u || true)
+              [[ ! -f "$MANIFEST" ]] || manifest_list "$MANIFEST" skills; } | grep -v '^$' | LC_ALL=C sort -u || true)
   # --update sets MANIFEST_PLATFORMS: its uninstall may have removed the manifest it read them from.
   platforms=$( { printf '%s\n' "${MANIFEST_PLATFORMS[@]:-$PLATFORM}"
-                 [[ ! -f "$MANIFEST" ]] || manifest_platforms "$MANIFEST"; } | tr -d '\r' | grep -v '^$' | LC_ALL=C sort -u || true)
+                 [[ ! -f "$MANIFEST" ]] || manifest_platforms "$MANIFEST"; } | grep -v '^$' | LC_ALL=C sort -u || true)
   # "all" covers every platform.
   ! grep -qxF all <<< "$platforms" || platforms=all
 
@@ -464,7 +446,6 @@ prune_skills_not_in() {
   local requested="$1" name prune=""
   [[ -f "$MANIFEST" ]] || return 0
   while IFS= read -r name; do
-    name="${name%$'\r'}"
     [[ -n "$name" ]] || continue
     grep -qxF "$name" <<< "$requested" && continue
     echo "  pruning $name (not in --skills list)"
@@ -482,7 +463,6 @@ run_update() {
   fi
   local platforms=() platform
   while IFS= read -r platform; do
-    platform="${platform%$'\r'}"
     [[ -n "$platform" ]] || continue
     if [[ "$platform" != "all" ]] && ! platform_known "$platform"; then
       echo "Error: the manifest's platform '$platform' is not in platforms.json" >&2
@@ -495,7 +475,6 @@ run_update() {
 
   local names=() name
   while IFS= read -r name; do
-    name="${name%$'\r'}"
     [[ -n "$name" ]] && names+=("$name")
   done < <(manifest_list "$MANIFEST" skills)
 
@@ -553,7 +532,7 @@ case "$SKILL_MODE" in
   all)
     echo "---"
     skill_names=()
-    while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && skill_names+=("$_line"); done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json")
+    while IFS= read -r _line; do [[ -n "$_line" ]] && skill_names+=("$_line"); done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json")
     for skill_name in "${skill_names[@]}"; do
       install_single_skill "$skill_name"
     done

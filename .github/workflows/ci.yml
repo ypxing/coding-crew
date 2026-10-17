@@ -10,7 +10,7 @@ on:
 
 jobs:
   test:
-    name: Test on ${{ matrix.os }} ${{ matrix.shard }}
+    name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     # The suite is several minutes of macOS CPU.
     timeout-minutes: 20
@@ -19,16 +19,7 @@ jobs:
       # No native Windows job: Windows is supported through WSL2 (README), which the ubuntu job
       # covers; under Git Bash's emulated fork() the suite is slow and fails mostly on its quirks.
       matrix:
-        include:
-          - os: ubuntu-latest
-            shard: "1/1"
-          # macOS is ~2x ubuntu's wall time on one job; free for a public repo, so split it.
-          - os: macos-latest
-            shard: "1/3"
-          - os: macos-latest
-            shard: "2/3"
-          - os: macos-latest
-            shard: "3/3"
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - name: Checkout repository
@@ -61,23 +52,10 @@ jobs:
 
       - name: Run tests
         shell: bash
-        env:
-          SHARD: ${{ matrix.shard }}
         run: |
           set -o pipefail
-          # The script fails loudly on a bad index/total pair rather than testing nothing.
-          index="${SHARD%%/*}"
-          total="${SHARD##*/}"
-          # while-read, not mapfile: the macOS runner's /bin/bash is 3.2.
-          files=()
-          while IFS= read -r f; do
-            [ -n "$f" ] && files+=("$f")
-          done < <(bash scripts/ci-test-shard.sh "$index" "$total")
-          [ "${#files[@]}" -gt 0 ] || { echo "::error::shard $SHARD selected no test files"; exit 1; }
-          echo "Shard $SHARD: ${#files[@]} test files"
-
           # One bats process per file, CPU-count at a time: bats alone runs files serially.
-          bash scripts/ci-run-bats.sh --log-dir "$RUNNER_TEMP/bats-logs" "${files[@]}" 2>&1 | tee bats.log && exit 0
+          bash scripts/ci-run-bats.sh --log-dir "$RUNNER_TEMP/bats-logs" tests/*.bats 2>&1 | tee bats.log && exit 0
           echo "::group::Failure summary"
           if grep -q "^not ok" bats.log; then
             grep -n -A 20 "^not ok" bats.log
@@ -92,7 +70,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: bats-log-${{ matrix.os }}-${{ strategy.job-index }}
+          name: bats-log-${{ matrix.os }}
           path: |
             bats.log
             ${{ runner.temp }}/bats-logs/

@@ -12,7 +12,7 @@ while IFS=$'\t' read -r _pf_name _pf_project _pf_user _pf_config _pf_env; do
   [[ -n "$_pf_name" ]] || continue
   PLATFORMS+=("$_pf_name")
   _PF_PROJECT+=("$_pf_project"); _PF_USER+=("$_pf_user")
-  _PF_CONFIG+=("$_pf_config"); _PF_ENV+=("${_pf_env%$'\r'}")
+  _PF_CONFIG+=("$_pf_config"); _PF_ENV+=("$_pf_env")
 done < <(jq -r 'to_entries[] | [.key, .value.projectSkills, .value.userSkills, .value.configDir, .value.configDirEnv] | @tsv' "$PLATFORMS_JSON")
 unset _pf_name _pf_project _pf_user _pf_config _pf_env
 [[ ${#PLATFORMS[@]} -gt 0 ]] || { echo "Error: no platforms read from $PLATFORMS_JSON" >&2; exit 1; }
@@ -87,8 +87,7 @@ platform_scope_paths() {
   return 0
 }
 
-# resolve_dest <platform> <path> — sets $_DEST_ROOT and $_DEST_REL. Join them once per caller, not
-# per file: forks are expensive on Git Bash.
+# resolve_dest <platform> <path> — sets $_DEST_ROOT and $_DEST_REL.
 _DEST_ROOT=""; _DEST_REL=""
 resolve_dest() {
   local platform="$1" path="$2"
@@ -109,15 +108,6 @@ resolve_skill_dest() {
   platform_skills_dir "$1" || return 1
   _SKILL_DEST="$_PLATFORM_SKILLS/$2"
   resolve_dest "$1" "$_SKILL_DEST"
-}
-
-# platform_skills_paths — every platform's skills dir at this scope, absolute and relocated, one per line.
-platform_skills_paths() {
-  local p
-  for p in "${PLATFORMS[@]}"; do
-    resolve_skill_dest "$p" . || continue
-    printf '%s\n' "${_DEST_ROOT}/${_DEST_REL%/.}"
-  done
 }
 
 # platform_user_dirs — the user-level dirs a host may resolve a skill or agent from, one per line.

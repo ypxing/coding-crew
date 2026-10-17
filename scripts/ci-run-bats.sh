@@ -39,10 +39,13 @@ BATS="${BATS:-bats}"
 jobs="${CI_BATS_JOBS:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || jobs=2
 
-# Heaviest first (scripts/ci-weights.sh), so the long files are not left to run alone at the
-# end. Numbered logs keep the output in the given order and survive two files sharing a basename.
-bash "$(dirname "${BASH_SOURCE[0]}")/ci-weights.sh" "$@" \
-  | awk -F'\t' '{ printf "%d\t%d\t%s\n", $1, NR, $2 }' \
+# Heaviest first by @test count, so the long files are not left to run alone at the end.
+# Numbered logs keep the output in the given order and survive two files sharing a basename.
+n=0
+for f in "$@"; do
+  n=$((n + 1))
+  printf '%d\t%d\t%s\n' "$(grep -c '^@test' "$f" 2>/dev/null || true)" "$n" "$f"
+done \
   | sort -t $'\t' -k1,1rn -k2,2n \
   | while IFS=$'\t' read -r _ i f; do printf '%s\0%s\0' "$i" "$f"; done | BATS="$BATS" LOG_DIR="$LOG_DIR" xargs -0 -n 2 -P "$jobs" bash -c '
   start=$(date +%s)

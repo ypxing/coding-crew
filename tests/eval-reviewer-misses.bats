@@ -127,27 +127,6 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   done
 }
 
-@test "a base from before the rename gets review-pr's prompt, and --reviewer is not an argument" {
-  git -C "$R" rm -rq skills/crew-review
-  mkdir -p "$R/skills/review-pr"
-  echo "OLD-REVIEW-PR-PROMPT" > "$R/skills/review-pr/reviewer-prompt.md"
-  git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm "review-pr"
-  BASEREF=$(git -C "$R" rev-parse HEAD)
-  git -C "$R" rm -rq skills/review-pr
-  mkdir -p "$R/skills/crew-review"
-  echo "CREW-REVIEW-SKILL" > "$R/skills/crew-review/SKILL.md"
-  git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm "crew-review"
-  FAKE_FORBID=1 run run_eval --dry-run --case branch-case
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  d=$(out_dir)
-  grep -qF 'skills/crew-review/SKILL.md' "$d/branch-case-head.crew-review.prompt.md"
-  grep -qF 'skills/review-pr/reviewer-prompt.md' "$d/branch-case-base.crew-review.prompt.md"
-  [ ! -e "$T/called" ]
-  run run_eval --dry-run --reviewer crew-review
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"unknown argument: --reviewer"* ]]
-}
-
 @test "a full run writes summary.md and results.json per case and ref; the judge is blind" {
   run run_eval --runs 2
   [ "$status" -eq 0 ]

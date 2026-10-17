@@ -99,21 +99,9 @@ function readAt(ref, rel) {
   return execFileSync("git", ["show", `${ref}:${rel}`], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
-// The SKILL.md body as claude receives it, from the same ref: a ref from before the committed tree was rendered in
-// place still has `{{FRAGMENT:<key>}}` lines, expanded here as the old installer did.
+// The SKILL.md body as claude receives it, from the same ref: the committed tree is already rendered.
 function skillText(skill, ref) {
-  const rel = `skills/${skill}/SKILL.md`;
-  const out = readAt(ref, rel).split("\n").map((line) => {
-    const m = line.match(/^\s*\{\{FRAGMENT:([A-Za-z0-9_-]+)\}\}\s*$/);
-    if (!m) return line.replaceAll("{{PLATFORM}}", "claude");
-    const frag = `skills/_shared/fragments/${m[1]}.md`;
-    try { return readAt(ref, frag).replace(/\n+$/, ""); } catch {
-      throw new Error(`${rel} at ${ref} needs fragment '${m[1]}', but ${frag} does not exist there`);
-    }
-  }).join("\n");
-  const left = out.match(/\{\{[A-Z][^}]*\}\}/);
-  if (left) throw new Error(`unexpanded placeholder ${left[0]} in ${rel} at ${ref}`);
-  return out;
+  return readAt(ref, `skills/${skill}/SKILL.md`);
 }
 
 export function subjectPrompt(skill, c) {

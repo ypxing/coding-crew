@@ -58,32 +58,7 @@ for cmd in jq; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Error: required command '$cmd' not found" >&2; exit 1; }
 done
 
-# jq on Windows (Git Bash) leaves a \r inside every value; normalise once (see install.sh).
-# The probe reads through `read`: `$(…)` strips the CR itself, so it would never see one.
-_jq_probe=""
-IFS= read -r _jq_probe < <(command jq -rn '"probe"' 2>/dev/null) || true
-if [[ "$_jq_probe" == *$'\r' ]]; then
-  jq() {
-    local _jq_out _jq_rc
-    _jq_out=$(command jq "$@")
-    _jq_rc=$?
-    [[ -n "$_jq_out" ]] && printf '%s\n' "${_jq_out//$'\r'/}"
-    return "$_jq_rc"
-  }
-fi
-
 source "$SCRIPT_DIR/scripts/lib/platforms.sh"
-
-# rmdir that tolerates Windows' lazy directory-entry removal: a child deleted a
-# moment ago can keep the parent looking non-empty for a few milliseconds, which
-# would otherwise abort the prune walk and leave empty platform dirs behind.
-rmdir_if_empty() {
-  local dir="$1"
-  rmdir "$dir" 2>/dev/null && return 0
-  [[ -d "$dir" ]] || return 0
-  sleep 0.2
-  rmdir "$dir" 2>/dev/null
-}
 
 # Remove now-empty directories up from a removed path, stopping at $root (REPO_ROOT, or the
 # platform's own override root when resolve_dest moved it).
@@ -92,7 +67,7 @@ prune_empty_dirs() {
   root=$(cd "$root" 2>/dev/null && pwd) || return 0
   dir="$(dirname "$root/$rel")"
   while [[ "$dir" != "$root" && "$dir" == "$root"/* ]]; do
-    rmdir_if_empty "$dir" || break
+    rmdir "$dir" 2>/dev/null || break
     echo "  removed ${dir#$root/}/"
     dir="$(dirname "$dir")"
   done
@@ -142,13 +117,13 @@ remove_legacy_lib() {
 # skills by name with a version each; both forms read the same.
 manifest_list() {
   [[ -f "$MANIFEST" ]] || return 0
-  jq -r --arg k "$1" '.[$k] // [] | if type == "object" then keys[] else .[] end' "$MANIFEST" | tr -d '\r'
+  jq -r --arg k "$1" '.[$k] // [] | if type == "object" then keys[] else .[] end' "$MANIFEST"
 }
 
 # Drop .coding-crew/ only when empty: config.json is the user's and must survive.
 prune_coding_crew_dirs() {
   if [[ -d "$REPO_ROOT/.coding-crew" ]]; then
-    rmdir_if_empty "$REPO_ROOT/.coding-crew" && echo "  removed .coding-crew/" || true
+    rmdir "$REPO_ROOT/.coding-crew" 2>/dev/null && echo "  removed .coding-crew/" || true
   fi
 }
 
@@ -189,11 +164,10 @@ if [[ "$MODE" == "skills" ]]; then
 else
   _skill_names=()
   while IFS= read -r name; do
-    name="${name%$'\r'}"
     [[ -n "$name" ]] && _skill_names+=("$name")
   done < <(
     { manifest_list skills
-      jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json"; } | tr -d '\r' | sort -u
+      jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json"; } | sort -u
   )
   for name in "${_skill_names[@]+"${_skill_names[@]}"}"; do remove_skill "$name"; done
   remove_legacy_lib

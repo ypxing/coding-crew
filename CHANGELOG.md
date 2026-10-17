@@ -13,6 +13,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Breaking
 
+- install: Windows Git Bash is no longer supported; use WSL2, as before. `install.sh`, `uninstall.sh` and
+  `render-skill.sh` drop the CRLF `jq` wrappers and CR stripping, and `uninstall.sh` no longer retries an `rmdir` for
+  Windows' lazy directory removal (#555).
 - address-pr-comments: `--auto` and the `crew-rework` GitHub Action are removed, with `fetch-review-threads.sh`,
   `push-rework.sh` and `reply-thread.sh`; a repo that copied the workflow deletes `.github/workflows/crew-rework.yml`
   (it now fails on the unknown `--auto` flag). The skill no longer writes `.scratch/<slug>/reviews/escaped.md` (#554).
@@ -25,6 +28,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- CI: one macOS job replaces the three macOS shards; `scripts/ci-test-shard.sh`, `scripts/ci-weights.sh` and
+  `tests/ci-shard-weights.tsv` are gone, and `ci-run-bats.sh` starts files heaviest first by `@test` count. Also
+  removed: `bootstrap.sh`'s `PLATFORM`/`SKILLS`/`PROJECT`/`UPDATE` env-var aliases for its arguments (pass the
+  arguments), the eval runners' handling of a `--base` from before the committed tree was rendered or before
+  crew-review, and the unlinked top-level requirements document (#555).
 - tracker: `mark-done` on a GitHub issue no longer creates a `ready-for-human` label to remove it; it reads the
   issue's labels and removes only the ready labels the issue carries (#553).
 - to-issues: `lint-issues.sh` is retired; `publish-issues` now refuses a draft whose `deps.json` edges differ from

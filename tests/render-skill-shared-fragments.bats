@@ -79,23 +79,6 @@ setup() {
   [ -z "$output" ]
 }
 
-@test "the text between every marker pair in a committed SKILL.md is byte-identical to its fragment" {
-  # A skill whose fragment text differed would be saying the same thing twice, differently.
-  local f key n=0 between
-  while IFS= read -r f; do
-    for key in $(sed -n 's/^<!-- fragment:\([A-Za-z0-9_-]*\) -->$/\1/p' "$f" | sort -u); do
-      between=$(awk -v k="$key" '$0 == "<!-- /fragment:" k " -->" {f=0} f; $0 == "<!-- fragment:" k " -->" {f=1}' "$f")
-      [ "$between" = "$(cat "$REPO_ROOT/skills/_shared/fragments/$key.md")" ] || {
-        echo "${f#"$REPO_ROOT/"}: the text between its $key markers is not the fragment:" >&2
-        diff <(cat "$REPO_ROOT/skills/_shared/fragments/$key.md") <(printf '%s\n' "$between") >&2
-        return 1
-      }
-      n=$((n + 1))
-    done
-  done < <(find "$REPO_ROOT/skills" -name SKILL.md | LC_ALL=C sort)
-  [ "$n" -ge 8 ]
-}
-
 @test "to-issues, to-prd, upgrade-deps and solve-issue carry the tracker-configuration fragment" {
   local skill body
   for skill in to-issues to-prd upgrade-deps solve-issue; do
@@ -106,10 +89,6 @@ setup() {
     grep -qF 'node "$TRACKER" config' "$body"
     ! grep -qF 'issue-tracker.md' "$body" || { echo "$skill still names issue-tracker.md" >&2; return 1; }
   done
-}
-
-@test "no {{FRAGMENT: line is left under skills/" {
-  ! grep -rn '{{FRAGMENT:' "$REPO_ROOT/skills" || false
 }
 
 @test "the tracker-configuration fragment asks configure-tracker on configured=no only interactively, else proceeds as local" {

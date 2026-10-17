@@ -17,7 +17,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 DEMO_DIR="${CREW_DEMO_DIR:-$SCRIPT_DIR/smoke-crew-afk/demo}"
 RESULTS="${CREW_SMOKE_RESULTS:-$SCRIPT_DIR/smoke-crew-afk/RESULTS.md}"
-PLATFORMS=$(jq -r 'keys_unsorted | join("|")' "$ROOT/platforms.json" | tr -d '\r')
+PLATFORMS=$(jq -r 'keys_unsorted | join("|")' "$ROOT/platforms.json")
 
 PLATFORM="${1:-}" VIA=install
 if [[ $# -eq 3 && "$2" == --via ]]; then VIA="$3"; elif [[ $# -ne 1 ]]; then PLATFORM=""; fi
@@ -115,7 +115,7 @@ else
     fail "install.sh failed — see $DIR/.git/crew-smoke/install.log"
   ! grep -q '^WARNING: user-level copies exist' .git/crew-smoke/install.log ||
     fail "user-level skills shadow the project install (see $DIR/.git/crew-smoke/install.log)"
-  SKILLS=$(jq -r --arg p "$PLATFORM" '.[$p].projectSkills' "$ROOT/platforms.json" | tr -d '\r')
+  SKILLS=$(jq -r --arg p "$PLATFORM" '.[$p].projectSkills' "$ROOT/platforms.json")
   printf '%s\n' .coding-crew/manifest.json "$SKILLS" >.worktreeinclude
   printf '%s\n' .coding-crew/manifest.json "$SKILLS" .worktreeinclude .scratch/ >>.git/info/exclude
 fi

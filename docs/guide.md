@@ -170,7 +170,7 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 ```
 
 `bootstrap.sh` takes the same arguments as `install.sh`. Needs `bash` 4+, `git`, `jq`, `curl` and `tar` (on Windows, use WSL2).
-A checkout of this repo needs symlink support: on Windows, WSL2, or Git for Windows with `core.symlinks=true`.
+A checkout of this repo needs symlink support: on Windows, use WSL2.
 
 | Argument                              | Effect                                              |
 | ------------------------------------- | --------------------------------------------------- |
@@ -246,7 +246,7 @@ or `--project <path>` (or `TARGET_REPO=<path>`) for another one:
 Uninstalls every skill and library `.coding-crew/manifest.json` lists, then installs those skills again
 from this checkout, for every platform the manifest names. An install made before libraries (it has
 `.coding-crew/tracker/` or `.coding-crew/dep-install/`) updates the same way; remove what it left once:
-`rm -rf <root>/.coding-crew/{tracker,crew-afk,dep-install,solve-issue,to-issues,write-pr,skills}`.
+`rm -rf <root>/.coding-crew/{agents,code-review,crew-afk,dep-install,scripts,skills,solve-issue,to-issues,tracker,write-pr}`.
 
 An install whose skills link into `.coding-crew/lib` updates with `--update` first: a partial run (`--skill`, one
 platform of several, `uninstall.sh --skill`) removes that directory too, and the skills it left alone stop with
@@ -254,7 +254,8 @@ platform of several, `uninstall.sh --skill`) removes that directory too, and the
 
 #### What lands where
 
-At project level (`--project`), with claude; a user-level install writes the same under `~`:
+At project level (`--project`), with claude; a user-level install writes the same under `~`. The unmarked skills
+come with `solve-feature`:
 
 ```
 YOUR_PROJECT/
@@ -266,11 +267,17 @@ YOUR_PROJECT/
 │       ├── dep-install/
 │       ├── solve-issue/
 │       ├── write-pr/
+│       ├── setup-coding-crew/
+│       ├── configure-tracker/
+│       ├── crew-afk/               ← installed with "all"
 │       ├── address-pr-comments/    ← installed with "all"
-│       ├── domain-modeling/   ← installed with "all"
-│       ├── to-issues/         ← installed with "all"
-│       ├── to-prd/            ← installed with "all"
-│       └── crew-grill/              ← installed with "all"
+│       ├── add-tests/              ← installed with "all"
+│       ├── upgrade-deps/           ← installed with "all"
+│       ├── crew-brainstorm/        ← installed with "all"
+│       ├── crew-grill/             ← installed with "all"
+│       ├── domain-modeling/        ← installed with "all", and with crew-grill
+│       ├── to-issues/              ← installed with "all", and with crew-grill or crew-brainstorm
+│       └── to-prd/                 ← installed with "all", and with to-issues
 └── .coding-crew/
     ├── config.json                 ← your settings; `tracker` picks the issue tracker
     └── manifest.json
@@ -397,7 +404,7 @@ in any coding-crew skill that uses the tracker (e.g. `solve-issue`).
 /solve-feature <feature-slug>
 ```
 
-It runs the feature's `ready-for-agent` issues in order on one branch (`feature/<slug>` unless you
+It runs the feature's `ready-for-agent` issues in order on one branch (one named after the slug unless you
 pass `--branch <name>`), each by a fresh coder subagent, and lands each one only when the project's
 checks pass. Then it reviews the whole feature and fixes the findings, at most twice: it reviews again
 only after fixing a CRITICAL, HIGH or MEDIUM finding. It writes the PR body and marks the draft PR ready

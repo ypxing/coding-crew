@@ -15,20 +15,6 @@ REGISTRY="$ROOT/registry.json"
 [[ $# -eq 0 ]] || { echo "Usage: render-skill.sh   (no arguments)" >&2; exit 2; }
 [[ -f "$REGISTRY" ]] || { echo "Error: registry not found: $REGISTRY" >&2; exit 1; }
 
-# jq on Windows (Git Bash) leaves a \r inside every value, so "tdd\r" names no directory; normalise
-# once (see install.sh). The probe reads through `read`: `$(…)` strips the CR itself.
-_jq_probe=""
-IFS= read -r _jq_probe < <(command jq -rn '"probe"' 2>/dev/null) || true
-if [[ "$_jq_probe" == *$'\r' ]]; then
-  jq() {
-    local _jq_out _jq_rc
-    _jq_out=$(command jq "$@")
-    _jq_rc=$?
-    [[ -n "$_jq_out" ]] && printf '%s\n' "${_jq_out//$'\r'/}"
-    return "$_jq_rc"
-  }
-fi
-
 TMP=$(mktemp)
 trap 'rm -f "$TMP"' EXIT
 
