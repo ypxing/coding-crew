@@ -2,12 +2,9 @@
 # scripts/ci-weights.sh to balance shards and to start the heaviest files first. Measured from CI
 # logs' "::group::<file> (Ns, …)" lines (last refresh: run 38129357784). A file missing here is
 # weighted 5s per @test. Refresh when a shard runs far longer than the others.
-1	address-pr-comments-escaped.bats
-6	address-pr-comments-scripts.bats
 1	ci-run-bats.bats
 10	ci-test-shard.bats
 2	configure-tracker-skill.bats
-1	crew-rework-workflow.bats
 5	cut-release.bats
 14	dep-install-assets.bats
 89	dep-install-docker-install.bats

@@ -13,6 +13,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Breaking
 
+- address-pr-comments: `--auto` and the `crew-rework` GitHub Action are removed, with `fetch-review-threads.sh`,
+  `push-rework.sh` and `reply-thread.sh`; a repo that copied the workflow deletes `.github/workflows/crew-rework.yml`
+  (it now fails on the unknown `--auto` flag). The skill no longer writes `.scratch/<slug>/reviews/escaped.md` (#554).
 - checks: the dev commands field `credential_target` is renamed `registry_auth` (and `ensure-env.sh`/
   `docker-install.sh --credential-target` is `--registry-auth`), with no fallback read of the old name; run
   `/setup-coding-crew redo commands` to rewrite the file (#551).

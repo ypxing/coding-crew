@@ -8,7 +8,7 @@ via: origin/feature/afk-effectiveness
 Replay of the feature review of #250 (afk-effectiveness): the whole feature diff `fe7022af5425..09aeb800cf31`,
 one reviewer reading the whole PRD. The SHAs are reachable through
 `origin/feature/afk-effectiveness`; fetch it before running if they do not resolve.
-Escaped (`.scratch/afk-effectiveness/reviews/escaped.md`, all three fixed in `7128c49`):
+Escaped (all three fixed in `7128c49`):
 `orchestrator/main.mjs:602` (D14), `scripts/cut-release.sh:101` (D16), `registry.json:42` (D2–D4).
 
 ## Expected misses

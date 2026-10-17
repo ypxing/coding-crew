@@ -441,41 +441,9 @@ Nothing removes a worktree: `git worktree remove <path>` once you are done with 
 
 ---
 
-### PR rework with GitHub Actions (optional)
+### PR rework
 
-Not installed by default. Without it, run `/address-pr-comments` yourself on the PR. On a solve-feature PR it pushes its fix commit itself once `solve-issue`'s checks pass (a plain `git push`, never forced; a failing check stops it with the output, unpushed) and suggests no next step: the run already reviewed the PR, fixed its findings and, in its describe step, marked the draft ready unless something needs a person (listed under `Needs attention` in the PR body). On any other PR it does not push.
-
-With it, reviewers comment on a PR labelled `crew-rework` as usual; the `crew-rework` GitHub
-Action runs `/address-pr-comments --auto`, which fixes what is sensible, pushes, and replies on
-every thread it handled. It never resolves a thread — you do.
-
-**Setup**
-
-1. Copy [`docs/templates/workflows/crew-rework.yml`](templates/workflows/crew-rework.yml) to
-   `.github/workflows/` in your repo.
-2. Install the skills per project and commit them (`./install.sh claude --skill
-   address-pr-comments --project`): the runner has no `$HOME` install.
-3. Add the repo secret `ANTHROPIC_API_KEY`.
-4. Make sure your CI workflow is `ci.yml` (or edit `--ci-workflow` in the template) and has
-   `workflow_dispatch:` if you want the re-trigger below.
-5. Add the `crew-rework` label to each PR it should work on; nothing adds it for you.
-
-**Flow.** A review, review comment or `/crew-rework` PR comment triggers the workflow. Before any
-step that uses the API key it checks that the actor has write access, the PR's branch is in the
-same repo (no forks), and the PR carries the `crew-rework` label. Runs are serialised per PR.
-Only comments by write/maintain/admin authors ever reach the model.
-
-**Guards.** Unattended runs are capped at two rounds; comment `/crew-rework` to allow two more. A
-change to protected paths (`.github/`, CI configs, auth, deploy, `.env`), a failing check, or a
-rejected push stops the run: it comments on the PR and adds `needs-human`.
-
-**CI re-trigger.** Pushes made with the default `GITHUB_TOKEN` do not start other workflows. The
-skill therefore dispatches your CI workflow explicitly after pushing (`--ci-workflow`).
-Alternatively, provide the optional App token below and the push triggers CI natively.
-
-**Optional App token.** Create a GitHub App with contents/pull-requests write, install it, set the
-repo variable `CREW_APP_ID` and secret `CREW_APP_PRIVATE_KEY`. The workflow then checks out and
-pushes as the App.
+Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it pushes its fix commit itself once `solve-issue`'s checks pass (a plain `git push`, never forced; a failing check stops it with the output, unpushed) and suggests no next step: the run already reviewed the PR, fixed its findings and, in its describe step, marked the draft ready unless something needs a person (listed under `Needs attention` in the PR body). On any other PR it does not push.
 
 ---
 
