@@ -14,6 +14,12 @@ Copy this file to `cases/<name>.md` (outside `cases/` it is never run). An escap
 branch before the issue's merge to the branch tip the reviewer passed) only for a defect that should
 have made one of the issue's acceptance criteria `unmet`, and fill those two sections from the issue.
 
+A **clean case** measures noise: a PR squash-merged on main with no defect found since. Add `clean: true` to
+the front matter and drop `## Expected misses`; `head_sha` is the squash commit and `base_sha` its parent. Its
+reference judgement says no defect is known and how that was checked (`git log <head_sha>..origin/main -- <the
+files it changed>`). The summary reports its mean CRITICAL+HIGH findings per version; without `clean: true`, a
+case with no expected misses fails to load.
+
 ## Issue
 
 <issue slug or number>

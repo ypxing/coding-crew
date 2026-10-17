@@ -94,8 +94,8 @@ There are no agents. No per-platform agent file is written under `.claude/agents
 
 ### The feature review
 
-`/solve-feature` reviews its PR at most twice, after every ready issue has landed: a fresh read-only subagent
-uses `crew-review` on the branch against `.solve-feature/spec.md` (the PRD, then each issue's
+`/solve-feature` reviews its PR at most twice, after every ready issue has landed: a fresh subagent, which
+may run the tests and its own experiments but leaves the repo as it found it, uses `crew-review` on the branch against `.solve-feature/spec.md` (the PRD, then each issue's
 acceptance criteria) and writes one JSON report. It asks what the spec asks for that the code lacks,
 what a real run breaks, and which documented rule the diff breaks. A fresh subagent fixes every
 finding with `tdd`; `solve-feature.sh fix` gates the fixes with the project's checks. When the first

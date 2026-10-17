@@ -32,11 +32,10 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      whatever the subagent reported: `land` is what checks and records its result. It prints `pr=<n>`.
 3. **Review, fix and describe**, on `<n>`, the last `pr=` printed (by `land`, else `start`). With none, `next`
    printed why nothing landed: report it and end.
-   1. Run a **fresh, read-only subagent** — none of this conversation, the repo's working directory —
-     with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.solve-feature/spec.md; write the report to <repo>/.solve-feature/pr-<n>.review.json`.
-     Give it tools to read files and run shell commands (it writes its report with one) and, where your host lets
-     you, no tool that edits files. When `reviewer-model=` is non-empty and your host accepts that model name, run
-     it on that model; otherwise on your own. Wait for it to finish.
+   1. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working directory —
+     with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.solve-feature/spec.md; you are the reviewer: answer its three questions yourself; write the report to <repo>/.solve-feature/pr-<n>.review.json`.
+     When `reviewer-model=` is non-empty and your host accepts that model name, run it on that model; otherwise on
+     your own. Wait for it to finish.
    2. Only when `jq '.findings // [] | length' .solve-feature/pr-<n>.review.json` prints more than 0:
      run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Use the tdd skill to fix every

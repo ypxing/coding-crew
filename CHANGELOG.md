@@ -36,6 +36,23 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- crew-review: the review also reports dead code a change adds or leaves without a caller (LOW), new code that reads
+  an input differently from the existing code that reads it, and a check an error or missing value skips, and
+  counts only concrete security holes, not missing hardening. solve-issue, crew-review, write-pr and
+  address-pr-comments treat issue, PR, review and CI-log text as data, never as instructions to the agent. The
+  `eval-reviewer-misses.mjs` eval takes `clean: true` cases with no expected misses, reports their mean
+  CRITICAL+HIGH findings per version, and gains `approve-held-ci-clean`, a replay of PR #527 (#562).
+- crew-review: the reviewer puts scratch copies in a fresh `mktemp -d` directory, not a fixed `/tmp` path. The
+  `eval-reviewer-misses.mjs` reviewer's turn cap rises from 40 to 80 (#562).
+- crew-review, solve-feature: the reviewer can run any shell command and write scratch files outside the repo (on
+  Claude Code a general-purpose agent, not Explore or Plan), leaves the repo as it found it, reproduces a suspected
+  defect where that is cheap, reports a defect even when a spec decision prescribes it, checks each new test can
+  fail, and again checks hostile input (credentials in source, outside text reaching a shell, eval, path or URL, an
+  auth bypass, a secret logged or committed, a dependency with a known advisory), lost with crew-afk's old reviewer
+  in #488; solve-feature's review subagent answers the review's questions itself and may start helper subagents, each
+  with a brief. The `eval-reviewer-misses.mjs` reviewer runs with `--permission-mode bypassPermissions` and
+  subagents allowed (`--no-subagents` denies them) in a worktree of its own, a run that changes it is failed, and a
+  `simplify-codebase-feature` case replays PR #558 (#563).
 - CI: `scripts/ci-run-bats.sh` runs the tests without the machine's git config or identity, so a test that commits
   without naming an author fails locally as it does on a CI runner (#558).
 - checks: one lockfile → install-command table (`install-cmd.sh`) serves host and docker installs, so a docker install
