@@ -216,7 +216,7 @@ _docker_ready() {
 
 @test "run-checks: this repo's own dev-commands.json (no install_mode) runs every check on the host" {
   local repo; repo="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  ! grep -q install_mode "$repo/.coding-crew/dev-commands.json"
+  ! grep -q install_mode "$repo/.coding-crew/dev-commands.json" || false
   mkdir -p "$WORK/.coding-crew"
   cp "$repo/.coding-crew/dev-commands.json" "$WORK/.coding-crew/"
   # every check of that file swapped for one that records where it ran, keeping its keys

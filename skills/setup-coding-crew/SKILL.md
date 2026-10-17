@@ -32,7 +32,7 @@ invocation or a subagent) never ask: proceed as `local`. The tracker's refs, sta
 
 Exit codes, every op: 0 ok; 3 not found; on 1 (the op failed) or 2 (a usage error or an invalid ref), report the
 stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, never performing it with the tracker's
-own tool. `publish-issues` adds 4 and 5, described in to-issues' `references/publish.md`.
+own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
 <!-- /fragment:tracker-configuration -->
 
 ## Step 1 — Tracker
@@ -64,12 +64,7 @@ bash "<skill-dir>/scripts/checks/discover-commands.sh"   # --refresh on "redo co
 
 - **A prompt** (`Command discovery: <n> source file(s) found`): follow it.
 
-- **`Command discovery: skipped`**: there is nothing to ask. Show what `$DEV` holds. If it has no `"test"`
-  key — discovery found none of the files it reads — solve-feature would stop at its first check, so ask the
-  user for test, lint and typecheck, offering the ecosystem's convention as each default (`npm test`,
-  `pytest`, `go test ./...`, `cargo test`, `bundle exec rspec`; `npx eslint .`, `ruff check .`,
-  `golangci-lint run`; `npx tsc --noEmit`, `mypy .`, `go vet ./...`), `null` for one the project has none of.
-  Set the answers as `$DEV`'s `test`, `lint` and `typecheck` keys.
+- **`Command discovery: skipped`**: there is nothing to ask. Show what `$DEV` holds.
 
 Never run the commands: this step only records them.
 

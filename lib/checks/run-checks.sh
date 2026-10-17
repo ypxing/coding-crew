@@ -40,7 +40,7 @@ fi
 . "$SELF_DIR/commands-file.sh"
 CACHE=$(commands_file "$PROJECT_ROOT")
 
-if [ ! -f "$CACHE" ] || ! grep -q '"test"' "$CACHE" 2>/dev/null; then
+if ! commands_field_present "$CACHE" test; then
   echo "DISCOVER"
   exit 3
 fi

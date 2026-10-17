@@ -10,7 +10,7 @@ PROJECT_ROOT="/absolute/path/to/checkout"
 
 ## Detect and run
 
-`scripts/checks/host-install.sh` ensures `.env` exists (from `.env.example`, or empty if there is none) before it does anything else — the same mechanical step `docker-install.sh` already does via `ensure-env.sh`, now on the host path too. It runs even when no install method is found below, since checks after this step can still need a `.env` to exist. It never reads `.env*` content.
+`scripts/checks/host-install.sh` ensures `.env` exists (from `.env.example`, or empty if there is none) before it does anything else — the same mechanical step `docker-install.sh` already does via `ensure-env.sh`, now on the host path too. It runs even when no install method is found below, since checks after this step can still need a `.env` to exist. It never reads `.env*` content. With `.env` in place it runs the dev commands file's `registry_auth` command, if any, to generate package-manager credential files.
 
 Then it runs the dev commands file's `install` command (dep-install's Step 1 has already made sure
 it was asked); when that is `null` or absent, the lockfile's install command (`npm ci`, `uv sync`, …).

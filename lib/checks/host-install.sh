@@ -25,10 +25,11 @@ if [[ ! -d "$PROJECT_ROOT" ]]; then
   exit 1
 fi
 
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 cd "$PROJECT_ROOT"
 
 # .env first, best-effort, whether or not an install method is found: the checks may need one.
-SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bash "$SELF_DIR/ensure-env.sh" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true
 
 # shellcheck source=/dev/null

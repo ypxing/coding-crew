@@ -89,7 +89,7 @@ _assert_every_skill_in() {
   local dir="$1" skill
   while IFS= read -r skill; do
     [ -f "$dir/$skill/SKILL.md" ] || { echo "missing $dir/$skill/SKILL.md" >&2; return 1; }
-  done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json" | tr -d '\r')
+  done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json")
 }
 
 @test "a fifth platforms.json entry installs every skill to its projectSkills dir, and uninstall removes them" {

@@ -22,7 +22,7 @@ invocation or a subagent) never ask: proceed as `local`. The tracker's refs, sta
 
 Exit codes, every op: 0 ok; 3 not found; on 1 (the op failed) or 2 (a usage error or an invalid ref), report the
 stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, never performing it with the tracker's
-own tool. `publish-issues` adds 4 and 5, described in to-issues' `references/publish.md`.
+own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
 <!-- /fragment:tracker-configuration -->
 
 ## Process

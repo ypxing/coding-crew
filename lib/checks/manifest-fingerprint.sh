@@ -34,7 +34,7 @@ fi
 
 PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 
-# Kept in step with host-install.sh's and docker-install.sh's lockfile tables.
+# Kept in step with install-cmd.sh's lockfile table.
 _LOCKFILE_NAMES=(
   package.json uv.lock bun.lockb pnpm-lock.yaml package-lock.json yarn.lock poetry.lock
   go.sum go.mod requirements.txt requirements-dev.txt dev-requirements.txt pyproject.toml

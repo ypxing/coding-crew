@@ -147,7 +147,8 @@ PROMPT
 
 _in_ask test && cat <<'PROMPT'
 - test (the bare command, e.g. `pnpm test`, never a `docker compose run …` wrapper: the checks
-  run it inside the project's container themselves when the project is set up that way)
+  run it inside the project's container themselves when the project is set up that way; any env
+  it needs goes inside the command, e.g. `CI=true pnpm test` when `pnpm-lock.yaml` exists)
 PROMPT
 _in_ask lint && cat <<'PROMPT'
 - lint (one that reports, not one that rewrites files: every check fails when it leaves the

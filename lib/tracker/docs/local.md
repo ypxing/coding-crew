@@ -58,7 +58,7 @@ not listed, and no `.scratch/` prints nothing.
 → blocker-filenames map. That file, not each issue's `## Blocked by` prose, is what `next` and
 `features` read to decide whether an issue can start: it is the only source of blockers, an
 issue without an entry (or a feature without the file) has none, and a `## Blocked by` edited by
-hand after publish does not change dispatch. It exits `4` when the feature
+hand after publish does not change dispatch; `rewrite` sets the issue's entry from its new `## Blocked by`. It exits `4` when the feature
 already has issues in `done/` and `5` when it has open ones and `--replace` is absent; both write
 nothing. `publish-prd` writes `.scratch/<slug>/PRD.md`.
 
@@ -110,7 +110,7 @@ Each feature slug maps to a directory under `.scratch/`. Whenever the tracker CL
 .scratch/<feature-slug>/
 ├── PRD.md                    ← optional product requirements doc
 └── issues/
-    ├── issues-deps.json      ← optional; filename → blocker-filenames map (written by publish-issues)
+    ├── issues-deps.json      ← optional; filename → blocker-filenames map (written by publish-issues and rewrite)
     ├── open/                 ← active issues
     │   ├── 01-<slug>.md      ← implementation issues, numbered from 01
     │   └── 02-<slug>.md

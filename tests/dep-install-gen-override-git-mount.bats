@@ -184,7 +184,7 @@ _git_fixture() {
   [ -f "$gitdir/crew-compose.override.yml" ]
   grep -qx '      - GIT_COMMON_DIR=/git-common' "$gitdir/crew-compose.override.yml"
   grep -qx "      - GIT_DIR=/git-common/worktrees/$(basename "$WORK")" "$gitdir/crew-compose.override.yml"
-  ! grep -q 'GIT_CONFIG' "$gitdir/crew-compose.override.yml"
+  ! grep -q 'GIT_CONFIG' "$gitdir/crew-compose.override.yml" || false
   # nothing was written into the repo trees, and MAIN's own git dir got no copy
   [ ! -e "$WORK/docker-compose.override.yml" ]
   [ ! -e "$MAIN/docker-compose.override.yml" ]
@@ -210,7 +210,7 @@ _git_fixture() {
   run bash "$SCRIPT" --project-root "$MAIN"
   [ "$status" -eq 0 ]
   [ -f "$MAIN/.git/crew-compose.override.yml" ]
-  ! grep -q 'GIT_' "$MAIN/.git/crew-compose.override.yml"
+  ! grep -q 'GIT_' "$MAIN/.git/crew-compose.override.yml" || false
   [ ! -e "$MAIN/docker-compose.override.yml" ]
 }
 

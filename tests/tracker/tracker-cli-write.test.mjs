@@ -261,6 +261,7 @@ test("publish-issues exits 1 and creates nothing when a draft's Blocked by and d
     assert.match(r.stderr, /02-b\.md/);
     assert.match(r.stderr, /deps\.json: \[\]/);
     assert.match(r.stderr, /## Blocked by: \[01-a\.md\]/);
+    assert.match(r.stderr, /names a draft by its filename/);
     if (github) assert.equal(ghCreates(exec).length, 0);
     assert.equal(existsSync(join(dir, ".scratch/feat/issues")), false);
     assert.deepEqual(readdirSync(d).sort(), ["01-a.md", "02-b.md", "deps.json"]);
@@ -578,6 +579,24 @@ test("rewrite (local) leaves a Blocked by entry naming a known issue file as tha
   const r = await cli(dir, ["rewrite", path, "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"]);
   assert.equal(r.code, 0, r.stderr);
   assert.equal(readFileSync(path, "utf8"), body.replace("needs-triage", "ready-for-agent"));
+});
+
+test("rewrite (local) records the rewritten Blocked by in issues-deps.json, so dispatch waits on it", async () => {
+  const dir = root();
+  const unblocked = DRAFT_A.replace("Add a", "Add b").replace("ready-for-agent", "ready-for-human");
+  const d = drafts(dir, { deps: {}, files: { "01-a.md": DRAFT_A.replace("ready-for-agent", "ready-for-human"), "02-b.md": unblocked } });
+  assert.equal((await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d])).code, 0);
+  const issues = join(dir, ".scratch/feat/issues");
+  const path = join(issues, "open/02-b.md");
+  writeFileSync(join(dir, "body.md"), `${unblocked}\n## Blocked by\n\n- 01-a.md\n`);
+  const r = await cli(dir, ["rewrite", path, "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(issues, "issues-deps.json"), "utf8")), { "01-a.md": [], "02-b.md": ["01-a.md"] });
+  assert.equal((await cli(dir, ["next", "--feature-slug", "feat"])).code, 3);
+
+  writeFileSync(join(dir, "body.md"), unblocked);
+  assert.equal((await cli(dir, ["rewrite", path, "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"])).code, 0);
+  assert.deepEqual(JSON.parse(readFileSync(join(issues, "issues-deps.json"), "utf8")), { "01-a.md": [], "02-b.md": [] });
 });
 
 test("rewrite (github) exits 3 for an issue that does not exist, 2 for a non-numeric ref", async () => {

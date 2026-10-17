@@ -130,3 +130,21 @@ lib_link_problems() {
   # The committed scripts/tracker is a link; the installed one is the directory it points to.
   [ -d "$home/.agents/skills/solve-issue/scripts/tracker" ] && [ ! -L "$home/.agents/skills/solve-issue/scripts/tracker" ]
 }
+
+@test "the ready-for-human block is written out only in to-issues" {
+  run grep -lE '^(## For a human|### Why a person)$' "$REPO_ROOT"/skills/*/SKILL.md
+  [ "$output" = "$REPO_ROOT/skills/to-issues/SKILL.md" ] || { echo "$output"; return 1; }
+}
+
+@test "the tracker-configuration fragment renders to at most 10 non-blank lines in every consumer" {
+  local body n consumers=0
+  for body in "$REPO_ROOT"/skills/*/SKILL.md; do
+    grep -qxF '<!-- fragment:tracker-configuration -->' "$body" || continue
+    consumers=$((consumers + 1))
+    n=$(awk '/^<!-- fragment:tracker-configuration -->$/ { f = 1; next }
+             /^<!-- \/fragment:tracker-configuration -->$/ { f = 0 }
+             f && NF' "$body" | wc -l | tr -d ' ')
+    [ "$n" -le 10 ] || { echo "$body: $n lines"; return 1; }
+  done
+  [ "$consumers" -gt 0 ]
+}

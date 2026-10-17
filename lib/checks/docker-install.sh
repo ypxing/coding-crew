@@ -4,9 +4,9 @@
 #
 # Usage:
 #   bash scripts/docker-install.sh --project-root <path> \
-#     [--service <name>] [--registry-auth <command>] [--timeout <sec, default 1800>] [--force]
-# The service, the install command and the registry auth command come from the checkout's
-# dev commands file ("docker_service", "install", "registry_auth"; commands-file.sh); with no
+#     [--service <name>] [--timeout <sec, default 1800>] [--force]
+# The service and the install command come from the checkout's dev commands file ("docker_service",
+# "install"; commands-file.sh), and ensure-env.sh runs its "registry_auth"; with no
 # docker_service, the compose file's first service. Generates this checkout's override, then installs
 # only when the root dependency volume (named by lockfile hash) lacks a .crew-stamp; --force deletes
 # the stamp first. A failed install removes the override again, so the next run.sh call retries it.
@@ -23,18 +23,16 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PROJECT_ROOT=""
 SERVICE=""
-REGISTRY_AUTH=""
 TIMEOUT=1800
 FORCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --project-root|--service|--registry-auth|--timeout)
+    --project-root|--service|--timeout)
       if [[ $# -lt 2 ]]; then echo "Error: $1 requires a value" >&2; exit 1; fi
       case "$1" in
         --project-root)      PROJECT_ROOT="$2" ;;
         --service)           SERVICE="$2" ;;
-        --registry-auth)     REGISTRY_AUTH="$2" ;;
         --timeout)           TIMEOUT="$2" ;;
       esac
       shift 2
@@ -81,7 +79,6 @@ ECO_NAME="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query ecosyste
 [[ -n "$SERVICE" ]] || _fail 2 detect "No compose service found at $PROJECT_ROOT"
 
 INSTALL_CMD="$(commands_field "$CACHE" install)"
-[[ -n "$REGISTRY_AUTH" ]] || REGISTRY_AUTH="$(commands_field "$CACHE" registry_auth)"
 
 CONTAINER_SRC="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query container-src 2>/dev/null)"
 
@@ -111,9 +108,7 @@ else
   CONTAINER_CMD="$(IFS=' && '; echo "${STEPS[*]}")"
 fi
 
-ENV_ARGS=(--project-root "$PROJECT_ROOT")
-[[ -n "$REGISTRY_AUTH" ]] && ENV_ARGS+=(--registry-auth "$REGISTRY_AUTH")
-bash "$SELF_DIR/ensure-env.sh" "${ENV_ARGS[@]}" >/dev/null 2>&1 || true
+bash "$SELF_DIR/ensure-env.sh" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true
 
 [[ -n "$OVERRIDE" ]] || _fail 1 "generate override" "$PROJECT_ROOT is not a git checkout — the override is written to its git dir"
 GENERATED=1

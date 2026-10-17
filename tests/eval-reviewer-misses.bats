@@ -127,6 +127,18 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   done
 }
 
+@test "a --base that predates crew-review is refused before any prompt is built" {
+  export GIT_INDEX_FILE="$T/old-index"
+  git -C "$R" read-tree HEAD
+  git -C "$R" update-index --force-remove skills/crew-review/SKILL.md
+  OLD=$(git -C "$R" commit-tree "$(git -C "$R" write-tree)" -p HEAD -m old)
+  unset GIT_INDEX_FILE
+  BASEREF="$OLD" FAKE_FORBID=1 run run_eval --dry-run
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--base $OLD has no skills/crew-review/SKILL.md"* ]] || { echo "$output"; return 1; }
+  [ ! -e "$T/called" ]
+}
+
 @test "a full run writes summary.md and results.json per case and ref; the judge is blind" {
   run run_eval --runs 2
   [ "$status" -eq 0 ]

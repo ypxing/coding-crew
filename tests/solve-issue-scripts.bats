@@ -93,6 +93,9 @@ _preflight() {
   _issue '- PRD: `docs/prd.md`' "None"
   _preflight
   [[ "$output" == *"PRD=$WORK/docs/prd.md"* ]]
+  _issue '- PRD: docs/prd.md' "None"
+  _preflight
+  [[ "$output" == *"PRD=$WORK/docs/prd.md"* ]]
   _issue "" "None"
   _preflight
   [ "$status" -eq 0 ]

@@ -31,7 +31,7 @@ invocation or a subagent) never ask: proceed as `local`. The tracker's refs, sta
 
 Exit codes, every op: 0 ok; 3 not found; on 1 (the op failed) or 2 (a usage error or an invalid ref), report the
 stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, never performing it with the tracker's
-own tool. `publish-issues` adds 4 and 5, described in to-issues' `references/publish.md`.
+own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
 <!-- /fragment:tracker-configuration -->
 
 ## Running commands
@@ -328,7 +328,9 @@ Each range-edit issue must include:
   - Step 3 found a CVE fix whose exploitability check was inconclusive
 
 When the decision is `ready-for-human`, step 8 publishes the draft through `to-issues` as
-`ready-for-human` with the reason; the person's steps are the review of the impacted call sites.
+`ready-for-human` with the reason, as to-issues' Kind B: the bump stays agent work, the person's
+steps are the review of the impacted call sites, and the last step relabels the issue
+`ready-for-agent` so an agent makes the bump.
 
 Either way, state the reasoning in the issue body — what was checked and what the finding
 was — so whoever picks it up (human or coder) knows what's already been verified. Use the

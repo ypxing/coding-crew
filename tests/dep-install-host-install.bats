@@ -96,6 +96,24 @@ _stub_npm() {
   [ "$(cat "$PROJECT/npm.calls")" = "ci" ]
 }
 
+@test "a relative --project-root reads that checkout's cached install command" {
+  _cache '{"install": "touch installed.marker"}'
+
+  run bash -c 'cd "$(dirname "$1")" && bash "$2" --project-root "$(basename "$1")"' _ "$PROJECT" "$SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/installed.marker" ]
+}
+
+@test "the dev commands file's registry_auth runs on the host path too, after .env exists" {
+  _cache '{"install": "true", "registry_auth": "test -f .env && touch .npmrc"}'
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/.npmrc" ]
+}
+
 @test "every run installs: no fingerprint fast path" {
   _cache '{"install": "touch installed.marker"}'
 

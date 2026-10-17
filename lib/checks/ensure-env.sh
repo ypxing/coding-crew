@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Ensure .env exists and generate credential config files (steps 0b-c of docker-install).
 # Never reads the contents of .env* or credential files. Never blocks: exit 0, or 1 on an argument error.
-# Usage: ensure-env.sh --project-root <path> [--registry-auth <command>]
+# Usage: ensure-env.sh --project-root <path>
 # A missing .env is generated in PROJECT_ROOT: the dev commands file's "env" command, else
-# .env.example-or-empty; a broken command falls through.
+# .env.example-or-empty; a broken command falls through. Then the file's "registry_auth" command runs.
 
 set -euo pipefail
 
@@ -12,12 +12,10 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SELF_DIR/commands-file.sh"
 
 PROJECT_ROOT=""
-REGISTRY_AUTH=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project-root)   PROJECT_ROOT="$2";   shift 2 ;;
-    --registry-auth)  REGISTRY_AUTH="$2";  shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -82,6 +80,7 @@ fi
 
 # REGISTRY_AUTH is a full command (e.g. "make _registry"). One that runs docker itself is skipped
 # (no docker to nest into); a skip or a failure falls through to .tpl expansion.
+REGISTRY_AUTH="$(commands_field "$(commands_file "$PROJECT_ROOT")" registry_auth)"
 ran_registry_auth=0
 if [[ -n "$REGISTRY_AUTH" ]]; then
   if bash "$SELF_DIR/detect-docker-nesting.sh" --dir "$PROJECT_ROOT" --cmd "$REGISTRY_AUTH"; then

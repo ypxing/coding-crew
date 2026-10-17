@@ -1,8 +1,9 @@
 #!/usr/bin/env bats
 
 # gen-override.sh: the proxy and CA passthrough a service container needs when started from a
-# proxied agent sandbox. The env entries are names only (compose passes one only when the invoking
-# shell sets it), so they are unconditional; the CA bundle is mounted only when the host has one.
+# proxied agent sandbox. An env entry is a name only, written when the generating shell sets it (an
+# unset name would override a value the project's own compose file gives); the CA bundle is mounted
+# only when the host has one.
 
 SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/gen-override.sh"
@@ -48,28 +49,33 @@ _volumes_of() {
   ' "$1"
 }
 
+# _generate [<ca file>] — with none of the passthrough variables set unless the caller exports them.
 _generate() {
   CREW_CA_FILE="${1:-$ABSENT_CA}" bash "$SCRIPT" --project-root "$ROOT"
+}
+
+_unset_passthrough() {
+  unset HTTPS_PROXY NODE_EXTRA_CA_CERTS NPM_TOKEN REQUESTS_CA_BUNDLE SSL_CERT_FILE
 }
 
 OVERRIDE() { echo "$ROOT/.git/crew-compose.override.yml"; }
 
 @test "a node override passes the proxy, its CA variable, YARN_HTTPS_PROXY and NPM_TOKEN by name to every service" {
   echo '{"name":"f"}' > "$ROOT/package.json"
-  run _generate
+  HTTPS_PROXY=http://p.invalid:3128 NODE_EXTRA_CA_CERTS=/ca.pem NPM_TOKEN=t run _generate
   [ "$status" -eq 0 ]
   for svc in app worker; do
     env="$(_env_of "$(OVERRIDE)" "$svc")"
     grep -qx 'HTTPS_PROXY' <<<"$env"
     grep -qx 'NODE_EXTRA_CA_CERTS' <<<"$env"
-    grep -qxF 'YARN_HTTPS_PROXY=${HTTPS_PROXY}' <<<"$env"
+    grep -qxF 'YARN_HTTPS_PROXY=${HTTPS_PROXY:-}' <<<"$env"
     grep -qx 'NPM_TOKEN' <<<"$env"
   done
 }
 
 @test "a python override passes HTTPS_PROXY and REQUESTS_CA_BUNDLE by name" {
   touch "$ROOT/requirements.txt"
-  run _generate
+  HTTPS_PROXY=http://p.invalid:3128 REQUESTS_CA_BUNDLE=/ca.pem run _generate
   [ "$status" -eq 0 ]
   for svc in app worker; do
     env="$(_env_of "$(OVERRIDE)" "$svc")"
@@ -82,7 +88,7 @@ OVERRIDE() { echo "$ROOT/.git/crew-compose.override.yml"; }
   for manifest in go.mod Cargo.toml Gemfile composer.json; do
     rm -f "$ROOT"/go.mod "$ROOT"/Cargo.toml "$ROOT"/Gemfile "$ROOT"/composer.json
     touch "$ROOT/$manifest"
-    run _generate
+    HTTPS_PROXY=http://p.invalid:3128 SSL_CERT_FILE=/ca.pem run _generate
     [ "$status" -eq 0 ]
     env="$(_env_of "$(OVERRIDE)" app)"
     grep -qx 'HTTPS_PROXY' <<<"$env"
@@ -90,12 +96,22 @@ OVERRIDE() { echo "$ROOT/.git/crew-compose.override.yml"; }
   done
 }
 
+@test "a variable the generating shell does not set gets no entry, so the project's own value stands" {
+  _unset_passthrough
+  echo '{"name":"f"}' > "$ROOT/package.json"
+  run _generate
+  [ "$status" -eq 0 ]
+  [ -z "$(_env_of "$(OVERRIDE)" app)" ]
+  NPM_TOKEN=t run _generate
+  [ "$(_env_of "$(OVERRIDE)" app)" = NPM_TOKEN ]
+}
+
 @test "HTTPS_PROXY set in the invoking shell does not write its value into the override" {
   echo '{"name":"f"}' > "$ROOT/package.json"
   HTTPS_PROXY="http://proxy.invalid:3128" NODE_EXTRA_CA_CERTS="/secret/ca.pem" run _generate
   [ "$status" -eq 0 ]
-  ! grep -q 'proxy.invalid' "$(OVERRIDE)"
-  ! grep -q '/secret/ca.pem' "$(OVERRIDE)"
+  ! grep -q 'proxy.invalid' "$(OVERRIDE)" || false
+  ! grep -q '/secret/ca.pem' "$(OVERRIDE)" || false
 }
 
 @test "with the CA file present, every service mounts it read-only and the summary says so" {
@@ -114,6 +130,6 @@ OVERRIDE() { echo "$ROOT/.git/crew-compose.override.yml"; }
   echo '{"name":"f"}' > "$ROOT/package.json"
   run _generate
   [ "$status" -eq 0 ]
-  ! grep -q 'ca-certificates' "$(OVERRIDE)"
+  ! grep -q 'ca-certificates' "$(OVERRIDE)" || false
   [[ "$output" != *"proxy/CA"* ]]
 }

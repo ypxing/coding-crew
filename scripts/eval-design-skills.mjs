@@ -101,7 +101,11 @@ function readAt(ref, rel) {
 
 // The SKILL.md body as claude receives it, from the same ref: the committed tree is already rendered.
 function skillText(skill, ref) {
-  return readAt(ref, `skills/${skill}/SKILL.md`);
+  const text = readAt(ref, `skills/${skill}/SKILL.md`);
+  if (text.includes("{{FRAGMENT:")) {
+    throw new Error(`skills/${skill}/SKILL.md at ${ref} has unrendered {{FRAGMENT:}} lines: the ref predates the rendered tree; pick a later --base`);
+  }
+  return text;
 }
 
 export function subjectPrompt(skill, c) {

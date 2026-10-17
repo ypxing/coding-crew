@@ -14,6 +14,12 @@ teardown() {
   rm -rf "$PROJECT"
 }
 
+# _cache <json> — the checkout's dev commands file (the tracked path: $PROJECT is no git checkout).
+_cache() {
+  mkdir -p "$PROJECT/.coding-crew"
+  printf '%s\n' "$1" > "$PROJECT/.coding-crew/dev-commands.json"
+}
+
 @test "creates .env from .env.example when neither exists yet" {
   echo "FOO=bar" > "$PROJECT/.env.example"
   run bash "$SCRIPT" --project-root "$PROJECT"
@@ -145,42 +151,46 @@ teardown() {
   fi
 }
 
-# ─── --registry-auth: a full command (e.g. "make _registry"), evaled directly, guarded
-# against docker-in-docker nesting the same way docker-install.sh's install command is ─────
+# ─── registry_auth: the dev commands file's full command (e.g. "make _registry"), evaled directly,
+# guarded against docker-in-docker nesting the same way docker-install.sh's install command is ─────
 
-@test "--registry-auth runs the discovered command and generates the credential file" {
+@test "the dev commands file's registry_auth runs after .env exists and generates the credential file" {
   cat > "$PROJECT/Makefile" <<'MK'
 .npmrc:
 	echo "TOKEN=x" > .npmrc
 MK
 
-  run bash "$SCRIPT" --project-root "$PROJECT" --registry-auth "make .npmrc"
+  _cache '{"registry_auth": "test -f .env && make .npmrc"}'
+  run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
   [ -f "$PROJECT/.env" ]
   [ -f "$PROJECT/.npmrc" ]
   [[ "$output" == *"ran discovered registry_auth"* ]]
 }
 
-@test "a --registry-auth command that already invokes docker is skipped, never eval'd" {
-  run bash "$SCRIPT" --project-root "$PROJECT" --registry-auth "docker compose run --rm app make _registry"
+@test "a registry_auth command that already invokes docker is skipped, never eval'd" {
+  _cache '{"registry_auth": "docker compose run --rm app make _registry"}'
+  run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"already invokes docker"* ]]
   [ ! -f "$PROJECT/.npmrc" ]
 }
 
-@test "a --registry-auth bare 'make <target>' whose recipe invokes docker is also skipped" {
+@test "a registry_auth bare 'make <target>' whose recipe invokes docker is also skipped" {
   cat > "$PROJECT/Makefile" <<'MK'
 _registry:
 	docker compose run --rm app ./gen-creds.sh
 MK
 
-  run bash "$SCRIPT" --project-root "$PROJECT" --registry-auth "make _registry"
+  _cache '{"registry_auth": "make _registry"}'
+  run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"already invokes docker"* ]]
 }
 
-@test "a failing --registry-auth command is reported, not fatal" {
-  run bash "$SCRIPT" --project-root "$PROJECT" --registry-auth "exit 5"
+@test "a failing registry_auth command is reported, not fatal" {
+  _cache '{"registry_auth": "exit 5"}'
+  run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"failed, falling back to template expansion"* ]]
 }

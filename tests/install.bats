@@ -193,7 +193,7 @@ _skills_copied() {
   local dir="$1" skill
   while IFS= read -r skill; do
     diff -r "$SCRIPT_DIR/skills/$skill" "$dir/$skill" >&2 || { echo "$skill is not a copy of skills/$skill" >&2; return 1; }
-  done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json" | tr -d '\r')
+  done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json")
   [ -z "$(find "$dir" -type l)" ] || { find "$dir" -type l >&2; return 1; }
 }
 

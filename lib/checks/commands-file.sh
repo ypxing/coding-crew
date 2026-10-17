@@ -12,17 +12,18 @@ commands_file() { # <project-root>
   echo "$common/coding-crew/dev-commands.json"
 }
 
-# _commands_token <file> <key> — the raw value of "<key>": a quoted string or null; empty when absent. Matched
-# anywhere in the file, so a model's response with prose or a code fence around the object reads the same.
+# _commands_token <file> <key> — the raw value of "<key>": a quoted string (escapes kept) or null; empty when
+# absent. Matched anywhere in the file, so a model's response with prose or a code fence around the object reads
+# the same.
 _commands_token() {
   [ -f "$1" ] || return 0
-  grep -o "\"$2\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" "$1" 2>/dev/null | head -1 \
+  grep -o "\"$2\"[[:space:]]*:[[:space:]]*\(\"\([^\"\\\\]\|\\\\.\)*\"\|null\)" "$1" 2>/dev/null | head -1 \
     | sed -E "s/^\"$2\"[[:space:]]*:[[:space:]]*//" || true
 }
 
-commands_field() { # <file> <key> — the string value; empty for null or an absent key
+commands_field() { # <file> <key> — the string value, \" \\ and \/ unescaped; empty for null or an absent key
   local raw; raw=$(_commands_token "$1" "$2")
-  case "$raw" in \"*\") raw="${raw#\"}"; printf '%s' "${raw%\"}" ;; esac
+  case "$raw" in \"*\") raw="${raw#\"}"; printf '%s' "${raw%\"}" | sed 's/\\\(["\\/]\)/\1/g' ;; esac
 }
 
 commands_field_present() { # <file> <key> — exit 0 when the key is there, null included

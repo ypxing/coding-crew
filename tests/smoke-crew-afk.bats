@@ -18,7 +18,7 @@ setup() {
   # No user-level skills but the ones a test puts there: they would shadow the project install.
   export HOME="$BATS_TEST_TMPDIR/home"
   mkdir -p "$HOME"
-  unset $(jq -r '.[].configDirEnv // empty' "$REPO_ROOT/platforms.json" | tr -d '\r')
+  unset $(jq -r '.[].configDirEnv // empty' "$REPO_ROOT/platforms.json")
   make_smoke_demo
   RESULTS="$BATS_TEST_TMPDIR/RESULTS.md"
   printf '| commit | date | platform | route | result | cost | findings |\n|---|---|---|---|---|---|---|\n' > "$RESULTS"
@@ -40,7 +40,7 @@ setup() {
 
 @test "each platform in platforms.json dispatches its own headless launch command after --" {
   local p want
-  for p in $(jq -r 'keys[]' "$REPO_ROOT/platforms.json" | tr -d '\r'); do
+  for p in $(jq -r 'keys[]' "$REPO_ROOT/platforms.json"); do
     case "$p" in
       # JSON last, so the run's log ends with the result whose cost fills the RESULTS cost column.
       claude) want=$'claude\n-p\n/solve-feature report-cli\n--output-format\njson\n--dangerously-skip-permissions' ;;
@@ -177,7 +177,7 @@ setup() {
 
 @test "--via npx passes each platform its npx skills agent id and excludes the dir that agent reads" {
   local p agent dir
-  for p in $(jq -r 'keys[]' "$REPO_ROOT/platforms.json" | tr -d '\r'); do
+  for p in $(jq -r 'keys[]' "$REPO_ROOT/platforms.json"); do
     case "$p" in
       claude) agent=claude-code dir=.claude/skills ;;
       copilot) agent=github-copilot dir=.agents/skills ;;

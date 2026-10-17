@@ -182,7 +182,7 @@ stub_uname_m() {
 }
 
 @test "the override passes NPM_TOKEN by name, so a project's .npmrc \${NPM_TOKEN} resolves from the invoking shell" {
-  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK"
+  NPM_TOKEN=t run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK"
   [ "$status" -eq 0 ]
   grep -qx '      - NPM_TOKEN' "$OVERRIDE"
 }
@@ -386,16 +386,12 @@ _installs() { grep -c . "$FAKE/install.calls" || true; }
   diff "$WORK/.env.example" "$WORK/.env"
 }
 
-@test "--registry-auth, or the cached registry_auth, is forwarded to ensure-env.sh" {
+@test "the cached registry_auth runs before the install" {
   cat > "$WORK/Makefile" <<'MK'
 .npmrc:
 	echo "TOKEN=x" > .npmrc
 MK
   stub_docker 0
-  run bash "$SCRIPT" --project-root "$WORK" --registry-auth "make .npmrc"
-  [ "$status" -eq 0 ]
-  [ -f "$WORK/.npmrc" ]
-  rm "$WORK/.npmrc"
   _cache '{"registry_auth": "make .npmrc"}'
   run bash "$SCRIPT" --project-root "$WORK"
   [ "$status" -eq 0 ]

@@ -21,7 +21,7 @@ invocation or a subagent) never ask: proceed as `local`. The tracker's refs, sta
 
 Exit codes, every op: 0 ok; 3 not found; on 1 (the op failed) or 2 (a usage error or an invalid ref), report the
 stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, never performing it with the tracker's
-own tool. `publish-issues` adds 4 and 5, described in to-issues' `references/publish.md`.
+own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
 <!-- /fragment:tracker-configuration -->
 
 ## Process
@@ -101,8 +101,8 @@ A decision a design summary tagged `(auto)` keeps that tag, and a fact it establ
 decision it supports with its citation.
 
 End the line with `(no slice)` when no issue needs to implement the decision — it is already true
-of the code, or only constrains how other work is done. `to-issues` then gives it no slice, and its
-linter does not warn that no issue's `## Implements` names it.
+of the code, or only constrains how other work is done. `to-issues` then gives it no slice and does
+not ask about it.
 
 May include:
 

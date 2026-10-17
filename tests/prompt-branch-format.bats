@@ -27,7 +27,7 @@ scan_prompt_files() {
 
 @test "no rendered skill body names the feature/<…> branch format" {
   local skill body fails=""
-  for skill in $(jq -r '.skills | keys[]' "$REPO_ROOT/registry.json" | tr -d '\r'); do
+  for skill in $(jq -r '.skills | keys[]' "$REPO_ROOT/registry.json"); do
     body=$(rendered_skill "$skill")
     grep -q -F 'feature/<' "$body" && fails+="$skill"$'\n'
   done

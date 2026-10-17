@@ -158,8 +158,9 @@ changes inside the skills' library directories.
 
 #### `bootstrap.sh`
 
-For a pinned or offline install from a clone (`./install.sh`), the per-platform config-dir relocation in the
-table below, and a warning when user-level copies shadow a project install:
+A curl-pipe install without a clone: it downloads `main`'s archive and runs its `install.sh`, which adds the
+per-platform config-dir relocation in the table below and a warning when user-level copies shadow a project
+install. For a pinned or offline install, run `./install.sh` from a clone instead:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash                             # every platform, into $HOME
@@ -374,8 +375,9 @@ feature branch, open until the PR that closes it merges. A local issue's `done` 
 directory on local. `next` picks an open `ready-for-agent` issue (not `blocked`) whose every blocker
 is done; `land` asks `next` again after the coder, and an issue still first was not closed. On github
 the blockers are the body's `## Blocked by`; on local they come only from `issues-deps.json`, which
-`publish-issues` writes: a local issue's `## Blocked by` is never read, and an issue with no entry
-there has no blockers, so editing the prose by hand holds nothing back. The status, the blockers and
+`publish-issues` and `rewrite` write: an issue with no entry there has no blockers, so editing
+`## Blocked by` by hand changes no dispatch order (solve-issue's preflight still refuses an issue whose
+own `## Blocked by` names an open one). The status, the blockers and
 the `Feature:` line are all they read, so an issue missing one of them is never found or never starts.
 
 ```

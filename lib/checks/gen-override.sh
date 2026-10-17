@@ -140,7 +140,7 @@ detect_ecosystem() {
     ECO_NAME="node"; ECO_VENDOR="node_modules"; ECO_PREFIX="nm"
     ECO_DEPTH=5; ECO_EXCLUDE="node_modules"
     # NPM_TOKEN by name only, so a project's .npmrc ${NPM_TOKEN} resolves from the invoking shell.
-    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "NODE_EXTRA_CA_CERTS" 'YARN_HTTPS_PROXY=${HTTPS_PROXY}' "NPM_TOKEN")
+    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "NODE_EXTRA_CA_CERTS" 'YARN_HTTPS_PROXY=${HTTPS_PROXY:-}' "NPM_TOKEN")
     return
   fi
   if find "$PROJECT_ROOT" -maxdepth 3 \( -name 'pyproject.toml' -o -name 'requirements.txt' \) \
@@ -181,6 +181,15 @@ detect_ecosystem() {
 }
 
 detect_ecosystem
+
+# Only what the generating shell sets: the override is the last -f, so an entry for an unset name would
+# blank the value the project's own compose file gives it. An entry that reads another variable
+# (YARN_HTTPS_PROXY=${HTTPS_PROXY:-}) follows that one.
+ENV_PASSTHROUGH=()
+for entry in "${ECO_ENV_PASSTHROUGH[@]+"${ECO_ENV_PASSTHROUGH[@]}"}"; do
+  src="${entry#*'${'}"; src="${src%%[:\}]*}"
+  [[ -z "${!src+set}" ]] || ENV_PASSTHROUGH+=("$entry")
+done
 
 GIT_COMMON_DIR_ABS="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
 [[ -n "$GIT_COMMON_DIR_ABS" && -d "$GIT_COMMON_DIR_ABS" ]] || GIT_COMMON_DIR_ABS=""
@@ -297,9 +306,9 @@ generate_yaml() {
   for svc in "${SERVICES[@]}"; do
     echo "  ${svc}:"
     [[ -z "$HOST_PLATFORM" ]] || echo "    platform: ${HOST_PLATFORM}"
-    if [[ ${#ECO_ENV_PASSTHROUGH[@]} -gt 0 || ${#GIT_ENV_LINES[@]} -gt 0 ]]; then
+    if [[ ${#ENV_PASSTHROUGH[@]} -gt 0 || ${#GIT_ENV_LINES[@]} -gt 0 ]]; then
       echo "    environment:"
-      for var in "${ECO_ENV_PASSTHROUGH[@]+"${ECO_ENV_PASSTHROUGH[@]}"}"; do
+      for var in "${ENV_PASSTHROUGH[@]+"${ENV_PASSTHROUGH[@]}"}"; do
         echo "      - ${var}"
       done
       for var in "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}"; do

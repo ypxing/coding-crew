@@ -44,7 +44,8 @@ jobs="${CI_BATS_JOBS:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/nu
 n=0
 for f in "$@"; do
   n=$((n + 1))
-  printf '%d\t%d\t%s\n' "$(grep -c '^@test' "$f" 2>/dev/null || true)" "$n" "$f"
+  tests=$(grep -c '^@test' "$f" 2>/dev/null) || true
+  printf '%d\t%d\t%s\n' "${tests:-0}" "$n" "$f"
 done \
   | sort -t $'\t' -k1,1rn -k2,2n \
   | while IFS=$'\t' read -r _ i f; do printf '%s\0%s\0' "$i" "$f"; done | BATS="$BATS" LOG_DIR="$LOG_DIR" xargs -0 -n 2 -P "$jobs" bash -c '

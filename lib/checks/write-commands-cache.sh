@@ -44,6 +44,7 @@ fi
 _json_value() {
   commands_field_present "$1" "$2" || return 0
   local v; v=$(commands_field "$1" "$2")
+  v=${v//\\/\\\\}; v=${v//\"/\\\"}
   if [ -n "$v" ]; then printf '"%s"' "$v"; else printf null; fi
 }
 

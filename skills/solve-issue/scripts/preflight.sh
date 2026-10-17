@@ -84,7 +84,9 @@ case "$ISSUE" in */.scratch/*) ISSUE_ROOT="${ISSUE%%/.scratch/*}" ;; esac
 
 PRD=""
 if [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
-  PRD_REL=$(awk '/^## Context Documents/{f=1;next} /^## /{f=0} f' "$ISSUE" | sed -n 's/.*PRD: *`\([^`]*\)`.*/\1/p' | head -1)
+  # `- PRD: <path>`, the path in backticks or bare.
+  PRD_REL=$(awk '/^## Context Documents/{f=1;next} /^## /{f=0} f' "$ISSUE" \
+    | sed -n -e 's/.*PRD: *`\([^`]*\)`.*/\1/p' -e 't' -e 's/.*PRD: *\([^ `][^ ]*\).*/\1/p' | head -1)
   if [ -n "$PRD_REL" ]; then
     for root in "$ISSUE_ROOT" "$PROJECT_ROOT"; do
       if [ -f "$root/$PRD_REL" ]; then PRD="$root/$PRD_REL"; break; fi

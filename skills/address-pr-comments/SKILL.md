@@ -66,8 +66,7 @@ If the user passed a PR number or URL as an argument, use it. Otherwise run:
 gh pr view --json number,url,title,body
 ```
 
-Confirm the PR number with the user before proceeding if it is ambiguous. Keep `body` for Steps 5
-and 6.
+Confirm the PR number with the user before proceeding if it is ambiguous. Keep `body` for Step 5.
 
 **solve-feature PR.** A PR whose body has the solve-feature block (a `<!-- solve-feature:begin -->`
 line) is solve-feature's. Its `<slug>` is the one the block's `<!-- solve-feature:slug <slug> -->`

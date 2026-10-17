@@ -99,6 +99,18 @@ run_eval() {
   rm -r "$d"
 }
 
+@test "a --base whose SKILL.md still has {{FRAGMENT:}} lines is refused" {
+  export GIT_INDEX_FILE="$T/old-index"
+  git -C "$R" read-tree HEAD
+  blob=$(printf '{{FRAGMENT:design-standard}}\n' | git -C "$R" hash-object -w --stdin)
+  git -C "$R" update-index --cacheinfo "100644,$blob,skills/crew-grill/SKILL.md"
+  OLD=$(git -C "$R" commit-tree "$(git -C "$R" write-tree)" -p HEAD -m old)
+  unset GIT_INDEX_FILE
+  run run_eval --base "$OLD" --dry-run --runs 1
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"skills/crew-grill/SKILL.md at $OLD has unrendered {{FRAGMENT:}} lines"* ]] || { echo "$output"; return 1; }
+}
+
 @test "base reads the committed skill, head reads the worktree" {
   run run_eval --runs 1
   [ "$status" -eq 0 ]
