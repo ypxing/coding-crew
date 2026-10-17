@@ -39,9 +39,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - crew-review, solve-feature: the reviewer can run any shell command and write scratch files outside the repo (on
   Claude Code a general-purpose agent, not Explore or Plan), leaves the repo as it found it, reproduces a suspected
   defect where that is cheap, reports a defect even when a spec decision prescribes it, and checks each new test can
-  fail; solve-feature's review subagent does the review itself and may start helper subagents. The
-  `eval-reviewer-misses.mjs` reviewer runs with `--permission-mode bypassPermissions` and subagents allowed
-  (`--no-subagents` denies them) in a worktree of its own, a run that changes it is failed, and a
+  fail; solve-feature's review subagent answers the review's questions itself and may start helper subagents, each
+  with a brief. The `eval-reviewer-misses.mjs` reviewer runs with `--permission-mode bypassPermissions` and
+  subagents allowed (`--no-subagents` denies them) in a worktree of its own, a run that changes it is failed, and a
   `simplify-codebase-feature` case replays PR #558 (#563).
 - CI: `scripts/ci-run-bats.sh` runs the tests without the machine's git config or identity, so a test that commits
   without naming an author fails locally as it does on a CI runner (#558).

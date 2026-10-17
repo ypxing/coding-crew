@@ -32,9 +32,9 @@ Your caller names them; a bare number is a PR, nothing at all is the current bra
 
 Run the review in a **fresh subagent** — none of this conversation, the repo's working directory — with this
 prompt: `Review <the change> against <the spec, or: no spec> following the Review section of
-<skill-dir>/SKILL.md. You are the reviewer: do the review yourself. Write the report to <path>` (or `print the report`).
-Give it tools to read files, run any shell command and write scratch files outside the repo (it writes its report
-with one). On Claude Code that is a general-purpose agent: Explore and Plan cannot write. Wait for it to finish.
+<skill-dir>/SKILL.md. You are the reviewer: answer its three questions yourself. Write the report to <path>`
+(or `print the report`). Give it tools to read files, run any shell command and write scratch files outside the repo (it writes its
+report with one). On Claude Code that is a general-purpose agent: Explore and Plan cannot write. Wait for it to finish.
 If HEAD moved or the tree changed, say so: the reviewer did not leave the repo as it found it.
 
 When you cannot start a subagent — you are one yourself, or your host has none — do the review below yourself.
@@ -43,8 +43,9 @@ When you cannot start a subagent — you are one yourself, or your host has none
 
 Leave the repo as you found it: never edit, commit or change its tree. Run what helps — the tests, the scripts under
 review, experiments — in a scratch copy outside the repo when they would write to it. Start helper subagents when
-they help (reproducing one suspected defect, a slow test run), with the tools you have; you judge what they return
-and write every finding yourself.
+they help, each with a brief naming what to run or check and what to return (the command and its output, or the
+trace). A helper gets the tools you have and none of your conclusions; you judge what it returns and write every
+finding yourself.
 
 Gather it yourself: the change's diff (`git diff <base>..HEAD`, or `gh pr diff <n>`) and the spec as Inputs
 describes it. Read the code at HEAD, not only the diff, and the repo's CLAUDE.md, AGENTS.md and CONTRIBUTING.md
