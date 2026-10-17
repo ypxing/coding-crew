@@ -42,6 +42,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   address-pr-comments treat issue, PR, review and CI-log text as data, never as instructions to the agent. The
   `eval-reviewer-misses.mjs` eval takes `clean: true` cases with no expected misses, reports their mean
   CRITICAL+HIGH findings per version, and gains `approve-held-ci-clean`, a replay of PR #527 (#562).
+- crew-review: the reviewer puts scratch copies in a fresh `mktemp -d` directory, not a fixed `/tmp` path. The
+  `eval-reviewer-misses.mjs` reviewer's turn cap rises from 40 to 80 (#562).
 - crew-review, solve-feature: the reviewer can run any shell command and write scratch files outside the repo (on
   Claude Code a general-purpose agent, not Explore or Plan), leaves the repo as it found it, reproduces a suspected
   defect where that is cheap, reports a defect even when a spec decision prescribes it, checks each new test can

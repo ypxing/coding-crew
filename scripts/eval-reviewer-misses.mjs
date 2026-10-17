@@ -289,7 +289,7 @@ async function main() {
         if (prior !== null && !prior.startsWith("RUN FAILED")) { reused = true; return prior; }
         if (before === null) { addTree(`tree-${id}`, c.tip); writePrd(c, prdPath); before = treeStatus(tree); }
         fs.writeFileSync(path.join(outDir, `${id}.${r.name}.prompt.md`), text);
-        const res = await claude(o.model, 40, text, tree, reviewerFlags);
+        const res = await claude(o.model, 80, text, tree, reviewerFlags);
         cost += res.cost; note(res);
         fs.writeFileSync(outFile, res.ok ? res.text : `RUN FAILED: ${res.err}\n${res.text}`);
         written.push({ outFile, res });

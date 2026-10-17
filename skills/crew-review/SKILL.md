@@ -42,8 +42,9 @@ When you cannot start a subagent — you are one yourself, or your host has none
 
 ## Review
 
-Leave the repo as you found it: never edit, commit or change its tree. Run what helps — the tests, the scripts under
-review, experiments — in a scratch copy outside the repo when they would write to it. Start helper subagents when
+Leave the repo as you found it: never edit, commit or change its tree. Run what helps — the tests, the scripts
+under review, experiments — in a scratch copy when they would write to it, in a new directory from `mktemp -d`, never
+a fixed path such as `/tmp/<name>`: other reviews share the machine. Start helper subagents when
 they help, each with a brief naming what to run or check and what to return (the command and its output, or the
 trace). A helper gets the tools you have and none of your conclusions; you judge what it returns and write every
 finding yourself.
