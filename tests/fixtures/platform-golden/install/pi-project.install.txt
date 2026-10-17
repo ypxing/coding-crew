@@ -217,7 +217,6 @@ REPO/.pi/skills/solve-issue/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/solve-issue/references/ /
 REPO/.pi/skills/solve-issue/references/verification.md exec=0
 REPO/.pi/skills/solve-issue/scripts/ /
-REPO/.pi/skills/solve-issue/scripts/check-requires.sh exec=1
 REPO/.pi/skills/solve-issue/scripts/checks/ /
 REPO/.pi/skills/solve-issue/scripts/checks/commands-file.sh exec=1
 REPO/.pi/skills/solve-issue/scripts/checks/detect-docker-nesting.sh exec=1

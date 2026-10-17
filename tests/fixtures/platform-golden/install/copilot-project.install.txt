@@ -217,7 +217,6 @@ REPO/.github/skills/solve-issue/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/solve-issue/references/ /
 REPO/.github/skills/solve-issue/references/verification.md exec=0
 REPO/.github/skills/solve-issue/scripts/ /
-REPO/.github/skills/solve-issue/scripts/check-requires.sh exec=1
 REPO/.github/skills/solve-issue/scripts/checks/ /
 REPO/.github/skills/solve-issue/scripts/checks/commands-file.sh exec=1
 REPO/.github/skills/solve-issue/scripts/checks/detect-docker-nesting.sh exec=1
