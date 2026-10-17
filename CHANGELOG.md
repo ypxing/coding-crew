@@ -29,7 +29,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 ### Changed
 
 - checks: one lockfile → install-command table (`install-cmd.sh`) serves host and docker installs, so a docker install
-  now also covers `pom.xml`, `mix.exs` and `*.csproj` and picks Go before pip as host installs do; a repo with no doc or
+  uses that table's rows for the container's ecosystem only (a `go.mod` beside a Python project's `pyproject.toml`
+  still installs with pip there), while a host install keeps the whole table, Go before pip; a repo with no doc or
   known manifest gets a discovery prompt for its ecosystem's test/lint/typecheck commands instead of a skip line, so
   the checks stop asking for discovery once it is saved (#558).
 - skills: shared instructions are stated once. The `ready-for-human` block lives only in to-issues (upgrade-deps
@@ -48,7 +49,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - tracker: `mark-done` on a GitHub issue no longer creates a `ready-for-human` label to remove it; it reads the
   issue's labels and removes only the ready labels the issue carries (#553).
 - to-issues: `lint-issues.sh` is retired; `publish-issues` now refuses a draft whose `deps.json` edges differ from
-  its `## Blocked by`, naming the draft and both lists, before it creates anything (#552).
+  its `## Blocked by`, naming the draft and both lists, before it creates anything; a draft blocker counts only when
+  named by its filename, so `Issue #<n>` prose no longer stands for draft `<n>` (#552).
 - tracker: the local tracker reads blockers from `issues-deps.json` only, which `publish-issues` now writes for every
   issue (`[]` when unblocked); a `## Blocked by` edited by hand after publish no longer changes dispatch (#552).
 - checks: the host install runs the dev commands file's `install` command and no longer probes the Makefile for

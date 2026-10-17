@@ -102,6 +102,28 @@ TOML
   [ "$output" = "uv sync --frozen" ]
 }
 
+@test "with no ecosystem named, go.mod wins over a Python manifest beside it, as on the host" {
+  touch "$PROJECT/go.mod" "$PROJECT/requirements.txt"
+  run bash "$SCRIPT" "$PROJECT"
+  [ "$output" = "go mod download" ]
+}
+
+@test "a named ecosystem uses only its own rows" {
+  touch "$PROJECT/go.mod" "$PROJECT/requirements.txt" "$PROJECT/Gemfile.lock" "$PROJECT/Cargo.toml" "$PROJECT/composer.json"
+  run bash "$SCRIPT" "$PROJECT" python
+  [ "$output" = "pip install -r requirements.txt --quiet" ]
+  run bash "$SCRIPT" "$PROJECT" ruby
+  [ "$output" = "bundle install" ]
+  run bash "$SCRIPT" "$PROJECT" rust
+  [ "$output" = "cargo fetch" ]
+  run bash "$SCRIPT" "$PROJECT" php
+  [ "$output" = "composer install --no-interaction" ]
+  run bash "$SCRIPT" "$PROJECT" go
+  [ "$output" = "go mod download" ]
+  run bash "$SCRIPT" "$PROJECT" node
+  [ -z "$output" ]
+}
+
 @test "a .NET project nested one level down installs with dotnet restore" {
   mkdir "$PROJECT/App"
   touch "$PROJECT/App/App.csproj"

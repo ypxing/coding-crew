@@ -96,7 +96,7 @@ else
 
   STEPS=()
   for dir in "${MANIFEST_DIRS[@]}"; do
-    cmd="$(bash "$SELF_DIR/install-cmd.sh" "$dir")"
+    cmd="$(bash "$SELF_DIR/install-cmd.sh" "$dir" "$ECO_NAME")"
     [[ -n "$cmd" ]] || continue
     rel="${dir#"$PROJECT_ROOT"}"
     rel="${rel#/}"

@@ -225,6 +225,17 @@ stub_uname_m() {
   [[ "$output" == *"pip install --quiet . --group dev"* ]]
 }
 
+@test "a Python project with a go.mod beside it installs with pip, the container's ecosystem" {
+  rm -f "$WORK/package.json" "$WORK/package-lock.json"
+  printf '[project]\nname = "x"\n' > "$WORK/pyproject.toml"
+  printf 'module x\n' > "$WORK/go.mod"
+  stub_docker 0
+  run bash "$SCRIPT" --project-root "$WORK"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"pip install --quiet ."* ]]
+  [[ "$output" != *"go mod download"* ]]
+}
+
 @test "the cached install command replaces the per-manifest lockfile table" {
   _cache '{"install": "make deps"}'
   stub_docker 0

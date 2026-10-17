@@ -267,7 +267,19 @@ test("publish-issues exits 1 and creates nothing when a draft's Blocked by and d
   }
 });
 
-test("publish-issues (local) publishes the clean drafts, whose Blocked by names a draft as a file or as Issue #<n>", async () => {
+test("publish-issues (local) refuses a draft whose Blocked by names a draft only as Issue #<n>: a draft is named by its filename", async () => {
+  const dir = root();
+  const d = join(dir, ".scratch/feat/.drafts");
+  cpSync(join(REPO, "tests/tracker/fixtures/publish-clean"), d, { recursive: true });
+  const docs = join(d, "03-docs.md");
+  writeFileSync(docs, readFileSync(docs, "utf8").replace("- 02-cli.md", "- Issue #2"));
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
+  assert.equal(r.code, 1, r.stderr);
+  assert.match(r.stderr, /03-docs\.md: deps\.json: \[02-cli\.md\] differs from ## Blocked by: \[\]/);
+  assert.equal(existsSync(join(dir, ".scratch/feat/issues")), false);
+});
+
+test("publish-issues (local) publishes the clean drafts, whose Blocked by names each draft blocker by its filename", async () => {
   const dir = root();
   const d = join(dir, ".scratch/feat/.drafts");
   cpSync(join(REPO, "tests/tracker/fixtures/publish-clean"), d, { recursive: true });

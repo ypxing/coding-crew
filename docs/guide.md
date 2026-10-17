@@ -371,11 +371,12 @@ feature branch, open until the PR that closes it merges. A local issue's `done` 
 `issues/done/`.
 
 **What `next` and `land` read.** The feature is found by its slug — the `Feature:` line on github, the
-directory on local. `next` picks an open `ready-for-agent` issue (not `blocked`) whose every
-`## Blocked by` issue is done (on local, `issues-deps.json` takes the place of `## Blocked by` when
-`/to-issues` wrote one); `land` asks `next` again after the coder, and an issue still first was not
-closed. The status, `## Blocked by` and the `Feature:` line are all they read, so an issue missing one
-of them is never found or never starts.
+directory on local. `next` picks an open `ready-for-agent` issue (not `blocked`) whose every blocker
+is done; `land` asks `next` again after the coder, and an issue still first was not closed. On github
+the blockers are the body's `## Blocked by`; on local they come only from `issues-deps.json`, which
+`publish-issues` writes: a local issue's `## Blocked by` is never read, and an issue with no entry
+there has no blockers, so editing the prose by hand holds nothing back. The status, the blockers and
+the `Feature:` line are all they read, so an issue missing one of them is never found or never starts.
 
 ```
  needs-triage  →  /to-issues <ref>  →  ready-for-agent  →  coder picks up

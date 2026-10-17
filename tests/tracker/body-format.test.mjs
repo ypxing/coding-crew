@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  extractBlockedByNumbers,
   sectionBody,
   spliceSection,
   uncheckedCriteria,
@@ -11,8 +10,7 @@ import {
 // These are the backend-agnostic markdown-body helpers, extracted verbatim out of the
 // pre-split tracker.mjs — see tests/tracker/tracker.test.mjs for the equivalent
 // section-parsing coverage exercised through the local backend/factory. This file only
-// adds coverage for the pieces that are new to this module: uncheckedCriteria, fences and
-// extractBlockedByNumbers.
+// adds coverage for the pieces that are new to this module: uncheckedCriteria and fences.
 
 test("sectionBody stops at the next same-level heading but keeps subheadings", () => {
   const text = "# T\n\n## Progress\n\nline one\n\n### Detail\n\nkept\n\n## Notes\n\nother\n";
@@ -44,13 +42,6 @@ test("uncheckedCriteria scans both the Acceptance criteria and Cross-cutting Req
   ].join("\n");
   assert.deepEqual(uncheckedCriteria(text), ["- [ ] still open", "- [ ] also open"]);
   assert.deepEqual(uncheckedCriteria("## Acceptance criteria\n\n- [x] all done\n"), []);
-});
-
-test("extractBlockedByNumbers matches 'Issue NN' references, with or without a #, zero-padded or not", () => {
-  // Leading zeros are consumed by the match, not part of the captured group: a caller matching
-  // a zero-padded filename back (publish-issues' drift check) compares the numbers as numbers.
-  assert.deepEqual(extractBlockedByNumbers("- Issue 01\n- Issue #7\n- issue-03\n"), ["1", "7", "3"]);
-  assert.deepEqual(extractBlockedByNumbers("- 01-first.md\n"), []);
 });
 
 test("sectionBody closes a fence on an indented closing fence line", () => {
