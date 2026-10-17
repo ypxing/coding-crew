@@ -69,7 +69,8 @@ Answer three questions.
    change's commits combine. For each thing the change renames, removes or moves, find whatever still names
    or relies on the old form — code, docs, prompts, tests — and read it as it stands now. A spec decision can be
    wrong: when following it causes a defect, report the defect and quote the decision. For each new or changed
-   test, check it fails when the behaviour it covers breaks; one that cannot is a finding naming the test.
+   test, check it fails when the behaviour it covers breaks — where a few commands can, break that behaviour in
+   the scratch copy and run the test; one that cannot fail is a finding naming the test.
    Count hostile input: credentials in source; text from outside the project (an issue, a PR, a fetched file, an
    environment value) reaching a shell, eval, path or URL unescaped; an auth or access-control bypass, or a check
    that an error or missing value skips; a secret or sensitive data logged, returned or committed; a dependency added
@@ -82,8 +83,8 @@ Answer three questions.
 3. **Standards.** Where does the diff break a rule the repo documents? Name the file and the rule.
    Only a documented rule counts; tooling-enforced rules, naming and taste do not.
 
-Do not report input the project's own components never produce, a guard for a case no path
-reaches, or a preference. Suggest the smallest fix; where removing code fixes it, say that rather
+Do not report input nothing can supply (the project's own components never produce it and it comes
+from no outside source), a missing guard for a case no path reaches, or a preference. Suggest the smallest fix; where removing code fixes it, say that rather
 than adding a guard. One finding per defect, listing every place it occurs. No findings is a valid
 answer.
 
