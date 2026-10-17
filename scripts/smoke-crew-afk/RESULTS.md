@@ -16,3 +16,4 @@ crew-afk-version / date / result / cost / dispatch-hours / findings; rows before
 | 0850c1523431 | 2026-10-14 | claude | PASS | $1.73 | 0 |
 | 71a8034d95fd | 2026-10-16 | claude | npx | PASS | $0.23 | 0 |
 | ba7a6687deb3 | 2026-10-17 | claude | install | PASS | $0.21 | 0 |
+| eec9e42a8969 | 2026-10-17 | claude | install | PASS | $0.14 | 0 |
