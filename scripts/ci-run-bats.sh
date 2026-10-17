@@ -36,6 +36,10 @@ if [[ -z "${BATS:-}" ]] && ! command -v bats >/dev/null 2>&1; then
   BATS="$bats_dir/bin/bats"
 fi
 BATS="${BATS:-bats}"
+
+# The tests see none of this machine's git config or identity, as on a CI runner: a test that commits names its own.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
 jobs="${CI_BATS_JOBS:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || jobs=2
 

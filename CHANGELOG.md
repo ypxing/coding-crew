@@ -36,6 +36,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- CI: `scripts/ci-run-bats.sh` runs the tests without the machine's git config or identity, so a test that commits
+  without naming an author fails locally as it does on a CI runner (#558).
 - checks: one lockfile → install-command table (`install-cmd.sh`) serves host and docker installs, so a docker install
   uses that table's rows for the container's ecosystem only (a `go.mod` beside a Python project's `pyproject.toml`
   still installs with pip there), while a host install keeps the whole table, Go before pip; a repo with no doc or
