@@ -1083,7 +1083,8 @@ EOF
 
 @test "SKILL.md runs its reviewer through the crew-review skill on the spec start wrote, names no other skill's files, and no SOLVE_FEATURE_HOST" {
   local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
-  grep -qF 'Use the crew-review skill on branch <branch> against the spec in <repo>/.solve-feature/spec.md; write the report to <repo>/.solve-feature/pr-<n>.review.json' "$skill"
+  grep -qF 'Use the crew-review skill on branch <branch> against the spec in <repo>/.solve-feature/spec.md; you are the reviewer: start no subagent; write the report to <repo>/.solve-feature/pr-<n>.review.json' "$skill"
+  ! grep -qF 'read-only' "$skill" || false
   ! grep -qF '<skill-dir>/..' "$skill" || false
   ! grep -qF 'SOLVE_FEATURE_HOST' "$skill" || false
   ! grep -qF 'review-pr' "$skill" || false

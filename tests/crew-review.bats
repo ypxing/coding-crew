@@ -17,11 +17,11 @@ SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
   jq -e '.skills["solve-feature"].deps | index("crew-review") and (index("review-pr") | not)' "$REPO_ROOT/registry.json" >/dev/null
 }
 
-@test "the review asks the three questions read-only, gaps against the code at HEAD, and names the report fields fix reads" {
+@test "the review asks the three questions leaving the repo as found, gaps against the code at HEAD, and names the report fields fix reads" {
   grep -qF '1. **Spec.**' "$SKILL"
   grep -qF '2. **What breaks.**' "$SKILL"
   grep -qF '3. **Standards.**' "$SKILL"
-  grep -qF 'never edit,' "$SKILL"
+  grep -qF 'Leave the repo as you found it' "$SKILL"
   grep -qF 'the spec require that the code at HEAD lacks' "$SKILL"
   grep -qF '"spec": "met|unmet|none"' "$SKILL"
   grep -qF '"gaps"' "$SKILL"
@@ -29,9 +29,13 @@ SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
   grep -qF '<details><summary>Spec</summary>' "$SKILL"
 }
 
-@test "crew-review reports only: no review, comment or ready call, and a fresh read-only subagent unless it cannot start one" {
+@test "crew-review reports only: no review, comment or ready call, and a fresh subagent that can run any shell command unless it cannot start one" {
   ! grep -qE 'gh pr (review|comment|ready)' "$SKILL" || false
-  grep -qF 'fresh, read-only subagent' "$SKILL"
+  grep -qF '**fresh subagent**' "$SKILL"
+  grep -qF 'run any shell command and write scratch files outside the repo' "$SKILL"
+  ! grep -qF 'no tool that edits files' "$SKILL" || false
+  ! grep -qi 'read-only' "$SKILL" || false
+  grep -qF 'If HEAD moved or the tree changed, say so' "$SKILL"
   grep -qF 'When you cannot start a subagent' "$SKILL"
   grep -qF 'print it' "$SKILL"
 }

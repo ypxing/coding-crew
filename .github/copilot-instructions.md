@@ -120,7 +120,7 @@ The tracker is `.coding-crew/config.json`'s `tracker` section (`github` today); 
 | `configure-tracker` | Choose where the project's issues live: local markdown files or GitHub Issues |
 | `crew-afk` | Start one feature's solve-feature run unattended in its own worktree, locally, in orca or in herdr |
 | `solve-feature` | Run one feature's issues on one branch, each by a fresh coder subagent gated by the checks, then review, fix and describe its PR |
-| `crew-review` | Review a branch or PR against a spec in a fresh read-only subagent; write one JSON report |
+| `crew-review` | Review a branch or PR against a spec in a fresh subagent that can run what it reviews; write one JSON report |
 | `tdd` | Test-driven development with red-green-refactor loop |
 | `solve-issue` | Implement one issue end-to-end: read, explore, install, TDD, verify, commit |
 | `write-pr` | Write a short PR body for a human reviewer: Why, What changes, Risk and Tested |
