@@ -12,3 +12,5 @@ random.
   different problem is false. A vague "review callers of X" is false. Severity does not matter: a
   LOW finding that names the defect counts.
 - Judge only what the output says. Do not credit a defect the output could have found.
+- A case with no expected misses (a clean case: no defect is known in it) is scored for `distinct` only;
+  its `caught` is `{}`.

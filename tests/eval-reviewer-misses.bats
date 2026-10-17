@@ -434,7 +434,7 @@ EOS
     import(process.env.MOD).then((m) => {
       const c = m.parseCase("approve-held-ci-clean", require("fs").readFileSync(process.env.F, "utf8"));
       if (c.misses.length !== 0 || !c.clean) throw new Error("not a clean case");
-      if (!/held/.test(c.prd)) throw new Error("PR #527 body not frozen in ## PRD");
+      if (!/### Risk/.test(c.prd) || !/held/.test(c.prd)) throw new Error("PR #527 body not frozen in ## PRD");
     }).catch((e) => { console.error(e.message); process.exit(1); });
   '
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
