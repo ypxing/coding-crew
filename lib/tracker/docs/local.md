@@ -78,8 +78,6 @@ Pass `--force` only for a descope a person approved. On success it sets `Status:
 `done` means implemented and merged into the feature branch, not shipped — for this tracker
 there is no later state: nothing outside `.scratch/` reads it, so no PR has anything to close.
 
-An issue may carry a `## Requires` section: one backticked shell command per bullet, naming what its checks need that the project's install does not guarantee (`- \`test -n "$LOCALSTACK_AUTH_TOKEN"\``). Exit 0 means satisfied. Each runs on the host from the project root, in `solve-issue`'s preflight, and a failing one blocks the issue.
-
 ## Reopen an issue
 
 To undo `mark-done` and hand the issue to an agent again, `node "$TRACKER" reopen <ref>` (its `open/` or
@@ -119,5 +117,3 @@ Each feature slug maps to a directory under `.scratch/`. Whenever the tracker CL
     └── done/                 ← completed issues moved here (sibling of open/)
         └── 01-<slug>.md
 ```
-
-Comments and conversation history append to the bottom of each issue file under a `## Comments` heading.

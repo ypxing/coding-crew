@@ -417,10 +417,6 @@ branch into it first (a conflict stops the run for you to merge by hand).
 Only a check that rewrites files on every run needs a non-mutating command in the dev commands file
 (below).
 
-**Per-issue requirements.** An issue can list what its checks need that the install doesn't
-guarantee under `## Requires`, one backticked command per bullet (exit 0 = satisfied); `/solve-issue`
-runs each before it starts, and a failing one blocks that issue with the command's output.
-
 **Unattended, in its own worktree.** `/crew-afk <feature>` starts that `/solve-feature` run for you
 and returns at once. It resolves the feature from a likely name, then prepares (or reuses) one
 worktree per feature beside your checkout, at `<repo>/../<repo-name>-worktrees/<slug>`, linking each

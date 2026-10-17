@@ -179,14 +179,12 @@ Before writing issues, read the PRD's `## Decisions` and `## Testing Decisions` 
 
 Write each approved slice with the template below and the rules that follow it, then take it through `<skill-dir>/references/publish.md`, in this order: drafts in `.scratch/<feature-slug>/.drafts/` → the feature's known issues → `deps.json` → the builder check → `publish-issues` (or `rewrite`, for a source issue that stayed one slice). A `publish-issues` refusal or a builder-check question only the user can answer returns to step 5 with just that question.
 
-**`## Requires`.** When a slice's checks need a service, a credential or a tool the project's install does not guarantee (a LocalStack container, an auth token, a CLI), write one backticked shell command per requirement — exit 0 means satisfied; it runs on the host from the project root before the issue is picked up, and may start the service it checks. Run each one while authoring. If one fails, publish the issue as `Status: ready-for-human` instead of `ready-for-agent`, because nobody working unattended can supply what it lacks: the failing command and its output go in `### Why a person`, and the fix goes in `### Steps`. A command that can only hold once one of the issue's blockers lands (a Makefile target that blocker adds) is not run now — it runs when the issue's turn comes.
-
-**`ready-for-human` bodies.** Every slice published as `ready-for-human` (a HITL slice from step 5, or a failing `## Requires`) opens with this block:
+**`ready-for-human` bodies.** Every slice published as `ready-for-human` (a HITL slice from step 5) opens with this block:
 
 <!-- fragment:human-issue -->
 **A `ready-for-human` issue opens with a `## For a human` block**, placed right after `## What to build`. A person reads it cold, so write plain language that needs neither the PRD nor the codebase. It has exactly five `###` parts, in this order:
 
-1. `### Why a person` — why no agent can do this (a permission, a credential, a judgement call, a failing `## Requires` command and its output).
+1. `### Why a person` — why no agent can do this (a permission, a credential, a judgement call).
 2. `### What changes` — what is true today and what will be true after, in concrete names and values.
 3. `### Steps` — numbered. Each step says what to do, then a `Check:` line (how to see it worked) and an `Undo:` line (how to reverse it). Write `n/a — <why>` when a step has no check or no undo. Put commands and file contents in fenced blocks.
 4. `### If skipped or done wrong` — what breaks, in the reader's terms.
@@ -319,12 +317,6 @@ The PRD IDs this issue carries (with no PRD, the IDs of its own `## Decisions`) 
 Rules from the PRD that apply to this implementation (a few items at most):
 
 - [ ] [PRD rule not already covered by an acceptance criterion]
-
-## Requires
-
-> **Optional — only include this section when the issue's checks need a service, credential or tool the project's own install does not guarantee. Omit entirely otherwise.**
-
-- `<one shell command per requirement, exit 0 = satisfied — e.g. make start-localstack, test -n "$LOCALSTACK_AUTH_TOKEN">`
 
 ## Blocked by
 

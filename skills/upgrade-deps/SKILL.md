@@ -368,7 +368,7 @@ coder makes the bump:
 <!-- fragment:human-issue -->
 **A `ready-for-human` issue opens with a `## For a human` block**, placed right after `## What to build`. A person reads it cold, so write plain language that needs neither the PRD nor the codebase. It has exactly five `###` parts, in this order:
 
-1. `### Why a person` — why no agent can do this (a permission, a credential, a judgement call, a failing `## Requires` command and its output).
+1. `### Why a person` — why no agent can do this (a permission, a credential, a judgement call).
 2. `### What changes` — what is true today and what will be true after, in concrete names and values.
 3. `### Steps` — numbered. Each step says what to do, then a `Check:` line (how to see it worked) and an `Undo:` line (how to reverse it). Write `n/a — <why>` when a step has no check or no undo. Put commands and file contents in fenced blocks.
 4. `### If skipped or done wrong` — what breaks, in the reader's terms.

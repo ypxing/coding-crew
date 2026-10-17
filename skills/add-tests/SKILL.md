@@ -171,9 +171,9 @@ Two more things per finding, each cheap here and expensive for a coder to redisc
 
 - **What its checks need.** When a real-tier finding needs a service, credential or tool the
   project's install does not guarantee (a LocalStack container, an auth token), record one shell
-  command per requirement (exit 0 = satisfied, e.g. `test -n "$LOCALSTACK_AUTH_TOKEN"`) for
-  `to-issues` to write as the issue's `## Requires`. Run each now: one that fails makes the issue
-  `ready-for-human`, with the failure as the reason — no coder can supply it.
+  command per requirement (exit 0 = satisfied, e.g. `test -n "$LOCALSTACK_AUTH_TOKEN"`). Run each
+  now: one that fails makes the issue `ready-for-human`, with the failure as the reason — no coder
+  can supply it.
 - **A working example per helper kind.** For each kind of test helper the finding needs (a mocked
   client, a fixture loader, a real-tier bootstrap), name one existing spec that already uses it and
   its import line, so a coder copies a pattern that runs instead of discovering which import breaks.
