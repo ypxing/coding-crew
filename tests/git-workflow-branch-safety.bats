@@ -41,8 +41,8 @@ teardown() { cd /; rm -rf "$WORK"; }
   [ "$status" -eq 0 ]
 }
 
-@test "--allow-default runs on the default branch with a warning" {
+@test "any argument is unknown: exit 2, before the branch is looked at" {
   run bash "$CHECK" --allow-default
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Warning: Running on default branch (main)"* ]]
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"unknown argument: --allow-default"* ]]
 }
