@@ -9,9 +9,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Agent Skills](https://img.shields.io/badge/Agent_Skills-any_capable_agent-555555)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-smoke--tested-D97757)
-![Copilot CLI](https://img.shields.io/badge/Copilot_CLI-smoke--tested-24292e)
-![Codex CLI](https://img.shields.io/badge/Codex_CLI-smoke--tested-10a37f)
-![pi](https://img.shields.io/badge/pi-smoke--tested-6f42c1)
+![Copilot CLI](https://img.shields.io/badge/Copilot_CLI-supported-24292e)
+![Codex CLI](https://img.shields.io/badge/Codex_CLI-supported-10a37f)
+![pi](https://img.shields.io/badge/pi-supported-6f42c1)
 
 </div>
 
@@ -66,8 +66,8 @@ The skills are plain [Agent Skills](https://agentskills.io): any agent that load
 `install.sh`'s `codex` target is the shared `.agents/skills` / `~/.agents/skills` location, which Codex, Copilot,
 pi, Cursor, Gemini CLI, OpenCode, Amp, Devin, Cline, Goose, Factory, Junie, Zed, Augment, Warp, Qwen Code, Kimi,
 Mistral Vibe, Crush, Kilo, Hermes, Codebuff, Rovo Dev and Zencoder read. Claude Code, Kiro and Continue read only
-their own directories, which `npx skills` targets. The release smoke runs on Claude Code, Copilot CLI, Codex CLI
-and pi.
+their own directories, which `npx skills` targets. The release smoke runs on Claude Code; Copilot CLI, Codex CLI
+and pi are supported too.
 
 ## How it works
 
@@ -105,6 +105,7 @@ flowchart LR
 | 🧪 **Cover risky untested code**          | `/add-tests` → `/crew-afk <slug>`                            |
 | 📦 **Upgrade dependencies safely**        | `/upgrade-deps` → `/crew-afk <slug>`                         |
 | 🔀 **Build several features in parallel** | one `/crew-afk <slug>` per feature, then `/crew-afk status`  |
+| ☁️ **Build on GitHub Actions**            | `/setup-coding-crew`, then label the feature's root issue `run-agent` |
 | 💬 **Clear a PR's review comments**       | `/address-pr-comments`                                       |
 | 🎯 **Pair on a single issue yourself**    | `/solve-issue <issue>`                                       |
 
@@ -117,7 +118,7 @@ Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to t
 - 🔍 **A reviewer that sees the whole feature.** It reviews against the plan, not one diff at a time.
 - 🔁 **Fixes itself, within bounds.** At most two review rounds, the second only after it fixed a critical, high or medium finding, each fix gated by your checks; then it stops.
 - 🙋 **Only what needs you.** A PR it could not finish lists what needs a person; one it could is marked ready.
-- 🧩 **Agent-agnostic.** Plain Agent Skills that any agent loading `SKILL.md` can run; the release smoke runs on Claude Code, Copilot CLI, Codex CLI and [pi](https://github.com/badlogic/pi-mono). Issues stay as local markdown or in GitHub Issues.
+- 🧩 **Agent-agnostic.** Plain Agent Skills that any agent loading `SKILL.md` can run; the release smoke runs on Claude Code, and Copilot CLI, Codex CLI and [pi](https://github.com/badlogic/pi-mono) are supported too. Issues stay as local markdown or in GitHub Issues.
 
 ## The toolkit
 
@@ -131,6 +132,7 @@ Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to t
 | `/to-issues`             | Split a plan into issues, or sharpen an existing one       |
 | `/crew-afk`              | Start a feature's run in its own worktree; see how it ended |
 | `/solve-feature`         | Run one feature's issues on one branch, each one verified  |
+| `/crew-review`           | Review a branch or PR against its spec; report only        |
 | `/address-pr-comments`   | Fix PR review comments, push once your checks pass         |
 | `/solve-issue`           | Build one issue end to end, yourself                       |
 | `/add-tests`             | Find risky untested code and plan tests for it             |
