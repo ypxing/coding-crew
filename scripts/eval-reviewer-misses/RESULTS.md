@@ -1,5 +1,47 @@
 # Reviewer-misses replay: results
 
+## Reviewer with a full shell (`reviewer-full-shell`, PRD #562)
+
+`node scripts/eval-reviewer-misses.mjs --runs 2`, base `main`, head `feature/reviewer-full-shell` at `cd9dfbd1` (the reviewer runs any shell command and may start helper subagents, #563 and #566), run for #564.
+Reviewers on opus, judge on opus. All 44 reviewer runs completed, and every judge call.
+
+| case | version | runs ok | caught (per expected miss) | mean findings (raw) | mean findings (distinct) | mean CRITICAL+HIGH | cost |
+|---|---|---|---|---|---|---|---|
+| afk-effectiveness-feature-prd-props | base | 2/2 | signal-no-run-end 2/2; release-gate-version-only 0/2; registry-description-stale 0/2 | 1.5 | 1.5 | - | $2.36 |
+| afk-effectiveness-feature-prd-props | head | 2/2 | signal-no-run-end 2/2; release-gate-version-only 0/2; registry-description-stale 0/2 | 2.5 | 2.5 | - | $2.87 |
+| afk-effectiveness-feature | base | 2/2 | signal-no-run-end 0/2; release-gate-version-only 0/2; registry-description-stale 1/2 | 4.0 | 5.0 | - | $2.70 |
+| afk-effectiveness-feature | head | 2/2 | signal-no-run-end 0/2; release-gate-version-only 0/2; registry-description-stale 0/2 | 3.5 | 3.5 | - | $3.12 |
+| approve-held-ci-clean | base | 2/2 | none (clean case) | 0.0 | 0.0 | 0.0 | $0.71 |
+| approve-held-ci-clean | head | 2/2 | none (clean case) | 0.0 | 0.0 | 0.0 | $0.81 |
+| force-keeps-stamp | base | 2/2 | force-keeps-stamp 2/2 | 1.0 | 1.0 | - | $1.20 |
+| force-keeps-stamp | head | 2/2 | force-keeps-stamp 2/2 | 1.0 | 1.0 | - | $1.76 |
+| lightweight-flow-feature | base | 2/2 | tracker-undefined 2/2; eval-close-stale 1/2; eval-round1-conflict 0/2 | 5.5 | 5.5 | - | $1.44 |
+| lightweight-flow-feature | head | 2/2 | tracker-undefined 2/2; eval-close-stale 1/2; eval-round1-conflict 0/2 | 5.5 | 6.0 | - | $1.76 |
+| promote-after-merge-207 | base | 2/2 | repromote-earlier-run 2/2 | 1.0 | 1.0 | - | $1.07 |
+| promote-after-merge-207 | head | 2/2 | repromote-earlier-run 1/2 | 0.5 | 0.5 | - | $1.41 |
+| promote-after-merge-feature | base | 2/2 | triage-diff-inverted 0/2 | 1.5 | 1.5 | - | $1.90 |
+| promote-after-merge-feature | head | 2/2 | triage-diff-inverted 0/2 | 1.0 | 1.0 | - | $2.21 |
+| shim-mutual-exec | base | 2/2 | shim-mutual-exec 1/2 | 1.5 | 1.5 | - | $1.43 |
+| shim-mutual-exec | head | 2/2 | shim-mutual-exec 0/2 | 1.0 | 1.0 | - | $1.48 |
+| simplify-codebase-feature | base | 2/2 | rewrite-blocked-by-unread 0/2; override-blanks-env 0/2; yarn-proxy-warning 1/2; negative-grep-cannot-fail 0/2 | 8.5 | 12.0 | - | $5.80 |
+| simplify-codebase-feature | head | 2/2 | rewrite-blocked-by-unread 0/2; override-blanks-env 0/2; yarn-proxy-warning 2/2; negative-grep-cannot-fail 1/2 | 5.5 | 5.5 | - | $8.84 |
+| tracker-agnostic-drain | base | 2/2 | unknown-blocker-mapped 0/2 | 1.0 | 1.0 | - | $1.03 |
+| tracker-agnostic-drain | head | 2/2 | unknown-blocker-mapped 0/2 | 1.0 | 1.0 | - | $1.25 |
+| tracker-agnostic-feature | base | 2/2 | replace-deletes-known-blocker 0/2; worktree-cli-lookup 0/2 | 1.5 | 1.5 | - | $2.61 |
+| tracker-agnostic-feature | head | 2/2 | replace-deletes-known-blocker 0/2; worktree-cli-lookup 0/2 | 2.0 | 2.0 | - | $3.09 |
+
+Mean distinct findings, head / base: afk-effectiveness-feature-prd-props 1.67x (within max(2x, +2)); afk-effectiveness-feature 0.70x (within max(2x, +2)); approve-held-ci-clean n/a (base 0, head 0) (within max(2x, +2)); force-keeps-stamp 1.00x (within max(2x, +2)); lightweight-flow-feature 1.09x (within max(2x, +2)); promote-after-merge-207 0.50x (within max(2x, +2)); promote-after-merge-feature 0.67x (within max(2x, +2)); shim-mutual-exec 0.67x (within max(2x, +2)); simplify-codebase-feature 0.46x (within max(2x, +2)); tracker-agnostic-drain 1.00x (within max(2x, +2)); tracker-agnostic-feature 1.33x (within max(2x, +2))
+
+Runs that changed their worktree: base 0/22, head 0/22.
+
+Total cost: $50.84 (judge included). Base `main`, head `worktree`, 2 run(s) each. Reviewers on opus (effort default, sub-agents allowed), judge on opus.
+
+Cost per version: base $22.26, head $28.59 (about 28% more; head may start helper subagents, and its simplify-codebase-feature runs reproduce and break code in a scratch copy).
+
+**Pass rule (#564): FAIL.** None of the three named bugs counts (head ≥1/2 and base 0/2): rewrite-blocked-by-unread base 0/2, head 0/2; override-blanks-env base 0/2, head 0/2; yarn-proxy-warning base 1/2, head 2/2. Head also caught fewer than base on afk-effectiveness-feature (0 vs 1), promote-after-merge-207 (1 vs 2) and shim-mutual-exec (0 vs 1). The clean case's mean CRITICAL+HIGH is 0.0 on base and 0.0 on head, so that condition holds.
+
+## Lean dev loop (`feature/lean-dev-loop`, #412)
+
 `node scripts/eval-reviewer-misses.mjs --runs 2`, base `main`, head `feature/lean-dev-loop` (the per-branch/feature reviewer protocol split, #405, and the lean coder-path instructions, #406), run for #412.
 Reviewers on opus, judge on opus. Every reviewer and judge call completed (36/36 runs ok).
 
