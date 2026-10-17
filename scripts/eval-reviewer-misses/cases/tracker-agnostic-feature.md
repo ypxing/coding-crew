@@ -8,7 +8,7 @@ via: origin/feature/tracker-agnostic
 Replay of the first feature review of #332 (tracker-agnostic, `dispatch/feature-d1`): the whole feature diff
 `cae21d841230..cd7114a56771`, one reviewer reading the whole PRD. The SHAs are reachable through
 `origin/feature/tracker-agnostic`; fetch it before running if they do not resolve.
-Escaped (`.scratch/tracker-agnostic/reviews/escaped.md`, fixed in `0621433`):
+Escaped (fixed in `0621433`):
 `tracker/local.mjs:311` (D4 × D6), `skills/_shared/fragments/tracker-configuration.md:14` (D3).
 The review raised two other real defects (known-file blockers under github, `$TRACKER` across shells), fixed in #333.
 

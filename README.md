@@ -36,9 +36,10 @@ npx skills add ypxing/coding-crew --all -g   # user level, every repo
 - The `skills` tool sends telemetry to skills.sh unless `DISABLE_TELEMETRY` is set.
 - To update, re-run the same `npx skills add` command. Not `npx skills update`: its hash skips the skills' library directories, so it misses library changes.
 
-Or use `bootstrap.sh`, for what only it does: a pinned or offline install from a clone (`./install.sh`), the
-per-platform config-dir relocation (`CLAUDE_CONFIG_DIR`, `COPILOT_HOME`, `PI_CODING_AGENT_DIR`, `CODEX_HOME`),
-and a warning when user-level copies would shadow a project install:
+Or use `bootstrap.sh`, a curl-pipe install without a clone: it downloads `main`'s archive and runs its
+`install.sh`, which adds the per-platform config-dir relocation (`CLAUDE_CONFIG_DIR`, `COPILOT_HOME`,
+`PI_CODING_AGENT_DIR`, `CODEX_HOME`) and a warning when user-level copies would shadow a project install. For a
+pinned or offline install, run `./install.sh` from a clone instead:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash   # add `-s -- --project` for one repo

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# manifest-fingerprint.sh compute — the lockfile hash gen-override.sh names the dependency volumes
+# manifest-fingerprint.sh — the lockfile hash gen-override.sh names the dependency volumes
 # by. Pinned standalone for its own edge cases (monorepo layouts, exclusions).
 
 SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
@@ -15,35 +15,35 @@ teardown() {
   rm -rf "$PROJECT"
 }
 
-@test "compute is deterministic for the same manifest content" {
+@test "the hash is deterministic for the same manifest content" {
   echo '{}' > "$PROJECT/package-lock.json"
-  run bash "$SCRIPT" compute --project-root "$PROJECT"
+  run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
   first="$output"
-  run bash "$SCRIPT" compute --project-root "$PROJECT"
+  run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
   [ "$output" = "$first" ]
 }
 
-@test "compute changes when a recognised lockfile's content changes" {
+@test "the hash changes when a recognised lockfile's content changes" {
   echo '{}' > "$PROJECT/package-lock.json"
-  run bash "$SCRIPT" compute --project-root "$PROJECT"
+  run bash "$SCRIPT" --project-root "$PROJECT"
   before="$output"
 
   echo '{"a":1}' > "$PROJECT/package-lock.json"
-  run bash "$SCRIPT" compute --project-root "$PROJECT"
+  run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$output" != "$before" ]
 }
 
-@test "compute changes when a new manifest directory appears (monorepo growth)" {
+@test "the hash changes when a new manifest directory appears (monorepo growth)" {
   mkdir -p "$PROJECT/services/api"
   echo '{}' > "$PROJECT/services/api/package-lock.json"
-  run bash "$SCRIPT" compute --project-root "$PROJECT"
+  run bash "$SCRIPT" --project-root "$PROJECT"
   before="$output"
 
   mkdir -p "$PROJECT/services/worker"
   echo '{}' > "$PROJECT/services/worker/package-lock.json"
-  run bash "$SCRIPT" compute --project-root "$PROJECT"
+  run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$output" != "$before" ]
 }
 
@@ -51,13 +51,13 @@ teardown() {
   mkdir -p "$PROJECT/services/api" "$PROJECT/services/worker"
   echo '{}' > "$PROJECT/services/api/package-lock.json"
   echo '{}' > "$PROJECT/services/worker/requirements.txt"
-  run bash "$SCRIPT" compute --project-root "$PROJECT"
+  run bash "$SCRIPT" --project-root "$PROJECT"
   before="$output"
 
   # Only the worker's manifest changes — the fingerprint must still change, proving both
   # directories are part of the hashed input, not just the first one found.
   echo 'flask==2.0' > "$PROJECT/services/worker/requirements.txt"
-  run bash "$SCRIPT" compute --project-root "$PROJECT"
+  run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$output" != "$before" ]
 }
 
@@ -71,42 +71,30 @@ teardown() {
   echo '{}' > "$PROJECT/build/out/package-lock.json"
   echo '{}' > "$PROJECT/.venv/lib/requirements.txt"
 
-  run bash "$SCRIPT" compute --project-root "$PROJECT"
+  run bash "$SCRIPT" --project-root "$PROJECT"
   no_manifest="$output"
 
   echo '{}' > "$PROJECT/package-lock.json"
-  run bash "$SCRIPT" compute --project-root "$PROJECT"
+  run bash "$SCRIPT" --project-root "$PROJECT"
   # Only the root manifest (not excluded) should have moved the hash.
   [ "$output" != "$no_manifest" ]
 }
 
-@test "compute with no recognised manifest at all is still a stable, non-empty hash" {
-  run bash "$SCRIPT" compute --project-root "$PROJECT"
+@test "the hash with no recognised manifest at all is still a stable, non-empty hash" {
+  run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
   [ -n "$output" ]
-  run bash "$SCRIPT" compute --project-root "$PROJECT"
+  run bash "$SCRIPT" --project-root "$PROJECT"
   [ -n "$output" ]
 }
 
 @test "--project-root is required" {
-  run bash "$SCRIPT" compute
+  run bash "$SCRIPT"
   [ "$status" -ne 0 ]
 }
 
 @test "a nonexistent --project-root is a usage error" {
-  run bash "$SCRIPT" compute --project-root "$PROJECT/does-not-exist"
-  [ "$status" -ne 0 ]
-}
-
-@test "check and write are gone: only compute remains" {
-  run bash "$SCRIPT" check --project-root "$PROJECT"
-  [ "$status" -eq 1 ]
-  run bash "$SCRIPT" write --project-root "$PROJECT"
-  [ "$status" -eq 1 ]
-}
-
-@test "an unrecognised first argument is a usage error" {
-  run bash "$SCRIPT" bogus --project-root "$PROJECT"
+  run bash "$SCRIPT" --project-root "$PROJECT/does-not-exist"
   [ "$status" -ne 0 ]
 }
 

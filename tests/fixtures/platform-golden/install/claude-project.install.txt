@@ -14,8 +14,8 @@ REPO/.claude/skills/add-tests/scripts/checks/docker-install.sh exec=1
 REPO/.claude/skills/add-tests/scripts/checks/ensure-env.sh exec=1
 REPO/.claude/skills/add-tests/scripts/checks/gen-override.sh exec=1
 REPO/.claude/skills/add-tests/scripts/checks/host-install.sh exec=1
+REPO/.claude/skills/add-tests/scripts/checks/install-cmd.sh exec=1
 REPO/.claude/skills/add-tests/scripts/checks/manifest-fingerprint.sh exec=1
-REPO/.claude/skills/add-tests/scripts/checks/python-install-cmd.sh exec=1
 REPO/.claude/skills/add-tests/scripts/checks/resolve-mode.sh exec=1
 REPO/.claude/skills/add-tests/scripts/checks/run-checks.sh exec=1
 REPO/.claude/skills/add-tests/scripts/checks/run.sh exec=1
@@ -34,21 +34,18 @@ REPO/.claude/skills/address-pr-comments/scripts/checks/docker-install.sh exec=1
 REPO/.claude/skills/address-pr-comments/scripts/checks/ensure-env.sh exec=1
 REPO/.claude/skills/address-pr-comments/scripts/checks/gen-override.sh exec=1
 REPO/.claude/skills/address-pr-comments/scripts/checks/host-install.sh exec=1
+REPO/.claude/skills/address-pr-comments/scripts/checks/install-cmd.sh exec=1
 REPO/.claude/skills/address-pr-comments/scripts/checks/manifest-fingerprint.sh exec=1
-REPO/.claude/skills/address-pr-comments/scripts/checks/python-install-cmd.sh exec=1
 REPO/.claude/skills/address-pr-comments/scripts/checks/resolve-mode.sh exec=1
 REPO/.claude/skills/address-pr-comments/scripts/checks/run-checks.sh exec=1
 REPO/.claude/skills/address-pr-comments/scripts/checks/run.sh exec=1
 REPO/.claude/skills/address-pr-comments/scripts/checks/shim/ /
 REPO/.claude/skills/address-pr-comments/scripts/checks/shim/docker exec=1
 REPO/.claude/skills/address-pr-comments/scripts/checks/write-commands-cache.sh exec=1
-REPO/.claude/skills/address-pr-comments/scripts/fetch-review-threads.sh exec=1
 REPO/.claude/skills/address-pr-comments/scripts/git-workflow/ /
 REPO/.claude/skills/address-pr-comments/scripts/git-workflow/README.md exec=0
 REPO/.claude/skills/address-pr-comments/scripts/git-workflow/branch-safety-check.sh exec=1
 REPO/.claude/skills/address-pr-comments/scripts/git-workflow/commit-changes.sh exec=1
-REPO/.claude/skills/address-pr-comments/scripts/push-rework.sh exec=1
-REPO/.claude/skills/address-pr-comments/scripts/reply-thread.sh exec=1
 REPO/.claude/skills/configure-tracker/ /
 REPO/.claude/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/configure-tracker/scripts/ /
@@ -134,8 +131,8 @@ REPO/.claude/skills/dep-install/scripts/checks/docker-install.sh exec=1
 REPO/.claude/skills/dep-install/scripts/checks/ensure-env.sh exec=1
 REPO/.claude/skills/dep-install/scripts/checks/gen-override.sh exec=1
 REPO/.claude/skills/dep-install/scripts/checks/host-install.sh exec=1
+REPO/.claude/skills/dep-install/scripts/checks/install-cmd.sh exec=1
 REPO/.claude/skills/dep-install/scripts/checks/manifest-fingerprint.sh exec=1
-REPO/.claude/skills/dep-install/scripts/checks/python-install-cmd.sh exec=1
 REPO/.claude/skills/dep-install/scripts/checks/resolve-mode.sh exec=1
 REPO/.claude/skills/dep-install/scripts/checks/run-checks.sh exec=1
 REPO/.claude/skills/dep-install/scripts/checks/run.sh exec=1
@@ -161,8 +158,8 @@ REPO/.claude/skills/setup-coding-crew/scripts/checks/docker-install.sh exec=1
 REPO/.claude/skills/setup-coding-crew/scripts/checks/ensure-env.sh exec=1
 REPO/.claude/skills/setup-coding-crew/scripts/checks/gen-override.sh exec=1
 REPO/.claude/skills/setup-coding-crew/scripts/checks/host-install.sh exec=1
+REPO/.claude/skills/setup-coding-crew/scripts/checks/install-cmd.sh exec=1
 REPO/.claude/skills/setup-coding-crew/scripts/checks/manifest-fingerprint.sh exec=1
-REPO/.claude/skills/setup-coding-crew/scripts/checks/python-install-cmd.sh exec=1
 REPO/.claude/skills/setup-coding-crew/scripts/checks/resolve-mode.sh exec=1
 REPO/.claude/skills/setup-coding-crew/scripts/checks/run-checks.sh exec=1
 REPO/.claude/skills/setup-coding-crew/scripts/checks/run.sh exec=1
@@ -191,8 +188,8 @@ REPO/.claude/skills/solve-feature/scripts/checks/docker-install.sh exec=1
 REPO/.claude/skills/solve-feature/scripts/checks/ensure-env.sh exec=1
 REPO/.claude/skills/solve-feature/scripts/checks/gen-override.sh exec=1
 REPO/.claude/skills/solve-feature/scripts/checks/host-install.sh exec=1
+REPO/.claude/skills/solve-feature/scripts/checks/install-cmd.sh exec=1
 REPO/.claude/skills/solve-feature/scripts/checks/manifest-fingerprint.sh exec=1
-REPO/.claude/skills/solve-feature/scripts/checks/python-install-cmd.sh exec=1
 REPO/.claude/skills/solve-feature/scripts/checks/resolve-mode.sh exec=1
 REPO/.claude/skills/solve-feature/scripts/checks/run-checks.sh exec=1
 REPO/.claude/skills/solve-feature/scripts/checks/run.sh exec=1
@@ -212,10 +209,7 @@ REPO/.claude/skills/solve-feature/scripts/tracker/local.mjs exec=0
 REPO/.claude/skills/solve-feature/scripts/tracker/tracker-config.mjs exec=0
 REPO/.claude/skills/solve-issue/ /
 REPO/.claude/skills/solve-issue/SKILL.md exec=0 unrendered=0
-REPO/.claude/skills/solve-issue/references/ /
-REPO/.claude/skills/solve-issue/references/verification.md exec=0
 REPO/.claude/skills/solve-issue/scripts/ /
-REPO/.claude/skills/solve-issue/scripts/check-requires.sh exec=1
 REPO/.claude/skills/solve-issue/scripts/checks/ /
 REPO/.claude/skills/solve-issue/scripts/checks/commands-file.sh exec=1
 REPO/.claude/skills/solve-issue/scripts/checks/detect-docker-nesting.sh exec=1
@@ -225,8 +219,8 @@ REPO/.claude/skills/solve-issue/scripts/checks/docker-install.sh exec=1
 REPO/.claude/skills/solve-issue/scripts/checks/ensure-env.sh exec=1
 REPO/.claude/skills/solve-issue/scripts/checks/gen-override.sh exec=1
 REPO/.claude/skills/solve-issue/scripts/checks/host-install.sh exec=1
+REPO/.claude/skills/solve-issue/scripts/checks/install-cmd.sh exec=1
 REPO/.claude/skills/solve-issue/scripts/checks/manifest-fingerprint.sh exec=1
-REPO/.claude/skills/solve-issue/scripts/checks/python-install-cmd.sh exec=1
 REPO/.claude/skills/solve-issue/scripts/checks/resolve-mode.sh exec=1
 REPO/.claude/skills/solve-issue/scripts/checks/run-checks.sh exec=1
 REPO/.claude/skills/solve-issue/scripts/checks/run.sh exec=1
@@ -254,7 +248,6 @@ REPO/.claude/skills/tdd/references/ /
 REPO/.claude/skills/tdd/references/deep-modules.md exec=0
 REPO/.claude/skills/tdd/references/interface-design.md exec=0
 REPO/.claude/skills/tdd/references/mocking.md exec=0
-REPO/.claude/skills/tdd/references/refactoring.md exec=0
 REPO/.claude/skills/tdd/references/tests.md exec=0
 REPO/.claude/skills/to-issues/ /
 REPO/.claude/skills/to-issues/SKILL.md exec=0 unrendered=0
@@ -262,7 +255,6 @@ REPO/.claude/skills/to-issues/references/ /
 REPO/.claude/skills/to-issues/references/expand-contract.md exec=0
 REPO/.claude/skills/to-issues/references/publish.md exec=0
 REPO/.claude/skills/to-issues/scripts/ /
-REPO/.claude/skills/to-issues/scripts/lint-issues.sh exec=1
 REPO/.claude/skills/to-issues/scripts/tracker/ /
 REPO/.claude/skills/to-issues/scripts/tracker/body-format.mjs exec=0
 REPO/.claude/skills/to-issues/scripts/tracker/cli.mjs exec=0
@@ -300,8 +292,8 @@ REPO/.claude/skills/upgrade-deps/scripts/checks/docker-install.sh exec=1
 REPO/.claude/skills/upgrade-deps/scripts/checks/ensure-env.sh exec=1
 REPO/.claude/skills/upgrade-deps/scripts/checks/gen-override.sh exec=1
 REPO/.claude/skills/upgrade-deps/scripts/checks/host-install.sh exec=1
+REPO/.claude/skills/upgrade-deps/scripts/checks/install-cmd.sh exec=1
 REPO/.claude/skills/upgrade-deps/scripts/checks/manifest-fingerprint.sh exec=1
-REPO/.claude/skills/upgrade-deps/scripts/checks/python-install-cmd.sh exec=1
 REPO/.claude/skills/upgrade-deps/scripts/checks/resolve-mode.sh exec=1
 REPO/.claude/skills/upgrade-deps/scripts/checks/run-checks.sh exec=1
 REPO/.claude/skills/upgrade-deps/scripts/checks/run.sh exec=1

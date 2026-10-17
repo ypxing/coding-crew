@@ -1,7 +1,5 @@
-# Shell scripts, test files, and the markdown/JSON they read must keep LF endings.
-# GitHub's windows-latest runners set core.autocrlf=true, so without this checkout
-# rewrites these files with CRLF: bash then fails on `$'\r'` and bats output
-# assertions miss on trailing \r.
+# Shell scripts, test files, and the markdown/JSON they read keep LF endings, whatever a
+# checkout's core.autocrlf: bash fails on `$'\r'`.
 * text=auto eol=lf
 
 *.sh text eol=lf

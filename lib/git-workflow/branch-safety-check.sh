@@ -2,13 +2,12 @@
 set -euo pipefail
 
 # Branch safety check - ensures not on default branch
-# Usage: branch-safety-check.sh [--allow-default]
-# Exit code: 0 if safe, 1 if on default branch (unless --allow-default)
+# Usage: branch-safety-check.sh
+# Exit code: 0 if safe, 1 if on default branch, 2 on any argument
 
-ALLOW_DEFAULT=false
-
-if [[ "${1:-}" == "--allow-default" ]]; then
-  ALLOW_DEFAULT=true
+if [ $# -gt 0 ]; then
+  echo "Error: unknown argument: $1" >&2
+  exit 2
 fi
 
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -20,12 +19,8 @@ if [ -z "$DEFAULT_BRANCH" ]; then
 fi
 
 if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
-  if [ "$ALLOW_DEFAULT" = false ]; then
-    echo "ERROR: Cannot run on default branch ($DEFAULT_BRANCH). Switch to your PR branch first: git checkout <branch-name>" >&2
-    exit 1
-  else
-    echo "Warning: Running on default branch ($DEFAULT_BRANCH)" >&2
-  fi
+  echo "ERROR: Cannot run on default branch ($DEFAULT_BRANCH). Switch to your PR branch first: git checkout <branch-name>" >&2
+  exit 1
 fi
 
 echo "Branch: $CURRENT_BRANCH"

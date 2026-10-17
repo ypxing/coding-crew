@@ -127,10 +127,6 @@ logged() { tr '\n' ' ' < "$LOG" | sed 's/ $//'; }
   done
 }
 
-@test "there is no docker-compose (v1) shim" {
-  [ ! -e "$SHIM_DIR/docker-compose" ]
-}
-
 @test "a non-compose docker command passes through unchanged" {
   run docker ps -a --format '{{.ID}}'
   [ "$(logged)" = "ps -a --format {{.ID}}" ]
@@ -177,7 +173,7 @@ logged() { tr '\n' ' ' < "$LOG" | sed 's/ $//'; }
 }
 
 @test "two shim copies on PATH (two installs): the real docker is reached, with the override added once" {
-  # A user's shell exporting one install's shim while the sprint runs another's: each copy used to
+  # A user's shell exporting one install's shim while the run uses another's: each copy used to
   # find the other as "the real docker" and exec it forever.
   OTHER="$TEMP_DIR/other-install/shim"
   mkdir -p "$OTHER"

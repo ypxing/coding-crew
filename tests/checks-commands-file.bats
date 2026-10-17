@@ -71,3 +71,37 @@ teardown() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(cat "$TEMP_DIR/ran")" = T ]
 }
+
+@test "commands_field reads a string, empty for null or absent; commands_field_present counts null as present" {
+  printf '{"install": "npm ci", "env": null}\n' > "$TEMP_DIR/c.json"
+  run bash -c '. "$1/commands-file.sh"; commands_field "$2" install' _ "$LIB" "$TEMP_DIR/c.json"
+  [ "$output" = "npm ci" ]
+  run bash -c '. "$1/commands-file.sh"; commands_field "$2" env; commands_field "$2" lint; commands_field "$3" install' _ "$LIB" "$TEMP_DIR/c.json" "$TEMP_DIR/missing.json"
+  [ -z "$output" ]
+  run bash -c '. "$1/commands-file.sh"; commands_field_present "$2" env && commands_field_present "$2" install' _ "$LIB" "$TEMP_DIR/c.json"
+  [ "$status" -eq 0 ]
+  run bash -c '. "$1/commands-file.sh"; commands_field_present "$2" lint' _ "$LIB" "$TEMP_DIR/c.json"
+  [ "$status" -eq 1 ]
+}
+
+@test "commands_field unescapes a JSON string, and write-commands-cache.sh escapes it again" {
+  printf '%s\n' '{"test": "pytest -m \"not slow\" && echo a\\b", "lint": "x"}' > "$TEMP_DIR/c.json"
+  run bash -c '. "$1/commands-file.sh"; commands_field "$2" test' _ "$LIB" "$TEMP_DIR/c.json"
+  [ "$output" = 'pytest -m "not slow" && echo a\b' ]
+  (cd "$MAIN" && bash "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/c.json") >/dev/null
+  run bash -c '. "$1/commands-file.sh"; commands_field "$2" test' _ "$LIB" "$MAIN/.git/coding-crew/dev-commands.json"
+  [ "$output" = 'pytest -m "not slow" && echo a\b' ]
+}
+
+@test "run-checks asks for discovery when only a value, not a key, is \"test\"" {
+  mkdir -p "$MAIN/.git/coding-crew"
+  printf '{"docker_service": "test", "lint": "true"}\n' > "$MAIN/.git/coding-crew/dev-commands.json"
+  run bash "$LIB/run-checks.sh" --project-root "$MAIN"
+  [ "$status" -eq 3 ]
+  [ "$output" = DISCOVER ]
+}
+
+@test "only commands-file.sh parses a dev-commands field" {
+  run grep -ln -E '"[a-z_]*"\[\[:space:\]\]\*:|\[\[:space:\]\]\*:\[\[:space:\]\]\*|grep[^|]*'"'"'"[a-z_]+"'"'" "$LIB"/*.sh
+  [ "$output" = "$LIB/commands-file.sh" ]
+}

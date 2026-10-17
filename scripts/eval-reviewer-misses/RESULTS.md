@@ -137,11 +137,11 @@ fixed on `review-pr-one-skill`), so head's 12 is of 30 that ran. Per case the tw
 (promote-after-merge-207 and replace-deletes-known-blocker one fewer, lightweight-flow-feature and
 promote-after-merge-feature one more): at 2 runs that is noise.
 
-## From an escaped.md line to a case
+## From an escaped defect to a case
 
-`/address-pr-comments` appends a line to `.scratch/<slug>/reviews/escaped.md` for each comment it
-fixed on a crew-afk PR: `- <YYYY-MM-DD> <file:line> — <one-line summary> — <commit sha>`. Each is a
-defect crew-afk's reviewer passed. To replay one:
+An escaped defect is one a reviewer comment caught on a crew-afk PR after crew-afk's own reviewer passed it.
+The case author writes its `Escaped:` line by hand: `<YYYY-MM-DD> <file:line> — <one-line summary> — <commit sha>`,
+`<file:line>` where the comment pointed and `<commit sha>` the commit that fixed it. To replay one:
 
 1. Find the review that should have caught it. A finding comes from the feature review alone, so
    an escaped defect is a `mode: feature` replay of the feature review that ran over its code:
@@ -150,7 +150,7 @@ defect crew-afk's reviewer passed. To replay one:
    `reviewed_tip..tip` increment). `mode: branch` is reserved for a defect that should have made one
    of the issue's acceptance criteria `unmet` in its per-branch review.
 2. Copy `case-template.md` to `cases/<name>.md` (its front matter defaults to `mode: feature`). Set
-   `base_sha` / `head_sha` to that review's range — never the fix commit from the escaped line, which
+   `base_sha` / `head_sha` to that review's range — never the fix commit from the `Escaped:` line, which
    is after it — and `via` to a ref that keeps them reachable.
 3. Fill `## PRD` from the PRD as it was at `head_sha`. Only for a `mode: branch` case, also fill
    `## Issue`, `## Implements` and `## Acceptance criteria` from the issue; a feature case drops them.

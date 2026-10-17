@@ -22,38 +22,16 @@ stop and ask the user before proceeding.
 <!-- fragment:tracker-configuration -->
 ## Tracker Configuration
 
-Every tracker operation in this skill is an op of the tracker CLI — nothing else reads or writes
-the tracker. Before the first one, check for Node:
-
-```bash
-node --version
-```
-
-If that fails, stop and tell the user: "the tracker CLI needs Node — install Node, then re-run this
-skill." The CLI is `<skill-dir>/scripts/tracker/cli.mjs`, `<skill-dir>` being the directory you read
-this file from. Wherever this skill runs an op as `node "$TRACKER" <op> …`, run it with that path:
-
-```bash
-node "<skill-dir>/scripts/tracker/cli.mjs" <op> …
-```
-
-Before the first op, ask the CLI which tracker it talks to:
-
-```bash
-node "$TRACKER" config   # prints tracker=<kind> and configured=yes|no
-```
-
-On `configured=no`, no tracker was ever chosen for this repo. On an interactive run, invoke the
-`configure-tracker` skill now to choose one, then continue. On a non-interactive run
-(a headless/`-p` invocation or a subagent) never ask: proceed as `local`, which
-is what the CLI already uses. How the tracker works — its refs, statuses and labels — is in
+Every tracker op runs through the tracker CLI, `TRACKER=<skill-dir>/scripts/tracker/cli.mjs` (`<skill-dir>` being the
+directory you read this file from), as `node "$TRACKER" <op> …`; nothing else reads or writes the tracker. Before the
+first op run `node "$TRACKER" config` (prints `tracker=<kind>` and `configured=yes|no`). On `configured=no` on an
+interactive run, invoke the `configure-tracker` skill, then continue; on a non-interactive run (a headless/`-p`
+invocation or a subagent) never ask: proceed as `local`. The tracker's refs, statuses and labels are in
 `<skill-dir>/scripts/tracker/docs/<kind>.md`.
 
-Exit codes, every op: 0 ok; 1 the op failed — stderr carries the tracker's own error, verbatim;
-2 a usage error or an invalid ref; 3 not found (`publish-issues` adds 4 and 5, described where it
-runs). On 1 or 2, report the stderr to the user and
-fix its cause (an input, auth, the network), then re-run the op —
-never perform the operation with the tracker's own tool instead.
+Exit codes, every op: 0 ok; 3 not found; on 1 (the op failed) or 2 (a usage error or an invalid ref), report the
+stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, never performing it with the tracker's
+own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
 <!-- /fragment:tracker-configuration -->
 
 ## Running commands
@@ -72,19 +50,8 @@ Do not install up front. Only when a command fails for a missing dependency (mod
 package manager or tool not found) invoke the `dep-install` skill, with `PROJECT_ROOT` set, then
 retry that command once.
 
-Resolve the `test`, `lint` and `typecheck` commands from the dev commands file now:
-
-```bash
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")
-```
-
-A prompt means some fields are unanswered: answer every field it lists by reading the files it
-names, write the JSON to `$PROJECT_ROOT/.discovered-commands.json`, and save it:
-
-```bash
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .discovered-commands.json)
-rm -f "$PROJECT_ROOT/.discovered-commands.json"
-```
+Resolve the `test`, `lint` and `typecheck` commands from the dev commands file now: run
+`(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")` and follow its prompt, if it prints one.
 
 `bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT"` prints the dev
 commands file's path. Step 6 needs `typecheck` to get a mechanical breaking-change signal on major
@@ -270,9 +237,9 @@ current branch, bump this package/group to `<target>` there, reinstall, and run 
 that worktree — every command through `run.sh` with `--project-root <the worktree>`. Delete the
 worktree immediately after collecting all results.
 
-- This is the one exception to the "never modify package.json/lockfiles" rule in `## Never`:
-  the edit exists only inside the disposable worktree and is never merged, committed to a
-  real branch, or left behind.
+- This is the one exception to the rule at the top of this skill (never edit
+  `package.json`/lockfiles): the edit exists only inside the disposable worktree and is never
+  merged, committed to a real branch, or left behind.
 - Report each command's pass/fail; on failure, cite the exact failing test/lint rule and
   location, not just "tests failed."
 - A clean run is evidence the existing test suite's coverage holds up under the bump, not
@@ -360,80 +327,10 @@ Each range-edit issue must include:
   - Step 4 found a transitive/peer conflict with no clean resolution
   - Step 3 found a CVE fix whose exploitability check was inconclusive
 
-When the decision is `ready-for-human`, the issue is Kind B below: the bump stays agent work,
-blocked on a person's review. It opens with this block; `### Steps` is the review of the impacted
-call sites listed in the earlier steps, and its last step relabels the issue `ready-for-agent` so a
-coder makes the bump:
-
-<!-- fragment:human-issue -->
-**A `ready-for-human` issue opens with a `## For a human` block**, placed right after `## What to build`. A person reads it cold, so write plain language that needs neither the PRD nor the codebase. It has exactly five `###` parts, in this order:
-
-1. `### Why a person` — why no agent can do this (a permission, a credential, a judgement call, a failing `## Requires` command and its output).
-2. `### What changes` — what is true today and what will be true after, in concrete names and values.
-3. `### Steps` — numbered. Each step says what to do, then a `Check:` line (how to see it worked) and an `Undo:` line (how to reverse it). Write `n/a — <why>` when a step has no check or no undo. Put commands and file contents in fenced blocks.
-4. `### If skipped or done wrong` — what breaks, in the reader's terms.
-5. `### Done when` — the observable end state.
-
-Write acceptance criteria unticked (`- [ ]`): the person ticks each one as they finish it, so a box ticked at publish says "done" before anything was done.
-
-**Kind A — the whole task is a person's.**
-
-- Drop `## Implements`, `## Interfaces` and the "Read this document before implementing" line; no agent will read this issue.
-- End `### Steps` with a fixed last step, "Mark it done", that reads: "Tell your coding agent: run the coding-crew tracker CLI (`scripts/tracker/cli.mjs` inside any coding-crew skill, for example `solve-issue`) with `mark-done <n>`". On the local tracker, write the issue file path instead of `<n>`. Never write an absolute path: it does not exist on the reader's machine.
-- That step's `Check:` is that the command exits 0 and prints no `REFUSED` line.
-- Its `Undo:` is the same request with "Reopen an issue" from the tracker doc `docs/<kind>.md` beside that `cli.mjs`, `<kind>` being the `tracker=` value the same CLI's `config` prints.
-- Name neither the tracker nor its labels or files in the step.
-
-**Kind B — agent work blocked on a person.** Keep the agent brief (`## What to build`, `## Implements`, acceptance criteria, …) below the block, and make the last step of `### Steps` relabel the issue `ready-for-agent` by following "Reopen an issue" in that same tracker doc, with `ready-for-agent` as the status, so an agent run picks it up.
-
-Trimmed example (Kind A):
-
-````markdown
-Status: ready-for-human
-
-## What to build
-
-Make the `main` branch ruleset require green test checks before a pull request merges.
-
-## For a human
-
-### Why a person
-
-Only a repository admin can edit rulesets, and the change is made on GitHub itself. An agent has no admin token and must not have one.
-
-### What changes
-
-Today the ruleset has no `required_status_checks` rule, so a PR can merge while its tests are red. After this change it has one, listing the four test jobs.
-
-### Steps
-
-1. Save the current ruleset. Check: the file is not empty. Undo: n/a — this step only reads.
-
-   ```bash
-   gh api repos/OWNER/REPO/rulesets/ID > ruleset.backup.json
-   ```
-
-2. Apply the edited ruleset. Check: the command prints JSON with no `message` error. Undo: send `ruleset.backup.json` back with the same command.
-
-   ```bash
-   gh api -X PUT repos/OWNER/REPO/rulesets/ID --input ruleset.json
-   ```
-
-3. Mark it done, once every acceptance criterion below is ticked. Tell your coding agent: run the coding-crew tracker CLI (`scripts/tracker/cli.mjs` inside any coding-crew skill, for example `solve-issue`) with `mark-done 42`. Check: the command exits 0 and prints no `REFUSED` line. Undo: tell your coding agent to follow "Reopen an issue" in the tracker doc `docs/<kind>.md` beside that `cli.mjs`, `<kind>` being the `tracker=` value the CLI's `config` prints.
-
-### If skipped or done wrong
-
-If skipped, a PR can merge with red tests. If `ruleset.json` leaves out an existing rule, that rule is silently removed.
-
-### Done when
-
-Reading the ruleset back lists `required_status_checks`, and a PR with a failing check cannot be merged.
-
-## Acceptance criteria
-
-- [ ] The ruleset has a `required_status_checks` rule
-````
-<!-- /fragment:human-issue -->
+When the decision is `ready-for-human`, step 8 publishes the draft through `to-issues` as
+`ready-for-human` with the reason, as to-issues' Kind B: the bump stays agent work, the person's
+steps are the review of the impacted call sites, and the last step relabels the issue
+`ready-for-agent` so an agent makes the bump.
 
 Either way, state the reasoning in the issue body — what was checked and what the finding
 was — so whoever picks it up (human or coder) knows what's already been verified. Use the
@@ -459,17 +356,3 @@ publishing, keep the file for the re-run.
 Print a short table: package(s), current → target, risk (low/med/high), status
 (ready-for-agent/ready-for-human), the issue ref `to-issues` published.
 
-## Never
-
-- Never modify `package.json`, lockfiles, or `node_modules` in the working tree or on any
-  real branch — this skill only plans and files issues; whoever picks them up executes
-  them. The one exception is the disposable git worktree from step 6d: created, bumped,
-  and deleted entirely within that sub-step, never merged and never left behind. Step 6a/6b's
-  tarball diffing downloads to a scratch temp dir and never touches a worktree at all.
-- Never mark a range-edit issue `ready-for-agent` when the status-decision criteria in step 7
-  call for `ready-for-human` — escalating uncertainty to a human beats a coder silently
-  trusting an incomplete changelog check.
-- Never fold a CVE-driven bump into the in-range safe-batch — its advisory-clean re-check
-  needs to be verifiable on its own.
-- Never mark an upgrade issue `ready-for-agent` without the safety checklist and, if there
-  are impacted call sites, their required test additions.

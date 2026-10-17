@@ -189,18 +189,10 @@ another issue in the feature fails (`gh issue create --parent` exits non-zero), 
 feature and start a new slug well before it. The PRD is identified by title convention
 (`PRD: <feature title>`), not a local file, whether it is the root or a sub-issue of a work-issue
 root. Work issues use the same markdown body conventions as local issues (`## Blocked by`,
-`## Acceptance criteria`, `## Requires`, `Source:`).
-`## Requires` is one backticked shell command per bullet, exit 0 = satisfied, naming what the
-issue's checks need that the install does not guarantee; `solve-issue`'s preflight runs each from
-the project root, and a failing one blocks the issue.
-
-No filename exists to derive a slug or branch from, so both are derived deterministically from
-the issue every time: kebab-case the title for the slug, and include the issue number in the
-branch name for uniqueness: `crew/<featureSlug>/<number>-<slug>`. Nothing to cache — GitHub
-issue numbers are stable, unambiguous identifiers, unlike local filenames.
+`## Acceptance criteria`, `Source:`).
 
 Comments and conversation history append to the issue as ordinary `gh issue comment` timeline
-entries — a live activity feed, not an in-place-edited section like local's `## Comments`.
+entries.
 
 ## Moving off milestones
 

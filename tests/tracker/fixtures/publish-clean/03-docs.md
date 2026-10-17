@@ -24,4 +24,4 @@ D2
 
 ## Blocked by
 
-- Issue #2
+- 02-cli.md

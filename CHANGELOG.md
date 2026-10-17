@@ -6,6 +6,73 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+### Upgrading
+
+- Run `/setup-coding-crew redo commands` once: the dev commands file's `credential_target` is now `registry_auth`,
+  and a file written before this keeps the old key, which nothing reads (#551).
+
+### Breaking
+
+- checks: `ensure-env.sh` and `docker-install.sh` no longer take `--registry-auth` (formerly `--credential-target`);
+  `ensure-env.sh` reads `registry_auth` from the dev commands file itself, so a host install now runs it too, after
+  `.env` exists (#558).
+- install: Windows Git Bash is no longer supported; use WSL2, as before. `install.sh`, `uninstall.sh` and
+  `render-skill.sh` drop the CRLF `jq` wrappers and CR stripping, and `uninstall.sh` no longer retries an `rmdir` for
+  Windows' lazy directory removal (#555).
+- address-pr-comments: `--auto` and the `crew-rework` GitHub Action are removed, with `fetch-review-threads.sh`,
+  `push-rework.sh` and `reply-thread.sh`; a repo that copied the workflow deletes `.github/workflows/crew-rework.yml`
+  (it now fails on the unknown `--auto` flag), and may also delete the `crew-rework` label and the `CREW_APP_ID` /
+  `CREW_APP_PRIVATE_KEY` secrets it set up for it. The skill no longer writes
+  `.scratch/<slug>/reviews/escaped.md` (#554).
+- checks: the dev commands field `credential_target` is renamed `registry_auth`, with no fallback read of the old
+  name (see Upgrading) (#551).
+- checks: `run-checks.sh` runs only the typecheck, lint, test, coverage and integration commands; any other key
+  added by hand to the dev commands file is no longer run (#551).
+- solve-issue: an issue's `## Requires` section is no longer read — preflight no longer runs its commands or
+  stops with `BLOCKED: requires:`, `check-requires.sh` is gone, and to-issues no longer writes the section. An
+  issue that still carries one stays valid and the section is ignored; nothing to migrate. Preflight also no longer
+  falls back to `.scratch/<slug>/PRD.md` for an issue without a `- PRD:` line, and it and
+  `branch-safety-check.sh` reject `--help` and any unknown argument (exit 2) (#553).
+
+### Changed
+
+- CI: `scripts/ci-run-bats.sh` runs the tests without the machine's git config or identity, so a test that commits
+  without naming an author fails locally as it does on a CI runner (#558).
+- checks: one lockfile → install-command table (`install-cmd.sh`) serves host and docker installs, so a docker install
+  uses that table's rows for the container's ecosystem only (a `go.mod` beside a Python project's `pyproject.toml`
+  still installs with pip there), while a host install keeps the whole table, Go before pip; a repo with no doc or
+  known manifest gets a discovery prompt for its ecosystem's test/lint/typecheck commands instead of a skip line, so
+  the checks stop asking for discovery once it is saved (#558).
+- skills: shared instructions are stated once. The `ready-for-human` block lives only in to-issues (upgrade-deps
+  hands its drafts there), the tracker-configuration block is 10 lines, and `discover-commands.sh`'s prompt now ends
+  with the commands that save the answer, so every skill that discovers dev commands runs it and follows the prompt;
+  solve-issue's `DISCOVER` now asks all eight fields. `solve-issue/references/verification.md` and
+  `tdd/references/refactoring.md` are folded into their SKILL.md (#557).
+- checks: the generated compose override passes `HTTPS_PROXY` and the ecosystem's CA variable (plus
+  `YARN_HTTPS_PROXY` for node) into every service by name when the shell that installs has them set, and mounts the
+  host's `/etc/ssl/certs/ca-certificates.crt` read-only when it exists, so `npm install`/`pip install` in a service
+  started from a proxied agent sandbox reach the registry again; no value is written to the file, and a variable the
+  installing shell lacks gets no entry, so it never blanks one the project's own compose file sets; after setting or unsetting one, re-run
+  `docker-install.sh` to regenerate the override (#556, #558).
+- CI: one macOS job replaces the three macOS shards; `scripts/ci-test-shard.sh`, `scripts/ci-weights.sh` and
+  `tests/ci-shard-weights.tsv` are gone, and `ci-run-bats.sh` starts files heaviest first by `@test` count. Also
+  removed: the eval runners' handling of a `--base` from before the committed tree was rendered or before
+  crew-review, and the unlinked top-level requirements document (#555).
+- tracker: `mark-done` on a GitHub issue no longer creates a `ready-for-human` label to remove it; it reads the
+  issue's labels and removes only the ready labels the issue carries (#553).
+- to-issues: `lint-issues.sh` is retired; `publish-issues` now refuses a draft whose `deps.json` edges differ from
+  its `## Blocked by`, naming the draft and both lists, before it creates anything; a draft blocker counts only when
+  named by its filename, so `Issue #<n>` prose no longer stands for draft `<n>` (#552).
+- tracker: the local tracker reads blockers from `issues-deps.json` only, which `publish-issues` now writes for every
+  issue (`[]` when unblocked) and `rewrite` updates for the issue it rewrites; a `## Blocked by` edited by hand after
+  publish no longer changes dispatch (#552, #558).
+- checks: the host install runs the dev commands file's `install` command and no longer probes the Makefile for
+  `install`/`deps` (nor `ensure-env.sh` for an `env` target): a cached `null` means discovery looked and found none.
+  One field reader in `commands-file.sh` replaces six copies; `run-checks.sh` runs typecheck, lint, test, coverage
+  and integration only. Removed: `gen-override.sh --dry-run` and `CREW_GIT_MOUNT`, `docker-install.sh --install-cmd`,
+  `manifest-fingerprint.sh --max-depth` and its `compute` word, `CREW_COMMANDS_REFRESH`, `CREW_CHECK_TAIL_LINES`, the
+  dangling `.env` symlink heal; `gen-override.sh --query` no longer hashes every lockfile (#551).
+
 ## [2.2.0]
 
 ### Highlights

@@ -88,9 +88,9 @@ project_name() {
 
 @test "the generated override carries the same name" {
   fixture "$PARENT/product-services"
-  run bash "$SCRIPT" --project-root "$PARENT/product-services" --dry-run
-  [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "name: product-services" ]
+  git init -q "$PARENT/product-services"
+  bash "$SCRIPT" --project-root "$PARENT/product-services" >/dev/null
+  [ "$(head -1 "$PARENT/product-services/.git/crew-compose.override.yml")" = "name: product-services" ]
 }
 
 @test "each linked worktree is a compose project of its own; the main checkout keeps compose's name" {

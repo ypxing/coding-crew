@@ -18,19 +18,29 @@ teardown() {
   rm -rf "$PROJECT"
 }
 
-@test "creates .env from .env.example before running a Makefile install target" {
-  cat > "$PROJECT/Makefile" <<'MK'
-install:
-	touch installed.marker
-MK
+# _cache <json> — the checkout's dev commands file (the tracked path: $PROJECT is no git checkout).
+_cache() {
+  mkdir -p "$PROJECT/.coding-crew"
+  printf '%s\n' "$1" > "$PROJECT/.coding-crew/dev-commands.json"
+}
+
+# _stub_npm — a fake `npm` on PATH that records its argv, so the lockfile table runs without npm.
+_stub_npm() {
+  mkdir -p "$PROJECT/.stub"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/npm.calls"\n' "$PROJECT" > "$PROJECT/.stub/npm"
+  chmod +x "$PROJECT/.stub/npm"
+  export PATH="$PROJECT/.stub:$PATH"
+}
+
+@test "creates .env from .env.example before running the cached install command" {
+  _cache '{"install": "cp .env installed.marker"}'
   echo "FOO=bar" > "$PROJECT/.env.example"
 
   run bash "$SCRIPT" --project-root "$PROJECT"
 
   [ "$status" -eq 0 ]
-  [ -f "$PROJECT/.env" ]
   diff "$PROJECT/.env.example" "$PROJECT/.env"
-  [ -f "$PROJECT/installed.marker" ]
+  diff "$PROJECT/.env.example" "$PROJECT/installed.marker"
 }
 
 @test "creates an empty .env with no .env.example, even when no install method is found" {
@@ -44,10 +54,7 @@ MK
 
 @test "leaves an existing .env untouched" {
   echo "REAL=1" > "$PROJECT/.env"
-  cat > "$PROJECT/Makefile" <<'MK'
-install:
-	touch installed.marker
-MK
+  _cache '{"install": "touch installed.marker"}'
 
   run bash "$SCRIPT" --project-root "$PROJECT"
 
@@ -55,12 +62,60 @@ MK
   [ "$(cat "$PROJECT/.env")" = "REAL=1" ]
 }
 
-@test "every run installs: no fingerprint fast path, and --main-root / --force are unknown arguments" {
-  cat > "$PROJECT/Makefile" <<'MK'
-install:
-	touch installed.marker
-MK
+@test "a cached install command runs, and the lockfile table is not consulted" {
+  _stub_npm
+  _cache '{"install": "touch installed.marker"}'
   echo '{}' > "$PROJECT/package-lock.json"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Running: touch installed.marker"* ]]
+  [ -f "$PROJECT/installed.marker" ]
+  [ ! -e "$PROJECT/npm.calls" ]
+}
+
+@test "a failing cached install command exits 3" {
+  _cache '{"install": "exit 7"}'
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+
+  [ "$status" -eq 3 ]
+}
+
+@test "a cached null install never runs a Makefile install target: the lockfile table decides" {
+  _stub_npm
+  _cache '{"install": null}'
+  printf 'install:\n\ttouch installed.marker\n' > "$PROJECT/Makefile"
+  echo '{}' > "$PROJECT/package-lock.json"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+
+  [ "$status" -eq 0 ]
+  [ ! -e "$PROJECT/installed.marker" ]
+  [ "$(cat "$PROJECT/npm.calls")" = "ci" ]
+}
+
+@test "a relative --project-root reads that checkout's cached install command" {
+  _cache '{"install": "touch installed.marker"}'
+
+  run bash -c 'cd "$(dirname "$1")" && bash "$2" --project-root "$(basename "$1")"' _ "$PROJECT" "$SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/installed.marker" ]
+}
+
+@test "the dev commands file's registry_auth runs on the host path too, after .env exists" {
+  _cache '{"install": "true", "registry_auth": "test -f .env && touch .npmrc"}'
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/.npmrc" ]
+}
+
+@test "every run installs: no fingerprint fast path" {
+  _cache '{"install": "touch installed.marker"}'
 
   run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
@@ -69,11 +124,6 @@ MK
   [ "$status" -eq 0 ]
   [ -f "$PROJECT/installed.marker" ]
   [ ! -e "$PROJECT/.scratch/host-install.done" ]
-
-  run bash "$SCRIPT" --project-root "$PROJECT" --force
-  [ "$status" -eq 1 ]
-  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$PROJECT"
-  [ "$status" -eq 1 ]
 }
 
 # _stub_pip — a fake `pip` on PATH that records its argv, so the Python fallback runs without

@@ -48,6 +48,7 @@ teardown() {
 mark_done() { node "$MAIN_ROOT/.coding-crew/tracker/cli.mjs" mark-done "$@" --main-root "$MAIN_ROOT"; }
 
 # stub_gh <edit-exit> — a fake `gh` that logs every invocation (one per line) and:
+#   - `issue view <n> --json labels` prints {"labels": [...]} from $GH_LABELS (space-separated names)
 #   - `issue view ... --json body ...` prints the current contents of $GH_BODY_FILE
 #   - `issue edit ...` exits with the given code
 #   - `label create ...` and `issue close ...` exit 0
@@ -58,6 +59,12 @@ stub_gh() {
 printf '%s\n' "\$*" >> "$GH_LOG"
 case "\$1 \$2" in
   "issue view")
+    if [ "\$4 \$5" = "--json labels" ]; then
+      printf '{"labels":['; sep=""
+      for l in \${GH_LABELS:-}; do printf '%s{"name":"%s"}' "\$sep" "\$l"; sep=,; done
+      printf ']}\n'
+      exit 0
+    fi
     cat "$GH_BODY_FILE"
     exit 0
     ;;
@@ -101,69 +108,41 @@ close_calls() {
 @test "mark-done (github): met criteria swaps ready-for-agent for awaiting-merge and never closes" {
   stub_gh 0
   write_body_met
+  export GH_LABELS="ready-for-agent bug"
 
   run mark_done 42
   [ "$status" -eq 0 ]
   [ "$(done_calls)" -eq 1 ]
   grep -q '^label create awaiting-merge --force' "$GH_LOG"
-  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human$' "$GH_LOG"
+  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent$' "$GH_LOG"
   [ "$(close_calls)" -eq 0 ]
   [[ "$output" == *"Closes #42"* ]]
 }
 
-@test "mark-done (github): a ready-for-human issue loses that label in the one edit, after it is created" {
-  stub_gh 0
-  cat > "$GH_BODY_FILE" <<'EOF'
-Status: ready-for-human
-
-## Acceptance criteria
-
-- [x] one
-- [x] two
-EOF
-
-  run mark_done 42
-  [ "$status" -eq 0 ]
-  [ "$(grep -c '^issue edit' "$GH_LOG")" -eq 1 ]
-  create=$(grep -n '^label create ready-for-human' "$GH_LOG" | cut -d: -f1)
-  # --force would reset an existing label's colour and description.
-  ! grep -q '^label create ready-for-human.*--force' "$GH_LOG" || false
-  edit=$(grep -n '^issue edit' "$GH_LOG" | cut -d: -f1)
-  [ -n "$create" ] && [ "$create" -lt "$edit" ]
-  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human$' "$GH_LOG"
-}
-
-@test "mark-done (github): an existing ready-for-human label is left as is and still removed" {
+@test "mark-done (github): --remove-label names only the triage labels the issue carries, and no ready-for-human label is created" {
   stub_gh 0
   write_body_met
-  # Wrap the stub: `label create ready-for-human` fails the way gh does on an existing label.
+  export GH_LABELS="ready-for-human"
+  run mark_done 42
+  [ "$status" -eq 0 ]
+  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-human$' "$GH_LOG"
+
+  : > "$GH_LOG"
+  export GH_LABELS=""
+  run mark_done 42
+  [ "$status" -eq 0 ]
+  grep -q '^issue edit 42 --add-label awaiting-merge$' "$GH_LOG"
+  ! grep -q '^label create ready-for-human' "$GH_LOG" || false
+}
+
+@test "mark-done (github): a failed labels read fails before any edit" {
+  stub_gh 0
+  write_body_met
+  # Wrap the stub: the labels read fails, everything else passes through.
   mv "$STUB/gh" "$STUB/gh-real"
   cat > "$STUB/gh" <<EOF
 #!/usr/bin/env bash
-if [ "\$1 \$2 \$3" = "label create ready-for-human" ]; then
-  printf '%s\n' "\$*" >> "$GH_LOG"
-  echo 'label with name "ready-for-human" already exists; use \`--force\` to update its color and description' >&2
-  exit 1
-fi
-exec "$STUB/gh-real" "\$@"
-EOF
-  chmod +x "$STUB/gh"
-
-  run mark_done 42
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"WARNING"* ]]
-  ! grep -q '^label create ready-for-human.*--force' "$GH_LOG" || false
-  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human$' "$GH_LOG"
-}
-
-@test "mark-done (github): a failed ready-for-human label create only warns and leaves it alone" {
-  stub_gh 0
-  write_body_met
-  # Wrap the stub: `label create ready-for-human` fails, everything else passes through.
-  mv "$STUB/gh" "$STUB/gh-real"
-  cat > "$STUB/gh" <<EOF
-#!/usr/bin/env bash
-if [ "\$1 \$2 \$3" = "label create ready-for-human" ]; then
+if [ "\$1 \$2 \$4 \$5" = "issue view --json labels" ]; then
   printf '%s\n' "\$*" >> "$GH_LOG"
   echo "HTTP 403: no permission" >&2
   exit 1
@@ -173,9 +152,9 @@ EOF
   chmod +x "$STUB/gh"
 
   run mark_done 42
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"WARNING: gh label create ready-for-human failed"* ]]
-  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent$' "$GH_LOG"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"HTTP 403: no permission"* ]]
+  [ "$(grep -c '^issue edit' "$GH_LOG")" -eq 0 ]
 }
 
 @test "mark-done (github): rejects a non-numeric argument instead of shelling out to gh" {

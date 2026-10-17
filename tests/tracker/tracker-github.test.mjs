@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { closingRefs, createIssue, featureMarker, linkBlockers, listFeatureIssues, parseIssue, retryTransient, selectDispatchable, writeProgress } from "../../lib/tracker/github.mjs";
+import { closingRefs, createIssue, featureMarker, linkBlockers, listFeatureIssues, parseIssue, retryTransient, selectDispatchable, writeSection } from "../../lib/tracker/github.mjs";
 import { fakeGithub, ghFeature, ghIssue } from "../helpers/fake-github.mjs";
 
 // github.mjs's read path: listFeatureIssues/parseIssue/selectDispatchable, all `gh` calls stubbed
@@ -13,7 +13,7 @@ import { fakeGithub, ghFeature, ghIssue } from "../helpers/fake-github.mjs";
 // See tests/tracker/tracker.test.mjs for the equivalent local-backend coverage and
 // tests/tracker/body-format.test.mjs for the shared markdown-body helpers this reuses.
 //
-// The write path — createIssue/writeProgress — is covered further down this same file.
+// The write path — createIssue/writeSection — is covered further down this same file.
 
 function repo() {
   return mkdtempSync(join(tmpdir(), "crew-tracker-github-"));
@@ -152,13 +152,9 @@ test("parseIssue is a pure transform producing local.mjs's exact output shape", 
   const i = parseIssue(json);
   assert.deepEqual(Object.keys(i).sort(), [
     "blockedBy",
-    "criteria",
-    "hasBlocked",
-    "hasProgress",
     "labels",
     "number",
     "ref",
-    "sourceGuarded",
     "slug",
     "status",
     "text",
@@ -170,10 +166,6 @@ test("parseIssue is a pure transform producing local.mjs's exact output shape", 
   assert.equal(i.slug, "fix-flaky-auth-test");
   assert.equal(i.status, "ready-for-agent");
   assert.deepEqual(i.blockedBy, [3]);
-  assert.match(i.criteria, /- \[ \] a/);
-  assert.equal(i.sourceGuarded, false);
-  assert.equal(i.hasProgress, false);
-  assert.equal(i.hasBlocked, false);
   assert.equal(i.text, json.body);
   assert.deepEqual(i.labels, ["ready-for-agent"]);
 });
@@ -293,7 +285,7 @@ test("selectDispatchable skips a non-ready status", () => {
 
 // ─────────────────────────────── write path ───────────────────────────────
 //
-// createIssue/writeProgress, all `gh` calls stubbed via an injected fake exec.
+// createIssue/writeSection, all `gh` calls stubbed via an injected fake exec.
 
 const createCall = (exec) => exec.calls.find((c) => c[1] === "issue" && c[2] === "create");
 const flagOf = (call, name) => (call.includes(name) ? call[call.indexOf(name) + 1] : undefined);
@@ -303,7 +295,7 @@ const noMilestone = (exec) => {
 
 test("createIssue for a slug with no root files the issue as its root: a Feature: line first, no --parent", () => {
   const exec = fakeGithub([ghIssue(1)]);
-  const r = createIssue({ title: "New work", body: "## What\n\nx\n", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: repo(), exec });
+  const r = createIssue({ title: "New work", body: "## What\n\nx\n", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: repo(), exec, parent: null });
   assert.equal(r.number, 2);
   assert.equal(exec.issues.find((i) => i.number === 2).body, "Feature: feat\n\n## What\n\nx\n");
   assert.equal(flagOf(createCall(exec), "--parent"), undefined);
@@ -314,7 +306,7 @@ test("createIssue for a slug with no root files the issue as its root: a Feature
 test("createIssue files the issue under the feature's root with --parent, its body passed through unmodified", () => {
   const exec = fakeGithub(ghFeature("feat", ghIssue(3, { title: "PRD: f" })));
   const body = "## Blocked by\n\n- Issue 3\n\nSource: review\n";
-  const r = createIssue({ title: "New work", body, labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: repo(), exec });
+  const r = createIssue({ title: "New work", body, labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: repo(), exec, parent: 3 });
   assert.equal(flagOf(createCall(exec), "--parent"), "3");
   assert.equal(flagOf(createCall(exec), "--title"), "New work");
   const made = exec.issues.find((i) => i.number === r.number);
@@ -325,7 +317,7 @@ test("createIssue files the issue under the feature's root with --parent, its bo
 
 test("createIssue never passes --repo: gh targets the git remote", () => {
   const exec = fakeGithub(ghFeature("feat", ghIssue(3), ghIssue(4)));
-  createIssue({ title: "New work", body: "## Blocked by\n- Issue #4\n", labels: [], featureSlug: "feat" }, { mainRoot: repo(), exec });
+  createIssue({ title: "New work", body: "## Blocked by\n- Issue #4\n", labels: [], featureSlug: "feat" }, { mainRoot: repo(), exec, parent: 3 });
   for (const call of exec.calls) assert.ok(!call.includes("--repo"), call.join(" "));
   const apiPaths = exec.calls.filter((c) => c[1] === "api").map((c) => c.find((a) => a.startsWith("repos/")));
   assert.ok(apiPaths.length > 0);
@@ -335,31 +327,23 @@ test("createIssue never passes --repo: gh targets the git remote", () => {
 test("createIssue surfaces a gh issue create failure rather than swallowing it", () => {
   const exec = fakeGithub([], { fail: { "issue create": { stderr: "gh: something went wrong" } } });
   assert.throws(
-    () => createIssue({ title: "New work", body: "b", labels: [], featureSlug: "feat" }, { mainRoot: repo(), exec }),
+    () => createIssue({ title: "New work", body: "b", labels: [], featureSlug: "feat" }, { mainRoot: repo(), exec, parent: null }),
     /gh issue create failed.*something went wrong/,
   );
 });
 
-test("createIssue exits with both roots named when the slug's root is ambiguous, creating nothing", () => {
-  const exec = fakeGithub([...ghFeature("feat", ghIssue(3)), ...ghFeature("feat", ghIssue(5))]);
-  assert.throws(() => createIssue({ title: "T", body: "b", featureSlug: "feat" }, { mainRoot: repo(), exec }), /#3.*#5|#5.*#3/);
-  assert.equal(createCall(exec), undefined);
-});
-
-test("writeProgress always calls gh issue comment, never gh issue edit", () => {
+test("writeSection always calls gh issue comment, never gh issue edit", () => {
   const root = repo();
   const exec = fakeGithub([ghIssue(3)]);
-  const issue = { number: 3, text: "" };
-  writeProgress(issue, "started work", { heading: "Progress", mainRoot: root, exec });
+  writeSection(root, 3, { heading: "Progress", body: "started work", exec });
   assert.ok(exec.calls.some((c) => c[1] === "issue" && c[2] === "comment"));
   assert.ok(!exec.calls.some((c) => c[1] === "issue" && c[2] === "edit"));
 });
 
-test("a `## Blocked` write goes through the same writeProgress/comment path, with no `blocked` label", () => {
+test("a `## Blocked` write goes through the same writeSection/comment path, with no `blocked` label", () => {
   const root = repo();
   const exec = fakeGithub([ghIssue(3)]);
-  const issue = { number: 3, text: "" };
-  writeProgress(issue, "waiting on issue 5", { heading: "Blocked", mainRoot: root, exec });
+  writeSection(root, 3, { heading: "Blocked", body: "waiting on issue 5", exec });
   const commentCall = exec.calls.find((c) => c[1] === "issue" && c[2] === "comment");
   assert.ok(commentCall, "expected a gh issue comment call");
   // The comment body legitimately says "## Blocked" — what must never appear is a
@@ -413,11 +397,10 @@ test("closingRefs surfaces a gh failure rather than reporting nothing to close",
   assert.throws(() => closingRefs(repo(), { featureSlug: "feat", exec: failingExec("boom") }), /boom/);
 });
 // link-blockers: native blocked_by relationships mirrored from the body's `## Blocked by`.
-function fakeLink({ body, failLink = "", noBlocker = false }) {
+function fakeLink({ failLink = "", noBlocker = false } = {}) {
   const calls = [];
   const exec = (cmd, args) => {
     calls.push([cmd, ...args]);
-    if (args[0] === "issue" && args[1] === "view") return { code: 0, stdout: body, stderr: "" };
     if (args[0] === "api" && args.includes("--jq")) {
       if (noBlocker) return { code: 1, stdout: "", stderr: "Not Found" };
       const n = /issues\/(\d+)$/.exec(args[1])[1];
@@ -434,8 +417,8 @@ function fakeLink({ body, failLink = "", noBlocker = false }) {
 const posts = (exec) => exec.calls.filter((c) => c.includes("POST"));
 
 test("linkBlockers posts one blocked_by per ## Blocked by number, using numeric ids", () => {
-  const exec = fakeLink({ body: "## Blocked by\n\n- Issue #3\n- Issue #4\n\n## X\n" });
-  assert.equal(linkBlockers(9, { mainRoot: repo(), exec, warn: () => {} }), 2);
+  const exec = fakeLink();
+  assert.equal(linkBlockers(9, { mainRoot: repo(), exec, body: "## Blocked by\n\n- Issue #3\n- Issue #4\n\n## X\n", warn: () => {} }), 2);
   assert.deepEqual(posts(exec).map((c) => [c[4], c[6]]), [
     ["repos/{owner}/{repo}/issues/9/dependencies/blocked_by", "issue_id=3000"],
     ["repos/{owner}/{repo}/issues/9/dependencies/blocked_by", "issue_id=4000"],
@@ -443,30 +426,31 @@ test("linkBlockers posts one blocked_by per ## Blocked by number, using numeric 
 });
 
 test("linkBlockers makes no dependency calls without ## Blocked by", () => {
-  const exec = fakeLink({ body: "## What\nx\n" });
-  linkBlockers(9, { mainRoot: repo(), exec, warn: () => {} });
+  const exec = fakeLink();
+  linkBlockers(9, { mainRoot: repo(), exec, body: "## What\nx\n", warn: () => {} });
   assert.equal(exec.calls.filter((c) => c[1] === "api").length, 0);
 });
 
 test("linkBlockers warns, never throws, on API error or missing blocker; already-linked is silent", () => {
   const warns = [];
   const warn = (m) => warns.push(m);
-  linkBlockers(9, { mainRoot: repo(), exec: fakeLink({ body: "## Blocked by\n- Issue #3\n", failLink: "boom" }), warn });
-  linkBlockers(9, { mainRoot: repo(), exec: fakeLink({ body: "## Blocked by\n- Issue #3\n", noBlocker: true }), warn });
+  const body = "## Blocked by\n- Issue #3\n";
+  linkBlockers(9, { mainRoot: repo(), exec: fakeLink({ failLink: "boom" }), body, warn });
+  linkBlockers(9, { mainRoot: repo(), exec: fakeLink({ noBlocker: true }), body, warn });
   assert.equal(warns.length, 2);
-  linkBlockers(9, { mainRoot: repo(), exec: fakeLink({ body: "## Blocked by\n- Issue #3\n", failLink: "Issue has already been taken" }), warn });
+  linkBlockers(9, { mainRoot: repo(), exec: fakeLink({ failLink: "Issue has already been taken" }), body, warn });
   assert.equal(warns.length, 2);
 });
 
 test("linkBlockers resolves the repo from the git remote", () => {
-  const exec = fakeLink({ body: "## Blocked by\n- Issue #3\n" });
-  linkBlockers(9, { mainRoot: repo(), exec, warn: () => {} });
+  const exec = fakeLink();
+  linkBlockers(9, { mainRoot: repo(), exec, body: "## Blocked by\n- Issue #3\n", warn: () => {} });
   assert.ok(posts(exec)[0].includes("repos/{owner}/{repo}/issues/9/dependencies/blocked_by"));
 });
 
 test("createIssue links blockers for the issue it created, and a link failure does not fail creation", () => {
   const exec = fakeGithub(ghFeature("feat", ghIssue(1)), { fail: { "api repos/{owner}/{repo}/issues/3 ": { stderr: "nope" } } });
-  const r = createIssue({ title: "T", body: "## Blocked by\n- Issue #3\n", featureSlug: "feat" }, { mainRoot: repo(), exec });
+  const r = createIssue({ title: "T", body: "## Blocked by\n- Issue #3\n", featureSlug: "feat" }, { mainRoot: repo(), exec, parent: 1 });
   assert.equal(r.number, 2);
 });
 

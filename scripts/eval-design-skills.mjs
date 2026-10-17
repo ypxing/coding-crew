@@ -22,7 +22,7 @@ const STAGE_INSTRUCTIONS = {
   slice:
     "EVAL MODE (non-interactive): the ARGUMENTS above are the feature's PRD; do not look for or fetch another. Explore the repo read-only, then output ONLY your step 5 breakdown: the numbered slices, each with its title, acceptance-criteria count (criteria count), `Blocked by`, and the split reason that produced it (none when there is one slice). Then stop. No user will answer. Modify nothing and publish nothing.",
   prepublish:
-    "EVAL MODE (non-interactive): you are at step 6, the drafts are written and `lint-issues.sh` exited 0. The ARGUMENTS above are the drafts (and the PRD, when there is one), inline: there are no files to read for them, so wherever your skill reads a draft or the PRD from a path, use this text. You may read the repo read-only. Do not publish. Output ONLY what you would ask the user or change in the drafts before publishing, ranked by importance, each with the draft it concerns and why the answer matters; if there is nothing, say so. Then stop. No user will answer. Modify nothing.",
+    "EVAL MODE (non-interactive): you are at step 6, the drafts are written and `deps.json` agrees with every `## Blocked by`. The ARGUMENTS above are the drafts (and the PRD, when there is one), inline: there are no files to read for them, so wherever your skill reads a draft or the PRD from a path, use this text. You may read the repo read-only. Do not publish. Output ONLY what you would ask the user or change in the drafts before publishing, ranked by importance, each with the draft it concerns and why the answer matters; if there is nothing, say so. Then stop. No user will answer. Modify nothing.",
 };
 
 const METRICS = ["sized", "do_least", "asked_well", "overbuilt", "underbuilt", "false_cut", "chain_priced"];
@@ -99,21 +99,13 @@ function readAt(ref, rel) {
   return execFileSync("git", ["show", `${ref}:${rel}`], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
-// The SKILL.md body as claude receives it, from the same ref: a ref from before the committed tree was rendered in
-// place still has `{{FRAGMENT:<key>}}` lines, expanded here as the old installer did.
+// The SKILL.md body as claude receives it, from the same ref: the committed tree is already rendered.
 function skillText(skill, ref) {
-  const rel = `skills/${skill}/SKILL.md`;
-  const out = readAt(ref, rel).split("\n").map((line) => {
-    const m = line.match(/^\s*\{\{FRAGMENT:([A-Za-z0-9_-]+)\}\}\s*$/);
-    if (!m) return line.replaceAll("{{PLATFORM}}", "claude");
-    const frag = `skills/_shared/fragments/${m[1]}.md`;
-    try { return readAt(ref, frag).replace(/\n+$/, ""); } catch {
-      throw new Error(`${rel} at ${ref} needs fragment '${m[1]}', but ${frag} does not exist there`);
-    }
-  }).join("\n");
-  const left = out.match(/\{\{[A-Z][^}]*\}\}/);
-  if (left) throw new Error(`unexpanded placeholder ${left[0]} in ${rel} at ${ref}`);
-  return out;
+  const text = readAt(ref, `skills/${skill}/SKILL.md`);
+  if (text.includes("{{FRAGMENT:")) {
+    throw new Error(`skills/${skill}/SKILL.md at ${ref} has unrendered {{FRAGMENT:}} lines: the ref predates the rendered tree; pick a later --base`);
+  }
+  return text;
 }
 
 export function subjectPrompt(skill, c) {

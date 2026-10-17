@@ -13,38 +13,16 @@ Break a plan into independently-grabbable issues using vertical slices (tracer b
 <!-- fragment:tracker-configuration -->
 ## Tracker Configuration
 
-Every tracker operation in this skill is an op of the tracker CLI — nothing else reads or writes
-the tracker. Before the first one, check for Node:
-
-```bash
-node --version
-```
-
-If that fails, stop and tell the user: "the tracker CLI needs Node — install Node, then re-run this
-skill." The CLI is `<skill-dir>/scripts/tracker/cli.mjs`, `<skill-dir>` being the directory you read
-this file from. Wherever this skill runs an op as `node "$TRACKER" <op> …`, run it with that path:
-
-```bash
-node "<skill-dir>/scripts/tracker/cli.mjs" <op> …
-```
-
-Before the first op, ask the CLI which tracker it talks to:
-
-```bash
-node "$TRACKER" config   # prints tracker=<kind> and configured=yes|no
-```
-
-On `configured=no`, no tracker was ever chosen for this repo. On an interactive run, invoke the
-`configure-tracker` skill now to choose one, then continue. On a non-interactive run
-(a headless/`-p` invocation or a subagent) never ask: proceed as `local`, which
-is what the CLI already uses. How the tracker works — its refs, statuses and labels — is in
+Every tracker op runs through the tracker CLI, `TRACKER=<skill-dir>/scripts/tracker/cli.mjs` (`<skill-dir>` being the
+directory you read this file from), as `node "$TRACKER" <op> …`; nothing else reads or writes the tracker. Before the
+first op run `node "$TRACKER" config` (prints `tracker=<kind>` and `configured=yes|no`). On `configured=no` on an
+interactive run, invoke the `configure-tracker` skill, then continue; on a non-interactive run (a headless/`-p`
+invocation or a subagent) never ask: proceed as `local`. The tracker's refs, statuses and labels are in
 `<skill-dir>/scripts/tracker/docs/<kind>.md`.
 
-Exit codes, every op: 0 ok; 1 the op failed — stderr carries the tracker's own error, verbatim;
-2 a usage error or an invalid ref; 3 not found (`publish-issues` adds 4 and 5, described where it
-runs). On 1 or 2, report the stderr to the user and
-fix its cause (an input, auth, the network), then re-run the op —
-never perform the operation with the tracker's own tool instead.
+Exit codes, every op: 0 ok; 3 not found; on 1 (the op failed) or 2 (a usage error or an invalid ref), report the
+stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, never performing it with the tracker's
+own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
 <!-- /fragment:tracker-configuration -->
 
 ## Process
@@ -75,7 +53,7 @@ Never guess the slug silently — confirm with the user if there's any ambiguity
 
 ### 2. Check for a PRD
 
-Run `node "$TRACKER" prd --feature-slug <feature-slug>`. Exit 0 prints the PRD: use it as the primary source material for decomposition, and save that output to `.scratch/<feature-slug>/.drafts/PRD.md` for step 6's lint. Note the PRD's ref — step 6 cites it in each work issue: `#<n>` when the output opens with `<!-- PRD issue #<n>: … -->`, else `.scratch/<feature-slug>/PRD.md`. Exit 3 means there is none.
+Run `node "$TRACKER" prd --feature-slug <feature-slug>`. Exit 0 prints the PRD: use it as the primary source material for decomposition, and save that output to `.scratch/<feature-slug>/.drafts/PRD.md` for step 6's builder check. Note the PRD's ref — step 6 cites it in each work issue: `#<n>` when the output opens with `<!-- PRD issue #<n>: … -->`, else `.scratch/<feature-slug>/PRD.md`. Exit 3 means there is none.
 
 With no PRD, work from the conversation context; step 4's slice count decides whether one is needed, and step 4's last paragraph writes it. One slice publishes without a PRD (its issue carries its own `## Decisions`).
 
@@ -140,11 +118,11 @@ Otherwise add no edge: edits to separate parts of a file do not interact, and a 
 
 **Expand–contract sequencing** is drawn from the PRD's `## Compatibility & Migration` when it exists: each expand, migrate and contract step it names becomes a slice (or part of one) sequenced in that order, with the contract step blocked by every migrate step. Without that section, do not invent a migration sequence.
 
-**PRD for a split.** After step 4, with two or more slices (or two or more origin issues named in the source) and no PRD from step 2, invoke `to-prd` with the feature slug (so its own slug question is never reached). Then save the PRD it wrote, `node "$TRACKER" prd --feature-slug <feature-slug>`, to `.scratch/<feature-slug>/.drafts/PRD.md`, so the lint's `--prd` and the builder check receive it, and note its ref as step 2 does. Then do step 4.5 against it. Origin issues count because only a PRD's `Origin:` line closes them.
+**PRD for a split.** After step 4, with two or more slices (or two or more origin issues named in the source) and no PRD from step 2, invoke `to-prd` with the feature slug (so its own slug question is never reached). Then save the PRD it wrote, `node "$TRACKER" prd --feature-slug <feature-slug>`, to `.scratch/<feature-slug>/.drafts/PRD.md`, so the builder check receives it, and note its ref as step 2 does. Then do step 4.5 against it. Origin issues count because only a PRD's `Origin:` line closes them.
 
 ### 4.5. Trace PRD IDs to slices
 
-Before the quiz, build a coverage table: one row per `D<n>` / `B<n>` ID in the PRD (lines starting `- **D<n>** — …` / `- **B<n>** — …`), with the slice(s) that implement it. An ID no slice covers is an empty row, except one whose PRD line ends in `(no slice)`: the PRD says it needs none, so its row reads `(no slice)` and is not asked about in step 5 (`lint-issues.sh` does not warn for it either). With no IDs in the PRD (or no PRD), the table is skipped entirely. Each slice's `## Implements` in step 6 must then name the IDs the table gave it.
+Before the quiz, build a coverage table: one row per `D<n>` / `B<n>` ID in the PRD (lines starting `- **D<n>** — …` / `- **B<n>** — …`), with the slice(s) that implement it. An ID no slice covers is an empty row, except one whose PRD line ends in `(no slice)`: the PRD says it needs none, so its row reads `(no slice)` and is not asked about in step 5. With no IDs in the PRD (or no PRD), the table is skipped entirely. Each slice's `## Implements` in step 6 must then name the IDs the table gave it.
 
 ### 5. Quiz the user
 
@@ -169,7 +147,7 @@ Show the coverage table from step 4.5 (when there is one), then ask only what ne
 
 Then one approve/adjust prompt: approve the breakdown as shown, or say what to adjust. Iterate until the user approves. Do not ask generic questions about granularity, blocking edges, combining slices or HITL/AFK — a breakdown with nothing to list above needs only the approve/adjust prompt.
 
-A return from step 6's lint or builder check asks only the questions it marked yours, in one message ranked by importance, then goes back to step 6 to re-render and re-lint.
+A return from step 6 — a `publish-issues` refusal, or the builder check's questions marked yours — asks only those questions, in one message ranked by importance, then goes back to step 6 to re-render.
 
 ### 5.5. Cross-cutting rules from the PRD
 
@@ -177,16 +155,11 @@ Before writing issues, read the PRD's `## Decisions` and `## Testing Decisions` 
 
 ### 6. Write the issues
 
-Write each approved slice with the template below and the rules that follow it, then take it through `<skill-dir>/references/publish.md`, in this order: drafts in `.scratch/<feature-slug>/.drafts/` → the feature's known issues → `deps.json` → `lint-issues.sh` → the builder check → `publish-issues` (or `rewrite`, for a source issue that stayed one slice). A lint `ERROR` or a builder-check question only the user can answer returns to step 5 with just that question.
+Write each approved slice with the template below and the rules that follow it, then take it through `<skill-dir>/references/publish.md`, in this order: drafts in `.scratch/<feature-slug>/.drafts/` → the feature's known issues → `deps.json` → the builder check → `publish-issues` (or `rewrite`, for a source issue that stayed one slice). A `publish-issues` refusal or a builder-check question only the user can answer returns to step 5 with just that question.
 
-**`## Requires`.** When a slice's checks need a service, a credential or a tool the project's install does not guarantee (a LocalStack container, an auth token, a CLI), write one backticked shell command per requirement — exit 0 means satisfied; it runs on the host from the project root before the issue is picked up, and may start the service it checks. Run each one while authoring. If one fails, publish the issue as `Status: ready-for-human` instead of `ready-for-agent`, because nobody working unattended can supply what it lacks: the failing command and its output go in `### Why a person`, and the fix goes in `### Steps`. A command that can only hold once one of the issue's blockers lands (a Makefile target that blocker adds) is not run now — it runs when the issue's turn comes.
-
-**`ready-for-human` bodies.** Every slice published as `ready-for-human` (a HITL slice from step 5, or a failing `## Requires`) opens with this block:
-
-<!-- fragment:human-issue -->
 **A `ready-for-human` issue opens with a `## For a human` block**, placed right after `## What to build`. A person reads it cold, so write plain language that needs neither the PRD nor the codebase. It has exactly five `###` parts, in this order:
 
-1. `### Why a person` — why no agent can do this (a permission, a credential, a judgement call, a failing `## Requires` command and its output).
+1. `### Why a person` — why no agent can do this (a permission, a credential, a judgement call).
 2. `### What changes` — what is true today and what will be true after, in concrete names and values.
 3. `### Steps` — numbered. Each step says what to do, then a `Check:` line (how to see it worked) and an `Undo:` line (how to reverse it). Write `n/a — <why>` when a step has no check or no undo. Put commands and file contents in fenced blocks.
 4. `### If skipped or done wrong` — what breaks, in the reader's terms.
@@ -251,7 +224,6 @@ Reading the ruleset back lists `required_status_checks`, and a PR with a failing
 
 - [ ] The ruleset has a `required_status_checks` rule
 ````
-<!-- /fragment:human-issue -->
 
 **Acceptance criteria describe this slice's behaviour, not repo-wide hygiene.** A rule every change must follow that a check already enforces — a version bump, a changelog entry, lint — is not a criterion: the check holds it, and as a per-issue criterion each issue on the branch repeats it (a second version bump, a duplicate changelog entry).
 
@@ -265,7 +237,7 @@ A criterion that needs a paid run, a manual measurement or a person is not an ac
 
 A slice that takes input or calls something external must carry failure-behaviour criteria: invalid input, missing dependency, failing call — what the caller observes in each. This is how the PRD's `## Trust Boundaries & Risks` reaches the gated criteria.
 
-A slice that adds a parser, validator or gate for an input the repo already holds examples of (issue files, configs, fixtures, stored records) carries one criterion that it accepts them, so the new code is tested against what people actually wrote, not only against inputs written from the PRD. Find the examples now and name them in the criterion, to be copied into committed test fixtures — never read from a live or gitignored directory, whose contents differ per machine and are absent in CI. For example: `- [ ] lint-issues.sh exits 0 on fixtures copied from .scratch/add-tests/issues/`. The repo holds no such examples (a new format) → no such criterion. The PRD's `## Compatibility & Migration` names them when it exists.
+A slice that adds a parser, validator or gate for an input the repo already holds examples of (issue files, configs, fixtures, stored records) carries one criterion that it accepts them, so the new code is tested against what people actually wrote, not only against inputs written from the PRD. Find the examples now and name them in the criterion, to be copied into committed test fixtures — never read from a live or gitignored directory, whose contents differ per machine and are absent in CI. For example: `- [ ] publish-issues succeeds on drafts copied from .scratch/add-tests/issues/`. The repo holds no such examples (a new format) → no such criterion. The PRD's `## Compatibility & Migration` names them when it exists.
 
 <issue-template>
 # <title>
@@ -319,12 +291,6 @@ The PRD IDs this issue carries (with no PRD, the IDs of its own `## Decisions`) 
 Rules from the PRD that apply to this implementation (a few items at most):
 
 - [ ] [PRD rule not already covered by an acceptance criterion]
-
-## Requires
-
-> **Optional — only include this section when the issue's checks need a service, credential or tool the project's own install does not guarantee. Omit entirely otherwise.**
-
-- `<one shell command per requirement, exit 0 = satisfied — e.g. make start-localstack, test -n "$LOCALSTACK_AUTH_TOKEN">`
 
 ## Blocked by
 

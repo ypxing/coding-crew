@@ -4,10 +4,9 @@
 #
 # Usage:
 #   bash scripts/docker-install.sh --project-root <path> \
-#     [--service <name>] [--install-cmd <cmd>] [--credential-target <command>] \
-#     [--timeout <sec, default 1800>] [--force]
-# The service, the install command and the credential target default to the checkout's
-# dev commands file ("docker_service", "install", "credential_target"; commands-file.sh); with no
+#     [--service <name>] [--timeout <sec, default 1800>] [--force]
+# The service and the install command come from the checkout's dev commands file ("docker_service",
+# "install"; commands-file.sh), and ensure-env.sh runs its "registry_auth"; with no
 # docker_service, the compose file's first service. Generates this checkout's override, then installs
 # only when the root dependency volume (named by lockfile hash) lacks a .crew-stamp; --force deletes
 # the stamp first. A failed install removes the override again, so the next run.sh call retries it.
@@ -24,20 +23,16 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PROJECT_ROOT=""
 SERVICE=""
-INSTALL_CMD=""
-CREDENTIAL_TARGET=""
 TIMEOUT=1800
 FORCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --project-root|--service|--install-cmd|--credential-target|--timeout)
+    --project-root|--service|--timeout)
       if [[ $# -lt 2 ]]; then echo "Error: $1 requires a value" >&2; exit 1; fi
       case "$1" in
         --project-root)      PROJECT_ROOT="$2" ;;
         --service)           SERVICE="$2" ;;
-        --install-cmd)       INSTALL_CMD="$2" ;;
-        --credential-target) CREDENTIAL_TARGET="$2" ;;
         --timeout)           TIMEOUT="$2" ;;
       esac
       shift 2
@@ -74,53 +69,31 @@ _fail() {
   exit "$1"
 }
 
-_cached() {
-  local cache; cache=$(commands_file "$PROJECT_ROOT")
-  [[ -f "$cache" ]] || return 0
-  grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$cache" 2>/dev/null \
-    | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/' || true
-}
+CACHE="$(commands_file "$PROJECT_ROOT")"
 
 ECO_NAME="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query ecosystem 2>/dev/null || true)"
 [[ -n "$ECO_NAME" ]] || _fail 2 detect "No compose file or no supported ecosystem at $PROJECT_ROOT"
 
-[[ -n "$SERVICE" ]] || SERVICE="$(_cached docker_service)"
+[[ -n "$SERVICE" ]] || SERVICE="$(commands_field "$CACHE" docker_service)"
 [[ -n "$SERVICE" ]] || SERVICE="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query services 2>/dev/null | head -1)"
 [[ -n "$SERVICE" ]] || _fail 2 detect "No compose service found at $PROJECT_ROOT"
 
-[[ -n "$INSTALL_CMD" ]] || INSTALL_CMD="$(_cached install)"
-[[ -n "$CREDENTIAL_TARGET" ]] || CREDENTIAL_TARGET="$(_cached credential_target)"
+INSTALL_CMD="$(commands_field "$CACHE" install)"
 
 CONTAINER_SRC="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query container-src 2>/dev/null)"
 
 if [[ -n "$INSTALL_CMD" ]]; then
   if bash "$SELF_DIR/detect-docker-nesting.sh" --dir "$PROJECT_ROOT" --cmd "$INSTALL_CMD"; then
-    _fail 5 "install command" "Install command '$INSTALL_CMD' runs docker itself, and the service's container has no docker to run it with. Name a container-side install command (e.g. 'pnpm install') as \"install\" in $(commands_file "$PROJECT_ROOT")."
+    _fail 5 "install command" "Install command '$INSTALL_CMD' runs docker itself, and the service's container has no docker to run it with. Name a container-side install command (e.g. 'pnpm install') as \"install\" in $CACHE."
   fi
   CONTAINER_CMD="cd $CONTAINER_SRC && $INSTALL_CMD"
 else
   mapfile -t MANIFEST_DIRS < <(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query manifest-dirs 2>/dev/null)
   [[ ${#MANIFEST_DIRS[@]} -gt 0 ]] || _fail 2 detect "No manifest directories detected at $PROJECT_ROOT"
 
-  _install_cmd_for_dir() {
-    local d="$1"
-    if   [[ -f "$d/uv.lock"           ]]; then echo "uv sync --frozen"
-    elif [[ -f "$d/bun.lockb"         ]]; then echo "bun install --frozen-lockfile"
-    elif [[ -f "$d/pnpm-lock.yaml"    ]]; then echo "pnpm install --frozen-lockfile"
-    elif [[ -f "$d/package-lock.json" ]]; then echo "npm ci"
-    elif [[ -f "$d/yarn.lock"         ]]; then echo "yarn install --frozen-lockfile"
-    elif [[ -f "$d/poetry.lock"       ]]; then echo "poetry install --no-root"
-    elif [[ -f "$d/requirements.txt" || -f "$d/pyproject.toml" ]]; then bash "$SELF_DIR/python-install-cmd.sh" "$d"
-    elif [[ -f "$d/Gemfile.lock"      ]]; then echo "bundle install"
-    elif [[ -f "$d/Cargo.toml"        ]]; then echo "cargo fetch"
-    elif [[ -f "$d/composer.json"     ]]; then echo "composer install --no-interaction"
-    elif [[ -f "$d/go.sum" || -f "$d/go.mod" ]]; then echo "go mod download"
-    fi
-  }
-
   STEPS=()
   for dir in "${MANIFEST_DIRS[@]}"; do
-    cmd="$(_install_cmd_for_dir "$dir")"
+    cmd="$(bash "$SELF_DIR/install-cmd.sh" "$dir" "$ECO_NAME")"
     [[ -n "$cmd" ]] || continue
     rel="${dir#"$PROJECT_ROOT"}"
     rel="${rel#/}"
@@ -135,9 +108,7 @@ else
   CONTAINER_CMD="$(IFS=' && '; echo "${STEPS[*]}")"
 fi
 
-ENV_ARGS=(--project-root "$PROJECT_ROOT")
-[[ -n "$CREDENTIAL_TARGET" ]] && ENV_ARGS+=(--credential-target "$CREDENTIAL_TARGET")
-bash "$SELF_DIR/ensure-env.sh" "${ENV_ARGS[@]}" >/dev/null 2>&1 || true
+bash "$SELF_DIR/ensure-env.sh" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true
 
 [[ -n "$OVERRIDE" ]] || _fail 1 "generate override" "$PROJECT_ROOT is not a git checkout — the override is written to its git dir"
 GENERATED=1

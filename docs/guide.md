@@ -107,7 +107,7 @@ the last round did not fix is listed under `Needs attention` in the PR body, whi
 
 ### Adding a New Skill
 
-1. Create `skills/<name>/SKILL.md` (required). Add supporting files in the same directory as needed (`verification.md`, `mocking.md`, etc.).
+1. Create `skills/<name>/SKILL.md` (required). Add supporting files in the same directory as needed (`references/mocking.md`, `references/publish.md`, etc.).
 
 2. Add the entry to `registry.json` under `.skills`:
 
@@ -158,8 +158,9 @@ changes inside the skills' library directories.
 
 #### `bootstrap.sh`
 
-For a pinned or offline install from a clone (`./install.sh`), the per-platform config-dir relocation in the
-table below, and a warning when user-level copies shadow a project install:
+A curl-pipe install without a clone: it downloads `main`'s archive and runs its `install.sh`, which adds the
+per-platform config-dir relocation in the table below and a warning when user-level copies shadow a project
+install. For a pinned or offline install, run `./install.sh` from a clone instead:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash                             # every platform, into $HOME
@@ -170,7 +171,7 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 ```
 
 `bootstrap.sh` takes the same arguments as `install.sh`. Needs `bash` 4+, `git`, `jq`, `curl` and `tar` (on Windows, use WSL2).
-A checkout of this repo needs symlink support: on Windows, WSL2, or Git for Windows with `core.symlinks=true`.
+A checkout of this repo needs symlink support: on Windows, use WSL2.
 
 | Argument                              | Effect                                              |
 | ------------------------------------- | --------------------------------------------------- |
@@ -246,7 +247,7 @@ or `--project <path>` (or `TARGET_REPO=<path>`) for another one:
 Uninstalls every skill and library `.coding-crew/manifest.json` lists, then installs those skills again
 from this checkout, for every platform the manifest names. An install made before libraries (it has
 `.coding-crew/tracker/` or `.coding-crew/dep-install/`) updates the same way; remove what it left once:
-`rm -rf <root>/.coding-crew/{tracker,crew-afk,dep-install,solve-issue,to-issues,write-pr,skills}`.
+`rm -rf <root>/.coding-crew/{agents,code-review,crew-afk,dep-install,scripts,skills,solve-issue,to-issues,tracker,write-pr}`.
 
 An install whose skills link into `.coding-crew/lib` updates with `--update` first: a partial run (`--skill`, one
 platform of several, `uninstall.sh --skill`) removes that directory too, and the skills it left alone stop with
@@ -254,7 +255,8 @@ platform of several, `uninstall.sh --skill`) removes that directory too, and the
 
 #### What lands where
 
-At project level (`--project`), with claude; a user-level install writes the same under `~`:
+At project level (`--project`), with claude; a user-level install writes the same under `~`. The unmarked skills
+come with `solve-feature`:
 
 ```
 YOUR_PROJECT/
@@ -266,11 +268,17 @@ YOUR_PROJECT/
 │       ├── dep-install/
 │       ├── solve-issue/
 │       ├── write-pr/
+│       ├── setup-coding-crew/
+│       ├── configure-tracker/
+│       ├── crew-afk/               ← installed with "all"
 │       ├── address-pr-comments/    ← installed with "all"
-│       ├── domain-modeling/   ← installed with "all"
-│       ├── to-issues/         ← installed with "all"
-│       ├── to-prd/            ← installed with "all"
-│       └── crew-grill/              ← installed with "all"
+│       ├── add-tests/              ← installed with "all"
+│       ├── upgrade-deps/           ← installed with "all"
+│       ├── crew-brainstorm/        ← installed with "all"
+│       ├── crew-grill/             ← installed with "all"
+│       ├── domain-modeling/        ← installed with "all", and with crew-grill
+│       ├── to-issues/              ← installed with "all", and with crew-grill or crew-brainstorm
+│       └── to-prd/                 ← installed with "all", and with to-issues
 └── .coding-crew/
     ├── config.json                 ← your settings; `tracker` picks the issue tracker
     └── manifest.json
@@ -364,11 +372,13 @@ feature branch, open until the PR that closes it merges. A local issue's `done` 
 `issues/done/`.
 
 **What `next` and `land` read.** The feature is found by its slug — the `Feature:` line on github, the
-directory on local. `next` picks an open `ready-for-agent` issue (not `blocked`) whose every
-`## Blocked by` issue is done (on local, `issues-deps.json` takes the place of `## Blocked by` when
-`/to-issues` wrote one); `land` asks `next` again after the coder, and an issue still first was not
-closed. The status, `## Blocked by` and the `Feature:` line are all they read, so an issue missing one
-of them is never found or never starts.
+directory on local. `next` picks an open `ready-for-agent` issue (not `blocked`) whose every blocker
+is done; `land` asks `next` again after the coder, and an issue still first was not closed. On github
+the blockers are the body's `## Blocked by`; on local they come only from `issues-deps.json`, which
+`publish-issues` and `rewrite` write: an issue with no entry there has no blockers, so editing
+`## Blocked by` by hand changes no dispatch order (solve-issue's preflight still refuses an issue whose
+own `## Blocked by` names an open one). The status, the blockers and
+the `Feature:` line are all they read, so an issue missing one of them is never found or never starts.
 
 ```
  needs-triage  →  /to-issues <ref>  →  ready-for-agent  →  coder picks up
@@ -397,7 +407,7 @@ in any coding-crew skill that uses the tracker (e.g. `solve-issue`).
 /solve-feature <feature-slug>
 ```
 
-It runs the feature's `ready-for-agent` issues in order on one branch (`feature/<slug>` unless you
+It runs the feature's `ready-for-agent` issues in order on one branch (one named after the slug unless you
 pass `--branch <name>`), each by a fresh coder subagent, and lands each one only when the project's
 checks pass. Then it reviews the whole feature and fixes the findings, at most twice: it reviews again
 only after fixing a CRITICAL, HIGH or MEDIUM finding. It writes the PR body and marks the draft PR ready
@@ -416,10 +426,6 @@ branch into it first (a conflict stops the run for you to merge by hand).
 (`make lint` running `--write`) can stay configured: run it once, commit what it rewrote, and re-run.
 Only a check that rewrites files on every run needs a non-mutating command in the dev commands file
 (below).
-
-**Per-issue requirements.** An issue can list what its checks need that the install doesn't
-guarantee under `## Requires`, one backticked command per bullet (exit 0 = satisfied); `/solve-issue`
-runs each before it starts, and a failing one blocks that issue with the command's output.
 
 **Unattended, in its own worktree.** `/crew-afk <feature>` starts that `/solve-feature` run for you
 and returns at once. It resolves the feature from a likely name, then prepares (or reuses) one
@@ -445,41 +451,9 @@ Nothing removes a worktree: `git worktree remove <path>` once you are done with 
 
 ---
 
-### PR rework with GitHub Actions (optional)
+### PR rework
 
-Not installed by default. Without it, run `/address-pr-comments` yourself on the PR. On a solve-feature PR it pushes its fix commit itself once `solve-issue`'s checks pass (a plain `git push`, never forced; a failing check stops it with the output, unpushed) and suggests no next step: the run already reviewed the PR, fixed its findings and, in its describe step, marked the draft ready unless something needs a person (listed under `Needs attention` in the PR body). On any other PR it does not push.
-
-With it, reviewers comment on a PR labelled `crew-rework` as usual; the `crew-rework` GitHub
-Action runs `/address-pr-comments --auto`, which fixes what is sensible, pushes, and replies on
-every thread it handled. It never resolves a thread — you do.
-
-**Setup**
-
-1. Copy [`docs/templates/workflows/crew-rework.yml`](templates/workflows/crew-rework.yml) to
-   `.github/workflows/` in your repo.
-2. Install the skills per project and commit them (`./install.sh claude --skill
-   address-pr-comments --project`): the runner has no `$HOME` install.
-3. Add the repo secret `ANTHROPIC_API_KEY`.
-4. Make sure your CI workflow is `ci.yml` (or edit `--ci-workflow` in the template) and has
-   `workflow_dispatch:` if you want the re-trigger below.
-5. Add the `crew-rework` label to each PR it should work on; nothing adds it for you.
-
-**Flow.** A review, review comment or `/crew-rework` PR comment triggers the workflow. Before any
-step that uses the API key it checks that the actor has write access, the PR's branch is in the
-same repo (no forks), and the PR carries the `crew-rework` label. Runs are serialised per PR.
-Only comments by write/maintain/admin authors ever reach the model.
-
-**Guards.** Unattended runs are capped at two rounds; comment `/crew-rework` to allow two more. A
-change to protected paths (`.github/`, CI configs, auth, deploy, `.env`), a failing check, or a
-rejected push stops the run: it comments on the PR and adds `needs-human`.
-
-**CI re-trigger.** Pushes made with the default `GITHUB_TOKEN` do not start other workflows. The
-skill therefore dispatches your CI workflow explicitly after pushing (`--ci-workflow`).
-Alternatively, provide the optional App token below and the push triggers CI natively.
-
-**Optional App token.** Create a GitHub App with contents/pull-requests write, install it, set the
-repo variable `CREW_APP_ID` and secret `CREW_APP_PRIVATE_KEY`. The workflow then checks out and
-pushes as the App.
+Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it pushes its fix commit itself once `solve-issue`'s checks pass (a plain `git push`, never forced; a failing check stops it with the output, unpushed) and suggests no next step: the run already reviewed the PR, fixed its findings and, in its describe step, marked the draft ready unless something needs a person (listed under `Needs attention` in the PR body). On any other PR it does not push.
 
 ---
 

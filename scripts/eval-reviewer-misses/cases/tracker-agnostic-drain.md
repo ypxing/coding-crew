@@ -8,7 +8,7 @@ via: origin/feature/tracker-agnostic
 Replay of the second feature review of #332 (tracker-agnostic, `dispatch/feature-d2`): the commits since the first
 review, `cd7114a56771..f8a189aebfec` (the #333 fix issue), one reviewer reading the whole PRD. The SHAs are reachable
 through `origin/feature/tracker-agnostic`; fetch it before running if they do not resolve.
-Escaped (`.scratch/tracker-agnostic/reviews/escaped.md`, fixed in `0621433`): `tracker/cli.mjs:234`. The live review
+Escaped (fixed in `0621433`): `tracker/cli.mjs:234`. The live review
 listed this defect under `### Dropped`, reasoning that lint runs first.
 
 ## Expected misses

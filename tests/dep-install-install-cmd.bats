@@ -1,11 +1,11 @@
 #!/usr/bin/env bats
 
-# python-install-cmd.sh — the pip command for a Python project with no uv/poetry lockfile,
-# shared by host-install.sh and docker-install.sh. `pip install .` / `-r requirements.txt`
+# install-cmd.sh — the one lockfile/manifest → install-command table, shared by host-install.sh and
+# docker-install.sh. For Python with no uv/poetry lockfile, `pip install .` / `-r requirements.txt`
 # alone left the dev tools the checks run (pytest, ruff, mypy…) uninstalled (#273).
 
 SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-SCRIPT="$SCRIPT_DIR/lib/checks/python-install-cmd.sh"
+SCRIPT="$SCRIPT_DIR/lib/checks/install-cmd.sh"
 
 setup() {
   PROJECT=$(mktemp -d)
@@ -91,4 +91,42 @@ TOML
   run bash "$SCRIPT" "$PROJECT"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
+}
+
+@test "a lockfile names its own installer, ahead of a Python manifest beside it" {
+  touch "$PROJECT/package-lock.json" "$PROJECT/requirements.txt"
+  run bash "$SCRIPT" "$PROJECT"
+  [ "$output" = "npm ci" ]
+  touch "$PROJECT/uv.lock"
+  run bash "$SCRIPT" "$PROJECT"
+  [ "$output" = "uv sync --frozen" ]
+}
+
+@test "with no ecosystem named, go.mod wins over a Python manifest beside it, as on the host" {
+  touch "$PROJECT/go.mod" "$PROJECT/requirements.txt"
+  run bash "$SCRIPT" "$PROJECT"
+  [ "$output" = "go mod download" ]
+}
+
+@test "a named ecosystem uses only its own rows" {
+  touch "$PROJECT/go.mod" "$PROJECT/requirements.txt" "$PROJECT/Gemfile.lock" "$PROJECT/Cargo.toml" "$PROJECT/composer.json"
+  run bash "$SCRIPT" "$PROJECT" python
+  [ "$output" = "pip install -r requirements.txt --quiet" ]
+  run bash "$SCRIPT" "$PROJECT" ruby
+  [ "$output" = "bundle install" ]
+  run bash "$SCRIPT" "$PROJECT" rust
+  [ "$output" = "cargo fetch" ]
+  run bash "$SCRIPT" "$PROJECT" php
+  [ "$output" = "composer install --no-interaction" ]
+  run bash "$SCRIPT" "$PROJECT" go
+  [ "$output" = "go mod download" ]
+  run bash "$SCRIPT" "$PROJECT" node
+  [ -z "$output" ]
+}
+
+@test "a .NET project nested one level down installs with dotnet restore" {
+  mkdir "$PROJECT/App"
+  touch "$PROJECT/App/App.csproj"
+  run bash "$SCRIPT" "$PROJECT"
+  [ "$output" = "dotnet restore" ]
 }

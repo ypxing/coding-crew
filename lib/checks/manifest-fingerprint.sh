@@ -3,33 +3,18 @@
 # a changed lockfile names fresh volumes, which docker-install.sh then installs into.
 #
 # Usage:
-#   manifest-fingerprint.sh compute --project-root <dir> [--max-depth N]
+#   manifest-fingerprint.sh --project-root <dir>
 #
-#   compute   one hash over every recognised lockfile (bounded depth; vendor, output and dot-dirs skipped)
+# Prints one hash over every recognised lockfile (depth 5; vendor, output and dot-dirs skipped).
 # Exit codes: 0 success, 1 argument or filesystem error
 
 set -euo pipefail
 
-MODE="${1:-}"
-case "$MODE" in
-  compute) shift ;;
-  --help|-h)
-    grep '^#' "$0" | sed 's/^# \{0,1\}//'
-    exit 0
-    ;;
-  *)
-    echo "Error: first argument must be compute (got: ${MODE:-<none>})" >&2
-    exit 1
-    ;;
-esac
-
 PROJECT_ROOT=""
-MAX_DEPTH=5
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project-root) PROJECT_ROOT="$2"; shift 2 ;;
-    --max-depth)    MAX_DEPTH="$2";    shift 2 ;;
     --help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -49,7 +34,7 @@ fi
 
 PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 
-# Kept in step with host-install.sh's and docker-install.sh's lockfile tables.
+# Kept in step with install-cmd.sh's lockfile table.
 _LOCKFILE_NAMES=(
   package.json uv.lock bun.lockb pnpm-lock.yaml package-lock.json yarn.lock poetry.lock
   go.sum go.mod requirements.txt requirements-dev.txt dev-requirements.txt pyproject.toml
@@ -87,7 +72,7 @@ _compute() {
     rel="${f#"$PROJECT_ROOT"/}"
     lines+=("$rel:$(_sha256_file "$f")")
   done < <(
-    find "$PROJECT_ROOT" -maxdepth "$MAX_DEPTH" \( "${name_args[@]}" \) \
+    find "$PROJECT_ROOT" -maxdepth 5 \( "${name_args[@]}" \) \
       -not -path '*/node_modules/*' \
       -not -path '*/.venv/*' \
       -not -path '*/vendor/*' \

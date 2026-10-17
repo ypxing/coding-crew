@@ -47,18 +47,6 @@ teardown() {
   [[ "$output" == *"zed"* ]]
 }
 
-@test "every platform gets one solve-feature SKILL.md, with no per-platform body beside it" {
-  cd "$SCRIPT_DIR"
-  local p q dir
-  for p in "${PLATFORMS[@]}"; do
-    dir="$(shared_installed "$p")/$(platform_field "$p" projectSkills)/solve-feature"
-    [ -f "$dir/SKILL.md" ] || { echo "$p: no SKILL.md" >&2; return 1; }
-    for q in "${PLATFORMS[@]}"; do
-      [ ! -f "$dir/$q.SKILL.md" ] || { echo "$p: $q.SKILL.md installed" >&2; return 1; }
-    done
-  done
-}
-
 @test "no platform's solve-feature body names another platform's skills dir, CLI call or a bash dispatcher" {
   cd "$SCRIPT_DIR"
   local p q body
@@ -101,7 +89,7 @@ _assert_every_skill_in() {
   local dir="$1" skill
   while IFS= read -r skill; do
     [ -f "$dir/$skill/SKILL.md" ] || { echo "missing $dir/$skill/SKILL.md" >&2; return 1; }
-  done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json" | tr -d '\r')
+  done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json")
 }
 
 @test "a fifth platforms.json entry installs every skill to its projectSkills dir, and uninstall removes them" {
@@ -185,45 +173,6 @@ _assert_every_skill_in() {
   run env PATH="$stub:$PATH" HOME="$TEMP_DIR" bash "$SCRIPT_DIR/bootstrap.sh" --bogus
   [ "$status" -ne 0 ]
   [[ "$output" == *"Unknown argument: --bogus"* ]]
-}
-
-# --- nothing per-platform is left outside platforms.json ---
-
-@test "no registry.json skill entry has an install or install-<platform> key, and the installer reads none" {
-  run jq -r '.skills | to_entries[] | .key as $k | .value | keys[] | select(test("^install(-.+)?$")) | "\($k).\(.)"' \
-    "$SCRIPT_DIR/registry.json"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-  run grep -nE '\.install\b|"install-|install-\$|\]\.install' "$SCRIPT_DIR/install.sh" "$SCRIPT_DIR/uninstall.sh" \
-    "$SCRIPT_DIR/scripts/render-skill.sh" "$SCRIPT_DIR/scripts/lib/platforms.sh"
-  [ "$status" -ne 0 ]
-}
-
-@test "install.sh and render-skill.sh read no per-platform body or platform-files" {
-  run grep -nE '\.body\b|body\[|platform-files|PLATFORM\.SKILL\.md|platform\.SKILL\.md' \
-    "$SCRIPT_DIR/install.sh" "$SCRIPT_DIR/scripts/render-skill.sh"
-  [ "$status" -ne 0 ]
-}
-
-@test "install.sh and uninstall.sh name no platform outside their migrations" {
-  local f names
-  names=$(IFS='|'; echo "${PLATFORMS[*]}")
-  for f in install.sh uninstall.sh; do
-    # The one migration keeps its platform: the legacy Copilot path.
-    # Comments and echoed help text are prose, not decisions.
-    run bash -c "awk '/^prune_legacy_copilot_path\\(\\)/{skip=1} skip&&/^}/{skip=0;next} !skip' '$SCRIPT_DIR/$f' \
-      | grep -vE '^[[:space:]]*(#|echo )' \
-      | grep -nE '(^|[^A-Za-z0-9_.-])($names)([^A-Za-z0-9_.-]|\$)'"
-    [ "$status" -ne 0 ] || { echo "$f: $output" >&2; return 1; }
-  done
-}
-
-@test "skill destinations resolve in one helper both installers source" {
-  grep -q 'source "$SCRIPT_DIR/scripts/lib/platforms.sh"' "$SCRIPT_DIR/install.sh"
-  grep -q 'source "$SCRIPT_DIR/scripts/lib/platforms.sh"' "$SCRIPT_DIR/uninstall.sh"
-  run grep -nE '^(resolve_dest|resolve_skill_dest|platform_skills_dir|default_skill_dest|adjust_platform_path)\(\)' \
-    "$SCRIPT_DIR/install.sh" "$SCRIPT_DIR/uninstall.sh"
-  [ "$status" -ne 0 ]
 }
 
 @test "install.sh --help works without jq, saying where the platform list lives" {

@@ -207,7 +207,12 @@ async function main() {
   };
   try {
     const refTree = {};
-    for (const [v, ref] of Object.entries(versions)) refTree[v] = ref === "worktree" ? ROOT : addTree(`ref-${v}`, ref);
+    for (const [v, ref] of Object.entries(versions)) {
+      refTree[v] = ref === "worktree" ? ROOT : addTree(`ref-${v}`, ref);
+      if (!fs.existsSync(path.join(refTree[v], "skills", "crew-review", "SKILL.md"))) {
+        throw new Error(`--${v} ${ref} has no skills/crew-review/SKILL.md: the ref predates crew-review; pick a later one`);
+      }
+    }
     const caseTree = {};
     // The case's PRD as a file: in its tree when the reviewer runs there, beside the prompts on a dry run.
     const prdFile = {};

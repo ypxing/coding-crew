@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Detect and run the right host install command for PROJECT_ROOT.
-# Checks (in order): Makefile install/deps target, then signal file fallback.
+# Checks (in order): the dev commands file's "install" command, then install-cmd.sh's lockfile table.
 # Usage: host-install.sh --project-root <path>
 # Exit codes: 0 installed, 1 argument error, 2 no install method, 3 install failed
 
@@ -25,61 +25,28 @@ if [[ ! -d "$PROJECT_ROOT" ]]; then
   exit 1
 fi
 
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 cd "$PROJECT_ROOT"
 
 # .env first, best-effort, whether or not an install method is found: the checks may need one.
-SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENSURE_ENV="$SELF_DIR/ensure-env.sh"
-if [[ -f "$ENSURE_ENV" ]]; then
-  bash "$ENSURE_ENV" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true
-fi
+bash "$SELF_DIR/ensure-env.sh" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true
 
-if [[ -f Makefile ]]; then
-  for target in install deps; do
-    # Non-empty output, not exit status, means the target exists: some GNU Make builds (3.81) run a
-    # recipe containing "make" even under -n, so a daemon-less docker failure would read as no target.
-    recipe=$(make -n "$target" 2>/dev/null || true)
-    if [[ -n "$recipe" ]]; then
-      if grep -qE 'docker (compose|run|exec)' <<<"$recipe"; then
-        echo "Skipping make $target — recipe invokes docker" >&2
-      else
-        echo "Running: make $target"
-        make "$target"
-        exit 0
-      fi
-    fi
-  done
-fi
-
-run() {
-  echo "Running: $*"
-  "$@"
-  exit 0
-}
-
-[[ -f uv.lock            ]] && run uv sync --frozen
-[[ -f bun.lockb          ]] && run bun install --frozen-lockfile
-[[ -f pnpm-lock.yaml     ]] && run pnpm install --frozen-lockfile
-[[ -f package-lock.json  ]] && run npm ci
-[[ -f yarn.lock          ]] && run yarn install --frozen-lockfile
-[[ -f poetry.lock        ]] && run poetry install --no-root
-[[ -f go.sum             ]] && run go mod download
-[[ -f go.mod             ]] && run go mod download
-# Python with no uv/poetry lockfile: python-install-cmd.sh adds the dev tools pip would leave out.
-python_cmd=$(bash "$SELF_DIR/python-install-cmd.sh" "$PROJECT_ROOT")
-if [[ -n "$python_cmd" ]]; then
-  echo "Running: $python_cmd"
-  bash -c "$python_cmd"
+# shellcheck source=/dev/null
+. "$SELF_DIR/commands-file.sh"
+cached=$(commands_field "$(commands_file "$PROJECT_ROOT")" install)
+if [[ -n "$cached" ]]; then
+  echo "Running: $cached"
+  bash -c "$cached" || exit 3
   exit 0
 fi
-[[ -f Gemfile.lock       ]] && run bundle install
-[[ -f Cargo.toml         ]] && run cargo fetch
-[[ -f composer.json      ]] && run composer install --no-interaction
-[[ -f pom.xml            ]] && run mvn dependency:resolve dependency:resolve-plugins -q
-[[ -f mix.exs            ]] && run mix deps.get
 
-csproj=$(find . -maxdepth 2 -name "*.csproj" | head -1)
-[[ -n "$csproj" ]] && run dotnet restore
+cmd=$(bash "$SELF_DIR/install-cmd.sh" "$PROJECT_ROOT")
+if [[ -n "$cmd" ]]; then
+  echo "Running: $cmd"
+  bash -c "$cmd" || exit 3
+  exit 0
+fi
 
 echo "No install method found in $PROJECT_ROOT" >&2
 exit 2

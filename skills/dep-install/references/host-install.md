@@ -10,30 +10,12 @@ PROJECT_ROOT="/absolute/path/to/checkout"
 
 ## Detect and run
 
-`scripts/checks/host-install.sh` ensures `.env` exists (from `.env.example`, or empty if there is none) before it does anything else — the same mechanical step `docker-install.sh` already does via `ensure-env.sh`, now on the host path too. It runs even when no install method is found below, since checks after this step can still need a `.env` to exist. It never reads `.env*` content.
+`scripts/checks/host-install.sh` ensures `.env` exists (from `.env.example`, or empty if there is none) before it does anything else — the same mechanical step `docker-install.sh` already does via `ensure-env.sh`, now on the host path too. It runs even when no install method is found below, since checks after this step can still need a `.env` to exist. It never reads `.env*` content. With `.env` in place it runs the dev commands file's `registry_auth` command, if any, to generate package-manager credential files.
 
-Check in order — use the first match, stop as soon as one is found.
-
-### 1. The dev commands file's `install`
-
-dep-install's Step 1 has already made sure this field was asked. Read it:
-
-```bash
-COMMANDS_FILE=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT")
-RAW=""
-[ -f "$COMMANDS_FILE" ] && RAW=$(grep -o '"install"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$COMMANDS_FILE" | head -1)
-```
-
-- `$RAW` holds a quoted command — that is the project's documented install command. Run it, and skip
-  Step 2: `bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<that command>"`.
-- `$RAW` is `null` (someone looked and found no documented command) or empty (discovery had no files
-  to read) — continue to Step 2. Do not look for an install command in `CLAUDE.md`, `AGENTS.md` or
-  the Makefile yourself: discovery already did.
-
-### 2. Script (Makefile target + signal file fallback)
-
-The detection script checks for a Makefile `install`/`deps` target first, then falls back to signal
-file detection:
+Then it runs the dev commands file's `install` command (dep-install's Step 1 has already made sure
+it was asked); when that is `null` or absent, the lockfile's install command (`npm ci`, `uv sync`, …).
+Do not look for an install command in `CLAUDE.md`, `AGENTS.md` or the Makefile yourself: discovery
+already did.
 
 ```bash
 bash "<skill-dir>/scripts/checks/host-install.sh" --project-root "$PROJECT_ROOT"

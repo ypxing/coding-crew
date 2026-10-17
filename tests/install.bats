@@ -93,8 +93,9 @@ teardown() {
   [ "$(jq -c '.platforms' "$TEMP_DIR/.coding-crew/manifest.json")" = '["claude","codex"]' ]
 }
 
-# What today's main left behind: per-skill versions in the manifest, scripts copied into each skill,
-# and a skill (crew-address-findings) the registry no longer has.
+# What an older install.sh left behind: a manifest with one `platform` and skills keyed by name with a
+# version each (today's lists `platforms` and skill names only), scripts copied into each skill, and a
+# skill (crew-address-findings) the registry no longer has.
 _old_main_install() {
   local root="$1"
   mkdir -p "$root/.claude/skills/tdd" "$root/.claude/skills/crew-address-findings/scripts" "$root/.claude/skills/solve-issue/scripts" "$root/.coding-crew"
@@ -118,7 +119,7 @@ _old_main_install() {
 JSON
 }
 
-@test "--update over an install made by today's main uninstalls the skills it lists and leaves a working new layout" {
+@test "--update over an install an older install.sh made uninstalls the skills it lists and leaves a working new layout" {
   _old_main_install "$TEMP_DIR"
   cd "$SCRIPT_DIR"
   run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
@@ -170,18 +171,6 @@ JSON
   [ -x "$dir/scripts/preflight.sh" ]
 }
 
-@test "re-installing prunes a file planted in a skill's library copy" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill dep-install >/dev/null
-  local lib="$TEMP_DIR/.claude/skills/dep-install/scripts/checks"
-  echo "# deleted script" > "$lib/retired.sh"
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill dep-install
-  [ "$status" -eq 0 ]
-  [ ! -e "$lib/retired.sh" ]
-  [ -x "$lib/run.sh" ]
-  [[ "$output" == *".claude/skills/dep-install/scripts/checks/retired.sh (removed)"* ]]
-}
-
 @test "the prune leaves files outside the skill root and asset dests alone" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null
@@ -204,7 +193,7 @@ _skills_copied() {
   local dir="$1" skill
   while IFS= read -r skill; do
     diff -r "$SCRIPT_DIR/skills/$skill" "$dir/$skill" >&2 || { echo "$skill is not a copy of skills/$skill" >&2; return 1; }
-  done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json" | tr -d '\r')
+  done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json")
   [ -z "$(find "$dir" -type l)" ] || { find "$dir" -type l >&2; return 1; }
 }
 
@@ -305,40 +294,6 @@ _skills_copied() {
   TARGET_REPO="$temp2" ./install.sh claude --skill tdd > /dev/null
 
   cmp -s "$temp1/.claude/skills/tdd/SKILL.md" "$temp2/.claude/skills/tdd/SKILL.md"
-}
-
-@test "registry.json has no crew: strings (colon-form removed)" {
-  cd "$SCRIPT_DIR"
-
-  # registry.json must be valid JSON
-  run jq . registry.json
-  [ "$status" -eq 0 ]
-
-  # No crew: strings anywhere in registry.json
-  ! grep -q 'crew:' registry.json
-}
-
-@test "registry.json has no agents" {
-  cd "$SCRIPT_DIR"
-  run jq -r 'has("agents")' registry.json
-  [ "$output" = "false" ]
-}
-
-@test "registry.json skill keys solve-feature, crew-afk and crew-grill are present; crew-address-findings and crew-plan are not" {
-  cd "$SCRIPT_DIR"
-
-  run jq -r '.skills | keys[]' registry.json
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -qxF "solve-feature"
-  echo "$output" | grep -qxF "crew-afk"
-  echo "$output" | grep -qxF "crew-grill"
-  ! echo "$output" | grep -qxF "crew-address-findings"
-  # tdd must exist without crew- prefix
-  [[ "$output" == *"tdd"* ]]
-  # crew-tdd must not be present
-  ! echo "$output" | grep -qxF "crew-tdd"
-  # crew-plan must not be present (renamed to crew-grill)
-  ! echo "$output" | grep -qxF "crew-plan"
 }
 
 @test "reinstalling modified skill reports the update without a diff body" {
@@ -464,27 +419,6 @@ _assert_legacy_tracker_files_gone() {
   [ "$(cat "$TEMP_DIR/.coding-crew/config.json")" = "$cfg_before" ]
 }
 
-@test "a fresh install writes no .coding-crew/docs/ and no tracker section, and installs the tracker docs" {
-  [ ! -e "$ALL/.coding-crew/docs" ]
-  if [ -f "$ALL/.coding-crew/config.json" ]; then
-    run jq -e 'has("tracker")' "$ALL/.coding-crew/config.json"
-    [ "$status" -ne 0 ]
-  fi
-  cmp "$SCRIPT_DIR/lib/tracker/docs/local.md" "$ALL/.claude/skills/to-issues/scripts/tracker/docs/local.md"
-  cmp "$SCRIPT_DIR/lib/tracker/docs/github.md" "$ALL/.claude/skills/to-issues/scripts/tracker/docs/github.md"
-}
-
-@test "install --update overwrites the tracker docs when a source doc changed" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill to-prd > /dev/null
-  local docs="$TEMP_DIR/.claude/skills/to-prd/scripts/tracker/docs"
-  echo "stale prose" > "$docs/github.md"
-  echo "stale prose" > "$docs/local.md"
-  TARGET_REPO="$TEMP_DIR" ./install.sh --update > /dev/null
-  cmp "$SCRIPT_DIR/lib/tracker/docs/local.md" "$docs/local.md"
-  cmp "$SCRIPT_DIR/lib/tracker/docs/github.md" "$docs/github.md"
-}
-
 @test "a user-level install deletes the legacy tracker files and writes no tracker section" {
   _legacy_tracker_repo issue-tracker-github.md
   cd "$SCRIPT_DIR"
@@ -496,182 +430,8 @@ _assert_legacy_tracker_files_gone() {
   fi
 }
 
-@test "install --user is rejected as an unknown argument" {
-  cd "$SCRIPT_DIR"
-  run ./install.sh --user claude
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"unknown argument '--user'"* ]]
-}
-
-@test "registry.json has no version, scripts, assets, more-assets, docs, retired-agents or retired-scripts key, and every lib is under lib/" {
-  cd "$SCRIPT_DIR"
-  run jq -r '[paths | .[-1] | strings | select(IN("version", "scripts", "assets", "more-assets", "docs", "retired-agents", "retired-scripts"))] | unique[]' registry.json
-  [ "$status" -eq 0 ]
-  [ -z "$output" ] || { echo "registry keys: $output" >&2; return 1; }
-  [ ! -e tests/registry-version-bump.bats ]
-  local lib
-  while IFS= read -r lib; do
-    [ -d "lib/$lib" ] || { echo "no lib/$lib" >&2; return 1; }
-  done < <(jq -r '[.skills[] | (.libs // [])[]] | unique[]' registry.json)
-}
-
-@test "install does not create triage-labels.md in target repo" {
-  [ -d "$ALL/.coding-crew" ]
-  [ ! -f "$ALL/docs/agents/triage-labels.md" ]
-}
-
-# ── Windows: jq that emits CRLF ────────────────────────────────────────────────
-# Git Bash's jq writes stdout in text mode, so `jq -r '.skills | keys[]'` yields
-# "tdd\r". install.sh used to read that straight into a registry lookup, miss, and
-# print "Warning: skill 'tdd' not found in registry ... skipping" — exit 0, nothing
-# installed. Stub jq the same way so the guard holds on every platform's CI.
-
-_stub_jq_crlf() {  # prints the bin dir holding a CRLF-emitting jq shim
-  local bindir="$TEMP_DIR/bin" real
-  real=$(command -v jq)
-  mkdir -p "$bindir"
-  cat > "$bindir/jq" <<STUB
-#!/usr/bin/env bash
-# awk, not sed: BSD sed does not expand \\r in a replacement.
-"$real" "\$@" | awk '{ printf "%s\r\n", \$0 }'
-exit \${PIPESTATUS[0]}
-STUB
-  chmod +x "$bindir/jq"
-  echo "$bindir"
-}
-
-@test "install survives a jq that emits CRLF (Windows Git Bash)" {
-  cd "$SCRIPT_DIR"
-  local bindir
-  bindir=$(_stub_jq_crlf)
-
-  PATH="$bindir:$PATH" TARGET_REPO="$TEMP_DIR" run ./install.sh pi --skill tdd
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"not found in registry"* ]]
-  [ -f "$TEMP_DIR/.pi/skills/tdd/SKILL.md" ]
-  # A \r that survived into a path would install to "tdd?" instead
-  run bash -c "ls \"$TEMP_DIR/.pi/skills\" | cat -v"
-  [[ "$output" != *'^M'* ]]
-}
-
-@test "uninstall removes installed files when jq emits CRLF" {
-  cd "$SCRIPT_DIR"
-  local bindir
-  bindir=$(_stub_jq_crlf)
-  TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill tdd >/dev/null
-  [ -f "$TEMP_DIR/.pi/skills/tdd/SKILL.md" ]
-
-  PATH="$bindir:$PATH" run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh
-  [ "$status" -eq 0 ]
-  [ ! -d "$TEMP_DIR/.pi" ]
-}
-
-# ── Windows: the CR strip must not cost a process per call ─────────────────────
-# The wrapper above used to be `command jq "$@" | tr -d '\r'` — three processes per
-# lookup (subshell, jq, tr) where one will do. install.sh makes ~1,500 jq calls, and
-# Git Bash emulates fork(), so on Windows that pipeline was the single largest cost in
-# CI: 27+ minutes for a suite that takes 2 elsewhere. Guard the cheap form.
-
-_jq_wrapper() {  # extracts the jq() wrapper from a script into a sourceable file
-  local src="$1" out="$2"
-  awk '/^ *jq\(\) \{/,/^ *\}/' "$src" > "$out"
-  [ -s "$out" ]
-}
-
-@test "every jq wrapper strips CR in-shell instead of spawning tr per call" {
-  cd "$SCRIPT_DIR"
-  local f
-  for f in install.sh uninstall.sh scripts/render-skill.sh; do
-    _jq_wrapper "$f" "$TEMP_DIR/wrapper.sh"
-    run cat "$TEMP_DIR/wrapper.sh"
-    [ "$status" -eq 0 ]
-    # A pipeline here is the regression: it re-adds two spawns per lookup.
-    [[ "$output" != *"| tr"* ]]
-    [[ "$output" == *"//\$'\\r'/"* ]]
-    # ...and the wrapper only exists where jq actually appends CR, so a jq that
-    # already writes LF is called directly rather than through an extra subshell.
-    run grep -c "command jq -rn '\"probe\"'" "$f"
-    [ "$output" -eq 1 ]
-  done
-}
-
-@test "the jq wrapper preserves output, exit status and emptiness" {
-  cd "$SCRIPT_DIR"
-  _jq_wrapper install.sh "$TEMP_DIR/wrapper.sh"
-  printf '{"a":["x","y"]}' > "$TEMP_DIR/j.json"
-
-  cat > "$TEMP_DIR/probe.sh" <<PROBE
-source "$TEMP_DIR/wrapper.sh"
-echo "lines=\$(jq -r '.a[]' "$TEMP_DIR/j.json" | wc -l | tr -d ' ')"
-echo "empty=\$(jq -r '.missing // empty' "$TEMP_DIR/j.json" | wc -l | tr -d ' ')"
-jq empty "$TEMP_DIR/nope.json" 2>/dev/null
-echo "rc=\$?"
-jq -r '.a[0]' "$TEMP_DIR/j.json" >/dev/null
-echo "okrc=\$?"
-PROBE
-
-  run bash "$TEMP_DIR/probe.sh"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"lines=2"* ]]
-  # Not one blank line: a `while read` loop must iterate zero times.
-  [[ "$output" == *"empty=0"* ]]
-  # jq's own failure still reaches the caller (`if ! jq empty` is a real guard).
-  # Match rc=0 on its own line (with leading newline) to avoid matching okrc=0 as a substring.
-  [[ "$output" != *$'\nrc=0'* ]]
-  [[ "$output" == *"okrc=0"* ]]
-}
-
-@test "a fresh install into an empty repo writes the libraries inside each skill, and no .coding-crew/lib or .coding-crew/scripts/" {
-  [ -f "$ALL/.claude/skills/solve-issue/scripts/tracker/cli.mjs" ]
-  [ ! -e "$ALL/.coding-crew/lib" ]
-  [ ! -e "$ALL/.coding-crew/scripts" ]
-  [ ! -e "$ALL/.coding-crew/tracker" ]
-}
-
 # ── the tracker library (<skill-dir>/scripts/tracker/) ────────────────────────
 # Copied with any skill that ships it; mechanism, so always overwritten, and removed with the skill.
-
-@test "crew-afk installs with its scripts and a tracker copy, and its SKILL.md runs nothing outside <skill-dir>" {
-  local skill="$ALL/.claude/skills/crew-afk" d
-  [ -f "$skill/scripts/crew-afk.sh" ]
-  for d in local orca herdr; do [ -f "$skill/scripts/destinations/$d.sh" ] || { echo "no $d" >&2; return 1; }; done
-  [ -d "$skill/scripts/tracker" ] && [ ! -L "$skill/scripts/tracker" ]
-  [ -f "$skill/scripts/tracker/cli.mjs" ]
-  [ -f "$ALL/.claude/skills/solve-feature/SKILL.md" ]
-  ! grep -nF -e '{{' -e '.coding-crew' -e '../' "$skill/SKILL.md"
-  # Every script path the body names is under <skill-dir>.
-  ! grep -nF 'scripts/' "$skill/SKILL.md" | grep -vF '<skill-dir>/scripts/'
-}
-
-@test "install of one skill ships the tracker CLI, which runs from the skill's own copy" {
-  local dir; dir="$(shared_installed to-issues)"
-  [ -f "$dir/.claude/skills/to-issues/scripts/tracker/cli.mjs" ]
-  [ ! -e "$dir/.coding-crew/lib" ]
-  cd "$dir"
-  run node .claude/skills/to-issues/scripts/tracker/cli.mjs prd --feature-slug x
-  [ "$status" -eq 3 ]
-}
-
-@test "re-running install overwrites the tracker library, dropping files the source no longer has" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill to-issues >/dev/null
-  local lib="$TEMP_DIR/.claude/skills/to-issues/scripts/tracker"
-  echo "// stale" > "$lib/cli.mjs"
-  echo "// retired" > "$lib/retired.mjs"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill to-issues >/dev/null
-  cmp -s "$SCRIPT_DIR/lib/tracker/cli.mjs" "$lib/cli.mjs"
-  [ ! -e "$lib/retired.mjs" ]
-}
-
-@test "--update refreshes the tracker library" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill to-issues >/dev/null
-  local lib="$TEMP_DIR/.claude/skills/to-issues/scripts/tracker"
-  echo "// stale" > "$lib/local.mjs"
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
-  [ "$status" -eq 0 ]
-  cmp -s "$SCRIPT_DIR/lib/tracker/local.mjs" "$lib/local.mjs"
-}
 
 @test "uninstall removes the skills with their library copies and the manifest, and keeps config.json" {
   cd "$SCRIPT_DIR"

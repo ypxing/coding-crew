@@ -68,12 +68,4 @@ if [ -n "$COAUTHOR" ]; then
 Co-authored-by: ${COAUTHOR}"
 fi
 
-git -C "$PROJECT_ROOT" commit -m "$FULL_MESSAGE"
-
-if [ $? -eq 0 ]; then
-  echo "Committed successfully"
-  git -C "$PROJECT_ROOT" log -1 --oneline
-else
-  echo "ERROR: Commit failed" >&2
-  exit 1
-fi
+git -C "$PROJECT_ROOT" commit -m "$FULL_MESSAGE" && git -C "$PROJECT_ROOT" log -1 --oneline

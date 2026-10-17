@@ -6,7 +6,7 @@ slug: <feature slug>
 via: <ref the SHAs are reachable through, e.g. origin/feature/<slug>>
 ---
 Replay of <the feature review that ran over the escaped code>, range `<base_sha>..<head_sha>`.
-Escaped: `<the escaped.md line, verbatim>`.
+Escaped: `<YYYY-MM-DD> <file:line> — <one-line summary> — <fix commit sha>`.
 
 Copy this file to `cases/<name>.md` (outside `cases/` it is never run). An escaped defect is a
 `mode: feature` case: findings come from the feature review alone, so drop `## Issue` and

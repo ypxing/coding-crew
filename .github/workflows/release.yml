@@ -1,7 +1,7 @@
 name: Release
 
 # Publishes a GitHub Release whenever a vX.Y.Z tag is pushed (scripts/cut-release.sh pushes one).
-# Releases are milestone markers only: `install.sh --update` follows registry.json's versions, not tags.
+# Releases are milestone markers only: `install.sh --update` reinstalls from the checkout it runs in, not from a tag.
 
 on:
   push:

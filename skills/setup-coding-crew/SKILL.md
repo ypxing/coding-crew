@@ -23,38 +23,16 @@ This skill does not commit or push: it prints the command, and the user runs it.
 <!-- fragment:tracker-configuration -->
 ## Tracker Configuration
 
-Every tracker operation in this skill is an op of the tracker CLI — nothing else reads or writes
-the tracker. Before the first one, check for Node:
-
-```bash
-node --version
-```
-
-If that fails, stop and tell the user: "the tracker CLI needs Node — install Node, then re-run this
-skill." The CLI is `<skill-dir>/scripts/tracker/cli.mjs`, `<skill-dir>` being the directory you read
-this file from. Wherever this skill runs an op as `node "$TRACKER" <op> …`, run it with that path:
-
-```bash
-node "<skill-dir>/scripts/tracker/cli.mjs" <op> …
-```
-
-Before the first op, ask the CLI which tracker it talks to:
-
-```bash
-node "$TRACKER" config   # prints tracker=<kind> and configured=yes|no
-```
-
-On `configured=no`, no tracker was ever chosen for this repo. On an interactive run, invoke the
-`configure-tracker` skill now to choose one, then continue. On a non-interactive run
-(a headless/`-p` invocation or a subagent) never ask: proceed as `local`, which
-is what the CLI already uses. How the tracker works — its refs, statuses and labels — is in
+Every tracker op runs through the tracker CLI, `TRACKER=<skill-dir>/scripts/tracker/cli.mjs` (`<skill-dir>` being the
+directory you read this file from), as `node "$TRACKER" <op> …`; nothing else reads or writes the tracker. Before the
+first op run `node "$TRACKER" config` (prints `tracker=<kind>` and `configured=yes|no`). On `configured=no` on an
+interactive run, invoke the `configure-tracker` skill, then continue; on a non-interactive run (a headless/`-p`
+invocation or a subagent) never ask: proceed as `local`. The tracker's refs, statuses and labels are in
 `<skill-dir>/scripts/tracker/docs/<kind>.md`.
 
-Exit codes, every op: 0 ok; 1 the op failed — stderr carries the tracker's own error, verbatim;
-2 a usage error or an invalid ref; 3 not found (`publish-issues` adds 4 and 5, described where it
-runs). On 1 or 2, report the stderr to the user and
-fix its cause (an input, auth, the network), then re-run the op —
-never perform the operation with the tracker's own tool instead.
+Exit codes, every op: 0 ok; 3 not found; on 1 (the op failed) or 2 (a usage error or an invalid ref), report the
+stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, never performing it with the tracker's
+own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
 <!-- /fragment:tracker-configuration -->
 
 ## Step 1 — Tracker
@@ -63,8 +41,8 @@ never perform the operation with the tracker's own tool instead.
 node "$TRACKER" config
 ```
 
-On `configured=no`, or when the user asks to change the tracker: Use the configure-tracker skill, then run
-`config` again. Otherwise show `Tracker: <kind>` and move on. Keep the kind for Step 3.
+When the user asks to change the tracker: Use the configure-tracker skill, then run `config` again. Show
+`Tracker: <kind>` and keep the kind for Step 3.
 
 ## Step 2 — Dev commands
 
@@ -84,21 +62,9 @@ fi
 bash "<skill-dir>/scripts/checks/discover-commands.sh"   # --refresh on "redo commands"
 ```
 
-- **A prompt** (`Command discovery: <n> source file(s) found`): answer it yourself by reading the files it
-  lists. Show the user the proposed commands, one per line, and take their corrections. Write the corrected
-  answer, in the JSON shape the prompt asks for, to `.discovered-commands.json` and save it:
+- **A prompt** (`Command discovery: <n> source file(s) found`): follow it.
 
-  ```bash
-  bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .discovered-commands.json
-  rm -f .discovered-commands.json
-  ```
-
-- **`Command discovery: skipped`**: there is nothing to ask. Show what `$DEV` holds. If it has no `"test"`
-  key — discovery found none of the files it reads — solve-feature would stop at its first check, so ask the
-  user for test, lint and typecheck, offering the ecosystem's convention as each default (`npm test`,
-  `pytest`, `go test ./...`, `cargo test`, `bundle exec rspec`; `npx eslint .`, `ruff check .`,
-  `golangci-lint run`; `npx tsc --noEmit`, `mypy .`, `go vet ./...`), `null` for one the project has none of.
-  Write the answers to `.discovered-commands.json` and save them with `write-commands-cache.sh` as above.
+- **`Command discovery: skipped`**: there is nothing to ask. Show what `$DEV` holds.
 
 Never run the commands: this step only records them.
 

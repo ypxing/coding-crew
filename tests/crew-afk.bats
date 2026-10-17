@@ -136,7 +136,7 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
 
 @test "an invalid slug, an unknown flag or an unknown --to exits 2, and creates nothing" {
   local args
-  for args in "../x" "report-cli --agent claude" "report-cli --to mars" "report-cli --branch a;b" "report-cli --branch x..y"; do
+  for args in "../x" "report-cli --not-a-flag x" "report-cli --to mars" "report-cli --branch a;b" "report-cli --branch x..y"; do
     run bash "$SCRIPT" dispatch $args -- claude
     [ "$status" -eq 2 ] || { echo "$args: $output"; return 1; }
     [[ "$output" == *crew-afk:* ]]
@@ -375,7 +375,3 @@ SH
   done
 }
 
-@test "no cost cap on any agent: crew-afk's SKILL.md, script and the guide's local row name no budget" {
-  ! grep -niE 'budget|\$10' "$REPO_ROOT/skills/crew-afk/SKILL.md" "$REPO_ROOT/skills/crew-afk/scripts/crew-afk.sh" || false
-  ! grep -E '^\| `local`' "$REPO_ROOT/docs/guide.md" | grep -iE 'budget|\$10' || false
-}

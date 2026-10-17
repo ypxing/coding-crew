@@ -45,20 +45,20 @@ Exit codes, every op: `0` ok, `1` the op failed (stderr says why), `2` a usage e
 outside `.scratch/`, `3` not found.
 
 `next` prints the path of the first open file, in filename order, whose `Status:` is
-`ready-for-agent` and whose every `## Blocked by` file (or `issues-deps.json` entry) sits in the
-feature's `done/`; it prints nothing and exits `3` when there is none.
+`ready-for-agent` and whose every blocker in `issues-deps.json` sits in the feature's `done/`; it prints nothing and exits `3` when there is none.
 
 `features` prints one tab-separated line per `.scratch/<slug>/` directory that has an `issues/`
 subdirectory, sorted by slug: `<slug>`, `open` (`issues/open/` holds an `.md` file) or `closed`, and
 the count of issues that can start now: `Status: ready-for-agent` files in `issues/open/` whose
-every blocker (from `issues-deps.json` when the feature has one, else `## Blocked by`) is in the
-feature's `issues/done/`, as `next` reads them. A directory without `issues/` is
+every blocker is in the feature's `issues/done/`, as `next` reads them. A directory without `issues/` is
 not listed, and no `.scratch/` prints nothing.
 
 `publish-issues` writes each draft to `.scratch/<slug>/issues/open/<NN>-<slug>.md` (numbered from
 `01`) and the drafts' `deps.json` to `.scratch/<slug>/issues/issues-deps.json` — a flat filename
 → blocker-filenames map. That file, not each issue's `## Blocked by` prose, is what `next` and
-`features` read to decide whether an issue can start. It exits `4` when the feature
+`features` read to decide whether an issue can start: it is the only source of blockers, an
+issue without an entry (or a feature without the file) has none, and a `## Blocked by` edited by
+hand after publish does not change dispatch; `rewrite` sets the issue's entry from its new `## Blocked by`. It exits `4` when the feature
 already has issues in `done/` and `5` when it has open ones and `--replace` is absent; both write
 nothing. `publish-prd` writes `.scratch/<slug>/PRD.md`.
 
@@ -77,8 +77,6 @@ Pass `--force` only for a descope a person approved. On success it sets `Status:
 
 `done` means implemented and merged into the feature branch, not shipped — for this tracker
 there is no later state: nothing outside `.scratch/` reads it, so no PR has anything to close.
-
-An issue may carry a `## Requires` section: one backticked shell command per bullet, naming what its checks need that the project's install does not guarantee (`- \`test -n "$LOCALSTACK_AUTH_TOKEN"\``). Exit 0 means satisfied. Each runs on the host from the project root, in `solve-issue`'s preflight, and a failing one blocks the issue.
 
 ## Reopen an issue
 
@@ -112,12 +110,10 @@ Each feature slug maps to a directory under `.scratch/`. Whenever the tracker CL
 .scratch/<feature-slug>/
 ├── PRD.md                    ← optional product requirements doc
 └── issues/
-    ├── issues-deps.json      ← optional; filename → blocker-filenames map (written by publish-issues)
+    ├── issues-deps.json      ← optional; filename → blocker-filenames map (written by publish-issues and rewrite)
     ├── open/                 ← active issues
     │   ├── 01-<slug>.md      ← implementation issues, numbered from 01
     │   └── 02-<slug>.md
     └── done/                 ← completed issues moved here (sibling of open/)
         └── 01-<slug>.md
 ```
-
-Comments and conversation history append to the bottom of each issue file under a `## Comments` heading.

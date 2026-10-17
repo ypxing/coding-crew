@@ -5,7 +5,7 @@ repo_ref: 6368458f
 ---
 <!-- repo_ref 6368458f is the feature baseline #342 was dispatched on. The draft below is #342's body with criterion 11 as first written, before the maintainer edited it. -->
 ## Request
-Issue #342 of feature `tracker-wrappers`, the only slice of the approved breakdown, under `tracker: github`. Its draft below passed `lint-issues.sh` (exit 0) and the feature's PRD is #343 (not reproduced here; judge the draft on its own). The draft, as written:
+Issue #342 of feature `tracker-wrappers`, the only slice of the approved breakdown, under `tracker: github`. Its draft below passed to-issues' linter (exit 0) and the feature's PRD is #343 (not reproduced here; judge the draft on its own). The draft, as written:
 
 # Remove the tracker shell wrappers; callers use the tracker CLI directly
 

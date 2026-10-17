@@ -5,7 +5,7 @@
 # Usage:
 #   bash scripts/run-checks.sh --project-root <path>
 #
-# Order: typecheck, lint, test, then every other key with a command. In docker mode with no override
+# Order: typecheck, lint, test, coverage, integration: the checks write-commands-cache.sh writes. In docker mode with no override
 # yet, the dependency install runs once first; if it fails, no check runs (CHECKS: fail).
 # Prints per check `<key>: pass`, `<key>: fail (exit N)` (then its output tail and log path), `<key>: NOT
 # RUN: no command found` (the cache's null), or `<key>: modified files: <list>` (the check rewrote files;
@@ -16,7 +16,6 @@ set -uo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_SCRIPT="$SELF_DIR/run.sh"
 PROJECT_ROOT=""
-TAIL_LINES="${CREW_CHECK_TAIL_LINES:-80}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -41,28 +40,12 @@ fi
 . "$SELF_DIR/commands-file.sh"
 CACHE=$(commands_file "$PROJECT_ROOT")
 
-if [ ! -f "$CACHE" ] || ! grep -q '"test"' "$CACHE" 2>/dev/null; then
+if ! commands_field_present "$CACHE" test; then
   echo "DISCOVER"
   exit 3
 fi
 
-# Keys of dev-commands.json that are not checks.
-NOT_CHECKS=" test lint typecheck install install_mode env credential_target docker_service "
-
-# _cached <key> — its command; empty for `null` or an absent key.
-_cached() {
-  local raw
-  raw=$(grep -o "\"$1\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" "$CACHE" 2>/dev/null | head -1 | sed -E "s/\"$1\"[[:space:]]*:[[:space:]]*//")
-  case "$raw" in
-    \"*\") raw="${raw#\"}"; printf '%s' "${raw%\"}" ;;
-  esac
-}
-
-KEYS=(typecheck lint test)
-while IFS= read -r key; do
-  [[ "$NOT_CHECKS" == *" $key "* ]] || KEYS+=("$key")
-done < <(grep -oE '"[a-z][a-z0-9_]*"[[:space:]]*:[[:space:]]*("|null)' "$CACHE" 2>/dev/null \
-  | sed -E 's/^"([a-z0-9_]+)".*/\1/' | awk '!seen[$0]++')
+KEYS=(typecheck lint test coverage integration)
 
 # A check must leave the tree as it found it; prior dirt is in the before snapshot.
 _tree_state() {
@@ -90,7 +73,8 @@ fi
 
 OVERALL=0
 for key in "${KEYS[@]}"; do
-  cmd="$(_cached "$key")"
+  case "$key" in coverage|integration) commands_field_present "$CACHE" "$key" || continue ;; esac
+  cmd="$(commands_field "$CACHE" "$key")"
   if [ -z "$cmd" ]; then
     echo "$key: NOT RUN: no command found"
     continue
@@ -106,7 +90,7 @@ for key in "${KEYS[@]}"; do
   after="$(_tree_state)"
   changed=""
   [ "$before" = "$after" ] || changed="$(_changed_files "$before" "$after")"
-  tail -n "$TAIL_LINES" "$log"
+  tail -n 80 "$log"
   if [ -n "$changed" ]; then
     echo "$key: modified files: $changed — the check rewrote them: run it, commit the result, and re-run (a check that rewrites files on every run needs a non-mutating command in $CACHE)"
     echo "$key: fail (exit $rc, modified files)"

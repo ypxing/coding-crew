@@ -26,13 +26,12 @@ function root({ github = false } = {}) {
   return dir;
 }
 
-async function cli(mainRoot, argv, exec = () => assert.fail("gh must not be called"), env = {}) {
+async function cli(mainRoot, argv, exec = () => assert.fail("gh must not be called")) {
   let stdout = "";
   let stderr = "";
   const code = await run([...argv, "--main-root", mainRoot], {
     exec,
     cwd: mainRoot,
-    env,
     out: (s) => (stdout += s),
     err: (s) => (stderr += s),
   });
@@ -222,7 +221,7 @@ test("publish-issues (local) writes open/NN-<slug>.md and issues-deps.json with 
   assert.deepEqual(readdirSync(open).sort(), ["01-a.md", "02-b.md"]);
   assert.equal(readFileSync(join(open, "01-a.md"), "utf8"), DRAFT_A);
   assert.equal(readFileSync(join(open, "02-b.md"), "utf8"), DRAFT_B);
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), "utf8")), { "02-b.md": ["01-a.md"] });
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), "utf8")), { "01-a.md": [], "02-b.md": ["01-a.md"] });
   assert.equal(r.stdout, `01-a.md ${join(open, "01-a.md")}\n02-b.md ${join(open, "02-b.md")}\n`);
   assert.equal(existsSync(d), false);
 });
@@ -237,7 +236,73 @@ test("publish-issues (local) numbers the drafts after any existing issue and rew
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(readdirSync(join(issues, "open")).sort(), ["04-a.md", "05-b.md"]);
   assert.match(readFileSync(join(issues, "open/05-b.md"), "utf8"), /## Blocked by\n\n- 04-a\.md\n/);
-  assert.deepEqual(JSON.parse(readFileSync(join(issues, "issues-deps.json"), "utf8")), { "05-b.md": ["04-a.md"] });
+  assert.deepEqual(JSON.parse(readFileSync(join(issues, "issues-deps.json"), "utf8")), { "04-a.md": [], "05-b.md": ["04-a.md"] });
+});
+
+test("publish-issues (local) writes every draft into issues-deps.json, [] for an unblocked one", async () => {
+  const dir = root();
+  const d = drafts(dir, { files: { "01-a.md": DRAFT_A, "02-b.md": DRAFT_B, "03-c.md": DRAFT_A.replace("Add a", "Add c") } });
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), "utf8")), {
+    "01-a.md": [],
+    "02-b.md": ["01-a.md"],
+    "03-c.md": [],
+  });
+});
+
+test("publish-issues exits 1 and creates nothing when a draft's Blocked by and deps.json differ, naming the draft and both lists", async () => {
+  for (const github of [false, true]) {
+    const dir = root({ github });
+    const d = drafts(dir, { deps: { "02-b.md": [] } });
+    const exec = github ? fakeGithub(ghFeature("feat", ghIssue(7, { title: "Existing thing" }))) : undefined;
+    const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d], exec);
+    assert.equal(r.code, 1, `github=${github}: ${r.stderr}`);
+    assert.match(r.stderr, /02-b\.md/);
+    assert.match(r.stderr, /deps\.json: \[\]/);
+    assert.match(r.stderr, /## Blocked by: \[01-a\.md\]/);
+    assert.match(r.stderr, /names a draft by its filename/);
+    if (github) assert.equal(ghCreates(exec).length, 0);
+    assert.equal(existsSync(join(dir, ".scratch/feat/issues")), false);
+    assert.deepEqual(readdirSync(d).sort(), ["01-a.md", "02-b.md", "deps.json"]);
+  }
+});
+
+test("publish-issues (local) refuses a draft whose Blocked by names a draft only as Issue #<n>: a draft is named by its filename", async () => {
+  const dir = root();
+  const d = join(dir, ".scratch/feat/.drafts");
+  cpSync(join(REPO, "tests/tracker/fixtures/publish-clean"), d, { recursive: true });
+  const docs = join(d, "03-docs.md");
+  writeFileSync(docs, readFileSync(docs, "utf8").replace("- 02-cli.md", "- Issue #2"));
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
+  assert.equal(r.code, 1, r.stderr);
+  assert.match(r.stderr, /03-docs\.md: deps\.json: \[02-cli\.md\] differs from ## Blocked by: \[\]/);
+  assert.equal(existsSync(join(dir, ".scratch/feat/issues")), false);
+});
+
+test("publish-issues (local) publishes the clean drafts, whose Blocked by names each draft blocker by its filename", async () => {
+  const dir = root();
+  const d = join(dir, ".scratch/feat/.drafts");
+  cpSync(join(REPO, "tests/tracker/fixtures/publish-clean"), d, { recursive: true });
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), "utf8")), {
+    "01-store.md": [],
+    "02-cli.md": ["01-store.md"],
+    "03-docs.md": ["02-cli.md"],
+  });
+});
+
+test("publish-issues (local) publishes the smoke demo's issues with its deps", async () => {
+  const dir = root();
+  const demo = join(REPO, "scripts/smoke-crew-afk/demo/feature/issues");
+  const d = join(dir, ".scratch/feat/.drafts");
+  cpSync(join(demo, "open"), d, { recursive: true });
+  const present = new Set(readdirSync(d));
+  const all = JSON.parse(readFileSync(join(demo, "issues-deps.json"), "utf8"));
+  writeFileSync(join(d, "deps.json"), JSON.stringify(Object.fromEntries(Object.entries(all).filter(([f]) => present.has(f)))));
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
+  assert.equal(r.code, 0, r.stderr);
 });
 
 /** Every file under `dir`, relative, sorted — to prove a refused op wrote nothing. */
@@ -516,6 +581,24 @@ test("rewrite (local) leaves a Blocked by entry naming a known issue file as tha
   assert.equal(readFileSync(path, "utf8"), body.replace("needs-triage", "ready-for-agent"));
 });
 
+test("rewrite (local) records the rewritten Blocked by in issues-deps.json, so dispatch waits on it", async () => {
+  const dir = root();
+  const unblocked = DRAFT_A.replace("Add a", "Add b").replace("ready-for-agent", "ready-for-human");
+  const d = drafts(dir, { deps: {}, files: { "01-a.md": DRAFT_A.replace("ready-for-agent", "ready-for-human"), "02-b.md": unblocked } });
+  assert.equal((await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d])).code, 0);
+  const issues = join(dir, ".scratch/feat/issues");
+  const path = join(issues, "open/02-b.md");
+  writeFileSync(join(dir, "body.md"), `${unblocked}\n## Blocked by\n\n- 01-a.md\n`);
+  const r = await cli(dir, ["rewrite", path, "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(issues, "issues-deps.json"), "utf8")), { "01-a.md": [], "02-b.md": ["01-a.md"] });
+  assert.equal((await cli(dir, ["next", "--feature-slug", "feat"])).code, 3);
+
+  writeFileSync(join(dir, "body.md"), unblocked);
+  assert.equal((await cli(dir, ["rewrite", path, "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"])).code, 0);
+  assert.deepEqual(JSON.parse(readFileSync(join(issues, "issues-deps.json"), "utf8")), { "01-a.md": [], "02-b.md": [] });
+});
+
 test("rewrite (github) exits 3 for an issue that does not exist, 2 for a non-numeric ref", async () => {
   const dir = root({ github: true });
   writeFileSync(join(dir, "body.md"), "b\n");
@@ -527,7 +610,7 @@ test("rewrite (github) exits 3 for an issue that does not exist, 2 for a non-num
 test("rewrite (local) overwrites the issue at its path with the new body and Status: ST, Source: kept", async () => {
   const dir = root();
   const open = join(dir, ".scratch/feat/issues/open");
-  cpSync(join(REPO, "tests/fixtures/lint-issues/promoted/issues"), open, { recursive: true });
+  cpSync(join(REPO, "tests/tracker/fixtures/promoted/issues"), open, { recursive: true });
   const path = join(open, "50-fix-finding.md");
   const fixture = readFileSync(path, "utf8");
   const body = fixture.replace("A reviewer found", "The reviewer found");
@@ -617,7 +700,7 @@ test("mark-done exits 4 while a criterion is unchecked in a fresh read, on both 
 
   // Fetched live on each call: the same ref refuses on the unmet body, then succeeds once it is met.
   let body = UNMET;
-  const exec = fakeGh({ "issue view 12": () => ({ stdout: body }), "label create": {}, "issue edit 12": {} });
+  const exec = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": () => ({ stdout: body }), "label create": {}, "issue edit 12": {} });
   const ghRoot = root({ github: true });
   const gh = await cli(ghRoot, ["mark-done", "12"], exec);
   assert.equal(gh.code, 4);
@@ -651,14 +734,14 @@ test("reopen (local) moves a done issue back to open/ as ready-for-agent, by eit
 
 test("reopen (github) swaps awaiting-merge for ready-for-agent, reopening a closed issue first; exits 3 for none", async () => {
   const dir = root({ github: true });
-  const open = fakeGh({ "issue view 12": { stdout: '{"state":"OPEN","labels":[{"name":"awaiting-merge"}]}' }, "issue edit 12": {} });
+  const open = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: '{"state":"OPEN","labels":[{"name":"awaiting-merge"}]}' }, "issue edit 12": {} });
   const r = await cli(dir, ["reopen", "12"], open);
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.stdout, "REOPENED: issue #12 labelled ready-for-agent\n");
   assert.deepEqual(open.find("issue edit")[0][0], ["gh", "issue", "edit", "12", "--add-label", "ready-for-agent", "--remove-label", "awaiting-merge"]);
   assert.equal(open.find("issue reopen").length, 0);
 
-  const closed = fakeGh({ "issue view 12": { stdout: '{"state":"CLOSED","labels":[]}' }, "issue reopen 12": {}, "issue edit 12": {} });
+  const closed = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: '{"state":"CLOSED","labels":[]}' }, "issue reopen 12": {}, "issue edit 12": {} });
   assert.equal((await cli(dir, ["reopen", "12"], closed)).code, 0);
   assert.deepEqual(closed.calls.map((c) => c[2]), ["view", "reopen", "edit"]);
   assert.deepEqual(closed.find("issue edit")[0][0], ["gh", "issue", "edit", "12", "--add-label", "ready-for-agent"]);
@@ -701,7 +784,7 @@ test("tick exits 3 for a missing issue and 2 for a ref outside .scratch/ or no r
 });
 
 test("tick (github) fetches the body live, edits it back ticked, and skips the edit when nothing is unchecked", async () => {
-  const exec = fakeGh({ "issue view 12": { stdout: TWO_UNMET }, "issue edit 12": {} });
+  const exec = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: TWO_UNMET }, "issue edit 12": {} });
   const dir = root({ github: true });
   const r = await cli(dir, ["tick", "12"], exec);
   assert.equal(r.code, 0, r.stderr);
@@ -711,7 +794,7 @@ test("tick (github) fetches the body live, edits it back ticked, and skips the e
   assert.deepEqual(edit.slice(0, 4), ["gh", "issue", "edit", "12"]);
   assert.equal(exec.bodies[i], TWO_TICKED);
 
-  const met = fakeGh({ "issue view 12": { stdout: TWO_TICKED } });
+  const met = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: TWO_TICKED } });
   assert.equal((await cli(dir, ["tick", "12"], met)).stdout, "TICKED: issue #12 — 0 criteria\n");
   assert.equal(met.find("issue edit").length, 0);
 
@@ -765,7 +848,7 @@ test("mark-done exits 4 for a body with no acceptance-criteria section, on both 
   assert.match(local.stderr, /--force is only for a descope a person approved/);
   assert.equal(existsSync(path), true);
 
-  const exec = fakeGh({ "issue view 12": { stdout: NO_SECTION }, "label create": {}, "issue edit 12": {} });
+  const exec = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: NO_SECTION }, "label create": {}, "issue edit 12": {} });
   const gh = await cli(root({ github: true }), ["mark-done", "12"], exec);
   assert.equal(gh.code, 4);
   assert.match(gh.stderr, /^REFUSED: .*no '## Acceptance criteria' section/);
@@ -801,7 +884,7 @@ test("mark-done --force closes a body with no acceptance-criteria section, on bo
   assert.equal(local.code, 0, local.stderr);
   assert.equal(existsSync(join(dir, ".scratch/feat/issues/done/01-t.md")), true);
 
-  const exec = fakeGh({ "issue view 12": { stdout: NO_SECTION }, "label create": {}, "issue edit 12": {} });
+  const exec = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: NO_SECTION }, "label create": {}, "issue edit 12": {} });
   const gh = await cli(root({ github: true }), ["mark-done", "12", "--force"], exec);
   assert.equal(gh.code, 0, gh.stderr);
   assert.equal(exec.find("issue edit 12").length, 1);
@@ -820,14 +903,15 @@ test("mark-done --force skips the criteria guards", async () => {
   assert.equal(r.code, 0, r.stderr);
   assert.equal(existsSync(join(dir, ".scratch/feat/issues/done/01-t.md")), true);
 
-  const exec = fakeGh({ "issue view 12": { stdout: UNMET }, "label create": {}, "issue edit 12": {} });
+  const exec = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: UNMET }, "label create": {}, "issue edit 12": {} });
   const gh = await cli(root({ github: true }), ["mark-done", "12", "--force"], exec);
   assert.equal(gh.code, 0, gh.stderr);
   assert.equal(exec.find("issue edit 12").length, 1);
 });
 
-test("mark-done (github) adds awaiting-merge, removes the ready labels, and leaves the issue open", async () => {
-  const exec = fakeGh({ "issue view 12": { stdout: MET }, "label create": {}, "issue edit 12": {} });
+test("mark-done (github) adds awaiting-merge, removes the ready labels it carries, and leaves the issue open", async () => {
+  const labels = '{"labels":[{"name":"ready-for-agent"},{"name":"ready-for-human"},{"name":"bug"}]}';
+  const exec = fakeGh({ "issue view 12 --json labels": { stdout: labels }, "issue view 12": { stdout: MET }, "label create": {}, "issue edit 12": {} });
   const r = await cli(root({ github: true }), ["mark-done", "12"], exec);
   assert.equal(r.code, 0, r.stderr);
   const [[edit]] = exec.find("issue edit 12");

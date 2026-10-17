@@ -55,20 +55,8 @@ confirm and save the answer exactly as the prompt's last lines say. Then run `re
 and continue with what it prints.
 
 **The install command.** The dev commands file's `install` field holds the project's documented
-install command, or `null` when someone looked and found none. Make sure it has been asked:
-
-```bash
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")
-```
-
-`Command discovery: skipped` means every field is already answered. A prompt means some are not:
-answer every field it lists by reading the files it names, write the JSON to
-`$PROJECT_ROOT/.discovered-commands.json`, and save it:
-
-```bash
-(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/write-commands-cache.sh" --response-file .discovered-commands.json)
-rm -f "$PROJECT_ROOT/.discovered-commands.json"
-```
+install command, or `null` when someone looked and found none. Make sure it has been asked: run
+`(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")` and follow its prompt, if it prints one.
 
 The install guides below only read `install`; they never look for one themselves.
 

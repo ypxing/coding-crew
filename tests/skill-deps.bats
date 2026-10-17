@@ -13,21 +13,19 @@ teardown() { rm -rf "$T"; }
 # Mentions that point a person or a reader at another skill without invoking it, as
 # `<skill> <name>  # reason`. A skill is never required to install what it only points at.
 ALLOWLIST='
-add-tests crew-grill            # an analogy: crew-grill hands its design over the same way
 add-tests tdd                   # cites tdd'"'"'s rule the coder follows; the coder runs solve-issue
 crew-afk crew-grill             # tells the person to plan the feature first
 crew-afk crew-brainstorm        # tells the person to plan the feature first
 crew-afk to-issues              # tells the person to plan the feature first
 setup-coding-crew solve-feature # what setup prepares the repo for, and its workflow file
 setup-coding-crew solve-issue   # says which earlier run discovered the dev commands file
-to-issues solve-issue           # human-issue: where a person finds the tracker CLI (scripts/tracker/)
+to-issues solve-issue           # For a human: where a person finds the tracker CLI (scripts/tracker/)
 to-issues add-tests             # a caller: names the findings file add-tests hands over
 to-issues crew-grill            # a caller: hands over its design summary
 to-issues crew-brainstorm       # a caller: hands over its design summary
 to-prd crew-grill               # a caller: its summary holds settled decisions
 to-prd crew-brainstorm          # a caller: its summary holds settled decisions
 to-prd to-issues                # a caller: it hands over the slug
-upgrade-deps solve-issue        # human-issue: where a person finds the tracker CLI (scripts/tracker/)
 '
 
 # named_skills <names-regex> — the registry names stdin names as a skill, one per line: a whole

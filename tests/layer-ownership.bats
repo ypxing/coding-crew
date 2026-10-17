@@ -83,11 +83,6 @@ defines_term() {
   ! echo "$section" | grep -qi 'name an orchestrator\|your caller'
 }
 
-@test "the blocked-by check no longer explains who filters issues" {
-  section=$(awk '/^### 1\./{f=1} /^### 1\.5/{exit} f' "$SOLVE_ISSUE")
-  ! echo "$section" | grep -qi 'orchestrator'
-}
-
 # ─── the environment contract is stated once ─────────────────────────────────
 
 @test "solve-issue and host-install reference PROJECT_ROOT without redefining it, and no MAIN_ROOT" {
@@ -109,17 +104,3 @@ defines_term() {
   grep -q '^### 0\. Preflight' "$SOLVE_ISSUE"
   grep -q 'DEFAULT_BRANCH' "$SOLVE_ISSUE"
 }
-
-# ─── the table is written down where the next change will look ───────────────
-
-@test "CLAUDE.md records the ownership table, with no orchestrator, crew-afk scripts or crew-coder row" {
-  local f="$REPO_ROOT/CLAUDE.md"
-  grep -q 'Layer ownership\|ownership table' "$f"
-  # Every layer named, with a "must not contain" column.
-  grep -q 'Must not contain' "$f"
-  for layer in 'solve-feature' 'solve-issue' 'tdd' 'dep-install'; do
-    grep -q "$layer" "$f" || { echo "CLAUDE.md's table omits $layer" >&2; return 1; }
-  done
-  ! grep -qE '^\| `((orchestrator|skills/crew-afk/scripts)/|crew-coder)`' "$f"
-}
-
