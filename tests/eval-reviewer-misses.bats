@@ -240,6 +240,23 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   [ "$status" -eq 0 ]
 }
 
+@test "the simplify-codebase case replays PR #558's reviewed range with its four misses and PRD #550" {
+  local f="$REPO_ROOT/scripts/eval-reviewer-misses/cases/simplify-codebase-feature.md"
+  grep -qx 'mode: feature' "$f"
+  grep -qx 'base_sha: 0247b4c5f11a6247146b151d46a0ab8f8d28a4f1' "$f"
+  grep -q '^head_sha: e6e6732f' "$f"
+  grep -qx 'via: refs/pull/558/head' "$f"
+  run env MOD="$REPO_ROOT/scripts/eval-reviewer-misses.mjs" F="$f" node -e '
+    import(process.env.MOD).then((m) => {
+      const c = m.parseCase("simplify-codebase-feature", require("fs").readFileSync(process.env.F, "utf8"));
+      const ids = c.misses.map((x) => x.id).join(" ");
+      if (ids !== "rewrite-blocked-by-unread override-blanks-env yarn-proxy-warning negative-grep-cannot-fail") throw new Error(ids);
+      if (!/\*\*D7\*\*/.test(c.prd) || !/\*\*D16\*\*/.test(c.prd) || !/\*\*B9\*\*/.test(c.prd)) throw new Error("PRD #550 not frozen in ## PRD");
+    }).catch((e) => { console.error(e.message); process.exit(1); });
+  '
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "the judge is asked for distinct findings, the summary names the models and gives both means" {
   run run_eval --runs 1
   d=$(out_dir)
