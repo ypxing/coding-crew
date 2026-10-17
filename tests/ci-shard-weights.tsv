@@ -35,6 +35,5 @@
 1	shell-sigpipe-lint.bats
 37	solve-issue-scripts.bats
 7	sync-pr-with-main.bats
-24	to-issues-lint-issues.bats
 3	tracker-mark-done-github.bats
 1	tracker-rewrite-github.bats

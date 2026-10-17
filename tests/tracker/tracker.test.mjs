@@ -14,7 +14,6 @@ import {
   listOpenIssueFiles,
   parseIssue,
   readIssueDeps,
-  resolveBlockedBy,
   selectDispatchable,
 } from "../../lib/tracker/local.mjs";
 
@@ -51,6 +50,7 @@ test("issueNumber reads the filename's leading digits, or null when there are no
 
 test("parseIssue reads status, criteria, blockers and section presence", () => {
   const root = repo();
+  issuesDeps(root, "feat", { "02-second.md": ["01-first.md"] });
   const p = issue(
     root,
     "feat",
@@ -93,53 +93,6 @@ test("parseIssue detects a Source: line (the promotion depth bound)", () => {
   assert.equal(parseIssue(p).sourceGuarded, true);
 });
 
-test("parseIssue resolves 'Issue NN' style blocked-by references to sibling filenames", () => {
-  const root = repo();
-  issue(root, "feat", "03-cutover-get-product-specification.md", "# GET spec\n\nStatus: ready-for-agent\n");
-  issue(root, "feat", "04-cutover-list-product-offerings.md", "# List offerings\n\nStatus: ready-for-agent\n");
-  const p = issue(
-    root,
-    "feat",
-    "02-second.md",
-    [
-      "# Second thing",
-      "",
-      "Status: ready-for-agent",
-      "",
-      "## Blocked by",
-      "",
-      "- Issue 03 (Contract: cutover get-product-specification)",
-      "- Issue 04 (Contract: cutover list-product-offerings)",
-      "",
-    ].join("\n"),
-  );
-  const i = parseIssue(p);
-  assert.deepEqual(i.blockedBy, [
-    "03-cutover-get-product-specification.md",
-    "04-cutover-list-product-offerings.md",
-  ]);
-});
-
-test("resolveBlockedBy finds a referenced issue whether it lives in open/ or done/", () => {
-  const root = repo();
-  issue(root, "feat", "01-first.md", "# F\n\nStatus: done\n", { dir: "done" });
-  const p = issue(root, "feat", "02-second.md", "# S\n\nStatus: ready-for-agent\n");
-  assert.deepEqual(resolveBlockedBy("- Issue 1: first thing", p), ["01-first.md"]);
-});
-
-test("selectDispatchable respects a numeric 'Issue NN' blocked-by reference", () => {
-  const root = repo();
-  issue(root, "feat", "01-first.md", "# F\n\nStatus: ready-for-agent\n");
-  issue(
-    root,
-    "feat",
-    "02-second.md",
-    "# S\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- Issue 01 (some contract)\n",
-  );
-  const picked = selectDispatchable(root).map((i) => i.slug);
-  assert.deepEqual(picked, ["first"]);
-});
-
 test("parseIssue prefers issues-deps.json over the Blocked by prose when both are present", () => {
   const root = repo();
   issuesDeps(root, "feat", { "02-second.md": ["01-first.md"] });
@@ -159,11 +112,25 @@ test("parseIssue treats an empty issues-deps.json array as explicitly unblocked"
   assert.deepEqual(parseIssue(p).blockedBy, []);
 });
 
-test("parseIssue falls back to the markdown heuristic when issues-deps.json has no entry for this issue", () => {
+test("parseIssue reads no blockers from the prose when issues-deps.json has no entry for this issue", () => {
   const root = repo();
   issuesDeps(root, "feat", { "03-third.md": ["01-first.md"] });
   const p = issue(root, "feat", "02-second.md", "# S\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 01-first.md\n");
-  assert.deepEqual(parseIssue(p).blockedBy, ["01-first.md"]);
+  assert.deepEqual(parseIssue(p).blockedBy, []);
+});
+
+test("parseIssue reads no blockers when the feature has no issues-deps.json, whatever the prose says", () => {
+  const root = repo();
+  const p = issue(root, "feat", "02-second.md", "# S\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 01-first.md\n- Issue 01\n");
+  assert.deepEqual(parseIssue(p).blockedBy, []);
+});
+
+test("selectDispatchable returns an issue whose Blocked by names an open issue when issues-deps.json gives it []", () => {
+  const root = repo();
+  issuesDeps(root, "feat", { "01-first.md": [], "02-second.md": [] });
+  issue(root, "feat", "01-first.md", "# F\n\nStatus: ready-for-agent\n");
+  issue(root, "feat", "02-second.md", "# S\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 01-first.md\n");
+  assert.deepEqual(selectDispatchable(root).map((i) => i.slug), ["first", "second"]);
 });
 
 test("readIssueDeps returns null when issues-deps.json is absent or unparseable", () => {
@@ -190,6 +157,7 @@ test("selectDispatchable gates on issues-deps.json even when the prose is unreso
 
 test("blockers only counts issues absent from done/", () => {
   const root = repo();
+  issuesDeps(root, "feat", { "02-second.md": ["01-first.md", "00-zero.md"] });
   const p = issue(
     root,
     "feat",
@@ -203,6 +171,7 @@ test("blockers only counts issues absent from done/", () => {
 
 test("selectDispatchable keeps ready+unblocked and skips every other status", () => {
   const root = repo();
+  issuesDeps(root, "feat", { "04-blocked.md": ["01-ready.md"] });
   issue(root, "feat", "01-ready.md", "# A\n\nStatus: ready-for-agent\n");
   issue(root, "feat", "02-parked.md", "# B\n\nStatus: deferred-findings\n");
   issue(root, "feat", "03-triage.md", "# C\n\nStatus: needs-triage\n");

@@ -318,7 +318,7 @@ EOF
   grep -q 'ARGUMENTS: Draft: build the widget' "$d/p1-head-1.prompt.txt"
   last=$(tail -n 1 "$d/p1-head-1.prompt.txt")
   [[ "$last" == "EVAL MODE"* ]]
-  [[ "$last" == *"step 6"*"lint-issues.sh"*"exited 0"* ]]
+  [[ "$last" == *"step 6"*"deps.json"*"agrees"* ]]
   [[ "$last" == *"inline"* ]]
   [[ "$last" == *"what you would ask the user or change in the drafts before publishing"* ]]
   [[ "$last" == *"Do not publish"* ]]

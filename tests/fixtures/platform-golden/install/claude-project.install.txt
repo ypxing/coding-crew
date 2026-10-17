@@ -262,7 +262,6 @@ REPO/.claude/skills/to-issues/references/ /
 REPO/.claude/skills/to-issues/references/expand-contract.md exec=0
 REPO/.claude/skills/to-issues/references/publish.md exec=0
 REPO/.claude/skills/to-issues/scripts/ /
-REPO/.claude/skills/to-issues/scripts/lint-issues.sh exec=1
 REPO/.claude/skills/to-issues/scripts/tracker/ /
 REPO/.claude/skills/to-issues/scripts/tracker/body-format.mjs exec=0
 REPO/.claude/skills/to-issues/scripts/tracker/cli.mjs exec=0

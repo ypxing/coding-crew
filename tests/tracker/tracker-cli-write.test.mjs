@@ -222,7 +222,7 @@ test("publish-issues (local) writes open/NN-<slug>.md and issues-deps.json with 
   assert.deepEqual(readdirSync(open).sort(), ["01-a.md", "02-b.md"]);
   assert.equal(readFileSync(join(open, "01-a.md"), "utf8"), DRAFT_A);
   assert.equal(readFileSync(join(open, "02-b.md"), "utf8"), DRAFT_B);
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), "utf8")), { "02-b.md": ["01-a.md"] });
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), "utf8")), { "01-a.md": [], "02-b.md": ["01-a.md"] });
   assert.equal(r.stdout, `01-a.md ${join(open, "01-a.md")}\n02-b.md ${join(open, "02-b.md")}\n`);
   assert.equal(existsSync(d), false);
 });
@@ -237,7 +237,60 @@ test("publish-issues (local) numbers the drafts after any existing issue and rew
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(readdirSync(join(issues, "open")).sort(), ["04-a.md", "05-b.md"]);
   assert.match(readFileSync(join(issues, "open/05-b.md"), "utf8"), /## Blocked by\n\n- 04-a\.md\n/);
-  assert.deepEqual(JSON.parse(readFileSync(join(issues, "issues-deps.json"), "utf8")), { "05-b.md": ["04-a.md"] });
+  assert.deepEqual(JSON.parse(readFileSync(join(issues, "issues-deps.json"), "utf8")), { "04-a.md": [], "05-b.md": ["04-a.md"] });
+});
+
+test("publish-issues (local) writes every draft into issues-deps.json, [] for an unblocked one", async () => {
+  const dir = root();
+  const d = drafts(dir, { files: { "01-a.md": DRAFT_A, "02-b.md": DRAFT_B, "03-c.md": DRAFT_A.replace("Add a", "Add c") } });
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), "utf8")), {
+    "01-a.md": [],
+    "02-b.md": ["01-a.md"],
+    "03-c.md": [],
+  });
+});
+
+test("publish-issues exits 1 and creates nothing when a draft's Blocked by and deps.json differ, naming the draft and both lists", async () => {
+  for (const github of [false, true]) {
+    const dir = root({ github });
+    const d = drafts(dir, { deps: { "02-b.md": [] } });
+    const exec = github ? fakeGithub(ghFeature("feat", ghIssue(7, { title: "Existing thing" }))) : undefined;
+    const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d], exec);
+    assert.equal(r.code, 1, `github=${github}: ${r.stderr}`);
+    assert.match(r.stderr, /02-b\.md/);
+    assert.match(r.stderr, /deps\.json: \[\]/);
+    assert.match(r.stderr, /## Blocked by: \[01-a\.md\]/);
+    if (github) assert.equal(ghCreates(exec).length, 0);
+    assert.equal(existsSync(join(dir, ".scratch/feat/issues")), false);
+    assert.deepEqual(readdirSync(d).sort(), ["01-a.md", "02-b.md", "deps.json"]);
+  }
+});
+
+test("publish-issues (local) publishes the clean drafts, whose Blocked by names a draft as a file or as Issue #<n>", async () => {
+  const dir = root();
+  const d = join(dir, ".scratch/feat/.drafts");
+  cpSync(join(REPO, "tests/tracker/fixtures/publish-clean"), d, { recursive: true });
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), "utf8")), {
+    "01-store.md": [],
+    "02-cli.md": ["01-store.md"],
+    "03-docs.md": ["02-cli.md"],
+  });
+});
+
+test("publish-issues (local) publishes the smoke demo's issues with its deps", async () => {
+  const dir = root();
+  const demo = join(REPO, "scripts/smoke-crew-afk/demo/feature/issues");
+  const d = join(dir, ".scratch/feat/.drafts");
+  cpSync(join(demo, "open"), d, { recursive: true });
+  const present = new Set(readdirSync(d));
+  const all = JSON.parse(readFileSync(join(demo, "issues-deps.json"), "utf8"));
+  writeFileSync(join(d, "deps.json"), JSON.stringify(Object.fromEntries(Object.entries(all).filter(([f]) => present.has(f)))));
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
+  assert.equal(r.code, 0, r.stderr);
 });
 
 /** Every file under `dir`, relative, sorted — to prove a refused op wrote nothing. */
@@ -527,7 +580,7 @@ test("rewrite (github) exits 3 for an issue that does not exist, 2 for a non-num
 test("rewrite (local) overwrites the issue at its path with the new body and Status: ST, Source: kept", async () => {
   const dir = root();
   const open = join(dir, ".scratch/feat/issues/open");
-  cpSync(join(REPO, "tests/fixtures/lint-issues/promoted/issues"), open, { recursive: true });
+  cpSync(join(REPO, "tests/tracker/fixtures/promoted/issues"), open, { recursive: true });
   const path = join(open, "50-fix-finding.md");
   const fixture = readFileSync(path, "utf8");
   const body = fixture.replace("A reviewer found", "The reviewer found");

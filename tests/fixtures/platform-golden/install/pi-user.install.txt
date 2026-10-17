@@ -265,7 +265,6 @@ HOME/.pi/agent/skills/to-issues/references/ /
 HOME/.pi/agent/skills/to-issues/references/expand-contract.md exec=0
 HOME/.pi/agent/skills/to-issues/references/publish.md exec=0
 HOME/.pi/agent/skills/to-issues/scripts/ /
-HOME/.pi/agent/skills/to-issues/scripts/lint-issues.sh exec=1
 HOME/.pi/agent/skills/to-issues/scripts/tracker/ /
 HOME/.pi/agent/skills/to-issues/scripts/tracker/body-format.mjs exec=0
 HOME/.pi/agent/skills/to-issues/scripts/tracker/cli.mjs exec=0

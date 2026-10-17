@@ -20,7 +20,7 @@ One file per issue already in the feature, named by the ref a `## Blocked by` en
 
 ## Dependency map
 
-Write `.scratch/<feature-slug>/.drafts/deps.json` with the drafts, before the lint below (its `--deps` compares the map with the `## Blocked by` prose) — a flat map from each draft's filename to the filenames of the drafts blocking it, e.g.:
+Write `.scratch/<feature-slug>/.drafts/deps.json` with the drafts — a flat map from each draft's filename to the filenames of the drafts blocking it, e.g.:
 
 ```json
 {
@@ -32,22 +32,13 @@ Write `.scratch/<feature-slug>/.drafts/deps.json` with the drafts, before the li
 
 Source it from the same blocking edges the user confirmed in the quiz — do not re-derive it from the `## Blocked by` prose. `publish-issues` creates the issues in this map's order and records the same edges, under the issues' final refs, where the dispatcher's `next` reads them to decide whether an issue is ready. Include every draft, even ones with no blockers (`[]`); an edge to an issue that already exists lives only in the draft's `## Blocked by`.
 
-## Lint
+## Refusals
 
-```bash
-bash <skill-dir>/scripts/lint-issues.sh --issue <draft> [--issue <draft> …] \
-  [--known <file> …] --deps .scratch/<feature-slug>/.drafts/deps.json [--prd .scratch/<feature-slug>/.drafts/PRD.md]
-```
-
-Pass every file `known` wrote as a `--known <file>` (never linted, but a `## Blocked by` ref resolves to it by basename, and an existing `--known` file's `## Implements` counts toward `--prd` coverage, so a PRD ID an earlier issue already implements is not reported uncovered), and `--prd` whenever `.scratch/<feature-slug>/.drafts/PRD.md` exists (step 2's PRD, or the one `to-prd` wrote).
-
-- Exit 1: publish nothing. Show the `ERROR` lines; return to the quiz (step 5) to fix them, then render and lint again.
-- Exit 0: at most `WARN` lines. Show them and continue. The shared-file `WARN` (two issues naming the same file with no `## Blocked by` path between them) is advisory: it is never by itself grounds for a `Blocked by` edge — only the edge rule's rows 1–2 are.
-- Exit 2: a usage error in how you called it. Fix the call.
+`publish-issues` refuses an unknown blocker, a cycle, or drift between `deps.json` and `## Blocked by`, and its stderr names the draft; return to step 5 with that message.
 
 ## Builder check
 
-After lint exits 0 and before publishing, a fresh subagent reads the drafts cold, the way their implementer will: the writer fills omissions from memory, and that is the blind spot this check exists for. Skip it when every draft carries a column-0 `Source:` line (findings already judged, step 1). When the session has no subagent tool, print `builder check skipped: no subagent tool` and publish: never read the drafts yourself in its place.
+Before publishing, a fresh subagent reads the drafts cold, the way their implementer will: the writer fills omissions from memory, and that is the blind spot this check exists for. Skip it when every draft carries a column-0 `Source:` line (findings already judged, step 1). When the session has no subagent tool, print `builder check skipped: no subagent tool` and publish: never read the drafts yourself in its place.
 
 Give the subagent only the paths of the drafts, `.scratch/<feature-slug>/.drafts/PRD.md` and `known/` when they exist, and read access to the repo. Never give it the conversation, a design summary or the quiz answers. Its prompt:
 
@@ -59,9 +50,9 @@ Sort each question it returns into one of three piles, once:
 
 - **Answered** — the conversation or the code settles it: write the answer into the draft.
 - **Minor** — a sensible implementer could settle it without changing what gets built: settle it and record one `(auto)` line as the last line of the draft's `## What to build`.
-- **Yours** — only the user can answer it, and it changes what gets built: return to step 5 the way a lint `ERROR` does, which asks only these, in one message ranked by importance, then re-render, re-lint and publish.
+- **Yours** — only the user can answer it, and it changes what gets built: return to step 5, which asks only these, in one message ranked by importance, then re-render and publish.
 
-Print `builder check: N answered, M (auto), K asked`. One round: dispatch no second check after the answers, and re-lint any draft you changed.
+Print `builder check: N answered, M (auto), K asked`. One round: dispatch no second check after the answers.
 
 ## Publish
 
@@ -74,7 +65,7 @@ It creates the issues in dependency order and prints one `<draft> <ref>` line pe
 - **Exit 4** — the feature has completed issues: stop, and tell the user: "Some issues are already completed. Please reconcile manually (delete or archive the old issues directory) before re-running."
 - **Exit 5** — the feature already has open issues, which publishing would overwrite (stderr lists them): show them, warn they will be overwritten, and ask for confirmation. On yes, re-run the same command with `--replace`; on no, stop.
 
-Exit 1 before anything is created means a draft's `## Blocked by` names a file that is neither a draft nor a `known` issue, or (with `--replace`) an open issue `--replace` would delete: fix that draft's `## Blocked by` and `deps.json`, lint again and re-publish. On any other exit 1 the stderr names the issues created before the failure, and the drafts stay in place: report both, fix the cause, and ask the user before re-running — a re-run creates every draft again.
+Exit 1 before anything is created is a refusal above, or (with `--replace`) a draft blocked by an open issue `--replace` would delete: fix that draft's `## Blocked by` and `deps.json`, and re-publish. On any other exit 1 the stderr names the issues created before the failure, and the drafts stay in place: report both, fix the cause, and ask the user before re-running — a re-run creates every draft again.
 
 ## A source issue that stayed one slice
 

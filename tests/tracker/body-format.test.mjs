@@ -76,9 +76,8 @@ test("uncheckedCriteria scans both the Acceptance criteria and Cross-cutting Req
 });
 
 test("extractBlockedByNumbers matches 'Issue NN' references, with or without a #, zero-padded or not", () => {
-  // Leading zeros are consumed by the match, not part of the captured group — callers
-  // that need a zero-padded filename match back (local.mjs's resolveBlockedBy) re-add
-  // `0*` flexibility themselves rather than expecting it preserved here.
+  // Leading zeros are consumed by the match, not part of the captured group: a caller matching
+  // a zero-padded filename back (publish-issues' drift check) compares the numbers as numbers.
   assert.deepEqual(extractBlockedByNumbers("- Issue 01\n- Issue #7\n- issue-03\n"), ["1", "7", "3"]);
   assert.deepEqual(extractBlockedByNumbers("- 01-first.md\n"), []);
 });

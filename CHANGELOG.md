@@ -19,6 +19,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- to-issues: `lint-issues.sh` is retired; `publish-issues` now refuses a draft whose `deps.json` edges differ from
+  its `## Blocked by`, naming the draft and both lists, before it creates anything (#552).
+- tracker: the local tracker reads blockers from `issues-deps.json` only, which `publish-issues` now writes for every
+  issue (`[]` when unblocked); a `## Blocked by` edited by hand after publish no longer changes dispatch (#552).
 - checks: the host install runs the dev commands file's `install` command and no longer probes the Makefile for
   `install`/`deps` (nor `ensure-env.sh` for an `env` target): a cached `null` means discovery looked and found none.
   One field reader in `commands-file.sh` replaces six copies; `run-checks.sh` runs typecheck, lint, test, coverage

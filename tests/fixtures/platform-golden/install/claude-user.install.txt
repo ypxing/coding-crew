@@ -262,7 +262,6 @@ HOME/.claude/skills/to-issues/references/ /
 HOME/.claude/skills/to-issues/references/expand-contract.md exec=0
 HOME/.claude/skills/to-issues/references/publish.md exec=0
 HOME/.claude/skills/to-issues/scripts/ /
-HOME/.claude/skills/to-issues/scripts/lint-issues.sh exec=1
 HOME/.claude/skills/to-issues/scripts/tracker/ /
 HOME/.claude/skills/to-issues/scripts/tracker/body-format.mjs exec=0
 HOME/.claude/skills/to-issues/scripts/tracker/cli.mjs exec=0

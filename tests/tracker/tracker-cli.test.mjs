@@ -15,7 +15,6 @@ import { fakeGithub, ghFeature, ghIssue } from "../helpers/fake-github.mjs";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const CLI = join(REPO, "lib/tracker/cli.mjs");
-const LINT = join(REPO, "skills/to-issues/scripts/lint-issues.sh");
 
 function root({ github = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "crew-tracker-cli-"));
@@ -289,31 +288,10 @@ test("known (github) writes nothing for a slug with no root", async () => {
   assert.deepEqual(readdirSync(out), []);
 });
 
-test("lint-issues.sh --known resolves Blocked by refs to the files known wrote", async () => {
-  const exec = fakeGithub(ghFeature("feat", ghIssue(7, { title: "Add the store", state: "CLOSED" })));
-  const dir = root({ github: true });
-  const out = join(dir, "known");
-  await cli(dir, ["known", "--feature-slug", "feat", "--out", out], exec);
-  const local = root();
-  writeIssue(local, "done", "03-old.md", "# Old\n");
-  const localOut = join(local, "known");
-  await cli(local, ["known", "--feature-slug", "feat", "--out", localOut]);
-
-  const draft = join(dir, "01-new.md");
-  writeFileSync(
-    draft,
-    "# New\n\nStatus: ready-for-agent\n\n## What to build\n\nx\n\n## Implements\n\nD1\n\n## Acceptance criteria\n\n- [ ] y\n\n## Blocked by\n\n- Issue #7\n- 03-old.md\n",
-  );
-  const known = [...readdirSync(out).map((f) => join(out, f)), ...readdirSync(localOut).map((f) => join(localOut, f))];
-  const lint = spawnSync("bash", [LINT, "--issue", draft, ...known.flatMap((k) => ["--known", k])], { encoding: "utf8" });
-  assert.doesNotMatch(lint.stdout, /ERROR/, lint.stdout);
-  assert.equal(lint.status, 0, lint.stdout + lint.stderr);
-});
-
 test("known and fetch accept the existing local issue fixtures", async () => {
   const dir = root();
   for (const kind of ["legacy", "promoted", "human"]) {
-    cpSync(join(REPO, "tests/fixtures/lint-issues", kind, "issues"), join(dir, ".scratch/feat/issues/open"), { recursive: true });
+    cpSync(join(REPO, "tests/tracker/fixtures", kind, "issues"), join(dir, ".scratch/feat/issues/open"), { recursive: true });
   }
   const out = join(dir, "known");
   const r = await cli(dir, ["known", "--feature-slug", "feat", "--out", out]);
@@ -491,8 +469,19 @@ test("next (local) exits 3 with empty stdout when every ready issue is blocked o
   const dir = root();
   writeIssue(dir, "open", "01-a.md", "# a\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 02-b.md\n");
   writeIssue(dir, "open", "02-b.md", "# b\n\nStatus: ready-for-human\n");
+  writeFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), JSON.stringify({ "01-a.md": ["02-b.md"], "02-b.md": [] }));
   assert.deepEqual(await cli(dir, ["next", "--feature-slug", "feat"]), { code: 3, stdout: "", stderr: "" });
   assert.deepEqual(await cli(dir, ["next", "--feature-slug", "nope"]), { code: 3, stdout: "", stderr: "" });
+});
+
+test("next (local) reads blockers from issues-deps.json only: a [] entry dispatches an issue whose Blocked by names an open one", async () => {
+  const dir = root();
+  writeIssue(dir, "open", "01-a.md", "# a\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 02-b.md\n");
+  writeIssue(dir, "open", "02-b.md", "# b\n\nStatus: ready-for-human\n");
+  writeFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), JSON.stringify({ "01-a.md": [], "02-b.md": [] }));
+  const r = await cli(dir, ["next", "--feature-slug", "feat"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /01-a\.md\n$/);
 });
 
 test("next exits 2 without --feature-slug, on an invalid slug or an unknown flag; 1 naming both roots when github has two", async () => {
@@ -537,7 +526,7 @@ test("features (local) lists each .scratch/<slug>/ with issues/, sorted, open|cl
   assert.equal(r.stdout, "alpha\tclosed\t0\nmid\topen\t0\nzeta\topen\t2\n");
 });
 
-test("features (local) counts only the ready issues whose every blocker is in the feature's done/, from issues-deps.json when it has one", async () => {
+test("features (local) counts only the ready issues whose every blocker, from issues-deps.json, is in the feature's done/", async () => {
   const dir = root();
   const write = (slug, state, name, status, blockedBy = "None") => {
     const d = join(dir, ".scratch", slug, "issues", state);
@@ -553,6 +542,8 @@ test("features (local) counts only the ready issues whose every blocker is in th
   write("deps", "open", "01-a.md", "ready-for-agent");
   write("deps", "open", "02-b.md", "ready-for-agent");
   writeFileSync(join(dir, ".scratch/deps/issues/issues-deps.json"), JSON.stringify({ "01-a.md": [], "02-b.md": ["01-a.md"] }));
+  writeFileSync(join(dir, ".scratch/prose/issues/issues-deps.json"), JSON.stringify({ "01-a.md": [], "02-b.md": ["01-a.md"], "03-c.md": ["00-done.md"] }));
+  writeFileSync(join(dir, ".scratch/waiting/issues/issues-deps.json"), JSON.stringify({ "02-b.md": ["01-a.md"] }));
   const r = await cli(dir, ["features"]);
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.stdout, "deps\topen\t1\nprose\topen\t2\nwaiting\topen\t0\n");
