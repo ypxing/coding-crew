@@ -127,6 +127,9 @@ ECO_DEPTH=5
 ECO_EXCLUDE=""
 ECO_ENV_PASSTHROUGH=()
 
+# A proxied agent sandbox's CA bundle; a service container must trust it to reach the registry.
+CREW_CA_FILE="${CREW_CA_FILE:-/etc/ssl/certs/ca-certificates.crt}"
+
 # Dot-directories hold build output and other checkouts, never manifests (manifest-fingerprint.sh skips them too).
 DOT_EXCLUDE=(-not -path "$PROJECT_ROOT/.*/*" -not -path "$PROJECT_ROOT/*/.*/*")
 
@@ -137,37 +140,42 @@ detect_ecosystem() {
     ECO_NAME="node"; ECO_VENDOR="node_modules"; ECO_PREFIX="nm"
     ECO_DEPTH=5; ECO_EXCLUDE="node_modules"
     # NPM_TOKEN by name only, so a project's .npmrc ${NPM_TOKEN} resolves from the invoking shell.
-    ECO_ENV_PASSTHROUGH=("NPM_TOKEN")
+    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "NODE_EXTRA_CA_CERTS" 'YARN_HTTPS_PROXY=${HTTPS_PROXY}' "NPM_TOKEN")
     return
   fi
   if find "$PROJECT_ROOT" -maxdepth 3 \( -name 'pyproject.toml' -o -name 'requirements.txt' \) \
       -not -path '*/.venv/*' -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="python"; ECO_VENDOR=".venv"; ECO_PREFIX="venv"
     ECO_DEPTH=3; ECO_EXCLUDE=".venv"
+    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "REQUESTS_CA_BUNDLE")
     return
   fi
   if find "$PROJECT_ROOT" -maxdepth 3 -name 'Gemfile' \
       -not -path '*/vendor/*' -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="ruby"; ECO_VENDOR="vendor/bundle"; ECO_PREFIX="bundle"
     ECO_DEPTH=3; ECO_EXCLUDE="vendor"
+    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "SSL_CERT_FILE")
     return
   fi
   if find "$PROJECT_ROOT" -maxdepth 3 -name 'Cargo.toml' \
       -not -path '*/target/*' -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="rust"; ECO_VENDOR="target"; ECO_PREFIX="target"
     ECO_DEPTH=3; ECO_EXCLUDE="target"
+    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "SSL_CERT_FILE")
     return
   fi
   if find "$PROJECT_ROOT" -maxdepth 3 -name 'composer.json' \
       -not -path '*/vendor/*' -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="php"; ECO_VENDOR="vendor"; ECO_PREFIX="vendor"
     ECO_DEPTH=3; ECO_EXCLUDE="vendor"
+    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "SSL_CERT_FILE")
     return
   fi
   if find "$PROJECT_ROOT" -maxdepth 3 -name 'go.mod' \
       -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="go"; ECO_VENDOR="vendor"; ECO_PREFIX="vendor"
     ECO_DEPTH=3; ECO_EXCLUDE="vendor"
+    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "SSL_CERT_FILE")
     return
   fi
 }
@@ -307,6 +315,7 @@ generate_yaml() {
       echo "      - wt_${PROJ_SLUG}_git_hooks:/git-common/hooks"
       echo "      - wt_${PROJ_SLUG}_git_info:/git-common/info"
     fi
+    [[ ! -f "$CREW_CA_FILE" ]] || echo "      - ${CREW_CA_FILE}:/etc/ssl/certs/ca-certificates.crt:ro"
   done
   echo "volumes:"
   for vol in "${VOL_NAMES[@]}"; do
@@ -332,3 +341,4 @@ if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
 else
   echo "  git:       not mounted (no git checkout detected at $PROJECT_ROOT)"
 fi
+[[ ! -f "$CREW_CA_FILE" ]] || echo "  proxy/CA:  passed through"
