@@ -79,8 +79,10 @@ Answer three questions.
    - **Old forms and old behaviour.** For each thing the change renames, removes or moves, or makes behave
      differently (when it runs, what it outputs), find whatever still names or assumes the old form — code, docs,
      prompts, manifest descriptions, eval harnesses, tests — and read it as it stands now.
-   - **Every writer.** When the change makes one place the record of a fact, check that every path writing that fact
-     keeps it current. When it deletes, renames or maps references, check what still points at the old ones.
+   - **One fact, every writer and reader.** When the change makes one place the record of a fact, check that every
+     path writing it keeps it current; when it deletes, renames or maps references, check what still points at the
+     old ones. When new code reads an input existing code already reads (a file format, a heading, a flag), find an
+     input the two accept or read differently, citing both `file:line`; duplication alone is not a finding.
    - **Gates and premises.** For each gate, stamp, lock or cache key the change adds or relies on, name what passes it
      that should not: a log from another commit, state from an older run, a different input. When the change rests
      on a claim about how a tool behaves — in the spec, a comment or a commit message — run the tool to check it.
@@ -93,9 +95,6 @@ Answer three questions.
      environment value) reaching a shell, eval, path or URL unescaped; an auth or access-control bypass, or a check
      that an error or missing value skips; a secret or sensitive data logged, returned or committed; a dependency
      added at a version with a known advisory. A concrete hole only, not a missing hardening measure.
-   - **A second reader:** new code that reads an input existing code already reads (a file format, a heading, a
-     flag) is a finding only when the two disagree — an input the old reader accepts that the new one rejects or
-     reads differently — citing both readers' `file:line`. Duplication alone is not.
    - **Dead code** the change adds (commented-out code, an unused import, an unreachable branch) or leaves with no
      caller by removing or moving what called it, although no run hits it.
 3. **Standards.** Where does the diff break a rule the repo documents? Name the file and the rule.
