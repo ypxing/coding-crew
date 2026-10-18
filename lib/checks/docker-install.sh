@@ -149,18 +149,19 @@ _run() {
 }
 _container() { _run docker compose run --rm "$SERVICE" sh -c "$CONTAINER_SCRIPT" _ "$STAMP_DIR" "$@"; }
 
+WHERE="inside service $SERVICE"
 if [[ -z "$HOST_CMD" ]]; then
   echo "Running: docker compose run --rm $SERVICE sh -c '$CONTAINER_CMD'"
   _container "$FORCE" "$CONTAINER_CMD"; RC=$?
-  WHERE="inside service $SERVICE"
 else
-  WHERE="on the host ('$HOST_CMD', which runs docker itself)"
   _container "$FORCE" ""; RC=$?
   if [[ "$RC" -eq 0 ]] && ! grep -qx 'crew-stamp: present' "$OUT_FILE"; then
     echo "Running on the host, as it runs docker itself: $HOST_CMD"
-    _run sh -c "$HOST_CMD"; RC=$?
+    _run bash -c "$HOST_CMD"; RC=$?
     # Written only now, so a failed host install leaves no stamp.
-    [[ "$RC" -ne 0 ]] || { _container 1 ":"; RC=$?; }
+    if [[ "$RC" -ne 0 ]]; then WHERE="on the host ('$HOST_CMD', which runs docker itself)"
+    else _container 1 ":"; RC=$?
+    fi
   fi
 fi
 if [[ "$RC" -ne 0 ]]; then
