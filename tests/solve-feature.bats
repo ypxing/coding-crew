@@ -253,17 +253,23 @@ land_ready() {
   [ "$(out branch)" = feature/feat ]
 }
 
-@test "start proceeds when the only changes are the setup files, modified or untracked, and dies for any other change" {
-  echo '{"test":"make check"}' > .coding-crew/dev-commands.json
+@test "start proceeds for a modified or untracked config.json and an untracked dev commands file, and dies for any other change" {
   echo '{"tracker":{"kind":"github"},"solveFeature":{"models":{"coder":"sonnet"}}}' > .coding-crew/config.json
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(out coder-model)" = sonnet ]
-  [ "$(git status --porcelain | sort | tr '\n' ' ')" = " M .coding-crew/config.json  M .coding-crew/dev-commands.json " ]
+  [ "$(git status --porcelain)" = " M .coding-crew/config.json" ]
 
-  git checkout -q main && git checkout -q -- .coding-crew && git branch -q -D feature/feat
+  # A tracked dev commands file is the branch's: an edit to it is work to commit, not a setting to try.
+  git checkout -q main && git checkout -q -- .coding-crew && git branch -q -D feature/feat && git push -q origin --delete feature/feat
+  echo '{"test":"make check"}' > .coding-crew/dev-commands.json
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"working tree is not clean"* ]]
+
+  git checkout -q -- .coding-crew
   git rm -q --cached .coding-crew/config.json .coding-crew/dev-commands.json && git commit -q -m "setup uncommitted"
-  git push -q origin HEAD && git push -q origin --delete feature/feat
+  git push -q origin HEAD
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(git status --porcelain -uall | sort | tr '\n' ' ')" = "?? .coding-crew/config.json ?? .coding-crew/dev-commands.json " ]
@@ -289,6 +295,15 @@ land_ready() {
   run bash "$SCRIPT" start feat
   [ "$status" -eq 1 ]
   [[ "$output" == *"origin/main now has .coding-crew/dev-commands.json: compare it with your uncommitted copy"* ]] || { echo "$output"; return 1; }
+}
+
+@test "start blocked by a tracked, modified setup file leaves the error to git, not blaming origin" {
+  git checkout -q -b feature/feat && echo '{"tracker":{"kind":"github"},"x":2}' > .coding-crew/config.json
+  git commit -qam "branch config" && git push -q -u origin feature/feat && git checkout -q main
+  echo '{"tracker":{"kind":"github"},"x":1}' > .coding-crew/config.json
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"origin/main now has"* ]] || { echo "$output"; return 1; }
 }
 
 @test "start in a linked worktree whose tree has no config.json reads the models from the main checkout's" {

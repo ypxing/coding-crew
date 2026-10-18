@@ -13,8 +13,8 @@ argument-hint: "[redo tracker | redo commands | redo actions]"
 
 Three steps and a commit hint, in this order: tracker, dev commands, GitHub Actions, commit hint. Run every
 command from the main checkout, even when started in a linked worktree: every worktree of the clone reads the
-setup files from there, committed or not. It is the directory holding the `.coding-crew/` of the path
-`bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PWD"` prints; carry it as a literal.
+setup files from there, committed or not. It is the parent of `git rev-parse --path-format=absolute --git-common-dir`
+(the top level when that is not a `.git` directory); carry it as a literal.
 
 A re-run acts only on what is missing: a configured tracker, commands already in the dev commands file and a
 workflow identical to the template are shown, not redone, and no file changes. When the user names a step ("change the tracker", "redo
@@ -144,8 +144,8 @@ space-separated (empty when none):
 
 ```bash
 UNVERIFIED=""
-DEV=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PWD")
-MAIN=$(dirname "$(dirname "$DEV")")
+MAIN=$(git rev-parse --path-format=absolute --git-common-dir)
+[ "$(basename "$MAIN")" = .git ] && MAIN=$(dirname "$MAIN") || MAIN=$(git rev-parse --show-toplevel)
 FILES=$(git -C "$MAIN" status --porcelain --untracked-files=all -- .coding-crew/config.json .coding-crew/dev-commands.json .github/workflows/solve-feature.yml | cut -c4- | LC_ALL=C sort | paste -sd' ' -)
 for c in $UNVERIFIED; do echo "unverified: $c fails"; done
 CD=""; [ "$MAIN" = "$(git rev-parse --show-toplevel)" ] || CD="cd $(printf '%q' "$MAIN") && "

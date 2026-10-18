@@ -56,9 +56,8 @@ LOGS="$ROOT/.solve-feature"
 # The main checkout, as the tracker finds it: its .coding-crew/ files are read from every worktree, committed or not.
 MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 [ "$(basename "$MAIN_ROOT")" = .git ] && MAIN_ROOT=$(dirname "$MAIN_ROOT") || MAIN_ROOT="$ROOT"
-# The setup files a user commits once satisfied: start's tree check never counts them. land and fix count, and
-# commit, only a dev commands file this tree tracks: it is the branch's own copy, the one its checks read.
-NOT_SETUP=(. ':!.coding-crew/dev-commands.json' ':!.coding-crew/config.json')
+# The setup files a user commits once satisfied: no tree check counts them, and no run commits them. A dev commands
+# file this tree tracks is not one: it is the branch's own copy, the one its checks read, counted and committed.
 BRANCH_WORK=(. ':!.coding-crew/config.json')
 git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 || BRANCH_WORK+=(':!.coding-crew/dev-commands.json')
 [ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head
@@ -104,18 +103,18 @@ write_spec() {
   done >>"$spec"
 }
 
-# die_setup_clash <default> — after a failed checkout or merge: when an uncommitted setup file is one origin/<default>
+# die_setup_clash <default> — after a failed checkout or merge: when an untracked setup file is one origin/<default>
 # now has, git refused to overwrite it, and only the user can choose which copy to keep.
 die_setup_clash() {
   local f
-  for f in $(git status --porcelain --untracked-files=all -- .coding-crew/config.json .coding-crew/dev-commands.json | cut -c4-); do
+  for f in $(git ls-files --others -- .coding-crew/config.json .coding-crew/dev-commands.json); do
     git cat-file -e "origin/$1:$f" 2>/dev/null || continue
     die "origin/$1 now has $f: compare it with your uncommitted copy, keep one (commit, or move yours aside), then re-run"
   done
 }
 
 start() {
-  [ -z "$(git status --porcelain -- "${NOT_SETUP[@]}")" ] || die "working tree is not clean: commit or stash first"
+  [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || die "working tree is not clean: commit or stash first"
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
   grep -qxF "$SLUG" <<<"$features" || die "no feature '$SLUG'; features: $(paste -sd' ' - <<<"$features")"
   # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase
