@@ -16,6 +16,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Breaking
 
+- tracker: run outside a git repo without `--main-root`, the tracker CLI now exits 2, naming the directory, instead of
+  reading that directory as the project; a coder that ran it from the skill's own directory got `tracker=local`,
+  `configured=no` and then "invalid ref" on a github issue.
 - checks: `ensure-env.sh` and `docker-install.sh` no longer take `--registry-auth` (formerly `--credential-target`);
   `ensure-env.sh` reads `registry_auth` from the dev commands file itself, so a host install now runs it too, after
   `.env` exists (#558).
