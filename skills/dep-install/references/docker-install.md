@@ -44,17 +44,16 @@ bash "<skill-dir>/scripts/checks/docker-install.sh" --project-root "$PROJECT_ROO
 
 It ensures `.env`, generates this checkout's override, and runs the install command (the dev commands file's
 `install`, else each manifest directory's lockfile command) in the service, unless the root
-dependency volume's `.crew-stamp` says it already ran. Handle its exit code:
+dependency volume's `.crew-stamp` says it already ran. An `install` that runs docker itself (a
+`make deps` wrapping `docker compose run`) runs on the host, as `run.sh` runs such a check, and its
+compose calls get the override. Handle its exit code:
 
 - **0** — the volumes hold the install: it ran, or the stamp was already there (it prints
   `Present: …`). Continue to step 2.
 - **2** — nothing this mechanism could do here (no compose file, no service, no supported
   ecosystem). Report this plainly rather than guessing a workaround.
-- **3** — the install command failed inside the container (no stamp was written). Report `BLOCKED`
-  with the tail of output it prints to stderr.
-- **5** — the `install` command runs docker itself, which the container has none of. Report
-  `BLOCKED` with its message — the fix is a container-side command in the dev commands file's
-  `install`, not in this session.
+- **3** — the install command failed (no stamp was written). Report `BLOCKED` with the tail of
+  output it prints to stderr.
 
 Every failure ends with `docker-install: failed — service <s>, step <step>, exit <n>` and removes the
 override, so the next `run.sh` call installs again rather than run against empty volumes.

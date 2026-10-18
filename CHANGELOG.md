@@ -39,6 +39,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- checks, dep-install: in docker mode, an install command that runs docker itself (a `make deps` wrapping
+  `docker compose run`) runs on the host, its compose calls given the checkout's override, as such a check already
+  does; it no longer stops with exit 5. This brings back, without the lock or volume probe, the host-run install
+  #484 cut.
+- checks: install-mode discovery no longer prompts a coder to commit the dev commands file or tell anyone to: an
+  untracked one stays the user's to commit, even after a headless run, and solve-issue commits one its branch tracks (#572).
 - checks, solve-feature, setup-coding-crew: try coding-crew before committing anything. The dev commands file is
   the main checkout's `.coding-crew/dev-commands.json`, read from every worktree committed or not, until a branch
   commits its own copy: then that branch is checked with its copy, and a run commits what it discovers there.
