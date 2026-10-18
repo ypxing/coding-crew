@@ -31,7 +31,8 @@ block() {
   awk -v h="^## Step $1" '$0 ~ h { s = 1; next } /^## / { s = 0 } s && /^```bash/ { c = 1; next } s && c && /^```/ { exit } c' \
     "$REPO_ROOT/skills/setup-coding-crew/SKILL.md" | sed "s#<skill-dir>#$REPO_ROOT/skills/setup-coding-crew#g"
 }
-step4() { block 4; }
+# step4 — Step 4's block, START (the tree setup started in) the directory it runs in unless the test sets it.
+step4() { block 4 | sed 's#^START="<[^>]*>"#START="${START:-$(git rev-parse --show-toplevel)}"#'; }
 
 # repo_with_worktree — $REPO, a main checkout with one commit, and $WT, a linked worktree of it.
 repo_with_worktree() {
@@ -72,12 +73,13 @@ repo_with_worktree() {
   ! grep -nE 'Never run the commands|This step does not decide it|solve-feature needs these files committed|the tracked `.coding-crew' "$skill" || false
 }
 
-@test "the commit hint from a linked worktree lists the main checkout's setup files" {
+@test "the commit hint for a setup started in a linked worktree lists the main checkout's files, with a cd there" {
   repo_with_worktree
   step4 > "$TEMP_DIR/hint.sh"
   mkdir -p "$REPO/.coding-crew"
   echo '{"test": "make test"}' > "$REPO/.coding-crew/dev-commands.json"
-  run bash -c 'cd "$1" && bash "$2"' _ "$WT" "$TEMP_DIR/hint.sh"
+  # Setup runs every command from the main checkout; only START remembers the worktree it was started in.
+  run bash -c 'cd "$1" && START="$2" bash "$3"' _ "$REPO" "$WT" "$TEMP_DIR/hint.sh"
   [ "$status" -eq 0 ]
   [[ "$output" == *"cd $REPO && git add .coding-crew/dev-commands.json && git commit"* ]] || { echo "$output"; return 1; }
 }

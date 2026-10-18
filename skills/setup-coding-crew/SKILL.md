@@ -14,7 +14,8 @@ argument-hint: "[redo tracker | redo commands | redo actions]"
 Three steps and a commit hint, in this order: tracker, dev commands, GitHub Actions, commit hint. Run every
 command from the main checkout, even when started in a linked worktree: every worktree of the clone reads the
 setup files from there, committed or not. It is the parent of `git rev-parse --path-format=absolute --git-common-dir`
-(the top level when that is not a `.git` directory); carry it as a literal.
+(the top level when that is not a `.git` directory); carry it as a literal. Note first the top level you were
+started in (`git rev-parse --show-toplevel`): Step 4's commit line is for the user's shell there.
 
 A re-run acts only on what is missing: a configured tracker, commands already in the dev commands file and a
 workflow identical to the template are shown, not redone, and no file changes. When the user names a step ("change the tracker", "redo
@@ -139,16 +140,17 @@ workflow's `GITHUB_TOKEN` never gets the `workflows` scope — so such an issue 
 Always, even after a step failed or was skipped, except after a stop in Step 2. Every run reads these files
 before they are committed; committing them shares them with the team and with an Actions runner, whose fresh
 checkout has only what is committed. List every setup file git shows as changed or untracked in the main
-checkout, whether or not this run wrote it. Set `UNVERIFIED` to the checks the user kept failing in Step 2,
-space-separated (empty when none):
+checkout, whether or not this run wrote it. Set `START` to the top level you were started in, and `UNVERIFIED` to
+the checks the user kept failing in Step 2, space-separated (empty when none):
 
 ```bash
+START="<the top level setup was started in>"
 UNVERIFIED=""
 MAIN=$(git rev-parse --path-format=absolute --git-common-dir)
 [ "$(basename "$MAIN")" = .git ] && MAIN=$(dirname "$MAIN") || MAIN=$(git rev-parse --show-toplevel)
 FILES=$(git -C "$MAIN" status --porcelain --untracked-files=all -- .coding-crew/config.json .coding-crew/dev-commands.json .github/workflows/solve-feature.yml | cut -c4- | LC_ALL=C sort | paste -sd' ' -)
 for c in $UNVERIFIED; do echo "unverified: $c fails"; done
-CD=""; [ "$MAIN" = "$(git rev-parse --show-toplevel)" ] || CD="cd $(printf '%q' "$MAIN") && "
+CD=""; [ "$MAIN" = "$START" ] || CD="cd $(printf '%q' "$MAIN") && "
 if [ -n "$FILES" ]; then echo "To finish, run: ${CD}git add $FILES && git commit -m \"Set up coding-crew\""
 else echo "Setup files are all committed: nothing to commit."; fi
 ```
