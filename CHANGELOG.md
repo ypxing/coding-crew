@@ -36,6 +36,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- crew-review, solve-feature: a reviewer started to review does the review itself, and crew-review starts a fresh
+  subagent only when its own conversation wrote or discussed the change, so a review never nests a second reviewer.
+  solve-feature's review prompt drops "you are the reviewer: answer its three questions yourself", and helper
+  subagents no longer need a set brief: the reviewer still writes every finding itself.
+
 - crew-review: the review also reports dead code a change adds or leaves without a caller (LOW), new code that reads
   an input differently from the existing code that reads it, and a check an error or missing value skips, and
   counts only concrete security holes, not missing hardening. solve-issue, crew-review, write-pr and

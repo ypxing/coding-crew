@@ -31,16 +31,16 @@ SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
   grep -qF '<details><summary>Spec</summary>' "$SKILL"
 }
 
-@test "crew-review reports only: no review, comment or ready call, and a fresh subagent that can run any shell command unless it cannot start one" {
+@test "crew-review reports only: no review, comment or ready call, and reviews itself when started to review, else in one fresh subagent that can run any shell command" {
   ! grep -qE 'gh pr (review|comment|ready)' "$SKILL" || false
   grep -qF '**fresh subagent**' "$SKILL"
   grep -qF 'run any shell command and write scratch files outside the repo' "$SKILL"
   ! grep -qF 'no tool that edits files' "$SKILL" || false
   ! grep -qi 'read-only' "$SKILL" || false
   grep -qF 'If HEAD moved or the tree changed, say so' "$SKILL"
-  grep -qF 'When you cannot start a subagent' "$SKILL"
-  grep -qF 'You are the reviewer: answer its three questions yourself.' "$SKILL"
-  grep -qF 'each with a brief naming what to run or check and what to return' "$SKILL"
-  grep -qF 'none of your conclusions' "$SKILL"
+  grep -qF 'When you were started to review it, do the review below' "$SKILL"
+  grep -qF 'Use the crew-review skill on <the change>' "$SKILL"
+  ! grep -qF 'answer its three questions yourself' "$SKILL" || false
+  grep -qF 'you write every finding yourself' "$SKILL"
   grep -qF 'print it' "$SKILL"
 }
