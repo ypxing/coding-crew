@@ -53,6 +53,11 @@ for t in gh jq node git; do command -v "$t" >/dev/null || die "$t not found on P
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"; cd "$ROOT"
 mkdir -p "$ROOT/.solve-feature" && echo '*' >"$ROOT/.solve-feature/.gitignore" # ignored in any repo, so the tree stays clean
 LOGS="$ROOT/.solve-feature"
+# The main checkout, as the tracker finds it: its .coding-crew/ files are read from every worktree, committed or not.
+MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
+[ "$(basename "$MAIN_ROOT")" = .git ] && MAIN_ROOT=$(dirname "$MAIN_ROOT") || MAIN_ROOT="$ROOT"
+# The setup files a user commits once satisfied: no tree check counts them, and no run commits them.
+NOT_SETUP=(. ':!.coding-crew/dev-commands.json' ':!.coding-crew/config.json')
 [ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head
 # The tracker and checks libraries: this skill's scripts/<lib> (a link into lib/ here, a real directory once installed).
 CLI="$SELF/tracker/cli.mjs" CHECKS="$SELF/checks"
@@ -97,13 +102,13 @@ write_spec() {
 }
 
 start() {
-  [ -z "$(git status --porcelain)" ] || die "working tree is not clean: commit or stash first"
+  [ -z "$(git status --porcelain -- "${NOT_SETUP[@]}")" ] || die "working tree is not clean: commit or stash first"
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
   grep -qxF "$SLUG" <<<"$features" || die "no feature '$SLUG'; features: $(paste -sd' ' - <<<"$features")"
   # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase
   # an existing one: a re-run lands on it as the last run left it, with the default branch merged in.
   git fetch -q origin || die "git fetch origin failed (see above)"
-  local default cfg="$ROOT/.coding-crew/config.json"
+  local default cfg="$MAIN_ROOT/.coding-crew/config.json"
   default=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
   default=${default:-main}
   [ "$BRANCH" != "$default" ] || die "--branch '$BRANCH': '$default' is the default branch; name a feature branch"
@@ -196,7 +201,7 @@ land() {
   checks_lib
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop solve "branch changed to '$(git branch --show-current)'"
   # solve-issue's blocked leaves files a check rewrote for a human to commit, and its report says so.
-  [ -z "$(git status --porcelain)" ] || stop solve "working tree left dirty$([ ! -s "$LOGS/coder.report.md" ] || echo "; why: $LOGS/coder.report.md")"
+  [ -z "$(git status --porcelain -- "${NOT_SETUP[@]}")" ] || stop solve "working tree left dirty$([ ! -s "$LOGS/coder.report.md" ] || echo "; why: $LOGS/coder.report.md")"
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
@@ -205,7 +210,7 @@ land() {
     stop solve "coder ran but did not close $REF; why: $LOGS/coder.report.md"
   fi
   rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
-  [ "$rc" != 3 ] || hand_back "no check commands known (DISCOVER): the coder discovered none" "run /setup-coding-crew and commit .coding-crew/dev-commands.json, then re-run" "$clog"
+  [ "$rc" != 3 ] || hand_back "no check commands known (DISCOVER): the coder discovered none" "run /setup-coding-crew, then re-run" "$clog"
   [ "$rc" = 0 ] || hand_back "run-checks.sh exit $rc" "fix the cause, then re-run" "$clog"
   # Any failed push reopens the issue, unretried: an Actions runner's commits go with its job, so a closed issue
   # would count as landed work that exists nowhere. Here a re-run finds the commits, since start never resets a branch.
@@ -244,9 +249,9 @@ fix() {
   # crew-review's own severity field; a missing or unknown one is not severe.
   severe=$(jq '[.findings // [] | .[]? | select(.severity? | IN("CRITICAL", "HIGH", "MEDIUM"))] | length' "$report")
   # Staged before the checks, so run-checks.sh's modified-files test also sees a check rewrite a file the fixer changed.
-  git add -A
+  git add -A -- "${NOT_SETUP[@]}"
   bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
-  [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /setup-coding-crew and commit .coding-crew/dev-commands.json" "$clog"
+  [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /setup-coding-crew, then re-run" "$clog"
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings on PR #$PR"
   push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
