@@ -279,7 +279,7 @@ _skills_copied() {
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
   [ ! -e "$TEMP_DIR/.claude/skills/crew-review" ]
   [ -f "$TEMP_DIR/.claude/skills/configure-tracker/scripts/tracker/cli.mjs" ]
-  [ "$(jq -c '.skills' "$m")" = '["configure-tracker","tdd"]' ]
+  [ "$(jq -c '.skills' "$m")" = '["configure-tracker","dep-install","tdd"]' ]
   run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
   [ "$(jq 'has("libs")' "$m")" = false ]

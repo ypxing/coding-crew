@@ -43,7 +43,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 ### Changed
 
 - crew-review: the reviewer looks for four kinds of defect earlier reviews kept missing, and no longer names a Claude
-  Code agent type (#569).
+  Code agent type (#569). It compares a replaced path's old output with the new one field by field, installs
+  missing dependencies in its scratch copy with dep-install, and says what it ran and could not run (#580).
 - solve-feature: `land` and `fix` merge in commits someone else pushed to the feature branch mid-run (an autofix
   bot, a teammate) before their checks, instead of stopping on a refused push; `fix` now commits the fixer's edits
   before its checks, so failing checks leave them in one local, unpushed commit. A merge conflict stops naming the

@@ -51,7 +51,8 @@ your host, do the review yourself.
 
 Leave the repo as you found it: never edit, commit or change its tree. Run what helps — the tests, the scripts
 under review, experiments — in a scratch copy when they would write to it, in a new directory from `mktemp -d`, never
-a fixed path such as `/tmp/<name>`: other reviews share the machine. Start helper subagents when
+a fixed path such as `/tmp/<name>`: other reviews share the machine. When a command fails for a missing
+dependency, install them in the scratch copy with the dep-install skill. Start helper subagents when
 they help; you write every finding yourself.
 
 Gather it yourself: the change's diff (`git diff <base>..HEAD`, or `gh pr diff <n>`) and the spec as Inputs
@@ -77,7 +78,10 @@ Answer three questions.
      one the spec pictured.
    - **Old forms and old behaviour.** For each thing the change renames, removes or moves, or makes behave
      differently (when it runs, what it outputs), find whatever still names or assumes the old form — code, docs,
-     config, prompts, tests — and read it as it stands now.
+     config, prompts, tests — and read it as it stands now. When the change replaces a path (a new writer, helper
+     or publisher for an old one), compare what the deleted code produced with what the new code produces — every
+     field, side effect and error, read from the diff's removed lines; a difference no spec line asks for is a
+     finding.
    - **One fact, every writer and reader.** When the change makes one place the record of a fact, check that every
      path writing it keeps it current; when it deletes, renames or maps references, check what still points at the
      old ones. When new code reads an input existing code already reads (a file format, a heading, a flag), find an
@@ -118,4 +122,5 @@ Finish by writing the report as JSON to the path you were given, or printing it 
 ```
 
 `spec` is `met` when `gaps` is empty, and `none` with empty `gaps` when there was no spec. Close with a few lines
-of prose explaining it.
+of prose explaining it, naming what you ran and what you could not run and why: a review that only read the code
+must say so.
