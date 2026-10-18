@@ -1,15 +1,25 @@
 #!/usr/bin/env bash
-# commands-file.sh --project-root <path> — prints the path of the checkout's dev commands file (its checks, install
-# command and install mode): <root>/.coding-crew/dev-commands.json when the tree has one (a team commits it to share
-# the commands), else dev-commands.json in the clone's git common dir, which every worktree of the clone shares, no
-# tree holds and nothing commits. The file need not exist yet. Sourced, it defines commands_file <root> instead,
+# commands-file.sh --project-root <path> — prints the path of the clone's dev commands file (its checks, install
+# command and install mode): <path>'s own tree's .coding-crew/dev-commands.json when that tree tracks it, else the
+# main checkout's, committed or not, so every worktree reads and writes the one file and a run works before the
+# user commits it. Outside a git repository it is
+# <path>/.coding-crew/dev-commands.json. The file need not exist yet. Sourced, it defines commands_file <root> instead,
 # and the only readers of the file's fields: commands_field and commands_field_present.
 
 commands_file() { # <project-root>
-  local tracked="$1/.coding-crew/dev-commands.json" common
-  [ ! -f "$tracked" ] || { echo "$tracked"; return; }
-  common=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || { echo "$tracked"; return; }
-  echo "$common/coding-crew/dev-commands.json"
+  local root="$1" common top
+  # A branch that commits the file is gated on its own copy, not on whatever the main checkout has.
+  if top=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) &&
+    git -C "$top" ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1; then
+    echo "$top/.coding-crew/dev-commands.json"; return
+  fi
+  # The main checkout as the tracker finds it: the common dir's parent when it is a .git directory.
+  if common=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+    if [ "$(basename "$common")" = .git ]; then root=$(dirname "$common")
+    else root=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || root="$1"
+    fi
+  fi
+  echo "$root/.coding-crew/dev-commands.json"
 }
 
 # _commands_token <file> <key> — the raw value of "<key>": a quoted string (escapes kept) or null; empty when

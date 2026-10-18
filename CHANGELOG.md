@@ -8,6 +8,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Upgrading
 
+- Run `/setup-coding-crew` once in each clone: it moves `.git/coding-crew/dev-commands.json`, where earlier
+  versions saved discovered commands, to the main checkout's `.coding-crew/dev-commands.json`, now the only
+  location; a clone that never re-runs setup rediscovers its commands (#571).
 - Run `/setup-coding-crew redo commands` once: the dev commands file's `credential_target` is now `registry_auth`,
   and a file written before this keeps the old key, which nothing reads (#551).
 
@@ -38,6 +41,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 - crew-review: the reviewer looks for four kinds of defect earlier reviews kept missing, and no longer names a Claude
   Code agent type (#569).
+- checks, solve-feature, setup-coding-crew: try coding-crew before committing anything. The dev commands file is
+  the main checkout's `.coding-crew/dev-commands.json`, read from every worktree committed or not, until a branch
+  commits its own copy: then that branch is checked with its copy, and a run commits what it discovers there.
+  solve-feature's clean-tree checks ignore an untracked dev commands file and `.coding-crew/config.json` (whose
+  models it now reads from the main checkout too) and never commit them; `/setup-coding-crew` installs and runs the checks before printing the commit line,
+  labelling a kept failure `unverified` (#571).
 - scripts: `field-review.mjs` runs two crew-review versions on another project's range, blind, and keeps both
   reports, cost and a verdict sheet to fill in (#570).
 - crew-review, solve-feature: a reviewer started to review does the review itself, and crew-review starts a fresh

@@ -1,39 +1,56 @@
 #!/usr/bin/env bats
 
-# commands-file.sh — where the dev commands file is: a tracked .coding-crew/dev-commands.json in the checkout, else
-# .git/coding-crew/dev-commands.json in the clone's common dir, shared by its worktrees and never committed.
-# write-commands-cache.sh writes it there, and resolve-mode.sh, run-checks.sh and discover-commands.sh read it there.
+# commands-file.sh — where the dev commands file is: a worktree's own .coding-crew/dev-commands.json when its branch
+# commits one, else the main checkout's, committed or not, read and written from every worktree of the clone. write-commands-cache.sh writes it there, and resolve-mode.sh,
+# run-checks.sh and discover-commands.sh read it there.
 
 LIB="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 
 setup() {
   TEMP_DIR=$(cd "$(mktemp -d)" && pwd -P)
-  MAIN="$TEMP_DIR/main" WT="$TEMP_DIR/wt"
+  MAIN="$TEMP_DIR/main" WT="$TEMP_DIR/wt" WT2="$TEMP_DIR/wt2"
   git init -q -b main "$MAIN"
   git -C "$MAIN" -c user.email=t@t -c user.name=T commit -q --allow-empty -m init
   git -C "$MAIN" worktree add -q --detach "$WT"
+  git -C "$MAIN" worktree add -q --detach "$WT2"
 }
 
 teardown() {
   rm -rf "$TEMP_DIR"
 }
 
-@test "with no file in the tree it is the clone's common dir, the same from every worktree" {
-  run bash "$LIB/commands-file.sh" --project-root "$MAIN"
-  [ "$output" = "$MAIN/.git/coding-crew/dev-commands.json" ]
-  run bash "$LIB/commands-file.sh" --project-root "$WT"
-  [ "$output" = "$MAIN/.git/coding-crew/dev-commands.json" ]
+# where <root> — commands-file.sh's answer for <root>
+where() { bash "$LIB/commands-file.sh" --project-root "$1"; }
+
+@test "it is the main checkout's file from the main checkout, a linked worktree or a subdirectory, the file missing" {
+  mkdir -p "$MAIN/sub" "$WT/sub"
+  for root in "$MAIN" "$WT" "$MAIN/sub" "$WT/sub"; do
+    [ "$(where "$root")" = "$MAIN/.coding-crew/dev-commands.json" ] || { echo "$root: $(where "$root")"; return 1; }
+  done
 }
 
-@test "a file in the checkout's tree wins; outside a repo it is that path" {
-  mkdir -p "$WT/.coding-crew" && echo '{}' > "$WT/.coding-crew/dev-commands.json"
-  run bash "$LIB/commands-file.sh" --project-root "$WT"
-  [ "$output" = "$WT/.coding-crew/dev-commands.json" ]
-  run bash "$LIB/commands-file.sh" --project-root "$MAIN"
-  [ "$output" = "$MAIN/.git/coding-crew/dev-commands.json" ]
+@test "a worktree that does not track the file gets the main checkout's, untracked there or not, never under .git" {
+  mkdir -p "$MAIN/.coding-crew" && echo '{}' > "$MAIN/.coding-crew/dev-commands.json"
+  [ "$(where "$WT")" = "$MAIN/.coding-crew/dev-commands.json" ]
+  [ "$(where "$MAIN")" = "$MAIN/.coding-crew/dev-commands.json" ]
+  [[ "$(where "$WT")" != *"/.git/"* ]]
+}
+
+@test "a worktree whose branch commits the file gets its own, even when the main checkout's branch lacks it" {
+  git -C "$WT" checkout -q -b with-cmds
+  mkdir -p "$WT/.coding-crew" "$WT/sub" && echo '{"test": "branch"}' > "$WT/.coding-crew/dev-commands.json"
+  git -C "$WT" add .coding-crew && git -C "$WT" -c user.email=t@t -c user.name=T commit -q -m cmds
+  [ ! -e "$MAIN/.coding-crew/dev-commands.json" ]
+  [ "$(where "$WT")" = "$WT/.coding-crew/dev-commands.json" ]
+  [ "$(where "$WT/sub")" = "$WT/.coding-crew/dev-commands.json" ]
+  [ "$(where "$WT2")" = "$MAIN/.coding-crew/dev-commands.json" ]
+  run bash "$LIB/run-checks.sh" --project-root "$WT"
+  [ "$output" != DISCOVER ]
+}
+
+@test "outside a git repository it is that path" {
   mkdir "$TEMP_DIR/plain"
-  run bash "$LIB/commands-file.sh" --project-root "$TEMP_DIR/plain"
-  [ "$output" = "$TEMP_DIR/plain/.coding-crew/dev-commands.json" ]
+  [ "$(where "$TEMP_DIR/plain")" = "$TEMP_DIR/plain/.coding-crew/dev-commands.json" ]
 }
 
 @test "a missing or non-directory root is a usage error" {
@@ -43,33 +60,38 @@ teardown() {
   [ "$status" -eq 2 ]
 }
 
-@test "checks discovered in one worktree are written outside every tree and read from another" {
+@test "checks discovered in one worktree land in the main checkout's file, read from another, both trees clean" {
   printf '{"test": "echo T > %s/ran", "lint": null}\n' "$TEMP_DIR" > "$TEMP_DIR/discovered.json"
   (cd "$WT" && bash "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/discovered.json") >/dev/null
-  [ -z "$(git -C "$WT" status --porcelain)" ]
   [ ! -e "$WT/.coding-crew" ]
-  grep -q '"lint": null' "$MAIN/.git/coding-crew/dev-commands.json"
+  grep -q '"lint": null' "$MAIN/.coding-crew/dev-commands.json"
 
   printf '{"install_mode": "docker", "docker_service": "web"}\n' > "$TEMP_DIR/answer.json"
   (cd "$MAIN" && bash "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/answer.json") >/dev/null
-  run bash "$LIB/resolve-mode.sh" --project-root "$WT"
+  run bash "$LIB/resolve-mode.sh" --project-root "$WT2"
   [ "$output" = $'INSTALL_MODE=docker\nDOCKER_SERVICE=web' ]
-  grep -q '"test": "echo T' "$MAIN/.git/coding-crew/dev-commands.json"
+  grep -q '"test": "echo T' "$MAIN/.coding-crew/dev-commands.json"
 
   touch "$WT/Makefile"
   run bash -c 'cd "$1" && bash "$2/discover-commands.sh"' _ "$WT" "$LIB"
   [[ "$output" == *"building discovery prompt for 6 of eight"* ]]
+  rm "$WT/Makefile"
+  [ -z "$(git -C "$WT" status --porcelain)" ]
+  [ -z "$(git -C "$WT2" status --porcelain)" ]
+  [ "$(git -C "$MAIN" status --porcelain)" = "?? .coding-crew/" ]
 }
 
-@test "run-checks runs the shared file's checks from a worktree, and says DISCOVER with none" {
-  run bash "$LIB/run-checks.sh" --project-root "$WT"
+@test "run-checks in a second worktree runs what the first one wrote, and says DISCOVER with none" {
+  run bash "$LIB/run-checks.sh" --project-root "$WT2"
   [ "$status" -eq 3 ]
   [ "$output" = DISCOVER ]
-  mkdir -p "$MAIN/.git/coding-crew"
-  printf '{"test": "echo T > %s/ran"}\n' "$TEMP_DIR" > "$MAIN/.git/coding-crew/dev-commands.json"
-  run bash "$LIB/run-checks.sh" --project-root "$WT"
+  printf '{"test": "echo T > %s/ran"}\n' "$TEMP_DIR" > "$TEMP_DIR/discovered.json"
+  (cd "$WT" && bash "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/discovered.json") >/dev/null
+  run bash "$LIB/run-checks.sh" --project-root "$WT2"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(cat "$TEMP_DIR/ran")" = T ]
+  [ -z "$(git -C "$WT" status --porcelain)" ]
+  [ -z "$(git -C "$WT2" status --porcelain)" ]
 }
 
 @test "commands_field reads a string, empty for null or absent; commands_field_present counts null as present" {
@@ -89,13 +111,13 @@ teardown() {
   run bash -c '. "$1/commands-file.sh"; commands_field "$2" test' _ "$LIB" "$TEMP_DIR/c.json"
   [ "$output" = 'pytest -m "not slow" && echo a\b' ]
   (cd "$MAIN" && bash "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/c.json") >/dev/null
-  run bash -c '. "$1/commands-file.sh"; commands_field "$2" test' _ "$LIB" "$MAIN/.git/coding-crew/dev-commands.json"
+  run bash -c '. "$1/commands-file.sh"; commands_field "$2" test' _ "$LIB" "$MAIN/.coding-crew/dev-commands.json"
   [ "$output" = 'pytest -m "not slow" && echo a\b' ]
 }
 
 @test "run-checks asks for discovery when only a value, not a key, is \"test\"" {
-  mkdir -p "$MAIN/.git/coding-crew"
-  printf '{"docker_service": "test", "lint": "true"}\n' > "$MAIN/.git/coding-crew/dev-commands.json"
+  mkdir -p "$MAIN/.coding-crew"
+  printf '{"docker_service": "test", "lint": "true"}\n' > "$MAIN/.coding-crew/dev-commands.json"
   run bash "$LIB/run-checks.sh" --project-root "$MAIN"
   [ "$status" -eq 3 ]
   [ "$output" = DISCOVER ]

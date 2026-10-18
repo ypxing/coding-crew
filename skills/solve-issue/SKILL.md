@@ -263,14 +263,20 @@ $DETAILS}" \
 
 Example: `[01-auth-logout] Add user logout endpoint`. Do not push.
 
-### 6.5. Reminder: the dev commands file
+### 6.5. The dev commands file
 
-Where the repo tracks `.coding-crew/dev-commands.json`, Step 5's `DISCOVER` updates it, and nothing here
-commits it:
+The dev commands file is this tree's `.coding-crew/dev-commands.json` when this branch tracks it, else the main
+checkout's, committed or not. Step 5's `DISCOVER` may write it. A tracked copy is this branch's: commit it with
+Step 6's prefix. An untracked one is the user's to commit once satisfied:
 
 ```bash
-if [ -n "$(git -C "$PROJECT_ROOT" status --porcelain -- .coding-crew/dev-commands.json 2>/dev/null)" ]; then
-  echo "Reminder: .coding-crew/dev-commands.json has uncommitted changes — review and commit it."
+DEV=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT")
+if git -C "$PROJECT_ROOT" ls-files --error-unmatch -- "$DEV" >/dev/null 2>&1; then
+  [ -z "$(git -C "$PROJECT_ROOT" status --porcelain -- "$DEV")" ] ||
+    PROJECT_ROOT="$PROJECT_ROOT" bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
+      --prefix "<Step 6's prefix>" --message "Record the discovered dev commands" --files .coding-crew/dev-commands.json
+elif [ -n "$(git -C "$(dirname "$(dirname "$DEV")")" status --porcelain -- "$DEV" 2>/dev/null)" ]; then
+  echo "Reminder: $DEV is untracked or modified — review and commit it."
 fi
 ```
 

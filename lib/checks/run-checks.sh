@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-checks.sh — run every check the checkout's dev commands file (commands-file.sh) names, each through
+# run-checks.sh — run every check the clone's dev commands file (commands-file.sh) names, each through
 # run.sh beside it, and report each one.
 #
 # Usage:
