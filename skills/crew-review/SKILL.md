@@ -67,11 +67,10 @@ Answer three questions.
 1. **Spec.** What does the spec require that the code at HEAD lacks or does differently? What does the change
    build that the spec did not ask for (a flag, an option, a guard, an abstraction no requirement
    needs)? Quote the spec line, or name the addition. With no spec, skip this question.
-2. **What breaks.** A defect is something a real run hits: name the input or sequence and the bad
-   outcome. Work through each of these:
-   - **Reproduce** it where a few commands can — a test, a run of the script, a small experiment in the scratch
-     copy — else trace it in the code. A reproduction that does not trigger it is not evidence it is absent: trace
-     it then too.
+2. **What breaks.** A defect is something a real run hits: name the input or sequence and the bad outcome.
+   Reproduce it where a few commands can — a test, a run of the script, a small experiment in the scratch copy —
+   else trace it in the code; a reproduction that does not trigger it is not evidence it is absent, so trace it
+   then too. Work through each of these:
    - **Look past the diff:** callers, what it calls, state an older version or an earlier run left, re-runs, error
      and recovery paths, and how the change's commits combine. Check every place the code actually runs — a linked
      worktree, a second install on the same `PATH`, a variable unset outside a sandbox — not only the one the spec
@@ -85,9 +84,8 @@ Answer three questions.
      input the two accept or read differently, citing both `file:line`; duplication alone is not a finding.
    - **Gates and premises.** For each gate, stamp, lock or cache key the change adds or relies on, name what passes it
      that should not: a log from another commit, state from an older run, a different input. When the change rests
-     on a claim about how a tool behaves — in the spec, a comment or a commit message — run the tool to check it.
-   - **Wrong spec decisions.** When following a spec decision causes a defect, report the defect and quote the
-     decision.
+     on a claim — a spec decision, or how a tool behaves (run the tool) — check it; when following it causes a
+     defect, report the defect and quote the claim.
    - **Tests that cannot fail.** For each new or changed test, check it fails when the behaviour it covers breaks:
      where a few commands can, break that behaviour in the scratch copy and run the test. One that cannot fail is a
      finding naming the test.
