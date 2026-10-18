@@ -142,6 +142,7 @@ EOF
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$STATE/checks.log"
 git status --porcelain > "$STATE/checks.status"
+git rev-parse HEAD > "$STATE/checks.head"
 [ -z "${CHECK_LEAVES:-}" ] || echo build > "$CHECK_LEAVES"
 for i in $(seq 1 30); do echo "check line $i"; done
 echo "test: ${CHECK_RESULT:-pass}"
@@ -784,6 +785,76 @@ refuse_pushes() { printf '#!/bin/sh\nexit 1\n' > "$TEMP_DIR/origin.git/hooks/pre
   stops_at push "git push failed: pre-receive hook declined; reopen 2 failed (see above): reopen 2 by hand, then re-run where git can push"
 }
 
+# branch_moves <file> <text> — another clone (a bot, a teammate) pushes a commit to origin's feature/feat; prints it.
+branch_moves() {
+  local other="$TEMP_DIR/other"
+  [ -d "$other" ] || { git clone -q "$TEMP_DIR/origin.git" "$other" && git -C "$other" config user.email b@example.com && git -C "$other" config user.name bot; }
+  git -C "$other" fetch -q origin && git -C "$other" checkout -q -B feature/feat origin/feature/feat
+  echo "$2" > "$other/$1" && git -C "$other" add "$1" && git -C "$other" commit -q -m "bot: $1" && git -C "$other" push -q origin feature/feat
+  git -C "$other" rev-parse HEAD
+}
+
+@test "land merges a commit others pushed to the branch before its checks, then pushes; nothing new makes no merge commit" {
+  land_ready
+  local bot; bot=$(branch_moves bot.txt "lint fix")
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out pr)" = 10 ]
+  git merge-base --is-ancestor "$bot" HEAD
+  [ "$(cat "$STATE/checks.head")" = "$(git rev-parse HEAD)" ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  local merges; merges=$(git rev-list --merges --count HEAD)
+  run bash "$SCRIPT" next feat
+  coder 3
+  run bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git rev-list --merges --count HEAD)" = "$merges" ]
+}
+
+@test "a loop with nothing pushed by others makes no merge commit in land or fix" {
+  fix_ready
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git rev-list --merges --count HEAD)" = 0 ]
+}
+
+@test "land whose merge of origin's branch conflicts aborts it, reopens the issue, pushes nothing and says how to recover" {
+  land_ready
+  local coded; coded=$(git rev-parse HEAD)
+  branch_moves work-2.txt "the bot's version" >/dev/null
+  REOPEN_TOUCHES="$WORK/issue-state.md" run bash "$SCRIPT" land feat 2 feature/feat
+  local why="merging origin/feature/feat into feature/feat conflicts in work-2.txt; 2 is ready again: re-run in a fresh clone, which redoes it on origin's branch, or merge it by hand in this checkout, commit, then re-run"
+  stops_at merge "$why"
+  [ "$(cat .solve-feature/outcome)" = "stopped: 2 merge failed: $why" ]
+  [ ! -f "$STATE/checks.log" ]
+  [ -z "$(git status --porcelain)" ]
+  [ "$(git log -1 --format=%s)" = "Reopen 2: its merge failed" ]
+  [ "$(git rev-parse HEAD~1)" = "$coded" ]
+  [ "$(node "$INSTALL/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
+}
+
+@test "land's merge conflict with no file move leaves HEAD at the coder's commit; a failed reopen names both failures" {
+  land_ready
+  local coded; coded=$(git rev-parse HEAD)
+  branch_moves work-2.txt "the bot's version" >/dev/null
+  REOPEN_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  stops_at merge "merging origin/feature/feat into feature/feat conflicts in work-2.txt; reopen 2 failed (see above): reopen 2 by hand, then re-run in a fresh clone"
+  [ "$(git rev-parse HEAD)" = "$coded" ]
+  [ -z "$(git status --porcelain)" ]
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$(git rev-parse HEAD)" = "$coded" ]
+}
+
+@test "a failed fetch does not stop land on its own: with pushes refused too it reopens the issue and stops at push quoting git's reason" {
+  land_ready
+  git remote set-url origin "$TEMP_DIR/gone.git"
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
+  [[ "$output" == *"solve-feature: 2 push failed: git push failed: fatal: Could not read from remote repository.; 2 is ready again"* ]] || { echo "$output"; return 1; }
+  [ -f "$STATE/checks.log" ]
+  [ "$(node "$INSTALL/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
+}
+
 @test "land with the checks library missing exits 1 naming it, before the checks" {
   land_ready
   rm -rf "$INSTALL/checks"
@@ -854,12 +925,14 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   fix_stops "run-checks.sh exit 1; once fixed and committed, run fix feat 10 feature/feat, then describe feat 10"
   [[ "$output" == *"log: $WORK/.solve-feature/pr-10.checks.log"* ]]
   [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
-  [ "$(git rev-parse HEAD)" = "$TIP" ]
-  [ "$(git status --porcelain)" = 'A  fixed.txt' ]
+  # The fixer's edits stay in one local, unpushed commit.
+  [ "$(git rev-parse HEAD~1)" = "$TIP" ]
+  [ "$(git log -1 --format=%s)" = "Fix the review's findings on PR #10" ]
+  [ "$(git show --name-only --format= HEAD)" = fixed.txt ]
+  [ -z "$(git status --porcelain)" ]
   CHECKS_RC=3 run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "no check commands known (DISCOVER): run /setup-coding-crew, then re-run"
 
-  git add fixed.txt && git commit -q -m "fix by hand"
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   pushed
@@ -867,11 +940,13 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
 }
 
-@test "the checks see the fixer's edits staged, so run-checks.sh's own modified-files test catches a check that rewrites one" {
+@test "the checks run with the fixer's edits committed and the tree clean, so run-checks.sh's own modified-files test catches a check that rewrites one" {
   fix_ready
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]
-  [ "$(cat "$STATE/checks.status")" = 'A  fixed.txt' ]
+  [ -z "$(cat "$STATE/checks.status")" ]
+  [ "$(cat "$STATE/checks.head")" = "$(git rev-parse HEAD)" ]
+  [ "$(git show --name-only --format= HEAD)" = fixed.txt ]
 }
 
 @test "a rejected push stops fix quoting git's reason and naming the recovery" {
@@ -880,6 +955,68 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   refuse_pushes
   run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "git push failed: pre-receive hook declined; once it can push, or once you have pushed it, run fix feat 10 feature/feat, then describe feat 10"
+}
+
+@test "fix merges a commit others pushed during the review after committing the fixer's edits and before its checks, then pushes" {
+  fix_ready
+  local tip bot; tip=$(git rev-parse HEAD); bot=$(branch_moves bot.txt "lint fix")
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
+  git merge-base --is-ancestor "$bot" HEAD
+  [ "$(git log -1 --format=%s HEAD^1)" = "Fix the review's findings on PR #10" ]
+  [ "$(git rev-parse HEAD^1~1)" = "$tip" ]
+  [ "$(cat "$STATE/checks.head")" = "$(git rev-parse HEAD)" ]
+  pushed
+}
+
+@test "a fixer that changed nothing is flagged when others pushed to the branch, before the round's head was recorded or after" {
+  fix_ready
+  rm fixed.txt
+  branch_moves bot.txt "after" >/dev/null
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(attention)" = "the fixer changed nothing" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
+  pushed
+  # The bot pushes before fix records the round's head, which is then the bot's commit.
+  PR_HEAD_OID=$(branch_moves bot2.txt "before") run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(attention)" = "the fixer changed nothing" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
+  pushed
+}
+
+@test "a fixer that changed nothing is still flagged on a re-run after fix merged others' commits and then stopped" {
+  fix_ready
+  rm fixed.txt
+  branch_moves bot.txt "lint fix" >/dev/null
+  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -ne 0 ]
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(attention)" = "the fixer changed nothing" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
+}
+
+@test "fix whose merge of origin's branch conflicts aborts it, pushes nothing and says how to recover" {
+  fix_ready
+  local tip; tip=$(git rev-parse HEAD)
+  TIP=$(branch_moves fixed.txt "the bot's version")
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  fix_stops "merging origin/feature/feat into feature/feat conflicts in fixed.txt; merge it by hand in this checkout, commit, then run fix feat 10 feature/feat, then describe feat 10; or re-run in a fresh clone"
+  [ -z "$(git status --porcelain)" ]
+  [ "$(git log -1 --format=%s)" = "Fix the review's findings on PR #10" ]
+  [ "$(git rev-parse HEAD~1)" = "$tip" ]
+}
+
+@test "a failed fetch does not stop fix on its own: with pushes refused too it stops at its push" {
+  fix_ready
+  TIP=$(git rev-parse HEAD)
+  git remote set-url origin "$TEMP_DIR/gone.git"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  git remote set-url origin "$TEMP_DIR/origin.git"
+  fix_stops "git push failed: fatal: Could not read from remote repository.; once it can push"
 }
 
 # push_says <stderr> — a git whose push prints <stderr> and fails; every other git command is the real one.
@@ -910,7 +1047,7 @@ push_says() {
   refuse_pushes
   run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "git push failed: pre-receive hook declined"
-  [ "$(cat .solve-feature/pr-10.head)" = "$TIP" ]
+  [ "$(head -n1 .solve-feature/pr-10.head)" = "$TIP" ]
   rm "$TEMP_DIR/origin.git/hooks/pre-receive"
   git push -q origin feature/feat
   run bash "$SCRIPT" fix feat 10 feature/feat
@@ -918,6 +1055,19 @@ push_says() {
   [ -z "$(attention)" ]
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
   [ ! -e .solve-feature/pr-10.head ]
+}
+
+@test "a fix pushed by hand after fix stopped still counts as the fixer's after a later run stops again" {
+  fix_ready
+  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -ne 0 ]
+  git push -q origin feature/feat
+  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -ne 0 ]
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -z "$(attention)" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
 }
 
 @test "a second review round compares with its own head: a round-2 fixer that changed nothing is flagged" {

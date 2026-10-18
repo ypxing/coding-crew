@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -335,8 +335,19 @@ test("the CLI process: exit codes and gh's stderr reach the caller", () => {
   assert.ok(failed.stderr.includes("gh: To get started with GitHub CLI, please run:  gh auth login\n"), failed.stderr);
 
   const local = root();
-  assert.equal(node(["prd", "--feature-slug", "x"], { cwd: local }).status, 3);
-  assert.equal(node(["nope"], { cwd: local }).status, 2);
+  assert.equal(node(["prd", "--feature-slug", "x", "--main-root", local], { cwd: local }).status, 3);
+  assert.equal(node(["nope", "--main-root", local], { cwd: local }).status, 2);
+});
+
+test("the CLI refuses a cwd outside any git repo when no --main-root is given", () => {
+  const dir = root({ github: true });
+  const outside = realpathSync(root()); // macOS: the process sees tmpdir()'s /var as /private/var
+  const r = node(["config"], { cwd: outside });
+  assert.equal(r.status, 2);
+  assert.equal(r.stdout, "");
+  assert.ok(r.stderr.includes(`not inside a git repository (${outside})`), r.stderr);
+  assert.ok(r.stderr.includes("--main-root"), r.stderr);
+  assert.equal(node(["config", "--main-root", dir], { cwd: outside }).stdout, "tracker=github\nconfigured=yes\n");
 });
 
 test("the CLI finds the main root from a linked worktree's cwd", () => {
