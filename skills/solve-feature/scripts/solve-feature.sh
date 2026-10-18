@@ -16,10 +16,9 @@
 #                                   to origin/<branch>, and once the checks pass push, and write what needs a person
 #                                   to pr-<pr>.attention.md; last stdout line
 #                                   `FIX: findings=<k> needs-attention=<a> review-again=yes|no`, yes when a
-#                                   CRITICAL/HIGH/MEDIUM finding was there and the fixer's HEAD holds a non-merge
-#                                   commit that neither the head fix first saw that review round nor a tip of
-#                                   origin/<branch> it merged holds (kept in pr-<pr>.head until the attention file
-#                                   is written)
+#                                   CRITICAL/HIGH/MEDIUM finding was there and the branch's own line (first parents)
+#                                   holds a commit past the head fix first saw that review round (kept in
+#                                   pr-<pr>.head until the attention file is written)
 #   describe <slug> <pr>            write the PR's whole body and title, mark the draft ready when nothing needs a
 #                                   person, then write the outcome
 # .solve-feature/outcome holds the run's result in one line: `ready pr=<n>`, `needs-attention pr=<n>` or
@@ -83,13 +82,14 @@ push() {
   return 1
 }
 
-# merge_in <ref> — merge <ref> into HEAD unless it is already there. On failure the merge is aborted, MERGE_CONFLICTS
-# holds the conflicting files (empty when git refused for another reason) and it returns 1: the caller decides.
+# merge_in <ref> — merge <ref> into HEAD unless it is already there, always as a merge commit, so the branch's own
+# commits stay its first-parent line. On failure the merge is aborted, MERGE_CONFLICTS holds the conflicting files
+# (empty when git refused for another reason) and it returns 1: the caller decides.
 MERGE_CONFLICTS=""
 merge_in() {
   MERGE_CONFLICTS=""
   ! git merge-base --is-ancestor "$1" HEAD || return 0
-  git merge -q --no-edit "$1" >&2 && return 0
+  git merge -q --no-ff --no-edit "$1" >&2 && return 0
   MERGE_CONFLICTS=$(git diff --name-only --diff-filter=U | paste -sd' ' -)
   git merge --abort 2>/dev/null || true
   return 1
@@ -269,14 +269,13 @@ land() {
 # changes), then the checks run on that clean tree, so the push carries exactly what was gated.
 fix() {
   local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.md" clog="$LOGS/pr-$PR.checks.log"
-  local headf="$LOGS/pr-$PR.head" head_oid seen=() fixed spec rc=0 total severe moved=no again=no attention=""
+  local headf="$LOGS/pr-$PR.head" head_oid spec rc=0 total severe moved=no again=no attention=""
   checks_lib
   # The round's first run keeps the PR's head, so a re-run after a person pushed the fix by hand still sees it moved.
-  # Each origin/<branch> tip fix merges is added below it, so a re-run never counts what an earlier run merged in.
-  if [ -s "$headf" ]; then mapfile -t seen <"$headf"
+  if [ -s "$headf" ]; then head_oid=$(cat "$headf")
   else
     head_oid=$(gh pr view "$PR" --json headRefOid | jq -r '.headRefOid // empty') || die "gh pr view $PR failed"
-    printf '%s\n' "$head_oid" >"$headf"; seen=("$head_oid")
+    printf '%s\n' "$head_oid" >"$headf"
   fi
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop fix "branch changed to '$(git branch --show-current)'"
   [ -f "$report" ] || stop fix "no review report at $report"
@@ -288,10 +287,8 @@ fix() {
   # Committed before the checks, so run-checks.sh's modified-files test also sees a check rewrite a file the fixer changed.
   git add -A -- "${BRANCH_WORK[@]}"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings on PR #$PR"
-  fixed=$(git rev-parse HEAD)
-  # A failed fetch skips the merge: the push owns that failure. A tip already in HEAD is not recorded: it may be
-  # the fixer's own commit a person pushed by hand.
-  if git fetch -q origin "$BRANCH" && { git merge-base --is-ancestor "origin/$BRANCH" HEAD || git rev-parse "origin/$BRANCH" >>"$headf"; } && ! merge_in "origin/$BRANCH"; then
+  # A failed fetch skips the merge: the push owns that failure.
+  if git fetch -q origin "$BRANCH" && ! merge_in "origin/$BRANCH"; then
     local why="merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS"
     [ -n "$MERGE_CONFLICTS" ] || why="merging origin/$BRANCH into $BRANCH failed (see above)"
     stop fix "$why; merge it by hand in this checkout, commit, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR; or re-run in a fresh clone"
@@ -301,9 +298,9 @@ fix() {
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
 
-  # "Changed nothing" is the pre-merge HEAD holding no non-merge commit beyond the round's head and the tips earlier
-  # runs merged: merged-in commits are not the fixer's, and a fix committed here and pushed by hand still counts.
-  local own; own=$(git rev-list --no-merges -n1 "$fixed" "${seen[@]/#/^}" 2>/dev/null) && [ -z "$own" ] || moved=yes
+  # "Changed nothing" is no commit on the branch's own line past the round's head: what merge_in brought in sits
+  # behind a merge's second parent, and a fix committed here and pushed by hand still counts.
+  [ -z "$(git rev-list --first-parent --no-merges -n1 HEAD "^$head_oid")" ] || moved=yes
   # Needs a person: the reviewer's gaps, an unmet spec, each line the fixer left in unfixed.md, and a fixer that
   # changed nothing without saying why (it crashed or gave up).
   attention=$(jq -r '.gaps // [] | .[] | tostring' "$report")

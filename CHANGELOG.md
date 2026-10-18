@@ -42,6 +42,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- solve-feature: every merge `start`, `land` and `fix` make is now a merge commit (`--no-ff`), and `fix` tells the
+  fixer's commits from merged-in ones by the branch's first-parent line; `pr-<pr>.head` holds one line again, the
+  round's head, instead of every tip `fix` merged (#578).
 - solve-feature: `land` and `fix` merge in commits someone else pushed to the feature branch mid-run (an autofix
   bot, a teammate) before their checks, instead of stopping on a refused push; `fix` now commits the fixer's edits
   before its checks, so failing checks leave them in one local, unpushed commit. A merge conflict stops naming the
