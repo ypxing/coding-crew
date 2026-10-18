@@ -272,7 +272,8 @@ fix() {
   local headf="$LOGS/pr-$PR.head" head_oid spec rc=0 total severe moved=no again=no attention=""
   checks_lib
   # The round's first run keeps the PR's head, so a re-run after a person pushed the fix by hand still sees it moved.
-  if [ -s "$headf" ]; then head_oid=$(cat "$headf")
+  # Its first line: a file an earlier version wrote also lists the tips it merged.
+  if [ -s "$headf" ]; then head_oid=$(head -n1 "$headf")
   else
     head_oid=$(gh pr view "$PR" --json headRefOid | jq -r '.headRefOid // empty') || die "gh pr view $PR failed"
     printf '%s\n' "$head_oid" >"$headf"
