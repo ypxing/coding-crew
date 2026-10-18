@@ -28,6 +28,10 @@ node scripts/eval-design-skills.mjs --skill crew-grill --runs 2 --dry-run   # dr
 # After editing skills/crew-review/SKILL.md: replay the bugs earlier reviews missed against base and head, judged blind; costs API money
 node scripts/eval-reviewer-misses.mjs --runs 2 --dry-run   # writes each ref's prompts, calls no model; drop --dry-run to run
 
+# Try two crew-review versions on another project's range, blind; costs API money (two reviewer runs). Writes
+# ~/crew-review-field/<project>/<date>-<head8>/: fill in its verdicts.md, then misses.md when a missed bug turns up
+node scripts/field-review.mjs /path/to/project --range <base>..<head> [--spec <file>] --skill-head <ref> --dry-run
+
 # One real crew-afk run on the pinned demo repo (scripts/smoke-crew-afk/demo/), in a clone rebuilt fresh each run; costs API money and opens (then closes) one demo PR
 scripts/smoke-crew-afk.sh claude > /tmp/smoke.log   # appends a row to scripts/smoke-crew-afk/RESULTS.md — commit it before cutting the release
 
