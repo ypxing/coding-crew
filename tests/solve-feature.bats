@@ -275,6 +275,22 @@ land_ready() {
   [[ "$output" == *"working tree is not clean"* ]]
 }
 
+@test "start whose uncommitted dev commands file origin now commits says to keep one copy, checking out or merging" {
+  git rm -q --cached .coding-crew/dev-commands.json && git commit -q -m "commands uncommitted" && git push -q origin HEAD
+  git clone -q "$TEMP_DIR/origin.git" "$TEMP_DIR/mate"
+  echo '{"test":"make all"}' > "$TEMP_DIR/mate/.coding-crew/dev-commands.json"
+  git -C "$TEMP_DIR/mate" add .coding-crew && git -C "$TEMP_DIR/mate" -c user.email=m@m -c user.name=M commit -q -m cmds
+  git -C "$TEMP_DIR/mate" push -q origin HEAD
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"origin/main now has .coding-crew/dev-commands.json: compare it with your uncommitted copy, keep one (commit, or move yours aside), then re-run"* ]] || { echo "$output"; return 1; }
+
+  git checkout -q -b feature/feat HEAD && git push -q -u origin feature/feat
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"origin/main now has .coding-crew/dev-commands.json: compare it with your uncommitted copy"* ]] || { echo "$output"; return 1; }
+}
+
 @test "start in a linked worktree whose tree has no config.json reads the models from the main checkout's" {
   git rm -q .coding-crew/config.json && git commit -q -m "no config" && git push -q origin HEAD
   echo '{"tracker":{"kind":"github"},"solveFeature":{"models":{"coder":"sonnet","reviewer":"opus"}}}' > .coding-crew/config.json

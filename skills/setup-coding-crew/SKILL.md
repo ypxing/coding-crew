@@ -148,7 +148,7 @@ DEV=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PWD")
 MAIN=$(dirname "$(dirname "$DEV")")
 FILES=$(git -C "$MAIN" status --porcelain --untracked-files=all -- .coding-crew/config.json .coding-crew/dev-commands.json .github/workflows/solve-feature.yml | cut -c4- | LC_ALL=C sort | paste -sd' ' -)
 for c in $UNVERIFIED; do echo "unverified: $c fails"; done
-CD=""; [ "$MAIN" = "$(git rev-parse --show-toplevel)" ] || CD="cd $MAIN && "
+CD=""; [ "$MAIN" = "$(git rev-parse --show-toplevel)" ] || CD="cd $(printf '%q' "$MAIN") && "
 if [ -n "$FILES" ]; then echo "To finish, run: ${CD}git add $FILES && git commit -m \"Set up coding-crew\""
 else echo "Setup files are all committed: nothing to commit."; fi
 ```

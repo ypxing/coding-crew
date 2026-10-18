@@ -101,6 +101,16 @@ write_spec() {
   done >>"$spec"
 }
 
+# die_setup_clash <default> — after a failed checkout or merge: when an uncommitted setup file is one origin/<default>
+# now has, git refused to overwrite it, and only the user can choose which copy to keep.
+die_setup_clash() {
+  local f
+  for f in $(git status --porcelain --untracked-files=all -- .coding-crew/config.json .coding-crew/dev-commands.json | cut -c4-); do
+    git cat-file -e "origin/$1:$f" 2>/dev/null || continue
+    die "origin/$1 now has $f: compare it with your uncommitted copy, keep one (commit, or move yours aside), then re-run"
+  done
+}
+
 start() {
   [ -z "$(git status --porcelain -- "${NOT_SETUP[@]}")" ] || die "working tree is not clean: commit or stash first"
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
@@ -116,7 +126,7 @@ start() {
   if git show-ref --verify -q "refs/heads/$BRANCH"; then git checkout -q "$BRANCH"
   elif git show-ref --verify -q "refs/remotes/origin/$BRANCH"; then git checkout -q -t "origin/$BRANCH"
   else git checkout -q -b "$BRANCH" "origin/$default"
-  fi || die "cannot check out $BRANCH (see above)"
+  fi || { die_setup_clash "$default"; die "cannot check out $BRANCH (see above)"; }
   # A branch origin lacks is new, or one whose first push was refused: a re-run pushes it before any coder runs.
   git show-ref --verify -q "refs/remotes/origin/$BRANCH" || push -u origin "$BRANCH" || die "cannot push $BRANCH: $PUSH_WHY"
   # The checks run the branch's own files, so a branch an earlier run left takes the default branch's fixes first.
@@ -124,6 +134,7 @@ start() {
     if ! git merge -q --no-edit "origin/$default" >&2; then
       local conflicts; conflicts=$(git diff --name-only --diff-filter=U | paste -sd' ' -)
       git merge --abort 2>/dev/null || true
+      [ -n "$conflicts" ] || die_setup_clash "$default"
       [ -n "$conflicts" ] || die "merging origin/$default into $BRANCH failed (see above)"
       die "merging origin/$default into $BRANCH conflicts in $conflicts: merge it by hand, push $BRANCH, then re-run"
     fi
