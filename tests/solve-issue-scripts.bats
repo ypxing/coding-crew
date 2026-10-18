@@ -167,16 +167,16 @@ _cache() {
   [[ "$output" == *"typecheck: fail (exit 4)"*"lint: pass"*"test: pass"*"CHECKS: fail" ]]
 }
 
-@test "run-checks: a worktree runs its own committed checks, not the main checkout's" {
-  _cache '{"test": "pwd -P", "lint": null, "typecheck": null}'
+@test "run-checks: a worktree runs the main checkout's checks, in the worktree, over its own committed copy" {
+  _cache '{"test": "echo branch-copy", "lint": null, "typecheck": null}'
   git -C "$WORK" add -A && git -C "$WORK" commit -q -m cache
   git -C "$WORK" worktree add -q "$TEMP_DIR/wt" -b wt-branch
-  _cache '{"test": "echo main-checkout", "lint": null, "typecheck": null}'
+  _cache '{"test": "pwd -P", "lint": null, "typecheck": null}'
   run bash "$RUN_CHECKS" --project-root "$TEMP_DIR/wt"
   [ "$status" -eq 0 ]
   [[ "$output" == *"$(cd "$TEMP_DIR/wt" && pwd -P)"* ]]
-  [[ "$output" != *main-checkout* ]]
-  rm -rf "$TEMP_DIR/wt/.coding-crew"
+  [[ "$output" != *branch-copy* ]]
+  rm -f "$WORK/.coding-crew/dev-commands.json"
   run bash "$RUN_CHECKS" --project-root "$TEMP_DIR/wt"
   [ "$status" -eq 3 ]
   [ "$output" = DISCOVER ]

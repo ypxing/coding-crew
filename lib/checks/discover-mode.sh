@@ -71,7 +71,7 @@ it) and let them change it before you save it. On a non-interactive run (a headl
 subagent), save it without asking.
 
 Save it by running these commands with your answer as the JSON. Every worktree of this clone then reads
-it from $CACHE; when that is the committed .coding-crew/dev-commands.json, tell the person to commit it.
+it from $CACHE; when git shows that file as untracked or modified, tell the person to commit it.
 
 cat > $(printf '%q' "$ANSWER") <<'JSON'
 {"install_mode": "<docker or host>", "docker_service": "<service, or null for host>"}

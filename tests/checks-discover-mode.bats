@@ -53,21 +53,21 @@ teardown() {
   (cd "$WT" && bash "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/answer.json") >/dev/null
   [ -z "$(git -C "$WT" status --porcelain)" ]
   run bash "$LIB/discover-mode.sh" --project-root "$MAIN"
-  [[ "$output" == "Mode discovery: skipped (already recorded at $MAIN/.git/coding-crew/dev-commands.json)" ]]
+  [[ "$output" == "Mode discovery: skipped (already recorded at $MAIN/.coding-crew/dev-commands.json)" ]]
   run bash "$LIB/resolve-mode.sh" --project-root "$WT"
   [ "$output" = $'INSTALL_MODE=docker\nDOCKER_SERVICE=app' ]
 }
 
 @test "checks discovered without a mode still ask for the mode; a host answer with a null service is recorded" {
-  mkdir -p "$MAIN/.git/coding-crew"
-  echo '{"test": "make test", "lint": null}' > "$MAIN/.git/coding-crew/dev-commands.json"
+  mkdir -p "$MAIN/.coding-crew"
+  echo '{"test": "make test", "lint": null}' > "$MAIN/.coding-crew/dev-commands.json"
   run bash "$LIB/discover-mode.sh" --project-root "$WT"
   [[ "$output" == *"mode discovery prompt"* ]]
   printf '{"install_mode": "host", "docker_service": null}\n' > "$TEMP_DIR/answer.json"
   (cd "$WT" && bash "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/answer.json") >/dev/null
   run bash "$LIB/discover-mode.sh" --project-root "$WT"
   [[ "$output" == "Mode discovery: skipped"* ]]
-  grep -q '"test": "make test"' "$MAIN/.git/coding-crew/dev-commands.json"
+  grep -q '"test": "make test"' "$MAIN/.coding-crew/dev-commands.json"
   run bash "$LIB/resolve-mode.sh" --project-root "$WT"
   [ "$output" = $'INSTALL_MODE=host\nDOCKER_SERVICE=' ]
 }
