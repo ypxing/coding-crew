@@ -5,7 +5,7 @@
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  TEMP_DIR="$(mktemp -d)"
+  TEMP_DIR="$(cd "$(mktemp -d)" && pwd -P)" # resolved, as git prints it: macOS TMPDIR is under a /var symlink
 }
 teardown() { rm -rf "$TEMP_DIR"; }
 
