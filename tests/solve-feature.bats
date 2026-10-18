@@ -253,6 +253,72 @@ land_ready() {
   [ "$(out branch)" = feature/feat ]
 }
 
+@test "start proceeds for a modified or untracked config.json and an untracked dev commands file, and dies for any other change" {
+  echo '{"tracker":{"kind":"github"},"solveFeature":{"models":{"coder":"sonnet"}}}' > .coding-crew/config.json
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out coder-model)" = sonnet ]
+  [ "$(git status --porcelain)" = " M .coding-crew/config.json" ]
+
+  # A tracked dev commands file is the branch's: an edit to it is work to commit, not a setting to try.
+  git checkout -q main && git checkout -q -- .coding-crew && git branch -q -D feature/feat && git push -q origin --delete feature/feat
+  echo '{"test":"make check"}' > .coding-crew/dev-commands.json
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"working tree is not clean"* ]]
+
+  git checkout -q -- .coding-crew
+  git rm -q --cached .coding-crew/config.json .coding-crew/dev-commands.json && git commit -q -m "setup uncommitted"
+  git push -q origin HEAD
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git status --porcelain -uall | sort | tr '\n' ' ')" = "?? .coding-crew/config.json ?? .coding-crew/dev-commands.json " ]
+
+  git checkout -q main
+  echo dirt > .coding-crew/other.json
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"working tree is not clean"* ]]
+}
+
+@test "start whose uncommitted dev commands file origin now commits says to keep one copy, checking out or merging" {
+  git rm -q --cached .coding-crew/dev-commands.json && git commit -q -m "commands uncommitted" && git push -q origin HEAD
+  git clone -q "$TEMP_DIR/origin.git" "$TEMP_DIR/mate"
+  echo '{"test":"make all"}' > "$TEMP_DIR/mate/.coding-crew/dev-commands.json"
+  git -C "$TEMP_DIR/mate" add .coding-crew && git -C "$TEMP_DIR/mate" -c user.email=m@m -c user.name=M commit -q -m cmds
+  git -C "$TEMP_DIR/mate" push -q origin HEAD
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"origin/main now has .coding-crew/dev-commands.json: compare it with your uncommitted copy, keep one (commit, or move yours aside), then re-run"* ]] || { echo "$output"; return 1; }
+
+  git checkout -q -b feature/feat HEAD && git push -q -u origin feature/feat
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"origin/main now has .coding-crew/dev-commands.json: compare it with your uncommitted copy"* ]] || { echo "$output"; return 1; }
+}
+
+@test "start blocked by a tracked, modified setup file leaves the error to git, not blaming origin" {
+  git checkout -q -b feature/feat && echo '{"tracker":{"kind":"github"},"x":2}' > .coding-crew/config.json
+  git commit -qam "branch config" && git push -q -u origin feature/feat && git checkout -q main
+  echo '{"tracker":{"kind":"github"},"x":1}' > .coding-crew/config.json
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"origin/main now has"* ]] || { echo "$output"; return 1; }
+}
+
+@test "start in a linked worktree whose tree has no config.json reads the models from the main checkout's" {
+  git rm -q .coding-crew/config.json && git commit -q -m "no config" && git push -q origin HEAD
+  echo '{"tracker":{"kind":"github"},"solveFeature":{"models":{"coder":"sonnet","reviewer":"opus"}}}' > .coding-crew/config.json
+  git fetch -q origin
+  git worktree add -q --detach "$TEMP_DIR/wt" origin/HEAD
+  cd "$TEMP_DIR/wt"
+  [ ! -e .coding-crew/config.json ]
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out coder-model)" = sonnet ]
+  [ "$(out reviewer-model)" = opus ]
+}
+
 # --- start: the branch ---------------------------------------------------------------
 
 @test "start on the default branch creates feature/<slug> from origin/main, pushes it with upstream and prints branch=" {
@@ -514,6 +580,24 @@ stops_at() {
   stops_at solve "working tree left dirty; why: $WORK/.solve-feature/coder.report.md"
 }
 
+@test "land goes on to the checks when the only leftover change is an untracked setup file or config.json" {
+  land_ready
+  git rm -q --cached .coding-crew/dev-commands.json && git commit -q -m "commands untracked"
+  echo '{"test":"make check"}' > .coding-crew/dev-commands.json
+  echo '{"tracker":{"kind":"github"},"x":1}' > .coding-crew/config.json
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -f "$STATE/checks.log" ]
+  [ "$(git status --porcelain -uall | sort | tr '\n' ' ')" = " M .coding-crew/config.json ?? .coding-crew/dev-commands.json " ]
+}
+
+@test "land stops 'working tree left dirty' for a modified dev commands file the branch tracks: it is the branch's to commit" {
+  land_ready
+  echo '{"test":"make check"}' > .coding-crew/dev-commands.json
+  run bash "$SCRIPT" land feat 2 feature/feat
+  stops_at solve "working tree left dirty"
+}
+
 @test "land after a coder committed [WIP] and left its issue open exits 1 'did not close' naming the coder's report, before the checks" {
   run bash "$SCRIPT" start feat
   echo "stale" > .solve-feature/coder.report.md
@@ -548,7 +632,8 @@ handed_back() {
   coder 2
   CHECKS_RC=3 run bash "$SCRIPT" land feat 2 feature/feat
   handed_back "no check commands known (DISCOVER): the coder discovered none"
-  [[ "$output" == *"run /setup-coding-crew and commit .coding-crew/dev-commands.json, then re-run"* ]]
+  [[ "$output" == *"run /setup-coding-crew, then re-run"* ]]
+  [[ "$output" != *commit* ]]
 }
 
 @test "a re-run after a checks stop hands the reopened issue to a coder on the pushed work, in a fresh clone too" {
@@ -772,7 +857,7 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   [ "$(git rev-parse HEAD)" = "$TIP" ]
   [ "$(git status --porcelain)" = 'A  fixed.txt' ]
   CHECKS_RC=3 run bash "$SCRIPT" fix feat 10 feature/feat
-  fix_stops "no check commands known (DISCOVER): run /setup-coding-crew and commit .coding-crew/dev-commands.json"
+  fix_stops "no check commands known (DISCOVER): run /setup-coding-crew, then re-run"
 
   git add fixed.txt && git commit -q -m "fix by hand"
   run bash "$SCRIPT" fix feat 10 feature/feat
@@ -876,6 +961,27 @@ push_says() {
   [ ! -e .solve-feature/stopped ]
   [ ! -e .solve-feature/reviewed ]
   [ ! -e .solve-feature/outcome ]
+}
+
+@test "fix leaves config.json and an untracked dev commands file out of its commit and stages every other change" {
+  fix_ready
+  git rm -q --cached .coding-crew/config.json .coding-crew/dev-commands.json && git commit -q -m "setup untracked"
+  echo '{"test":"make check"}' > .coding-crew/dev-commands.json
+  echo more > more.txt
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git diff --name-only HEAD~1 HEAD | sort | tr '\n' ' ')" = "fixed.txt more.txt " ]
+  [ "$(git status --porcelain -uall | sort | tr '\n' ' ')" = "?? .coding-crew/config.json ?? .coding-crew/dev-commands.json " ]
+}
+
+@test "fix commits a dev commands file the branch tracks with its fixes, and still leaves a modified config.json out" {
+  fix_ready
+  echo '{"test":"make check"}' > .coding-crew/dev-commands.json
+  echo '{"tracker":{"kind":"github"},"x":1}' > .coding-crew/config.json
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git diff --name-only HEAD~1 HEAD | sort | tr '\n' ' ')" = ".coding-crew/dev-commands.json fixed.txt " ]
+  [ "$(git status --porcelain -uall)" = " M .coding-crew/config.json" ]
 }
 
 @test "fix with no findings on a clean tree commits nothing" {

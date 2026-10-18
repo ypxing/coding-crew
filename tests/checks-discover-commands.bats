@@ -22,7 +22,7 @@ teardown() {
   [[ "$output" == *"docker compose run"* ]]
 }
 
-@test "the prompt's save commands, run with an answer filled in, record it and leave the tree clean" {
+@test "the prompt's save commands, run with an answer filled in, record it in the dev commands file and touch nothing else" {
   run bash -c 'cd "$1" && bash "$2/discover-commands.sh"' _ "$REPO" "$LIB"
   [[ "$output" == *"write-commands-cache.sh"* ]]
   [[ "$output" == *"rm -f $REPO/.discovered-commands.json"* ]]
@@ -30,8 +30,8 @@ teardown() {
     | sed -e 's/"<command or null[^"]*>"/null/g' -e 's/"test": null/"test": "make test"/')
   [ -n "$block" ]
   (cd "$TEMP_DIR" && bash -c "$block")
-  [ -z "$(git -C "$REPO" status --porcelain -- . ':!Makefile')" ]
-  grep -q '"test": "make test"' "$REPO/.git/coding-crew/dev-commands.json"
+  [ "$(git -C "$REPO" status --porcelain -uall -- . ':!Makefile')" = "?? .coding-crew/dev-commands.json" ]
+  grep -q '"test": "make test"' "$REPO/.coding-crew/dev-commands.json"
   run bash -c 'cd "$1" && bash "$2/discover-commands.sh"' _ "$REPO" "$LIB"
   [[ "$output" == "Command discovery: skipped (already cached"* ]]
 }
@@ -45,7 +45,7 @@ teardown() {
     | sed -e 's/"<command or null[^"]*>"/null/g' -e 's/"test": null/"test": "mvn test"/')
   [ -n "$block" ]
   (cd "$TEMP_DIR" && bash -c "$block")
-  grep -q '"test": "mvn test"' "$REPO/.git/coding-crew/dev-commands.json"
+  grep -q '"test": "mvn test"' "$REPO/.coding-crew/dev-commands.json"
   run bash "$LIB/run-checks.sh" --project-root "$REPO"
   [[ "$output" != *"DISCOVER"* ]]
   run bash -c 'cd "$1" && bash "$2/discover-commands.sh"' _ "$REPO" "$LIB"

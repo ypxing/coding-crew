@@ -5,7 +5,7 @@
 # Usage:
 #   bash scripts/docker-install.sh --project-root <path> \
 #     [--service <name>] [--timeout <sec, default 1800>] [--force]
-# The service and the install command come from the checkout's dev commands file ("docker_service",
+# The service and the install command come from the clone's dev commands file ("docker_service",
 # "install"; commands-file.sh), and ensure-env.sh runs its "registry_auth"; with no
 # docker_service, the compose file's first service. Generates this checkout's override, then installs
 # only when the root dependency volume (named by lockfile hash) lacks a .crew-stamp; --force deletes

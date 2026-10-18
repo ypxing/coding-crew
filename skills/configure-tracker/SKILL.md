@@ -8,7 +8,8 @@ description: >
 
 # Configure Tracker
 
-Choose the project's issue tracker and record it in the repo's `.coding-crew/config.json`:
+Choose the project's issue tracker and record it in the repo's `.coding-crew/config.json`, the main checkout's
+one even when run from a linked worktree, since the tracker reads it from there:
 
 ```json
 { "tracker": { "kind": "github" } }
@@ -22,7 +23,9 @@ existing `tracker` section is replaced.
 Show the current choice, if any:
 
 ```bash
-CONFIG="$(git rev-parse --show-toplevel)/.coding-crew/config.json"
+COMMON="$(git rev-parse --path-format=absolute --git-common-dir)"   # the main checkout, from a linked worktree too
+ROOT="$(git rev-parse --show-toplevel)"; [ "$(basename "$COMMON")" != .git ] || ROOT="$(dirname "$COMMON")"
+CONFIG="$ROOT/.coding-crew/config.json"
 [ -f "$CONFIG" ] && jq -r '.tracker.kind // "none"' "$CONFIG"
 ```
 
@@ -64,7 +67,8 @@ section, then delete a legacy `issue-tracker.md` an earlier version wrote — it
 once `config.json` has a `tracker` section:
 
 ```bash
-ROOT="$(git rev-parse --show-toplevel)"
+COMMON="$(git rev-parse --path-format=absolute --git-common-dir)"   # the main checkout, from a linked worktree too
+ROOT="$(git rev-parse --show-toplevel)"; [ "$(basename "$COMMON")" != .git ] || ROOT="$(dirname "$COMMON")"
 CONFIG="$ROOT/.coding-crew/config.json"
 mkdir -p "$ROOT/.coding-crew"
 [ -f "$CONFIG" ] || echo '{}' > "$CONFIG"
