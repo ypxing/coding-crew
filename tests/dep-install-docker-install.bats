@@ -245,18 +245,6 @@ stub_uname_m() {
   [[ "$output" != *"npm ci"* ]]
 }
 
-@test "an install command that runs docker itself is refused before anything runs (exit 5)" {
-  printf 'deps:\n\tdocker compose run --rm app npm ci\n' > "$WORK/Makefile"
-  _cache '{"install": "make deps"}'
-  use_fake_docker
-  run bash "$SCRIPT" --project-root "$WORK"
-  [ "$status" -eq 5 ]
-  [[ "$output" == *"runs docker itself"* ]]
-  [[ "$output" == *"docker-install: failed — service app, step install command, exit 5"* ]]
-  [ ! -s "$FAKE/docker.calls" ]
-  [ ! -f "$OVERRIDE" ]
-}
-
 # ─── the stamp in the volume ─────────────────────────────────────────────────
 #
 # `docker` is a fake that keeps each named volume as a temp dir (helpers/fake-docker.bash) and runs
@@ -353,6 +341,38 @@ _installs() { grep -c . "$FAKE/install.calls" || true; }
   FAKE_NPM_RC=1 run bash "$SCRIPT" --project-root "$WORK" --force
   [ "$status" -eq 3 ]
   [ ! -e "$stamp" ]
+}
+
+@test "an install command that runs docker itself runs on the host, its compose call given the override, then stamps the volume" {
+  printf 'deps:\n\tdocker compose run --rm app npm ci\n' > "$WORK/Makefile"
+  _cache '{"install": "make deps"}'
+  use_fake_docker
+  run bash "$SCRIPT" --project-root "$WORK"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Running on the host, as it runs docker itself: make deps"* ]]
+  # the recipe's own call went through the shim: the override is its last -f
+  grep -q -- "-f $OVERRIDE run --rm app npm ci" "$FAKE/docker.calls"
+  [ "$(_installs)" -eq 1 ]
+  [ -f "$(vol_dir)/.crew-stamp" ]
+
+  run bash "$SCRIPT" --project-root "$WORK"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Present:"* ]]
+  [ "$(_installs)" -eq 1 ]
+}
+
+@test "a failed host-run install writes no stamp, removes the override, and is exit 3" {
+  printf 'deps:\n\tdocker compose run --rm app npm ci\n' > "$WORK/Makefile"
+  _cache '{"install": "make deps"}'
+  use_fake_docker
+  bash "$SCRIPT" --project-root "$WORK" >/dev/null
+  stamp="$(vol_dir)/.crew-stamp"
+  FAKE_NPM_RC=1 run bash "$SCRIPT" --project-root "$WORK" --force
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"failed on the host ('make deps'"* ]]
+  [[ "${lines[${#lines[@]}-1]}" == "docker-install: failed — service app, step install, exit 3" ]]
+  [ ! -e "$stamp" ]
+  [ ! -f "$OVERRIDE" ]
 }
 
 @test "no compose file is exit 2, not a failure" {
