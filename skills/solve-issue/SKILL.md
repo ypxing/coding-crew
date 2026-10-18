@@ -266,7 +266,7 @@ Example: `[01-auth-logout] Add user logout endpoint`. Do not push.
 ### 6.5. Reminder: the dev commands file
 
 The dev commands file is the main checkout's `.coding-crew/dev-commands.json`, read from every worktree whether
-committed or not, unless this tree's branch commits its own. Step 5's `DISCOVER` may write it, and nothing here commits it:
+committed or not. Step 5's `DISCOVER` may write it, and nothing here commits it:
 
 ```bash
 DEV=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT")

@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 
-# commands-file.sh — where the dev commands file is: a worktree's own .coding-crew/dev-commands.json when its branch
-# commits one, else the main checkout's, committed or not, read and written from every worktree of the clone. write-commands-cache.sh writes it there, and resolve-mode.sh,
+# commands-file.sh — where the dev commands file is: the main checkout's .coding-crew/dev-commands.json, committed or
+# not, read and written from every worktree of the clone. write-commands-cache.sh writes it there, and resolve-mode.sh,
 # run-checks.sh and discover-commands.sh read it there.
 
 LIB="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
@@ -29,23 +29,25 @@ where() { bash "$LIB/commands-file.sh" --project-root "$1"; }
   done
 }
 
-@test "a worktree that does not track the file gets the main checkout's, untracked there or not, never under .git" {
+@test "it is the main checkout's file whether committed or untracked, never the worktree's own or under .git" {
   mkdir -p "$MAIN/.coding-crew" && echo '{}' > "$MAIN/.coding-crew/dev-commands.json"
   [ "$(where "$WT")" = "$MAIN/.coding-crew/dev-commands.json" ]
+  git -C "$MAIN" add .coding-crew && git -C "$MAIN" -c user.email=t@t -c user.name=T commit -q -m cmds
+  git -C "$MAIN" worktree add -q -b feat "$TEMP_DIR/wt3"
+  [ -f "$TEMP_DIR/wt3/.coding-crew/dev-commands.json" ]
+  [ "$(where "$TEMP_DIR/wt3")" = "$MAIN/.coding-crew/dev-commands.json" ]
   [ "$(where "$MAIN")" = "$MAIN/.coding-crew/dev-commands.json" ]
   [[ "$(where "$WT")" != *"/.git/"* ]]
 }
 
-@test "a worktree whose branch commits the file gets its own, even when the main checkout's branch lacks it" {
-  git -C "$WT" checkout -q -b with-cmds
-  mkdir -p "$WT/.coding-crew" "$WT/sub" && echo '{"test": "branch"}' > "$WT/.coding-crew/dev-commands.json"
-  git -C "$WT" add .coding-crew && git -C "$WT" -c user.email=t@t -c user.name=T commit -q -m cmds
-  [ ! -e "$MAIN/.coding-crew/dev-commands.json" ]
-  [ "$(where "$WT")" = "$WT/.coding-crew/dev-commands.json" ]
-  [ "$(where "$WT/sub")" = "$WT/.coding-crew/dev-commands.json" ]
-  [ "$(where "$WT2")" = "$MAIN/.coding-crew/dev-commands.json" ]
-  run bash "$LIB/run-checks.sh" --project-root "$WT"
-  [ "$output" != DISCOVER ]
+@test "an answer written in a worktree whose branch commits the file lands in the main checkout's, that tree clean" {
+  mkdir -p "$MAIN/.coding-crew" && echo '{"test": "true"}' > "$MAIN/.coding-crew/dev-commands.json"
+  git -C "$MAIN" add .coding-crew && git -C "$MAIN" -c user.email=t@t -c user.name=T commit -q -m cmds
+  git -C "$MAIN" worktree add -q -b feat "$TEMP_DIR/wt3"
+  printf '{"install_mode": "host"}\n' > "$TEMP_DIR/answer.json"
+  (cd "$TEMP_DIR/wt3" && bash "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/answer.json") >/dev/null
+  grep -q '"install_mode": "host"' "$MAIN/.coding-crew/dev-commands.json"
+  [ -z "$(git -C "$TEMP_DIR/wt3" status --porcelain)" ]
 }
 
 @test "outside a git repository it is that path" {
