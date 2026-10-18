@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -341,7 +341,7 @@ test("the CLI process: exit codes and gh's stderr reach the caller", () => {
 
 test("the CLI refuses a cwd outside any git repo when no --main-root is given", () => {
   const dir = root({ github: true });
-  const outside = root();
+  const outside = realpathSync(root()); // macOS: the process sees tmpdir()'s /var as /private/var
   const r = node(["config"], { cwd: outside });
   assert.equal(r.status, 2);
   assert.equal(r.stdout, "");
