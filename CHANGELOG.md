@@ -42,6 +42,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- solve-feature: `land` and `fix` merge in commits someone else pushed to the feature branch mid-run (an autofix
+  bot, a teammate) before their checks, instead of stopping on a refused push; `fix` now commits the fixer's edits
+  before its checks, so failing checks leave them in one local, unpushed commit. A merge conflict stops naming the
+  files, `land`'s reopening the issue (#576).
 - checks, dep-install: in docker mode, an install command that runs docker itself (a `make deps` wrapping
   `docker compose run`) runs on the host, its compose calls given the checkout's override, as such a check already
   does, instead of stopping with exit 5: the host-run install #484 cut, without its lock or volume probe. Install-mode
