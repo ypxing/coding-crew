@@ -72,18 +72,18 @@ Answer three questions.
    else trace it in the code; a reproduction that does not trigger it is not evidence it is absent, so trace it
    then too. Work through each of these:
    - **Look past the diff:** callers, what it calls, state an older version or an earlier run left, re-runs, error
-     and recovery paths, and how the change's commits combine. Check every place the code actually runs — a linked
-     worktree, a second install on the same `PATH`, a variable unset outside a sandbox — not only the one the spec
-     pictured.
+     and recovery paths, and how the change's commits combine. Check every place the code actually runs — another
+     OS or shell, a container or the host, a missing environment variable, two copies running at once — not only the
+     one the spec pictured.
    - **Old forms and old behaviour.** For each thing the change renames, removes or moves, or makes behave
      differently (when it runs, what it outputs), find whatever still names or assumes the old form — code, docs,
-     prompts, manifest descriptions, eval harnesses, tests — and read it as it stands now.
+     config, prompts, tests — and read it as it stands now.
    - **One fact, every writer and reader.** When the change makes one place the record of a fact, check that every
      path writing it keeps it current; when it deletes, renames or maps references, check what still points at the
      old ones. When new code reads an input existing code already reads (a file format, a heading, a flag), find an
      input the two accept or read differently, citing both `file:line`; duplication alone is not a finding.
    - **Gates and premises.** For each gate, stamp, lock or cache key the change adds or relies on, name what passes it
-     that should not: a log from another commit, state from an older run, a different input. When the change rests
+     that should not: state from another version, an older run or a different input. When the change rests
      on a claim — a spec decision, or how a tool behaves (run the tool) — check it; when following it causes a
      defect, report the defect and quote the claim.
    - **Tests that cannot fail.** For each new or changed test, check it fails when the behaviour it covers breaks:
