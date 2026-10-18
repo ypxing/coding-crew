@@ -73,9 +73,17 @@ Answer three questions.
      copy — else trace it in the code. A reproduction that does not trigger it is not evidence it is absent: trace
      it then too.
    - **Look past the diff:** callers, what it calls, state an older version or an earlier run left, re-runs, error
-     and recovery paths, and how the change's commits combine.
-   - **Old forms.** For each thing the change renames, removes or moves, find whatever still names or relies on the
-     old form — code, docs, prompts, tests — and read it as it stands now.
+     and recovery paths, and how the change's commits combine. Check every place the code actually runs — a linked
+     worktree, a second install on the same `PATH`, a variable unset outside a sandbox — not only the one the spec
+     pictured.
+   - **Old forms and old behaviour.** For each thing the change renames, removes or moves, or makes behave
+     differently (when it runs, what it outputs), find whatever still names or assumes the old form — code, docs,
+     prompts, manifest descriptions, eval harnesses, tests — and read it as it stands now.
+   - **Every writer.** When the change makes one place the record of a fact, check that every path writing that fact
+     keeps it current. When it deletes, renames or maps references, check what still points at the old ones.
+   - **Gates and premises.** For each gate, stamp, lock or cache key the change adds or relies on, name what passes it
+     that should not: a log from another commit, state from an older run, a different input. When the change rests
+     on a claim about how a tool behaves — in the spec, a comment or a commit message — run the tool to check it.
    - **Wrong spec decisions.** When following a spec decision causes a defect, report the defect and quote the
      decision.
    - **Tests that cannot fail.** For each new or changed test, check it fails when the behaviour it covers breaks:
@@ -94,15 +102,13 @@ Answer three questions.
    Only a documented rule counts; tooling-enforced rules, naming and taste do not.
 
 Do not report input nothing can supply (the project's own components never produce it and it comes from no
-outside source), a missing guard for a case no path reaches, or a preference. No findings is a valid answer.
+outside source), a missing guard for a case no path reaches, or a preference. Suggest the smallest fix; where
+removing code fixes it, say that rather than adding a guard. One finding per defect, listing every place it occurs.
+No findings is a valid answer.
 
-One finding per defect, listing every place it occurs. Suggest the smallest fix; where removing code fixes it, say
-that rather than adding a guard. Severity:
-
-- **CRITICAL** loses data, opens a security hole or breaks the main path.
-- **HIGH** is wrong behaviour a user hits.
-- **MEDIUM** is a broken error or recovery path, or a broken documented rule.
-- **LOW** is a wrong doc or message, or dead code.
+Severity: CRITICAL loses data, opens a security hole or breaks the main path; HIGH is wrong behaviour a
+user hits; MEDIUM is a broken error or recovery path, or a broken documented rule; LOW is a wrong
+doc or message, or dead code.
 
 Finish by writing the report as JSON to the path you were given, or printing it when you were given none:
 
