@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 
-# The setup-coding-crew skill: what install.sh ships for it, and the one piece of its SKILL.md that is
-# code rather than prose, the commit hint.
+# The setup-coding-crew skill: what install.sh ships for it, and the pieces of its SKILL.md that are code rather
+# than prose: Step 2's start of the dev commands file and Step 4's commit hint.
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
@@ -19,15 +19,80 @@ teardown() { rm -rf "$TEMP_DIR"; }
   [ -f "$skill/hosts/github-actions.yml" ]
   [ -f "$skill/scripts/checks/discover-commands.sh" ]
   [ -f "$skill/scripts/checks/write-commands-cache.sh" ]
+  [ -f "$skill/scripts/checks/run-checks.sh" ]
+  [ -f "$target/.claude/skills/dep-install/SKILL.md" ]
   [ -f "$skill/scripts/tracker/cli.mjs" ]
   [ -f "$target/.claude/skills/configure-tracker/SKILL.md" ]
-  [ "$(jq -c '.skills["setup-coding-crew"].deps' "$REPO_ROOT/registry.json")" = '["configure-tracker"]' ]
+  [ "$(jq -c '.skills["setup-coding-crew"].deps' "$REPO_ROOT/registry.json")" = '["configure-tracker","dep-install"]' ]
 }
 
-# step4 — the bash block under SKILL.md's "## Step 4" heading, the commit hint the skill prints.
-step4() {
-  awk '/^## Step 4/ { s = 1; next } /^## / { s = 0 } s && /^```bash/ { c = 1; next } s && c && /^```/ { exit } c' \
-    "$REPO_ROOT/skills/setup-coding-crew/SKILL.md"
+# block <n> — the first bash block under SKILL.md's "## Step <n>" heading, <skill-dir> pointing at the source skill.
+block() {
+  awk -v h="^## Step $1" '$0 ~ h { s = 1; next } /^## / { s = 0 } s && /^```bash/ { c = 1; next } s && c && /^```/ { exit } c' \
+    "$REPO_ROOT/skills/setup-coding-crew/SKILL.md" | sed "s#<skill-dir>#$REPO_ROOT/skills/setup-coding-crew#g"
+}
+step4() { block 4; }
+
+# repo_with_worktree — $REPO, a main checkout with one commit, and $WT, a linked worktree of it.
+repo_with_worktree() {
+  REPO="$TEMP_DIR/repo" WT="$TEMP_DIR/wt"
+  git init -q -b main "$REPO"
+  git -C "$REPO" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+  git -C "$REPO" worktree add -q --detach "$WT"
+}
+
+@test "Step 2 moves the clone's old .git/coding-crew/ file to the main checkout's file, from a linked worktree too" {
+  repo_with_worktree
+  block 2 > "$TEMP_DIR/step2.sh"
+  grep -q 'commands-file.sh' "$TEMP_DIR/step2.sh"
+  mkdir -p "$REPO/.git/coding-crew"
+  echo '{"test": "make test", "install_mode": "host"}' > "$REPO/.git/coding-crew/dev-commands.json"
+  (cd "$WT" && bash "$TEMP_DIR/step2.sh") >/dev/null
+  [ ! -e "$REPO/.git/coding-crew/dev-commands.json" ]
+  grep -q '"test": "make test"' "$REPO/.coding-crew/dev-commands.json"
+  [ ! -e "$WT/.coding-crew" ]
+
+  # An existing project file is kept; with no old file either, it starts empty.
+  echo '{"test": "make check"}' > "$REPO/.coding-crew/dev-commands.json"
+  echo '{"test": "old"}' > "$REPO/.git/coding-crew/dev-commands.json"
+  (cd "$REPO" && bash "$TEMP_DIR/step2.sh") >/dev/null
+  grep -q '"test": "make check"' "$REPO/.coding-crew/dev-commands.json"
+  rm -rf "$REPO/.coding-crew" "$REPO/.git/coding-crew"
+  (cd "$REPO" && bash "$TEMP_DIR/step2.sh") >/dev/null
+  [ -f "$REPO/.coding-crew/dev-commands.json" ]
+}
+
+@test "setup verifies the commands: dep-install by name, then run-checks.sh, offering fix, keep or stop on a failure" {
+  local skill="$REPO_ROOT/skills/setup-coding-crew/SKILL.md"
+  grep -qF 'Use the dep-install skill' "$skill"
+  grep -qF 'scripts/checks/run-checks.sh' "$skill"
+  grep -qF 'CHECKS: fail' "$skill"
+  grep -qF '**fix**' "$skill" && grep -qF '**keep**' "$skill" && grep -qF '**stop**' "$skill"
+  ! grep -n 'dep-install/' "$skill" || false
+  ! grep -nE 'Never run the commands|This step does not decide it|solve-feature needs these files committed|the tracked `.coding-crew' "$skill" || false
+}
+
+@test "the commit hint from a linked worktree lists the main checkout's setup files" {
+  repo_with_worktree
+  step4 > "$TEMP_DIR/hint.sh"
+  mkdir -p "$REPO/.coding-crew"
+  echo '{"test": "make test"}' > "$REPO/.coding-crew/dev-commands.json"
+  run bash -c 'cd "$1" && bash "$2"' _ "$WT" "$TEMP_DIR/hint.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"cd $REPO && git add .coding-crew/dev-commands.json && git commit"* ]] || { echo "$output"; return 1; }
+}
+
+@test "the commit hint labels each kept failing check unverified, above the commit line" {
+  local repo="$TEMP_DIR/repo"
+  step4 | sed 's/^UNVERIFIED=""/UNVERIFIED="lint test"/' > "$TEMP_DIR/hint.sh"
+  grep -q '^UNVERIFIED="lint test"' "$TEMP_DIR/hint.sh"
+  mkdir -p "$repo" && cd "$repo" && git init -q -b main
+  mkdir -p .coding-crew && echo '{"test": "make test"}' > .coding-crew/dev-commands.json
+  run bash "$TEMP_DIR/hint.sh"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "unverified: lint fails" ]
+  [ "${lines[1]}" = "unverified: test fails" ]
+  [[ "${lines[2]}" == "To finish, run: git add .coding-crew/dev-commands.json && git commit"* ]]
 }
 
 @test "the commit hint lists each setup file git shows as changed or untracked, and says when all are committed" {

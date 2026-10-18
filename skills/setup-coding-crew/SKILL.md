@@ -2,7 +2,7 @@
 name: setup-coding-crew
 description: >
   Takes a repo from a fresh install to a working /solve-feature in one run: chooses the tracker with the
-  configure-tracker skill, discovers the dev commands and saves them to .coding-crew/dev-commands.json, with the
+  configure-tracker skill, discovers the dev commands, saves them to .coding-crew/dev-commands.json and runs them, with the
   github tracker optionally installs the solve-feature GitHub Actions workflow and its label, then prints the
   git commit line for the files it wrote. It never commits. Use when setting up coding-crew in a project, or to
   redo one of those steps. Trigger with /setup-coding-crew [redo tracker | redo commands | redo actions].
@@ -12,7 +12,9 @@ argument-hint: "[redo tracker | redo commands | redo actions]"
 # Setup Coding Crew
 
 Three steps and a commit hint, in this order: tracker, dev commands, GitHub Actions, commit hint. Run every
-command from the repo root (`git rev-parse --show-toplevel`).
+command from the main checkout, even when started in a linked worktree: every worktree of the clone reads the
+setup files from there, committed or not. It is the directory holding the `.coding-crew/` of the path
+`bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PWD"` prints; carry it as a literal.
 
 A re-run acts only on what is missing: a configured tracker, commands already in the dev commands file and a
 workflow identical to the template are shown, not redone, and no file changes. When the user names a step ("change the tracker", "redo
@@ -46,31 +48,24 @@ When the user asks to change the tracker: Use the configure-tracker skill, then 
 
 ## Step 2 — Dev commands
 
-solve-feature gates every issue on these commands, and a GitHub Actions runner sees only what is committed, so
-they live in the dev commands file, the tracked `.coding-crew/dev-commands.json`. When that file is absent,
-start it from the clone's own dev commands file under `.git/` (what an earlier `/solve-issue` discovered), else
-empty, then run discovery — with `--refresh` when the
-user said "redo commands", which asks all eight fields again:
+solve-feature gates every issue on these commands. They live in the dev commands file, the main checkout's
+`.coding-crew/dev-commands.json`, which every worktree reads before it is committed. When that file is absent,
+move into it what an earlier version of coding-crew discovered into `.git/coding-crew/`, else start it empty,
+then run discovery — with `--refresh` when the user said "redo commands", which asks all eight fields again:
 
 ```bash
-DEV=.coding-crew/dev-commands.json
+DEV=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PWD")
+OLD="$(git rev-parse --path-format=absolute --git-common-dir)/coding-crew/dev-commands.json"
 if [ ! -f "$DEV" ]; then
-  CLONE=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PWD")
-  mkdir -p .coding-crew
-  if [ -f "$CLONE" ]; then cp "$CLONE" "$DEV"; else echo '{}' > "$DEV"; fi
+  mkdir -p "$(dirname "$DEV")"
+  if [ -f "$OLD" ]; then mv "$OLD" "$DEV"; else echo '{}' > "$DEV"; fi
 fi
-bash "<skill-dir>/scripts/checks/discover-commands.sh"   # --refresh on "redo commands"
+cd "$(dirname "$(dirname "$DEV")")" && bash "<skill-dir>/scripts/checks/discover-commands.sh"   # --refresh on "redo commands"
 ```
 
 - **A prompt** (`Command discovery: <n> source file(s) found`): follow it.
 
 - **`Command discovery: skipped`**: there is nothing to ask. Show what `$DEV` holds.
-
-Never run the commands: this step only records them.
-
-The install mode (`install_mode`, and `docker_service` for docker) is saved into this same committed file: the
-copy above carries a mode already decided, and once this file exists, solve-issue and dep-install save the mode
-they decide here, for the user to commit. This step does not decide it.
 
 When `test`, `lint` and `typecheck` are all `null`, warn: "solve-feature will land issues with no checks run:
 each prints `NOT RUN` and the run passes."
@@ -78,6 +73,22 @@ each prints `NOT RUN` and the run passes."
 Then tell the user: `.coding-crew/dev-commands.json` is plain JSON they can edit by hand at any time; a re-run
 keeps their edits, since discovery never re-asks a field already there; and saying "redo commands" discovers all
 eight fields again (`--refresh`).
+
+### Verify the commands
+
+On a full run and on "redo commands" (not on "redo tracker" or "redo actions"), run the commands now, so the
+user sees them pass before committing them; a re-run is how a fixed command is verified. Use the dep-install skill
+to decide the install mode (it saves `install_mode` into the dev commands file when that is missing) and install,
+then, from the main checkout:
+
+```bash
+bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$PWD"
+```
+
+- `CHECKS: pass`: say so, and go on.
+- `CHECKS: fail`: show each failing check's output, then ask the user, per failing check: **fix** the command
+  (edit it in `$DEV` with them, then run `run-checks.sh` again), **keep** it as it is (Step 4 labels it
+  unverified), or **stop**. On stop, end the run here, without Step 4's commit line.
 
 ## Step 3 — GitHub Actions
 
@@ -125,14 +136,21 @@ workflow's `GITHUB_TOKEN` never gets the `workflows` scope — so such an issue 
 
 ## Step 4 — Commit hint
 
-Always, even after a step failed or was skipped. solve-feature needs these files committed: its start refuses a
-dirty tree, and an Actions runner's fresh checkout has only what is committed. List every setup file git shows
-as changed or untracked, whether or not this run wrote it:
+Always, even after a step failed or was skipped, except after a stop in Step 2. Every run reads these files
+before they are committed; committing them shares them with the team and with an Actions runner, whose fresh
+checkout has only what is committed. List every setup file git shows as changed or untracked in the main
+checkout, whether or not this run wrote it. Set `UNVERIFIED` to the checks the user kept failing in Step 2,
+space-separated (empty when none):
 
 ```bash
-FILES=$(git status --porcelain --untracked-files=all -- .coding-crew/config.json .coding-crew/dev-commands.json .github/workflows/solve-feature.yml | cut -c4- | LC_ALL=C sort | paste -sd' ' -)
-if [ -n "$FILES" ]; then echo "To finish, run: git add $FILES && git commit -m \"Set up coding-crew\""
+UNVERIFIED=""
+DEV=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PWD")
+MAIN=$(dirname "$(dirname "$DEV")")
+FILES=$(git -C "$MAIN" status --porcelain --untracked-files=all -- .coding-crew/config.json .coding-crew/dev-commands.json .github/workflows/solve-feature.yml | cut -c4- | LC_ALL=C sort | paste -sd' ' -)
+for c in $UNVERIFIED; do echo "unverified: $c fails"; done
+CD=""; [ "$MAIN" = "$(git rev-parse --show-toplevel)" ] || CD="cd $MAIN && "
+if [ -n "$FILES" ]; then echo "To finish, run: ${CD}git add $FILES && git commit -m \"Set up coding-crew\""
 else echo "Setup files are all committed: nothing to commit."; fi
 ```
 
-Print its line as it is; do not run it.
+Print its lines as they are; do not run them.

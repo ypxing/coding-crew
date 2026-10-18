@@ -265,12 +265,13 @@ Example: `[01-auth-logout] Add user logout endpoint`. Do not push.
 
 ### 6.5. Reminder: the dev commands file
 
-Where the repo tracks `.coding-crew/dev-commands.json`, Step 5's `DISCOVER` updates it, and nothing here
-commits it:
+The dev commands file is the main checkout's `.coding-crew/dev-commands.json`, read from every worktree whether
+committed or not. Step 5's `DISCOVER` may write it, and nothing here commits it:
 
 ```bash
-if [ -n "$(git -C "$PROJECT_ROOT" status --porcelain -- .coding-crew/dev-commands.json 2>/dev/null)" ]; then
-  echo "Reminder: .coding-crew/dev-commands.json has uncommitted changes — review and commit it."
+DEV=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT")
+if [ -n "$(git -C "$(dirname "$(dirname "$DEV")")" status --porcelain -- "$DEV" 2>/dev/null)" ]; then
+  echo "Reminder: $DEV is untracked or modified — review and commit it."
 fi
 ```
 

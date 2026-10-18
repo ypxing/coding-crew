@@ -14,7 +14,7 @@ needed: read the mode, then install.
 
 Every project command — an ad-hoc one, and a one-off `docker compose` call, included — runs through
 `bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"`. It reads the
-mode from this checkout's dev commands file and runs the command on the host, or inside
+mode from the clone's dev commands file (`commands-file.sh` names it) and runs the command on the host, or inside
 docker in this checkout's own compose project, with its override added by the `docker` shim. In
 docker mode, with no override yet, it installs first, and a failed install stops it with the service,
 the step and its log: docker mode never runs a command on the host, except one that runs docker itself.

@@ -133,7 +133,8 @@
     "setup-coding-crew": {
       "source-dir": "setup-coding-crew",
       "deps": [
-        "configure-tracker"
+        "configure-tracker",
+        "dep-install"
       ],
       "libs": [
         "checks",

@@ -518,16 +518,17 @@ Edit these files after install — they override the defaults on the next run:
 | `.coding-crew/config.json` (`tracker` section) | Where issues live: `{"tracker": {"kind": "github"}}` (default `local`) |
 
 Commit `.coding-crew/config.json`: it is team state — the tracker choice and solve-feature's models —
-that everyone using the repo needs, so do not add it to `.gitignore`.
+that everyone using the repo needs, so do not add it to `.gitignore`. Runs read the main checkout's copy before it
+is committed, from every worktree, so you can try a setting first and commit it once satisfied.
 
 **The dev commands file** holds the project's checks (`test`, `lint`, `typecheck`, …), its install
 command and its install mode (`install_mode`: `host` or `docker`, with `docker_service`). The first
 `/solve-issue` or `/solve-feature` coder discovers the checks and, in a repo with a compose file, the
-mode; `/dep-install` discovers the mode too, and shows you its answer to change first. They are
-written to `.git/coding-crew/dev-commands.json`: outside every working tree, shared by all worktrees
-of the clone, never committed. To share them with your team or CI, run `/setup-coding-crew`: it saves them to
-`.coding-crew/dev-commands.json` and prints the commit line. A tracked file there wins, and later discoveries
-update it. The installed tooling beside them (`lib/`, `manifest.json`) is what `install.sh` writes, not team
+mode; `/dep-install` discovers the mode too, and shows you its answer to change first. They live in one
+place, the main checkout's `.coding-crew/dev-commands.json`, committed or not: every worktree of the clone
+reads and writes that file, and a solve-feature run ignores it when checking for a clean tree and never commits it.
+`/setup-coding-crew` discovers them, runs them so you see them pass, and prints the commit line; commit it once
+satisfied to share the commands with your team and with Actions. The installed tooling beside them (`lib/`, `manifest.json`) is what `install.sh` writes, not team
 state.
 
 ---
@@ -539,7 +540,7 @@ state.
 | `/solve-feature` finds no ready issue immediately | No issue with the correct status                 | Under `local`, check `.scratch/*/issues/` — status must be exactly `ready-for-agent` |
 | The coder reports `blocked`                       | Ambiguous spec or missing dependency             | Read its `BLOCKED:` line; resolve and re-run                                        |
 | `install.sh`: "unsafe path in registry"           | `registry.json` path contains `..` or `/` prefix | Fix `registry.json`                                                                 |
-| Checks run in the wrong mode (host or docker)     | `install_mode` in the dev commands file          | Set `"install_mode": "host"` (or `"docker"` with `"docker_service"`) in `.coding-crew/dev-commands.json` if the repo tracks one, else `.git/coding-crew/dev-commands.json` |
+| Checks run in the wrong mode (host or docker)     | `install_mode` in the dev commands file          | Set `"install_mode": "host"` (or `"docker"` with `"docker_service"`) in the main checkout's `.coding-crew/dev-commands.json` |
 | `address-pr-comments` fails with opaque error     | `gh` CLI missing or not authenticated            | Run `gh auth login` first                                                           |
 
 ---
