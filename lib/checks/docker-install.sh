@@ -9,10 +9,11 @@
 # "install"; commands-file.sh), and ensure-env.sh runs its "registry_auth"; with no
 # docker_service, the compose file's first service. Generates this checkout's override, then installs
 # only when the root dependency volume (named by lockfile hash) lacks a .crew-stamp; --force deletes
-# the stamp first. A failed install removes the override again, so the next run.sh call retries it.
+# the stamp first. An install command that runs docker itself (e.g. `make deps` wrapping `docker compose
+# run`) runs on the host, as run.sh runs such a check, its compose calls given the override by the shim.
+# A failed install removes the override again, so the next run.sh call retries it.
 # Exit codes: 0 installed (now or already), 1 argument or filesystem error, 2 nothing to install (no
-# compose file, service or ecosystem), 3 install failed (no stamp written), 5 the install command runs
-# docker itself, which a container has none of
+# compose file, service or ecosystem), 3 install failed (no stamp written)
 # Every failure ends with one line on stderr: `docker-install: failed — service <s>, step <step>, exit <n>`.
 
 set -uo pipefail
@@ -82,10 +83,10 @@ INSTALL_CMD="$(commands_field "$CACHE" install)"
 
 CONTAINER_SRC="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query container-src 2>/dev/null)"
 
+HOST_CMD=""
 if [[ -n "$INSTALL_CMD" ]]; then
-  if bash "$SELF_DIR/detect-docker-nesting.sh" --dir "$PROJECT_ROOT" --cmd "$INSTALL_CMD"; then
-    _fail 5 "install command" "Install command '$INSTALL_CMD' runs docker itself, and the service's container has no docker to run it with. Name a container-side install command (e.g. 'pnpm install') as \"install\" in $CACHE."
-  fi
+  # The container has no docker to nest into.
+  if bash "$SELF_DIR/detect-docker-nesting.sh" --dir "$PROJECT_ROOT" --cmd "$INSTALL_CMD"; then HOST_CMD="$INSTALL_CMD"; fi
   CONTAINER_CMD="cd $CONTAINER_SRC && $INSTALL_CMD"
 else
   mapfile -t MANIFEST_DIRS < <(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query manifest-dirs 2>/dev/null)
@@ -124,14 +125,16 @@ for _t in timeout gtimeout; do
   command -v "$_t" >/dev/null 2>&1 && { TIMEOUT_BIN="$_t"; break; }
 done
 
-# The shim adds this checkout's override as the last -f of the compose call.
+# The shim adds this checkout's override as the last -f of every compose call, ours or a host-run install's.
 export PATH="$SELF_DIR/shim:$PATH"
 export CREW_COMPOSE_OVERRIDE="$OVERRIDE"
 
+# An empty command only looks for the stamp (deleting it under --force) and writes none.
 CONTAINER_SCRIPT='
 v=$1; force=$2; cmd=$3; stamp="$v/.crew-stamp"
 if [ "$force" != 1 ] && [ -f "$stamp" ]; then echo "crew-stamp: present"; exit 0; fi
 mkdir -p "$v" && rm -f "$stamp" || exit 1
+[ -n "$cmd" ] || exit 0
 ( eval "$cmd" ) || exit $?
 date -u +%Y-%m-%dT%H:%M:%SZ > "$stamp"
 '
@@ -139,19 +142,35 @@ date -u +%Y-%m-%dT%H:%M:%SZ > "$stamp"
 OUT_FILE="$(mktemp)"
 trap 'rm -f "$OUT_FILE"' EXIT
 
-echo "Running: docker compose run --rm $SERVICE sh -c '$CONTAINER_CMD'"
-# tee'd, so a foreground caller sees install output live.
-( cd "$PROJECT_ROOT" && ${TIMEOUT_BIN:+"$TIMEOUT_BIN" "$TIMEOUT"} \
-    docker compose run --rm "$SERVICE" sh -c "$CONTAINER_SCRIPT" _ "$STAMP_DIR" "$FORCE" "$CONTAINER_CMD" ) 2>&1 \
-  | tee "$OUT_FILE"
-RC=${PIPESTATUS[0]}
+# _run <cmd…> — in PROJECT_ROOT under the timeout, tee'd, so a foreground caller sees install output live.
+_run() {
+  ( cd "$PROJECT_ROOT" && ${TIMEOUT_BIN:+"$TIMEOUT_BIN" "$TIMEOUT"} "$@" ) 2>&1 | tee -a "$OUT_FILE"
+  return "${PIPESTATUS[0]}"
+}
+_container() { _run docker compose run --rm "$SERVICE" sh -c "$CONTAINER_SCRIPT" _ "$STAMP_DIR" "$@"; }
+
+WHERE="inside service $SERVICE"
+if [[ -z "$HOST_CMD" ]]; then
+  echo "Running: docker compose run --rm $SERVICE sh -c '$CONTAINER_CMD'"
+  _container "$FORCE" "$CONTAINER_CMD"; RC=$?
+else
+  _container "$FORCE" ""; RC=$?
+  if [[ "$RC" -eq 0 ]] && ! grep -qx 'crew-stamp: present' "$OUT_FILE"; then
+    echo "Running on the host, as it runs docker itself: $HOST_CMD"
+    _run bash -c "$HOST_CMD"; RC=$?
+    # Written only now, so a failed host install leaves no stamp.
+    if [[ "$RC" -ne 0 ]]; then WHERE="on the host ('$HOST_CMD', which runs docker itself)"
+    else _container 1 ":"; RC=$?
+    fi
+  fi
+fi
 if [[ "$RC" -ne 0 ]]; then
   {
-    echo "--- docker compose output (tail) ---"
+    echo "--- install output (tail) ---"
     tail -n 20 "$OUT_FILE"
     echo "--- end ---"
   } >&2
-  _fail 3 install "The install failed inside service $SERVICE (exit $RC); no stamp was written."
+  _fail 3 install "The install failed $WHERE (exit $RC); no stamp was written."
 fi
 if grep -qx 'crew-stamp: present' "$OUT_FILE"; then
   echo "Present: $STAMP_DIR/.crew-stamp found — the dependency volumes are already installed"

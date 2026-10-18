@@ -58,7 +58,7 @@ _host() {
 }
 
 _stop() {
-  echo "run.sh: docker mode: $1 — '$CMD' did not run. Nothing runs on the host in docker mode." >&2
+  echo "run.sh: docker mode: $1 — '$CMD' did not run, and does not run on the host instead." >&2
   exit 1
 }
 

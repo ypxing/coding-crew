@@ -142,7 +142,7 @@ _docker_ready() {
   [ "$status" -eq 1 ]
   log="$(git -C "$WORK" rev-parse --path-format=absolute --git-dir)/crew-docker-install.log"
   [[ "$output" == *"the dependency install failed — service app, step install, exit 3; log: $log"* ]]
-  [[ "$output" == *"did not run. Nothing runs on the host in docker mode."* ]]
+  [[ "$output" == *"did not run, and does not run on the host instead."* ]]
   [ -f "$log" ]
   [ ! -e "$TEMP_DIR/ran-on-host" ]
   [ "$(wc -l < "$CALLS")" -eq 1 ]
