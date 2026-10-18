@@ -987,6 +987,18 @@ attention() { cat .solve-feature/pr-10.attention.md; }
   pushed
 }
 
+@test "a fixer that changed nothing is still flagged on a re-run after fix merged others' commits and then stopped" {
+  fix_ready
+  rm fixed.txt
+  branch_moves bot.txt "lint fix" >/dev/null
+  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -ne 0 ]
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(attention)" = "the fixer changed nothing" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
+}
+
 @test "fix whose merge of origin's branch conflicts aborts it, pushes nothing and says how to recover" {
   fix_ready
   local tip; tip=$(git rev-parse HEAD)
@@ -1035,7 +1047,7 @@ push_says() {
   refuse_pushes
   run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "git push failed: pre-receive hook declined"
-  [ "$(cat .solve-feature/pr-10.head)" = "$TIP" ]
+  [ "$(head -n1 .solve-feature/pr-10.head)" = "$TIP" ]
   rm "$TEMP_DIR/origin.git/hooks/pre-receive"
   git push -q origin feature/feat
   run bash "$SCRIPT" fix feat 10 feature/feat
