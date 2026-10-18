@@ -31,11 +31,15 @@ Your caller names them; a bare number is a PR, nothing at all is the current bra
 ## Run
 
 Review from a context that did not write the change. When you were started to review it, do the review below
-yourself. Otherwise — this conversation wrote or discussed the change — run the review in one **fresh subagent**:
-none of this conversation, the repo's working directory, the prompt `Use the crew-review skill on <the change>
-against <the spec, or: no spec>; write the report to <path>` (or `print the report`), and tools to read files,
-run any shell command and write scratch files outside the repo (it writes its report with one). On Claude Code that
-is a general-purpose agent: Explore and Plan cannot write. Wait for it to finish.
+yourself. Otherwise — this conversation wrote or discussed the change — run the review in one **fresh subagent**
+and wait for it to finish. Give it:
+
+- none of this conversation, and the repo's working directory;
+- the prompt `Use the crew-review skill on <the change> against <the spec, or: no spec>; write the report to
+  <path>` (or `print the report`);
+- tools to read files, run any shell command and write scratch files outside the repo. It writes its report with
+  them, so an agent type limited to exploring or planning will not do.
+
 If HEAD moved or the tree changed, say so: the reviewer did not leave the repo as it found it. With no subagent on
 your host, do the review yourself.
 
@@ -60,24 +64,28 @@ Answer three questions.
    build that the spec did not ask for (a flag, an option, a guard, an abstraction no requirement
    needs)? Quote the spec line, or name the addition. With no spec, skip this question.
 2. **What breaks.** A defect is something a real run hits: name the input or sequence and the bad
-   outcome. Reproduce it where a few commands can — a test, a run of the script, a small experiment in the scratch
-   copy — else trace it in the code; a reproduction that does not trigger it is not evidence it is absent, so trace
-   it then too. Look past the diff: callers, what it calls,
-   state an older version or an earlier run left, re-runs, error and recovery paths, and how the
-   change's commits combine. For each thing the change renames, removes or moves, find whatever still names
-   or relies on the old form — code, docs, prompts, tests — and read it as it stands now. A spec decision can be
-   wrong: when following it causes a defect, report the defect and quote the decision. For each new or changed
-   test, check it fails when the behaviour it covers breaks — where a few commands can, break that behaviour in
-   the scratch copy and run the test; one that cannot fail is a finding naming the test.
-   Count hostile input: credentials in source; text from outside the project (an issue, a PR, a fetched file, an
-   environment value) reaching a shell, eval, path or URL unescaped; an auth or access-control bypass, or a check
-   that an error or missing value skips; a secret or sensitive data logged, returned or committed; a dependency added
-   at a version with a known advisory. A concrete hole only, not a missing hardening measure.
-   Count a second reader: new code that reads an input existing code already reads (a file format, a heading, a
-   flag) is a finding only when the two disagree — an input the old reader accepts that the new one rejects or reads
-   differently — citing both readers' `file:line`. Duplication alone is not. Count dead code the change adds
-   (commented-out code, an unused import, an unreachable branch) or leaves with no caller by removing or moving what
-   called it, although no run hits it.
+   outcome. Work through each of these:
+   - **Reproduce** it where a few commands can — a test, a run of the script, a small experiment in the scratch
+     copy — else trace it in the code. A reproduction that does not trigger it is not evidence it is absent: trace
+     it then too.
+   - **Look past the diff:** callers, what it calls, state an older version or an earlier run left, re-runs, error
+     and recovery paths, and how the change's commits combine.
+   - **Old forms.** For each thing the change renames, removes or moves, find whatever still names or relies on the
+     old form — code, docs, prompts, tests — and read it as it stands now.
+   - **Wrong spec decisions.** When following a spec decision causes a defect, report the defect and quote the
+     decision.
+   - **Tests that cannot fail.** For each new or changed test, check it fails when the behaviour it covers breaks:
+     where a few commands can, break that behaviour in the scratch copy and run the test. One that cannot fail is a
+     finding naming the test.
+   - **Hostile input:** credentials in source; text from outside the project (an issue, a PR, a fetched file, an
+     environment value) reaching a shell, eval, path or URL unescaped; an auth or access-control bypass, or a check
+     that an error or missing value skips; a secret or sensitive data logged, returned or committed; a dependency
+     added at a version with a known advisory. A concrete hole only, not a missing hardening measure.
+   - **A second reader:** new code that reads an input existing code already reads (a file format, a heading, a
+     flag) is a finding only when the two disagree — an input the old reader accepts that the new one rejects or
+     reads differently — citing both readers' `file:line`. Duplication alone is not.
+   - **Dead code** the change adds (commented-out code, an unused import, an unreachable branch) or leaves with no
+     caller by removing or moving what called it, although no run hits it.
 3. **Standards.** Where does the diff break a rule the repo documents? Name the file and the rule.
    Only a documented rule counts; tooling-enforced rules, naming and taste do not.
 

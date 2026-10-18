@@ -20,7 +20,7 @@ SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
 @test "the review asks the three questions, hostile input included, leaving the repo as found, gaps against the code at HEAD, and names the report fields fix reads" {
   grep -qF '1. **Spec.**' "$SKILL"
   grep -qF '2. **What breaks.**' "$SKILL"
-  grep -qF 'Count hostile input' "$SKILL"
+  grep -qF '**Hostile input:**' "$SKILL"
   grep -qF 'opens a security hole' "$SKILL"
   grep -qF '3. **Standards.**' "$SKILL"
   grep -qF 'Leave the repo as you found it' "$SKILL"
