@@ -289,8 +289,9 @@ fix() {
   git add -A -- "${BRANCH_WORK[@]}"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings on PR #$PR"
   fixed=$(git rev-parse HEAD)
-  # A failed fetch skips the merge: the push owns that failure.
-  if git fetch -q origin "$BRANCH" && git rev-parse "origin/$BRANCH" >>"$headf" && ! merge_in "origin/$BRANCH"; then
+  # A failed fetch skips the merge: the push owns that failure. A tip already in HEAD is not recorded: it may be
+  # the fixer's own commit a person pushed by hand.
+  if git fetch -q origin "$BRANCH" && { git merge-base --is-ancestor "origin/$BRANCH" HEAD || git rev-parse "origin/$BRANCH" >>"$headf"; } && ! merge_in "origin/$BRANCH"; then
     local why="merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS"
     [ -n "$MERGE_CONFLICTS" ] || why="merging origin/$BRANCH into $BRANCH failed (see above)"
     stop fix "$why; merge it by hand in this checkout, commit, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR; or re-run in a fresh clone"

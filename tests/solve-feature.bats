@@ -1057,6 +1057,19 @@ push_says() {
   [ ! -e .solve-feature/pr-10.head ]
 }
 
+@test "a fix pushed by hand after fix stopped still counts as the fixer's after a later run stops again" {
+  fix_ready
+  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -ne 0 ]
+  git push -q origin feature/feat
+  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -ne 0 ]
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -z "$(attention)" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
+}
+
 @test "a second review round compares with its own head: a round-2 fixer that changed nothing is flagged" {
   fix_ready
   run bash "$SCRIPT" fix feat 10 feature/feat
