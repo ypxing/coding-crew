@@ -565,14 +565,22 @@ stops_at() {
   stops_at solve "working tree left dirty; why: $WORK/.solve-feature/coder.report.md"
 }
 
-@test "land goes on to the checks when the only leftover change is a setup file the coder's discovery wrote" {
+@test "land goes on to the checks when the only leftover change is an untracked setup file or config.json" {
   land_ready
+  git rm -q --cached .coding-crew/dev-commands.json && git commit -q -m "commands untracked"
   echo '{"test":"make check"}' > .coding-crew/dev-commands.json
   echo '{"tracker":{"kind":"github"},"x":1}' > .coding-crew/config.json
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ -f "$STATE/checks.log" ]
-  [ "$(git status --porcelain | sort | tr '\n' ' ')" = " M .coding-crew/config.json  M .coding-crew/dev-commands.json " ]
+  [ "$(git status --porcelain -uall | sort | tr '\n' ' ')" = " M .coding-crew/config.json ?? .coding-crew/dev-commands.json " ]
+}
+
+@test "land stops 'working tree left dirty' for a modified dev commands file the branch tracks: it is the branch's to commit" {
+  land_ready
+  echo '{"test":"make check"}' > .coding-crew/dev-commands.json
+  run bash "$SCRIPT" land feat 2 feature/feat
+  stops_at solve "working tree left dirty"
 }
 
 @test "land after a coder committed [WIP] and left its issue open exits 1 'did not close' naming the coder's report, before the checks" {
@@ -940,15 +948,25 @@ push_says() {
   [ ! -e .solve-feature/outcome ]
 }
 
-@test "fix leaves the setup files, modified or untracked, out of its commit and stages every other change" {
+@test "fix leaves config.json and an untracked dev commands file out of its commit and stages every other change" {
   fix_ready
-  git rm -q --cached .coding-crew/config.json && git commit -q -m "config.json untracked"
+  git rm -q --cached .coding-crew/config.json .coding-crew/dev-commands.json && git commit -q -m "setup untracked"
   echo '{"test":"make check"}' > .coding-crew/dev-commands.json
   echo more > more.txt
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(git diff --name-only HEAD~1 HEAD | sort | tr '\n' ' ')" = "fixed.txt more.txt " ]
-  [ "$(git status --porcelain -uall | sort | tr '\n' ' ')" = " M .coding-crew/dev-commands.json ?? .coding-crew/config.json " ]
+  [ "$(git status --porcelain -uall | sort | tr '\n' ' ')" = "?? .coding-crew/config.json ?? .coding-crew/dev-commands.json " ]
+}
+
+@test "fix commits a dev commands file the branch tracks with its fixes, and still leaves a modified config.json out" {
+  fix_ready
+  echo '{"test":"make check"}' > .coding-crew/dev-commands.json
+  echo '{"tracker":{"kind":"github"},"x":1}' > .coding-crew/config.json
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git diff --name-only HEAD~1 HEAD | sort | tr '\n' ' ')" = ".coding-crew/dev-commands.json fixed.txt " ]
+  [ "$(git status --porcelain -uall)" = " M .coding-crew/config.json" ]
 }
 
 @test "fix with no findings on a clean tree commits nothing" {

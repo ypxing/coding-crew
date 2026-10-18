@@ -56,8 +56,11 @@ LOGS="$ROOT/.solve-feature"
 # The main checkout, as the tracker finds it: its .coding-crew/ files are read from every worktree, committed or not.
 MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 [ "$(basename "$MAIN_ROOT")" = .git ] && MAIN_ROOT=$(dirname "$MAIN_ROOT") || MAIN_ROOT="$ROOT"
-# The setup files a user commits once satisfied: no tree check counts them, and no run commits them.
+# The setup files a user commits once satisfied: start's tree check never counts them. land and fix count, and
+# commit, only a dev commands file this tree tracks: it is the branch's own copy, the one its checks read.
 NOT_SETUP=(. ':!.coding-crew/dev-commands.json' ':!.coding-crew/config.json')
+BRANCH_WORK=(. ':!.coding-crew/config.json')
+git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 || BRANCH_WORK+=(':!.coding-crew/dev-commands.json')
 [ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head
 # The tracker and checks libraries: this skill's scripts/<lib> (a link into lib/ here, a real directory once installed).
 CLI="$SELF/tracker/cli.mjs" CHECKS="$SELF/checks"
@@ -212,7 +215,7 @@ land() {
   checks_lib
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop solve "branch changed to '$(git branch --show-current)'"
   # solve-issue's blocked leaves files a check rewrote for a human to commit, and its report says so.
-  [ -z "$(git status --porcelain -- "${NOT_SETUP[@]}")" ] || stop solve "working tree left dirty$([ ! -s "$LOGS/coder.report.md" ] || echo "; why: $LOGS/coder.report.md")"
+  [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || stop solve "working tree left dirty$([ ! -s "$LOGS/coder.report.md" ] || echo "; why: $LOGS/coder.report.md")"
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
@@ -260,7 +263,7 @@ fix() {
   # crew-review's own severity field; a missing or unknown one is not severe.
   severe=$(jq '[.findings // [] | .[]? | select(.severity? | IN("CRITICAL", "HIGH", "MEDIUM"))] | length' "$report")
   # Staged before the checks, so run-checks.sh's modified-files test also sees a check rewrite a file the fixer changed.
-  git add -A -- "${NOT_SETUP[@]}"
+  git add -A -- "${BRANCH_WORK[@]}"
   bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
   [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /setup-coding-crew, then re-run" "$clog"
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"

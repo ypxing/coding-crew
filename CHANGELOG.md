@@ -40,9 +40,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 ### Changed
 
 - checks, solve-feature, setup-coding-crew: try coding-crew before committing anything. The dev commands file is
-  the main checkout's `.coding-crew/dev-commands.json`, read from every worktree committed or not; solve-feature's
-  clean-tree checks ignore it and `.coding-crew/config.json` (whose models it now reads from the main checkout
-  too) and never commit them; `/setup-coding-crew` installs and runs the checks before printing the commit line,
+  the main checkout's `.coding-crew/dev-commands.json`, read from every worktree committed or not, until a branch
+  commits its own copy: then that branch is checked with its copy, and a run commits what it discovers there.
+  solve-feature's clean-tree checks ignore an untracked dev commands file and `.coding-crew/config.json` (whose
+  models it now reads from the main checkout too) and never commit them; `/setup-coding-crew` installs and runs the checks before printing the commit line,
   labelling a kept failure `unverified` (#571).
 - scripts: `field-review.mjs` runs two crew-review versions on another project's range, blind, and keeps both
   reports, cost and a verdict sheet to fill in (#570).

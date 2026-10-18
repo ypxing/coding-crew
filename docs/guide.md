@@ -527,6 +527,8 @@ command and its install mode (`install_mode`: `host` or `docker`, with `docker_s
 mode; `/dep-install` discovers the mode too, and shows you its answer to change first. They live in one
 place, the main checkout's `.coding-crew/dev-commands.json`, committed or not: every worktree of the clone
 reads and writes that file, and a solve-feature run ignores it when checking for a clean tree and never commits it.
+Once a branch commits the file, a worktree on that branch uses its own copy instead, so a branch that changes its
+checks is gated on them, and a run commits what it discovers there with the branch.
 `/setup-coding-crew` discovers them, runs them so you see them pass, and prints the commit line; commit it once
 satisfied to share the commands with your team and with Actions. The installed tooling beside them (`lib/`, `manifest.json`) is what `install.sh` writes, not team
 state.
