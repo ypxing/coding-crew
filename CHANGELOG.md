@@ -36,8 +36,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
-- crew-review: "what breaks" lists its checks one per line, so a reviewer works through each, and the fresh
-  subagent's brief says it needs tools that write instead of naming Claude Code's general-purpose agent type.
+- crew-review: its checks, inputs and severities are lists, and it no longer names a Claude Code agent type.
 - crew-review, solve-feature: a reviewer started to review does the review itself, and crew-review starts a fresh
   subagent only when its own conversation wrote or discussed the change, so a review never nests a second reviewer.
   solve-feature's review prompt drops "you are the reviewer: answer its three questions yourself", and helper

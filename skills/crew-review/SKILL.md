@@ -18,14 +18,18 @@ nothing ready: your caller decides what to do with the report.
 
 Your caller names them; a bare number is a PR, nothing at all is the current branch.
 
-- **The change.** A **branch**: it must be checked out at HEAD (`git branch --show-current`); if it is not, tell
-  the caller to check it out and stop. The change is `<base>..HEAD`, `<base>` the ref the
-  caller names, else `git merge-base HEAD origin/<default branch>`. A **PR**: HEAD must be its head (`gh pr view <n>
-  --json headRefOid`); if it is not, tell the caller to run `gh pr checkout <n>` and stop. The change is `gh pr diff
-  <n>`.
-- **The spec.** A file; an issue ref, read with the tracker CLI's `fetch` (`node "<skill-dir>/scripts/tracker/cli.mjs" fetch
-  <ref>`, `<skill-dir>` being the directory you read this file from); or, given a PR and no spec, the PR body's
-  `<details><summary>Spec</summary>` block when it has one, else the whole body. A branch with no spec named has none.
+- **The change.**
+  - A **branch** must be checked out at HEAD (`git branch --show-current`); if it is not, tell the caller to check
+    it out and stop. The change is `<base>..HEAD`, `<base>` the ref the caller names, else
+    `git merge-base HEAD origin/<default branch>`.
+  - A **PR**'s head must be HEAD (`gh pr view <n> --json headRefOid`); if it is not, tell the caller to run
+    `gh pr checkout <n>` and stop. The change is `gh pr diff <n>`.
+- **The spec.**
+  - A file.
+  - An issue ref, read with the tracker CLI's `fetch` (`node "<skill-dir>/scripts/tracker/cli.mjs" fetch <ref>`,
+    `<skill-dir>` being the directory you read this file from).
+  - Given a PR and no spec, the PR body's `<details><summary>Spec</summary>` block when it has one, else the whole
+    body. A branch with no spec named has none.
 - **The report's path.** Write the report there; with none, print it.
 
 ## Run
@@ -89,16 +93,18 @@ Answer three questions.
 3. **Standards.** Where does the diff break a rule the repo documents? Name the file and the rule.
    Only a documented rule counts; tooling-enforced rules, naming and taste do not.
 
-Do not report input nothing can supply (the project's own components never produce it and it comes
-from no outside source), a missing guard for a case no path reaches, or a preference. Suggest the smallest fix; where removing code fixes it, say that rather
-than adding a guard. One finding per defect, listing every place it occurs. No findings is a valid
-answer.
+Do not report input nothing can supply (the project's own components never produce it and it comes from no
+outside source), a missing guard for a case no path reaches, or a preference. No findings is a valid answer.
 
-Severity: CRITICAL loses data, opens a security hole or breaks the main path; HIGH is wrong behaviour a
-user hits; MEDIUM is a broken error or recovery path, or a broken documented rule; LOW is a wrong
-doc or message, or dead code.
+One finding per defect, listing every place it occurs. Suggest the smallest fix; where removing code fixes it, say
+that rather than adding a guard. Severity:
 
-As your last action, write the report as JSON to the path you were given, or print it when you were given none:
+- **CRITICAL** loses data, opens a security hole or breaks the main path.
+- **HIGH** is wrong behaviour a user hits.
+- **MEDIUM** is a broken error or recovery path, or a broken documented rule.
+- **LOW** is a wrong doc or message, or dead code.
+
+Finish by writing the report as JSON to the path you were given, or printing it when you were given none:
 
 ```json
 {"spec": "met|unmet|none",
@@ -108,5 +114,5 @@ As your last action, write the report as JSON to the path you were given, or pri
                "fix": "<the smallest change>"}]}
 ```
 
-`spec` is `met` when `gaps` is empty, and `none` with empty `gaps` when there was no spec. Then explain in a few
-lines of prose.
+`spec` is `met` when `gaps` is empty, and `none` with empty `gaps` when there was no spec. Close with a few lines
+of prose explaining it.
