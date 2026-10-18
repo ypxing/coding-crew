@@ -124,7 +124,8 @@ lib_link_problems() {
   [ "$n" -eq "$(jq '.skills | length' "$REPO_ROOT/registry.json")" ] || { ls "$home/.agents/skills"; return 1; }
   [ "$n" -eq 17 ]
   ! grep -l '{{' "$home"/.agents/skills/*/SKILL.md || false
-  run env HOME="$home" bash -c "cd '$BATS_TEST_TMPDIR' && node '$home/.agents/skills/solve-issue/scripts/tracker/cli.mjs' config"
+  git init -q "$BATS_TEST_TMPDIR/project"
+  run env HOME="$home" bash -c "cd '$BATS_TEST_TMPDIR/project' && node '$home/.agents/skills/solve-issue/scripts/tracker/cli.mjs' config"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"tracker=local"* ]]
   # The committed scripts/tracker is a link; the installed one is the directory it points to.
