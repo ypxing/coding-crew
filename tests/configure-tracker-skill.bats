@@ -4,7 +4,7 @@
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export TEMP_DIR=$(mktemp -d)
+  export TEMP_DIR=$(cd "$(mktemp -d)" && pwd -P)
 }
 
 teardown() {
