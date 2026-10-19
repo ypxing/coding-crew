@@ -51,8 +51,10 @@ your host, do the review yourself.
 
 Leave the repo as you found it: never edit, commit or change its tree. Run what helps — the tests, the scripts
 under review, experiments — in a scratch copy when they would write to it, in a new directory from `mktemp -d`, never
-a fixed path such as `/tmp/<name>`: other reviews share the machine. Start helper subagents when
-they help; you write every finding yourself.
+a fixed path such as `/tmp/<name>`: other reviews share the machine.
+
+Start helper subagents whenever they help. Every judgement about the change is made on your model, never a weaker
+one, and the report is yours, judged across the whole change.
 
 Gather it yourself: the change's diff (`git diff <base>..HEAD`, or `gh pr diff <n>`) and the spec as Inputs
 describes it. Read the code at HEAD, not only the diff, and the repo's CLAUDE.md, AGENTS.md and CONTRIBUTING.md
