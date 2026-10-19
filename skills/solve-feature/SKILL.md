@@ -75,4 +75,4 @@ the step (`2 checks failed: …`, `review fix failed: …`).
 | Setting                                         | Effect                                                         |
 | ----------------------------------------------- | -------------------------------------------------------------- |
 | `--branch <name>`                               | The branch the run uses, never the default branch (default: one named after the slug) |
-| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model, when your host accepts the name (default: your own) |
+| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model, when your host accepts the name: the project's file, then `~/.coding-crew/config.json` for each key it lacks (an Actions runner sees only the project's committed file), then the default (your own) |

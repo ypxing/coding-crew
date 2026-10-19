@@ -284,6 +284,9 @@ YOUR_PROJECT/
     └── manifest.json
 ```
 
+A user-level install never writes `~/.coding-crew/config.json`; you write it (or configure-tracker does, at user
+level) to hold defaults for every project, which a project's own `.coding-crew/config.json` overrides value by value.
+
 Each installed skill's `scripts/<lib>/` is its own copy of the library (`tracker/` with its docs, `checks/`,
 `git-workflow/`), copied through the committed link into `lib/`. A gitignored project install reaches a worktree only through `.worktreeinclude`.
 
@@ -325,8 +328,8 @@ Other platforms get the same skills under their own skill dir (see the README's 
 
 ### What a feature looks like on the tracker
 
-A feature is a slug and the issues filed under it. Where they live depends on the tracker
-(`.coding-crew/config.json`'s `tracker` section):
+A feature is a slug and the issues filed under it. Where they live depends on the tracker: the project's
+`.coding-crew/config.json` `tracker` section, else the user-level `~/.coding-crew/config.json`'s, else `local`:
 
 - **github** — one root issue whose body carries a column-0 `Feature: <slug>` line (the feature's
   `PRD:` issue, or for a single-slice feature the work issue itself), and every other issue a native
@@ -420,7 +423,7 @@ branch into it first (a conflict stops the run for you to merge by hand).
 | Setting | Effect |
 | --- | --- |
 | `--branch <name>` | The branch the run uses, never the default branch (default: one named after the slug) |
-| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model, when your host accepts the name (default: your own) |
+| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model, when your host accepts the name; each key the project's file lacks comes from `~/.coding-crew/config.json` (default: your own) |
 
 **Checks that modify files.** A check that leaves the tree modified fails. An auto-fixing lint
 (`make lint` running `--write`) can stay configured: run it once, commit what it rewrote, and re-run.
@@ -516,10 +519,18 @@ Edit these files after install — they override the defaults on the next run:
 | File                                           | Purpose                                         |
 | ---------------------------------------------- | ----------------------------------------------- |
 | `.coding-crew/config.json` (`tracker` section) | Where issues live: `{"tracker": {"kind": "github"}}` (default `local`) |
+| `~/.coding-crew/config.json` (`tracker`, `solveFeature.models`) | Your defaults for every project, same format |
+
+Each value is looked up on its own: the project's `.coding-crew/config.json` (for the tracker, then a legacy
+`.coding-crew/docs/issue-tracker.md`), then `~/.coding-crew/config.json`, then the default. A broken user file
+stops every tracker op with its path, even where the project sets the tracker. The github tracker creates its
+status labels itself, before it first applies one.
 
 Commit `.coding-crew/config.json`: it is team state — the tracker choice and solve-feature's models —
-that everyone using the repo needs, so do not add it to `.gitignore`. Runs read the main checkout's copy before it
-is committed, from every worktree, so you can try a setting first and commit it once satisfied.
+that everyone using the repo needs, so do not add it to `.gitignore`. The Actions runner and your teammates see only
+the project's committed file, never your `~/.coding-crew/config.json`, so team settings belong in the project's.
+Runs read the main checkout's copy before it is committed, from every worktree, so you can try a setting first and
+commit it once satisfied.
 
 **The dev commands file** holds the project's checks (`test`, `lint`, `typecheck`, …), its install
 command and its install mode (`install_mode`: `host` or `docker`, with `docker_service`). The first
