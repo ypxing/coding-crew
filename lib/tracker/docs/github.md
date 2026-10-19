@@ -6,7 +6,7 @@ authenticated (`gh auth status`), on every machine that runs a tracker-touching 
 
 ## Tracker config
 
-The tracker this repo uses is the `tracker` section of `.coding-crew/config.json`:
+The tracker this repo uses is the `tracker` section of `.coding-crew/config.json`, else `~/.coding-crew/config.json`'s:
 
 ```json
 { "tracker": { "kind": "github" } }
@@ -142,10 +142,11 @@ maps to a close-reason.
 `done` has two representations on purpose: "merged into the feature branch" and "shipped" are
 different facts, and only a PR merge establishes the second. Closing at the first would show
 issues as completed on GitHub while their code exists only in a local branch. Both read as
-`done` for `next` and for `## Blocked by` resolution. `configure-tracker`'s github setup
-idempotently creates the real labels (including `blocked`) before first publish, since `gh issue create --label x`
-fails outright if `x` isn't already a repo label; `mark-done` also creates `awaiting-merge` on
-demand, for repos configured before it existed.
+`done` for `next` and for `## Blocked by` resolution. `gh issue create --label x` and `gh issue edit
+--add-label x` fail outright if `x` isn't already a repo label, so the tracker creates all six status labels
+(including `blocked` and `needs-info`, which a person picks in GitHub's UI) with `gh label create <name> --color <fixed colour>` (no `--force`: a label that already exists, and the colour a team gave it, is left as it is),
+once per CLI invocation, before the first call that applies one: `publish-issues`, `rewrite`, `mark-done` and
+`reopen`.
 
 Statuses other than `done` are labels a person sets in GitHub; `wontfix` closes the issue with a
 reason instead of setting a label:

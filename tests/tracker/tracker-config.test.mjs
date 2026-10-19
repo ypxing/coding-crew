@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { copyFileSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,6 +9,11 @@ import { readTrackerConfig } from "../../lib/tracker/tracker-config.mjs";
 import { run } from "../../lib/tracker/cli.mjs";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "tracker-config");
+
+// Every test gets its own HOME, so a developer's real ~/.coding-crew/config.json never decides an outcome.
+beforeEach(() => {
+  process.env.HOME = mkdtempSync(join(tmpdir(), "crew-tracker-config-home-"));
+});
 
 function repo() {
   return mkdtempSync(join(tmpdir(), "crew-tracker-config-"));
@@ -22,6 +27,7 @@ function put(root, rel, content) {
   else writeFileSync(path, content);
 }
 const legacyDoc = (root, content) => put(root, "docs/issue-tracker.md", content);
+const userConfig = (content) => configJson(process.env.HOME, content);
 const configJson = (root, content) => put(root, "config.json", typeof content === "string" ? content : JSON.stringify(content));
 
 async function cliConfig(root) {
@@ -99,3 +105,65 @@ test("cli config prints exactly tracker=<kind> and configured=yes|no, exit 0", a
   configJson(root, { tracker: { kind: "github" } });
   assert.deepEqual(await cliConfig(root), { code: 0, stdout: "tracker=github\nconfigured=yes\n", stderr: "" });
 });
+
+// --- the user-level ~/.coding-crew/config.json -------------------------------------------
+
+test("the user file's tracker applies when the project sets none: cli config prints tracker=github, configured=yes", async () => {
+  const root = repo();
+  userConfig({ tracker: { kind: "github" } });
+  assert.deepEqual(readTrackerConfig(root), { tracker: "github", configured: true });
+  assert.deepEqual(await cliConfig(root), { code: 0, stdout: "tracker=github\nconfigured=yes\n", stderr: "" });
+  configJson(root, { fixture: "config-afk-only.json" });
+  assert.deepEqual(readTrackerConfig(root), { tracker: "github", configured: true });
+});
+
+test("a user-level github tracker makes the other ops use the github backend", async () => {
+  const root = repo();
+  userConfig({ tracker: { kind: "github" } });
+  const calls = [];
+  const exec = (cmd, args) => {
+    calls.push([cmd, ...args].join(" "));
+    return { code: 0, stdout: JSON.stringify({ number: 5, title: "T", body: "b", state: "OPEN", labels: [] }), stderr: "" };
+  };
+  let stdout = "";
+  const code = await run(["fetch", "5", "--main-root", root], { exec, out: (s) => (stdout += s), err: () => {} });
+  assert.equal(code, 0);
+  assert.ok(calls.some((c) => c.startsWith("gh issue view 5")), calls.join("\n"));
+});
+
+test("a project tracker section, or a legacy issue-tracker.md, wins over the user file's tracker", () => {
+  userConfig({ tracker: { kind: "github" } });
+  const withSection = repo();
+  configJson(withSection, { tracker: { kind: "local" } });
+  assert.deepEqual(readTrackerConfig(withSection), { tracker: "local", configured: true });
+  const withLegacy = repo();
+  configJson(withLegacy, { fixture: "config-afk-only.json" });
+  legacyDoc(withLegacy, { fixture: "issue-tracker-no-front-matter.md" });
+  assert.deepEqual(readTrackerConfig(withLegacy), { tracker: "local", configured: true });
+});
+
+test("a user file with no tracker section is no error: local, not configured", () => {
+  userConfig({ solveFeature: { models: { coder: "sonnet" } } });
+  assert.deepEqual(readTrackerConfig(repo()), { tracker: "local", configured: false });
+});
+
+for (const [name, content] of [
+  ["not valid JSON", "{ tracker: github"],
+  ["not a JSON object", "[1]"],
+  ["an invalid tracker.kind", { tracker: { kind: "jira" } }],
+]) {
+  test(`a user file that is ${name} fails config and the other ops with its path, even when the project sets a tracker`, async () => {
+    const root = repo();
+    configJson(root, { tracker: { kind: "local" } });
+    userConfig(content);
+    const path = join(process.env.HOME, ".coding-crew/config.json");
+    assert.throws(() => readTrackerConfig(root), (e) => e.message.includes(path));
+    const r = await cliConfig(root);
+    assert.equal(r.code, 1);
+    assert.ok(r.stderr.includes(path), r.stderr);
+    let stderr = "";
+    const code = await run(["features", "--main-root", root], { out: () => {}, err: (s) => (stderr += s) });
+    assert.equal(code, 1);
+    assert.ok(stderr.includes(path), stderr);
+  });
+}

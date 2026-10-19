@@ -124,6 +124,22 @@ gh label create run-agent --force
 gh variable set CREW_AGENT --body <agent>
 ```
 
+The runner's fresh checkout has no `~/.coding-crew/`, so a tracker set only at user level reads as `local`
+there. When the project's `config.json` has no `tracker` section, write it, keeping its other sections:
+
+```bash
+CONFIG=.coding-crew/config.json
+if [ ! -f "$CONFIG" ] || [ "$(jq 'has("tracker")' "$CONFIG")" = false ]; then
+  mkdir -p .coding-crew && { [ -f "$CONFIG" ] || echo '{}' > "$CONFIG"; }
+  TMP=$(mktemp "$CONFIG.XXXXXX")
+  if jq '.tracker = {kind: "github"}' "$CONFIG" > "$TMP"; then mv "$TMP" "$CONFIG"
+    echo "Wrote tracker github to .coding-crew/config.json: the Actions runner sees only the project's files"
+  else rm -f "$TMP"; fi
+fi
+```
+
+If `jq` fails (the file is not valid JSON), show its error and leave the file as it is.
+
 When a `gh` command fails, show its error as it printed it (it says what to fix, e.g. `gh auth login`) and
 carry on to Step 4: the workflow file is written. Tell the user that once gh's error is fixed, they re-run
 `/setup-coding-crew redo actions` (or run the failed `gh` command themselves): a plain re-run finds the

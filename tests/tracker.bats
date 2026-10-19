@@ -4,6 +4,9 @@
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
 
+# A temp HOME: a developer's real ~/.coding-crew/config.json must not pick a test's tracker.
+setup() { export HOME="$BATS_TEST_TMPDIR/home"; }
+
 run_node_test() {
   command -v node >/dev/null 2>&1 || skip "node not installed"
   cd "$REPO_ROOT"

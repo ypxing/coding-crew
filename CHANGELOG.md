@@ -42,6 +42,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- tracker, solve-feature, configure-tracker, setup-coding-crew: a user-level `~/.coding-crew/config.json` holds
+  defaults for `tracker` and `solveFeature.models`, which a project's `.coding-crew/config.json` overrides value by
+  value. configure-tracker asks whether to save for this project (default) or all your projects; enabling Actions in
+  setup writes the tracker into the project's file when it has none, since the runner sees only committed files; and
+  the github tracker now creates its six status labels itself before it first applies one (#581).
+
 - crew-review: the reviewer looks for four kinds of defect earlier reviews kept missing, and no longer names a Claude
   Code agent type (#569). When a change replaces a code path, it traces the old path end to end and compares
   what it stored or sent with the new path, field by field (#580).

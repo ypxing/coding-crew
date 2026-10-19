@@ -113,13 +113,14 @@ close_calls() {
   run mark_done 42
   [ "$status" -eq 0 ]
   [ "$(done_calls)" -eq 1 ]
-  grep -q '^label create awaiting-merge --force' "$GH_LOG"
+  grep -q '^label create awaiting-merge --color [0-9a-f]\{6\}' "$GH_LOG"
+  [ "$(grep -c '^label create .*--force' "$GH_LOG")" -eq 0 ]
   grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent$' "$GH_LOG"
   [ "$(close_calls)" -eq 0 ]
   [[ "$output" == *"Closes #42"* ]]
 }
 
-@test "mark-done (github): --remove-label names only the triage labels the issue carries, and no ready-for-human label is created" {
+@test "mark-done (github): --remove-label names only the triage labels the issue carries" {
   stub_gh 0
   write_body_met
   export GH_LABELS="ready-for-human"
@@ -132,7 +133,6 @@ close_calls() {
   run mark_done 42
   [ "$status" -eq 0 ]
   grep -q '^issue edit 42 --add-label awaiting-merge$' "$GH_LOG"
-  ! grep -q '^label create ready-for-human' "$GH_LOG" || false
 }
 
 @test "mark-done (github): a failed labels read fails before any edit" {
