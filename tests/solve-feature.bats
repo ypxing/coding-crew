@@ -464,6 +464,21 @@ main_moves() {
   [ "$(out reviewer-model)" = opus ]
 }
 
+@test "start takes each model the project's config.json lacks from \$HOME/.coding-crew/config.json" {
+  mkdir -p "$HOME/.coding-crew"
+  echo '{"solveFeature":{"models":{"coder":"haiku","reviewer":"opus"}}}' > "$HOME/.coding-crew/config.json"
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out coder-model)" = haiku ]
+  [ "$(out reviewer-model)" = opus ]
+
+  echo '{"tracker":{"kind":"github"},"solveFeature":{"models":{"coder":"sonnet"}}}' > .coding-crew/config.json
+  git commit -q -am "project coder only"
+  run bash "$SCRIPT" start feat
+  [ "$(out coder-model)" = sonnet ]
+  [ "$(out reviewer-model)" = opus ]
+}
+
 @test "start writes .solve-feature/spec.md: the PRD, then each issue known writes with its criteria as plain bullets" {
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }

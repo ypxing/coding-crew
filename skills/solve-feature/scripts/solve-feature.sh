@@ -128,6 +128,15 @@ die_setup_clash() {
   done
 }
 
+# model <coder|reviewer> — solveFeature.models.<key> from the project's config.json, else the user-level one's, else empty.
+model() {
+  local cfg m
+  for cfg in "$MAIN_ROOT/.coding-crew/config.json" "$HOME/.coding-crew/config.json"; do
+    m=$(jq -r --arg k "$1" '.solveFeature.models[$k] | strings' "$cfg" 2>/dev/null || true)
+    [ -z "$m" ] || { echo "$m"; return; }
+  done
+}
+
 start() {
   [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || die "working tree is not clean: commit or stash first"
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
@@ -136,7 +145,7 @@ start() {
   # an existing one: a re-run lands on it as the last run left it, with the default branch merged in (and land and
   # fix merge in origin's copy of the branch, so a commit someone else pushed there never refuses their push).
   git fetch -q origin || die "git fetch origin failed (see above)"
-  local default cfg="$MAIN_ROOT/.coding-crew/config.json"
+  local default
   default=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
   default=${default:-main}
   [ "$BRANCH" != "$default" ] || die "--branch '$BRANCH': '$default' is the default branch; name a feature branch"
@@ -158,8 +167,8 @@ start() {
   write_spec
   pr_view
   echo "branch=$BRANCH"
-  echo "coder-model=$(jq -r '.solveFeature.models.coder | strings' "$cfg" 2>/dev/null || true)"
-  echo "reviewer-model=$(jq -r '.solveFeature.models.reviewer | strings' "$cfg" 2>/dev/null || true)"
+  echo "coder-model=$(model coder)"
+  echo "reviewer-model=$(model reviewer)"
   echo "pr=$PR_N"
 }
 
