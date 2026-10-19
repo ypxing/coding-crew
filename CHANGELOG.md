@@ -42,6 +42,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- solve-feature: a `solveFeature.models` value is read as a model family with an optional version (`opus`,
+  `claude-opus-5-5`, `opus 5.5`), which each host matches against its own models, so one committed value works on
+  Claude Code and Copilot; the Actions summary page lists the model ids a Claude run's subagents ran on (#583).
 - setup-coding-crew: the solve-feature workflow keeps the commits a refused push left behind (an issue that edits
   `.github/workflows/`) in the artifact's `unpushed.bundle`, and the run's summary page prints the commands that fetch
   them into a local clone; before, they were lost with the runner. Re-run `/setup-coding-crew redo actions` to get it.

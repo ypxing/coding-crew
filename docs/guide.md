@@ -423,7 +423,7 @@ branch into it first (a conflict stops the run for you to merge by hand).
 | Setting | Effect |
 | --- | --- |
 | `--branch <name>` | The branch the run uses, never the default branch (default: one named after the slug) |
-| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model, when your host accepts the name; each key the project's file lacks comes from `~/.coding-crew/config.json` (default: your own) |
+| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model name, a family with an optional version (`opus`, `claude-opus-5-5`, `opus 5.5`): the host runs the subagent on the matching model in its own list, the closest of the same family when it lacks that version, its own model when it lacks the family. Read from the project's file, then `~/.coding-crew/config.json` for each key it lacks (an Actions runner sees only the project's committed file), then the default (your own) |
 
 **Checks that modify files.** A check that leaves the tree modified fails. An auto-fixing lint
 (`make lint` running `--write`) can stay configured: run it once, commit what it rewrote, and re-run.

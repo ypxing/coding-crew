@@ -238,12 +238,17 @@ jobs:
           line=$(cat "$logs/outcome" 2>/dev/null) ||
             line="never finished: the session ended early or never started (see the first failed step)"
           model=$(jq -r 'select(.type == "system" and .subtype == "init") | .model' "$logs/session.jsonl" 2>/dev/null | head -n 1)
+          # Claude Code writes "<synthetic>" as the model of messages it makes up itself (API errors, interruptions).
+          subagent_models=$(jq -Rrn '[inputs | fromjson? | objects | select(.type == "assistant" and .parent_tool_use_id != null)
+            | .message.model? | strings | select(. != "<synthetic>")]
+            | reduce .[] as $m ([]; if index([$m]) then . else . + [$m] end) | join(", ")' "$logs/session.jsonl" 2>/dev/null || true)
           pr=$(sed -n 's/.*pr=\([0-9][0-9]*\).*/\1/p' <<<"$line")
           {
             # A double-backtick span: git's reason can quote names in single backticks.
             echo "### solve-feature $SLUG: \`\` $line \`\`"
             [ -z "$pr" ] || echo "- PR: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr"
             echo "- Agent: $CREW_AGENT, model ${model:-${CREW_MODEL:-unpinned (the CLI default)}}"
+            [ -z "$subagent_models" ] || echo "- Subagent models: $subagent_models"
             [ ! -s "$logs/unpushed.bundle" ] ||
               echo "- Unpushed commits: in the artifact's unpushed.bundle. In a clone where git can push, fetch them with \`gh run download $GITHUB_RUN_ID -n solve-feature-$SLUG-$GITHUB_RUN_ATTEMPT -D /tmp/sf-$GITHUB_RUN_ID && git fetch /tmp/sf-$GITHUB_RUN_ID/unpushed.bundle 'refs/heads/*:refs/heads/*'\`, then run /solve-feature $SLUG there"
             ref=${line#stopped: }
