@@ -734,16 +734,16 @@ test("reopen (local) moves a done issue back to open/ as ready-for-agent, by eit
 
 test("reopen (github) swaps awaiting-merge for ready-for-agent, reopening a closed issue first; exits 3 for none", async () => {
   const dir = root({ github: true });
-  const open = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: '{"state":"OPEN","labels":[{"name":"awaiting-merge"}]}' }, "issue edit 12": {} });
+  const open = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: '{"state":"OPEN","labels":[{"name":"awaiting-merge"}]}' }, "label create": {}, "issue edit 12": {} });
   const r = await cli(dir, ["reopen", "12"], open);
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.stdout, "REOPENED: issue #12 labelled ready-for-agent\n");
   assert.deepEqual(open.find("issue edit")[0][0], ["gh", "issue", "edit", "12", "--add-label", "ready-for-agent", "--remove-label", "awaiting-merge"]);
   assert.equal(open.find("issue reopen").length, 0);
 
-  const closed = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: '{"state":"CLOSED","labels":[]}' }, "issue reopen 12": {}, "issue edit 12": {} });
+  const closed = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: '{"state":"CLOSED","labels":[]}' }, "issue reopen 12": {}, "label create": {}, "issue edit 12": {} });
   assert.equal((await cli(dir, ["reopen", "12"], closed)).code, 0);
-  assert.deepEqual(closed.calls.map((c) => c[2]), ["view", "reopen", "edit"]);
+  assert.deepEqual(closed.calls.filter((c) => c[1] === "issue").map((c) => c[2]), ["view", "reopen", "edit"]);
   assert.deepEqual(closed.find("issue edit")[0][0], ["gh", "issue", "edit", "12", "--add-label", "ready-for-agent"]);
 
   const gone = fakeGh({ "issue view 99": { code: 1, stderr: "could not resolve to an Issue" } });
@@ -928,4 +928,45 @@ test("mark-done (local) exits 1 for an issue that exists nowhere", async () => {
   const r = await cli(dir, ["mark-done", join(dir, ".scratch/feat/issues/open/09-none.md")]);
   assert.equal(r.code, 1);
   assert.match(r.stderr, /not found/);
+});
+
+// --- status labels: the github backend creates them -------------------------------------
+
+const STATUS_LABELS = ["needs-triage", "needs-info", "ready-for-agent", "ready-for-human", "awaiting-merge", "blocked"];
+
+/** The ops that apply a label, each against a fake repo with no labels at all. */
+const LABELLING_OPS = {
+  "publish-issues": (dir) => [["publish-issues", "--feature-slug", "feat", "--drafts", drafts(dir)], fakeGithub(ghFeature("feat", ghIssue(4)), { labels: [] })],
+  "rewrite --status": (dir) => {
+    writeFileSync(join(dir, "body.md"), PROMOTED_BODY);
+    return [rewriteArgs(dir), fakeGithub([...ghFeature("feat", ghIssue(5)), triage(12)], { labels: [] })];
+  },
+  "mark-done": () => [["mark-done", "12"], fakeGithub([ghIssue(12, { body: MET, labels: [] })], { labels: [] })],
+  reopen: () => [["reopen", "12"], fakeGithub([ghIssue(12, { state: "CLOSED" })], { labels: [] })],
+};
+
+for (const [name, setup] of Object.entries(LABELLING_OPS)) {
+  test(`${name} (github) in a repo with no status labels creates all six with --force, once, before the first label is applied`, async () => {
+    const dir = root({ github: true });
+    const [argv, exec] = setup(dir);
+    const r = await cli(dir, argv, exec);
+    assert.equal(r.code, 0, r.stderr);
+    const lines = exec.calls.map((c) => c.slice(1).join(" "));
+    const creates = lines.filter((l) => l.startsWith("label create"));
+    assert.deepEqual(creates.map((l) => l.split(" ")[2]).sort(), [...STATUS_LABELS].sort());
+    for (const l of creates) assert.ok(l.includes("--force"), l);
+    const firstLabel = lines.findIndex((l) => / --(add-)?label /.test(`${l} `));
+    const lastCreate = lines.findLastIndex((l) => l.startsWith("label create"));
+    assert.ok(lastCreate < firstLabel, lines.join("\n"));
+  });
+}
+
+test("a failing gh label create exits 1 with gh's error and the label's name", async () => {
+  const dir = root({ github: true });
+  const exec = fakeGithub([ghIssue(12, { body: MET })], { fail: { "label create ready-for-agent": { stderr: "HTTP 403: Must have admin rights" } } });
+  const r = await cli(dir, ["mark-done", "12"], exec);
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /ready-for-agent/);
+  assert.match(r.stderr, /Must have admin rights/);
+  assert.equal(exec.calls.filter((c) => c[2] === "edit").length, 0);
 });
