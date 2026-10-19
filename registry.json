@@ -27,9 +27,6 @@
       "source-dir": "crew-review",
       "libs": [
         "tracker"
-      ],
-      "deps": [
-        "dep-install"
       ]
     },
     "tdd": {

@@ -51,8 +51,7 @@ your host, do the review yourself.
 
 Leave the repo as you found it: never edit, commit or change its tree. Run what helps — the tests, the scripts
 under review, experiments — in a scratch copy when they would write to it, in a new directory from `mktemp -d`, never
-a fixed path such as `/tmp/<name>`: other reviews share the machine. When running the tests would help and the
-scratch copy has no dependencies installed, install them there first with the dep-install skill. Start helper subagents when
+a fixed path such as `/tmp/<name>`: other reviews share the machine. Start helper subagents when
 they help; you write every finding yourself.
 
 Gather it yourself: the change's diff (`git diff <base>..HEAD`, or `gh pr diff <n>`) and the spec as Inputs
@@ -123,5 +122,4 @@ Finish by writing the report as JSON to the path you were given, or printing it 
 ```
 
 `spec` is `met` when `gaps` is empty, and `none` with empty `gaps` when there was no spec. Close with a few lines
-of prose explaining it, naming what you ran and what you could not run and why: a review that only read the code
-must say so.
+of prose explaining it.
