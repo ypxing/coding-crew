@@ -73,14 +73,14 @@ setup() {
   [ "$(git -C "$D" rev-parse HEAD)" = "$PIN" ]
   [ "$(git -C "$D" remote get-url origin)" = "$UP" ]
   [ -f "$D/.claude/skills/crew-afk/scripts/crew-afk.sh" ]
-  [ -f "$D/.scratch/report-cli/issues/open/01-one.md" ]
+  [ -f "$D/.coding-crew/scratch/report-cli/issues/open/01-one.md" ]
   local p
   for p in .coding-crew/manifest.json .claude/skills; do
     grep -qxF "$p" "$D/.worktreeinclude" || { echo "worktreeinclude lacks $p"; return 1; }
     grep -qxF "$p" "$D/.git/info/exclude" || { echo "exclude lacks $p"; return 1; }
   done
   grep -qxF .worktreeinclude "$D/.git/info/exclude"
-  grep -qxF .scratch/ "$D/.git/info/exclude"
+  grep -qxF .coding-crew/scratch/ "$D/.git/info/exclude"
   ! grep -qF .coding-crew/lib "$D/.worktreeinclude" "$D/.git/info/exclude" || false
   [ -z "$(git -C "$D" status --porcelain)" ]
 }
@@ -167,7 +167,7 @@ setup() {
   [ ! -e "$D/.coding-crew/manifest.json" ]
   grep -qxF .claude/skills "$D/.worktreeinclude"
   local p
-  for p in .claude/skills skills-lock.json .worktreeinclude .scratch/; do
+  for p in .claude/skills skills-lock.json .worktreeinclude .coding-crew/scratch/; do
     grep -qxF "$p" "$D/.git/info/exclude" || { echo "exclude lacks $p"; return 1; }
   done
   [ -z "$(git -C "$D" status --porcelain)" ]

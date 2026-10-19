@@ -5,7 +5,7 @@
 # host subagents: start checks the slug, picks the branch and writes the spec, next saves the next ready issue,
 # land asserts what the coder left (branch, clean tree, issue closed, checks) and pushes it into a draft PR, fix
 # gates, commits and pushes what the review's fixer left, and describe writes the PR body, marks it ready when
-# nothing needs a person and writes .solve-feature/outcome.
+# nothing needs a person and writes .coding-crew/solve-feature/outcome.
 #
 # A temp clone with a bare `origin`, and the skill's scripts/ as install.sh lays it out: its own
 # script beside the tracker and checks library copies. `gh`, `node` (only for the tracker CLI's path; everything else reaches the
@@ -211,11 +211,11 @@ fix_ready() {
   echo fixed > fixed.txt
 }
 # report <json> — the reviewer's report.
-report() { printf '%s\n' "$1" > .solve-feature/pr-10.review.json; }
+report() { printf '%s\n' "$1" > .coding-crew/solve-feature/pr-10.review.json; }
 pushed() { [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]; }
 
 # attention — what fix handed describe.
-attention() { cat .solve-feature/pr-10.attention.md; }
+attention() { cat .coding-crew/solve-feature/pr-10.attention.md; }
 
 # fixed [<report json>] — fix_ready, then fix: describe's input as SKILL.md leaves it.
 fixed() {

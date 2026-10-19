@@ -21,7 +21,7 @@ function repo() {
 }
 
 function issue(root, feature, name, body, { dir = "open" } = {}) {
-  const d = join(root, ".scratch", feature, "issues", dir);
+  const d = join(root, ".coding-crew/scratch", feature, "issues", dir);
   mkdirSync(d, { recursive: true });
   const p = join(d, name);
   writeFileSync(p, body);
@@ -29,7 +29,7 @@ function issue(root, feature, name, body, { dir = "open" } = {}) {
 }
 
 function issuesDeps(root, feature, map) {
-  const d = join(root, ".scratch", feature, "issues");
+  const d = join(root, ".coding-crew/scratch", feature, "issues");
   mkdirSync(d, { recursive: true });
   writeFileSync(join(d, "issues-deps.json"), JSON.stringify(map));
 }
@@ -126,7 +126,7 @@ test("readIssueDeps returns null when issues-deps.json is absent or unparseable"
   const root = repo();
   const p = issue(root, "feat", "02-second.md", "# S\n\nStatus: ready-for-agent\n");
   assert.equal(readIssueDeps(p), null);
-  writeFileSync(join(root, ".scratch", "feat", "issues", "issues-deps.json"), "not json");
+  writeFileSync(join(root, ".coding-crew/scratch", "feat", "issues", "issues-deps.json"), "not json");
   assert.equal(readIssueDeps(p), null);
 });
 
@@ -208,7 +208,7 @@ test("listOpenIssueFiles returns nothing for a featureSlug with no issues/open d
 
 test("selectDispatchable with featureSlug never dispatches another feature's ready issue", () => {
   // Regression: a run scoped to one feature must not pick up a ready-for-agent issue
-  // that merely happens to live in a different .scratch/<feature>/ dir — that issue would
+  // that merely happens to live in a different .coding-crew/scratch/<feature>/ dir — that issue would
   // be dispatched, merged, and closed against the wrong feature branch.
   const root = repo();
   issue(root, "qa-slo-emission-test", "01-qa-slo-emission-test.md", "# QA SLO\n\nStatus: ready-for-agent\n");

@@ -15,7 +15,7 @@ load helpers/solve-feature
     [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
   done
   [ ! -f "$STATE/gh.log" ]
-  [ ! -e "$WORK/.solve-feature/outcome" ]
+  [ ! -e "$WORK/.coding-crew/solve-feature/outcome" ]
 }
 
 @test "start: a missing tool, an invalid slug, no tracker CLI or a dirty tree exits 1 before any checkout or gh call" {
@@ -58,7 +58,7 @@ load helpers/solve-feature
   [ "$(git branch --show-current)" = main ]
   ! git show-ref --verify -q refs/heads/feature/feta || false
   [ "$(git ls-remote --heads origin | grep -c .)" -eq 1 ]
-  [ "$(cat .solve-feature/outcome)" = "stopped: start failed: no feature 'feta'; features: feat other" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: start failed: no feature 'feta'; features: feat other" ]
 }
 
 # --- start: the dev commands file -----------------------------------------------------
@@ -197,7 +197,7 @@ main_moves() {
   main_moves shared.txt "main's version"
   run bash "$SCRIPT" start feat --branch mine
   [ "$status" -eq 1 ]
-  [ "$(cat .solve-feature/outcome)" = "stopped: start failed: merging origin/main into mine conflicts in shared.txt: merge it by hand, push mine, then re-run" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: start failed: merging origin/main into mine conflicts in shared.txt: merge it by hand, push mine, then re-run" ]
   [ "$(git rev-parse HEAD)" = "$tip" ]
   [ -z "$(git status --porcelain)" ]
   [ "$(git ls-remote origin mine | cut -f1)" = "$tip" ]
@@ -224,13 +224,13 @@ main_moves() {
   git remote set-url origin "$TEMP_DIR/missing.git"
   run bash "$SCRIPT" start feat
   [ "$status" -eq 1 ]
-  [[ "$(cat .solve-feature/outcome)" == "stopped: start failed: git fetch origin failed"* ]]
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: start failed: git fetch origin failed"* ]]
   git remote set-url origin "$TEMP_DIR/origin.git"
   chmod -w "$TEMP_DIR/origin.git/refs/heads"
   run bash "$SCRIPT" start feat
   chmod +w "$TEMP_DIR/origin.git/refs/heads"
   [ "$status" -eq 1 ]
-  [[ "$(cat .solve-feature/outcome)" == "stopped: start failed: cannot push feature/feat"* ]]
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: start failed: cannot push feature/feat"* ]]
   # The refused push left the local branch behind; a re-run pushes it rather than reuse it unpushed.
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
@@ -242,7 +242,7 @@ main_moves() {
   refuse_pushes
   run bash "$SCRIPT" start feat
   [ "$status" -eq 1 ]
-  [ "$(cat .solve-feature/outcome)" = "stopped: start failed: cannot push feature/feat: pre-receive hook declined" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: start failed: cannot push feature/feat: pre-receive hook declined" ]
   rm "$TEMP_DIR/origin.git/hooks/pre-receive"
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ]
@@ -251,7 +251,7 @@ main_moves() {
   refuse_pushes
   run bash "$SCRIPT" start feat
   [ "$status" -eq 1 ]
-  [ "$(cat .solve-feature/outcome)" = "stopped: start failed: cannot push feature/feat after merging origin/main into it: pre-receive hook declined" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: start failed: cannot push feature/feat after merging origin/main into it: pre-receive hook declined" ]
 }
 
 @test "start --branch naming the default branch exits 1 naming it" {
@@ -326,10 +326,10 @@ main_moves() {
   [ "$(out reviewer-model)" = haiku ]
 }
 
-@test "start writes .solve-feature/spec.md: the PRD, then each issue known writes with its criteria as plain bullets" {
+@test "start writes .coding-crew/solve-feature/spec.md: the PRD, then each issue known writes with its criteria as plain bullets" {
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(cat .solve-feature/spec.md)" = "$(cat <<'EOF'
+  [ "$(cat .coding-crew/solve-feature/spec.md)" = "$(cat <<'EOF'
 <!-- PRD issue #1: PRD: Feat -->
 # PRD: Feat
 
@@ -353,22 +353,22 @@ EOF
 }
 
 @test "start writes a spec with no PRD when prd exits 3, closed issues included, and removes an old outcome and review files" {
-  mkdir -p .solve-feature && echo '*' > .solve-feature/.gitignore && echo 'ready pr=7' > .solve-feature/outcome
-  echo old > .solve-feature/pr-7.unfixed.md && echo old > .solve-feature/pr-7.review.json && echo old > .solve-feature/pr-7.head
-  echo old > .solve-feature/pr-7.summary.md && echo old > .solve-feature/pr-7.attention.md
+  mkdir -p .coding-crew/solve-feature && echo '*' > .coding-crew/solve-feature/.gitignore && echo 'ready pr=7' > .coding-crew/solve-feature/outcome
+  echo old > .coding-crew/solve-feature/pr-7.unfixed.md && echo old > .coding-crew/solve-feature/pr-7.review.json && echo old > .coding-crew/solve-feature/pr-7.head
+  echo old > .coding-crew/solve-feature/pr-7.summary.md && echo old > .coding-crew/solve-feature/pr-7.attention.md
   rm "$STATE/prd.md"
   jq 'map(if .number == 2 then .state = "CLOSED" else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(head -1 .solve-feature/spec.md)" = "### 2-two — Two" ]
-  grep -qx '### 3-three — Three' .solve-feature/spec.md
-  ! grep -q PRD .solve-feature/spec.md || false
-  [ ! -e .solve-feature/outcome ]
-  [ ! -e .solve-feature/pr-7.unfixed.md ]
-  [ ! -e .solve-feature/pr-7.review.json ]
-  [ ! -e .solve-feature/pr-7.summary.md ]
-  [ ! -e .solve-feature/pr-7.attention.md ]
-  [ ! -e .solve-feature/pr-7.head ]
+  [ "$(head -1 .coding-crew/solve-feature/spec.md)" = "### 2-two — Two" ]
+  grep -qx '### 3-three — Three' .coding-crew/solve-feature/spec.md
+  ! grep -q PRD .coding-crew/solve-feature/spec.md || false
+  [ ! -e .coding-crew/solve-feature/outcome ]
+  [ ! -e .coding-crew/solve-feature/pr-7.unfixed.md ]
+  [ ! -e .coding-crew/solve-feature/pr-7.review.json ]
+  [ ! -e .coding-crew/solve-feature/pr-7.summary.md ]
+  [ ! -e .coding-crew/solve-feature/pr-7.attention.md ]
+  [ ! -e .coding-crew/solve-feature/pr-7.head ]
 }
 
 # --- next ------------------------------------------------------------------------------
@@ -377,12 +377,12 @@ EOF
   run bash "$SCRIPT" next feat
   [ "$status" -eq 0 ]
   [ "$output" = 2 ]
-  [ "$(cat .solve-feature/2.issue.md)" = "$(cat "$STATE/2.md")" ]
+  [ "$(cat .coding-crew/solve-feature/2.issue.md)" = "$(cat "$STATE/2.md")" ]
   jq 'map(.state = "CLOSED")' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
   PR_EXISTS=1 run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
   [ -z "$output" ]
-  [ ! -e .solve-feature/outcome ]
+  [ ! -e .coding-crew/solve-feature/outcome ]
   NEXT_PRINTS='2; rm -rf /' run bash "$SCRIPT" next feat
   [ "$status" -eq 1 ]
   [[ "$output" == *"fetch 2; rm -rf / failed"* ]]
@@ -394,7 +394,7 @@ EOF
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
   [[ "$output" == *"nothing landed: no ready issue for feat and no open PR"* ]]
-  [ "$(cat .solve-feature/outcome)" = "stopped: next failed: nothing landed: no ready issue for feat and no open PR" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: next failed: nothing landed: no ready issue for feat and no open PR" ]
 }
 
 @test "issues run lowest number first, skipping closed and blocked-labelled issues and any whose blocker is neither CLOSED nor awaiting-merge" {
@@ -421,7 +421,7 @@ EOF
 # The attribution line describe writes under the begin marker, whatever the writer subagent left.
 ATTRIBUTION='> Written by solve-feature (`feat`): its coder, reviewer and fixer were agents; no person has read this body.'
 # summary — what the writer subagent leaves: write-pr's title line and body.
-summary() { printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n\n**Tested:** checks pass\n' > .solve-feature/pr-10.summary.md; }
+summary() { printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n\n**Tested:** checks pass\n' > .coding-crew/solve-feature/pr-10.summary.md; }
 
 @test "describe writes the whole body once in order, titles the PR from the summary, then marks the draft ready and writes ready" {
   fixed
@@ -442,7 +442,7 @@ Users need accounts.
 
 <details><summary>Spec</summary>
 
-$(cat .solve-feature/spec.md)
+$(cat .coding-crew/solve-feature/spec.md)
 
 </details>
 
@@ -453,7 +453,7 @@ Closes #3
 EOF
 )" ]
   [ "$(grep -E '^pr (edit|ready)' "$STATE/gh.log" | cut -d' ' -f1-3)" = "$(printf 'pr edit 10\npr ready 10')" ]
-  [ "$(cat .solve-feature/outcome)" = "ready pr=10" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "ready pr=10" ]
   [ "${lines[${#lines[@]}-1]}" = "ready pr=10" ]
 
   # A second describe rewrites the body rather than stacking the summary.
@@ -472,7 +472,7 @@ EOF
   [ "$(grep -n -m1 '^## Why$' "$STATE/pr-body" | cut -d: -f1)" -lt "$(grep -n -m1 '^## Needs attention$' "$STATE/pr-body" | cut -d: -f1)" ]
   [ "$(sed -n 2p "$STATE/pr-body")" = "$ATTRIBUTION" ]
   ! grep -q '^pr ready' "$STATE/gh.log" || false
-  [ "$(cat .solve-feature/outcome)" = "needs-attention pr=10" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention pr=10" ]
 }
 
 @test "a report whose spec is unmet, with no gap or finding, leaves the PR a draft and writes needs-attention" {
@@ -481,7 +481,7 @@ EOF
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   ! grep -q '^pr ready' "$STATE/gh.log" || false
-  [ "$(cat .solve-feature/outcome)" = "needs-attention pr=10" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention pr=10" ]
 }
 
 @test "a PR already ready is not marked again; with no summary describe keeps land's title and still decides readiness" {
@@ -491,7 +491,7 @@ EOF
   ! grep -q '^pr ready' "$STATE/gh.log" || false
   [ "$(cat "$STATE/pr-title")" = Feat ]
   [ "$(head -4 "$STATE/pr-body")" = "$(printf '<!-- solve-feature:begin -->\n%s\n\n<details><summary>Spec</summary>' "$ATTRIBUTION")" ]
-  [ "$(cat .solve-feature/outcome)" = "ready pr=10" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "ready pr=10" ]
 }
 
 @test "describe with no fix result, a failing closing-refs or a failing gh pr ready stops, never writing ready" {
@@ -499,30 +499,30 @@ EOF
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 1 ]
   [[ "$output" == *"run fix feat 10 <branch> first"* ]]
-  [[ "$(cat .solve-feature/outcome)" == "stopped: describe failed: "* ]]
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: describe failed: "* ]]
   ! grep -q '^pr edit' "$STATE/gh.log" || false
 
   run bash "$SCRIPT" fix feat 10 feature/feat
   CLOSING_REFS_RC=1 run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 1 ]
   [[ "$output" == *"closing-refs failed for 'feat'"* ]]
-  [[ "$(cat .solve-feature/outcome)" == "stopped: describe failed: closing-refs failed"* ]]
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: describe failed: closing-refs failed"* ]]
   ! grep -q '^pr edit' "$STATE/gh.log" || false
 
   GH_READY_FAIL=1 run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 1 ]
-  [[ "$(cat .solve-feature/outcome)" == "stopped: describe failed: gh pr ready 10 failed"* ]]
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: describe failed: gh pr ready 10 failed"* ]]
 }
 
 # --- packaging and the skill -------------------------------------------------------------
 
-@test ".solve-feature/ is gitignored here" {
-  git -C "$REPO_ROOT" check-ignore -q .solve-feature/x.log
+@test ".coding-crew/solve-feature/ is gitignored here" {
+  git -C "$REPO_ROOT" check-ignore -q .coding-crew/solve-feature/x.log
 }
 
 @test "SKILL.md runs its reviewer through the crew-review skill on the spec start wrote, names no other skill's files, and no SOLVE_FEATURE_HOST" {
   local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
-  grep -qF 'Use the crew-review skill on branch <branch> against the spec in <repo>/.solve-feature/spec.md; write the report to <repo>/.solve-feature/pr-<n>.review.json' "$skill"
+  grep -qF 'Use the crew-review skill on branch <branch> against the spec in <repo>/.coding-crew/solve-feature/spec.md; write the report to <repo>/.coding-crew/solve-feature/pr-<n>.review.json' "$skill"
   ! grep -qF 'read-only' "$skill" || false
   ! grep -qF '<skill-dir>/..' "$skill" || false
   ! grep -qF 'SOLVE_FEATURE_HOST' "$skill" || false
@@ -592,9 +592,9 @@ yaml_to_json() {
   [ "$(jq -r '.jobs.solve.env.CREW_REVIEWER_MODEL' "$json")" = '${{ vars.CREW_REVIEWER_MODEL }}' ]
   grep -qxF '      CREW_CODER_MODEL: ${{ vars.CREW_CODER_MODEL }}' "$REPO_ROOT/.github/workflows/solve-feature.yml"
   grep -qxF '      CREW_REVIEWER_MODEL: ${{ vars.CREW_REVIEWER_MODEL }}' "$REPO_ROOT/.github/workflows/solve-feature.yml"
-  # The logs step runs whatever the run step did, and keeps .solve-feature/, hidden files included.
+  # The logs step runs whatever the run step did, and keeps .coding-crew/solve-feature/, hidden files included.
   jq -e '.jobs.solve.steps[-2] | .if == "always()" and (.uses | startswith("actions/upload-artifact@"))
-    and .with.path == ".solve-feature/" and .with["include-hidden-files"] == true' "$json" >/dev/null
+    and .with.path == ".coding-crew/solve-feature/" and .with["include-hidden-files"] == true' "$json" >/dev/null
   ! grep -q 'solve-feature\.sh' "$wf" || false
   ! grep -q 'SOLVE_FEATURE_HOST' "$wf" || false
   ! grep -q 'review-pr' "$wf" || false
@@ -618,8 +618,8 @@ yaml_to_json() {
   # the session's exit code comes through the pipe.
   run env CREW_AGENT=claude CREW_MODEL= SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN=tok bash -e "$TEMP_DIR/run-step.sh"
   [ "$status" -eq 0 ]
-  [ "$(cat .solve-feature/session.jsonl)" = "$(printf 'claude -p /solve-feature feat --dangerously-skip-permissions --output-format stream-json --verbose\nCLAUDE_CODE_OAUTH_TOKEN=tok')" ]
-  [ "$(cat .solve-feature/.gitignore)" = '*' ]
+  [ "$(cat .coding-crew/solve-feature/session.jsonl)" = "$(printf 'claude -p /solve-feature feat --dangerously-skip-permissions --output-format stream-json --verbose\nCLAUDE_CODE_OAUTH_TOKEN=tok')" ]
+  [ "$(cat .coding-crew/solve-feature/.gitignore)" = '*' ]
   cat > "$STUB/claude" <<'SH'
 #!/usr/bin/env bash
 echo "$*" >"$TEMP_DIR/claude-argv"
@@ -637,7 +637,7 @@ SH
   [ "$(cat "$TEMP_DIR/claude-argv")" = "-p /solve-feature feat --dangerously-skip-permissions --model opus --output-format stream-json --verbose" ]
   [ "$output" = "$(printf '%s\n' 'model: claude-opus-5-5' Starting. '$ bash s.sh start feat' '> subagent: Coder for 7 (opus)' \
     '      failed: no such file' 'session: error_max_turns, 3 turns, 2 min, $1.5')" ]
-  [ "$(wc -l < .solve-feature/session.jsonl)" -eq 5 ]
+  [ "$(wc -l < .coding-crew/solve-feature/session.jsonl)" -eq 5 ]
   jq -r '.jobs.solve.steps[] | select(.name == "Install the agent CLI") | .run' "$json" > "$TEMP_DIR/install-step.sh"
   run env CREW_AGENT=codex bash -e "$TEMP_DIR/install-step.sh"
   [ "$status" -ne 0 ]
@@ -660,17 +660,17 @@ SH
   jq -r '.jobs.solve.steps[-1].run' "$json" > "$TEMP_DIR/last-step.sh"
   export GITHUB_STEP_SUMMARY="$TEMP_DIR/summary.md" GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=o/r \
     CREW_AGENT=claude CREW_MODEL= SLUG=feat
-  rm -rf .solve-feature
+  rm -rf .coding-crew/solve-feature
   run bash -e "$TEMP_DIR/last-step.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"never finished"* ]]
   grep -qF '### solve-feature feat: `` never finished' "$GITHUB_STEP_SUMMARY"
   grep -qxF -- '- Agent: claude, model unpinned (the CLI default)' "$GITHUB_STEP_SUMMARY"
-  mkdir -p .solve-feature
-  echo 'needs-attention pr=10' > .solve-feature/outcome
-  echo '- the flaky test' > .solve-feature/pr-10.attention.md
-  echo 'report of the last coder' > .solve-feature/coder.report.md
-  echo '{"type":"system","subtype":"init","model":"claude-opus-5-5"}' > .solve-feature/session.jsonl
+  mkdir -p .coding-crew/solve-feature
+  echo 'needs-attention pr=10' > .coding-crew/solve-feature/outcome
+  echo '- the flaky test' > .coding-crew/solve-feature/pr-10.attention.md
+  echo 'report of the last coder' > .coding-crew/solve-feature/coder.report.md
+  echo '{"type":"system","subtype":"init","model":"claude-opus-5-5"}' > .coding-crew/solve-feature/session.jsonl
   : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"
   [ "$status" -ne 0 ]
@@ -682,7 +682,7 @@ SH
   ! grep -q 'report of the last coder' "$GITHUB_STEP_SUMMARY" || false
   # The models the subagents ran on: distinct, in first-seen order, right after the Agent line; the main session's
   # own messages, Claude Code's made-up <synthetic> ones and a message with no model add nothing.
-  cat >> .solve-feature/session.jsonl <<'J'
+  cat >> .coding-crew/solve-feature/session.jsonl <<'J'
 {"type":"assistant","message":{"model":"claude-opus-5-5","content":[]},"parent_tool_use_id":null}
 {"type":"assistant","message":{"model":"claude-sonnet-5-5","content":[]},"parent_tool_use_id":"t1"}
 {"type":"assistant","message":{"model":"<synthetic>","content":[]},"parent_tool_use_id":"t1"}
@@ -695,8 +695,8 @@ J
   [ "$status" -ne 0 ]
   [ "$(grep -A1 -xF -- '- Agent: claude, model claude-opus-5-5' "$GITHUB_STEP_SUMMARY" | tail -n 1)" = \
     '- Subagent models: claude-sonnet-5-5, claude-haiku-5-5' ]
-  echo 'stopped: 2 checks failed: run-checks.sh exit 1' > .solve-feature/outcome
-  echo 'FAIL: test_x' > .solve-feature/2.checks.log
+  echo 'stopped: 2 checks failed: run-checks.sh exit 1' > .coding-crew/solve-feature/outcome
+  echo 'FAIL: test_x' > .coding-crew/solve-feature/2.checks.log
   : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"
   [ "$status" -ne 0 ]
@@ -705,24 +705,24 @@ J
   grep -qxF 'FAIL: test_x' "$GITHUB_STEP_SUMMARY"
   # Each stop shows the files of the step it names: a coder's stop not an earlier issue's passing checks log, a
   # fix stop the PR's checks log and no coder's report.
-  echo 'stopped: 3 solve failed: coder ran but did not close 3; why: x' > .solve-feature/outcome
+  echo 'stopped: 3 solve failed: coder ran but did not close 3; why: x' > .coding-crew/solve-feature/outcome
   : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"
   grep -qxF 'report of the last coder' "$GITHUB_STEP_SUMMARY"
   ! grep -q 'FAIL: test_x' "$GITHUB_STEP_SUMMARY" || false
-  echo 'stopped:  fix failed: run-checks.sh exit 1; once fixed' > .solve-feature/outcome
-  echo 'FAIL: test_after_fix' > .solve-feature/pr-10.checks.log
+  echo 'stopped:  fix failed: run-checks.sh exit 1; once fixed' > .coding-crew/solve-feature/outcome
+  echo 'FAIL: test_after_fix' > .coding-crew/solve-feature/pr-10.checks.log
   : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"
   grep -qxF 'FAIL: test_after_fix' "$GITHUB_STEP_SUMMARY"
   ! grep -q 'report of the last coder' "$GITHUB_STEP_SUMMARY" || false
   # git's reason for a refused workflow-file push quotes names in backticks: the heading stays one code span.
   line='stopped: 3 land push refused: refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission'
-  echo "$line" > .solve-feature/outcome
+  echo "$line" > .coding-crew/solve-feature/outcome
   : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"
   grep -qxF "### solve-feature feat: \`\` $line \`\`" "$GITHUB_STEP_SUMMARY"
-  echo 'ready pr=10' > .solve-feature/outcome
+  echo 'ready pr=10' > .coding-crew/solve-feature/outcome
   : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"
   [ "$status" -eq 0 ]
@@ -743,8 +743,8 @@ J
 
   run bash -e "$TEMP_DIR/bundle-step.sh"
   [ "$status" -eq 0 ]
-  [ ! -e .solve-feature/unpushed.bundle ]
-  echo 'stopped: 3 push failed: refused' > .solve-feature/outcome
+  [ ! -e .coding-crew/solve-feature/unpushed.bundle ]
+  echo 'stopped: 3 push failed: refused' > .coding-crew/solve-feature/outcome
   : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"
   ! grep -q 'Unpushed commits' "$GITHUB_STEP_SUMMARY" || false
@@ -753,13 +753,13 @@ J
   echo x > x.txt && git add x.txt && git commit -q -m 'the coder'
   run bash -e "$TEMP_DIR/bundle-step.sh"
   [ "$status" -eq 0 ]
-  [ "$(git bundle list-heads .solve-feature/unpushed.bundle)" = "$(git rev-parse HEAD) refs/heads/feature/feat" ]
+  [ "$(git bundle list-heads .coding-crew/solve-feature/unpushed.bundle)" = "$(git rev-parse HEAD) refs/heads/feature/feat" ]
   run bash -e "$TEMP_DIR/last-step.sh"
   grep -qF -- '- Unpushed commits: ' "$GITHUB_STEP_SUMMARY"
   grep -qF '`gh run download 99 -n solve-feature-feat-1 -D /tmp/sf-99 && git fetch /tmp/sf-99/unpushed.bundle '\''refs/heads/*:refs/heads/*'\''`, then run /solve-feature feat there' "$GITHUB_STEP_SUMMARY"
   # The fetch it prints recovers the branch in a clone that has only origin.
   git clone -q "$TEMP_DIR/origin.git" "$TEMP_DIR/clone"
-  git -C "$TEMP_DIR/clone" fetch -q "$PWD/.solve-feature/unpushed.bundle" 'refs/heads/*:refs/heads/*'
+  git -C "$TEMP_DIR/clone" fetch -q "$PWD/.coding-crew/solve-feature/unpushed.bundle" 'refs/heads/*:refs/heads/*'
   [ "$(git -C "$TEMP_DIR/clone" rev-parse feature/feat)" = "$(git rev-parse HEAD)" ]
 }
 
@@ -783,11 +783,11 @@ case "$1 $2" in
 esac
 SH
   chmod +x "$STUB/gh"
-  mkdir -p .solve-feature
+  mkdir -p .coding-crew/solve-feature
   export GITHUB_REPOSITORY=o/r GH_HELD=$'7 .github/workflows/ci.yml\n8 .github/workflows/lint.yml'
 
   for line in 'ready pr=12' 'needs-attention pr=12'; do
-    echo "$line" > .solve-feature/outcome
+    echo "$line" > .coding-crew/solve-feature/outcome
     rm -f "$STATE/gh.log"
     run bash -e "$TEMP_DIR/ci-step.sh"
     [ "$status" -eq 0 ]
@@ -814,8 +814,8 @@ SH
   ! grep -q 'api -X POST\|workflow run' "$STATE/gh.log" || false
 
   for line in 'stopped: 2 checks failed: x' ''; do
-    rm -f "$STATE/gh.log" .solve-feature/outcome
-    [ -z "$line" ] || echo "$line" > .solve-feature/outcome
+    rm -f "$STATE/gh.log" .coding-crew/solve-feature/outcome
+    [ -z "$line" ] || echo "$line" > .coding-crew/solve-feature/outcome
     run bash -e "$TEMP_DIR/ci-step.sh"
     [ "$status" -eq 0 ]
     [ ! -e "$STATE/gh.log" ]

@@ -32,7 +32,7 @@ record() {
   [[ $RECORD -eq 1 ]] || return 0
   RECORD=0
   local findings
-  findings=$(jq '.findings // [] | length' "$WT/.solve-feature/pr-$PR.review.json" 2>/dev/null) || findings='?'
+  findings=$(jq '.findings // [] | length' "$WT/.coding-crew/solve-feature/pr-$PR.review.json" 2>/dev/null) || findings='?'
   echo "| $SHORT | $(date -u +%Y-%m-%d) | $PLATFORM | $VIA | $1 | $COST | ${findings:-?} |" >>"$RESULTS" ||
     echo "SMOKE: warning: cannot append to $RESULTS" >&2
 }
@@ -109,7 +109,7 @@ if [[ "$VIA" == npx ]]; then
   SKILLS=$NPX_SKILLS
   # Installed, never committed: excluded here, and linked into every worktree through .worktreeinclude.
   printf '%s\n' "$SKILLS" >.worktreeinclude
-  printf '%s\n' "$SKILLS" skills-lock.json .worktreeinclude .scratch/ >>.git/info/exclude
+  printf '%s\n' "$SKILLS" skills-lock.json .worktreeinclude .coding-crew/scratch/ >>.git/info/exclude
 else
   "$ROOT/install.sh" "$PLATFORM" --project "$DIR" >.git/crew-smoke/install.log 2>&1 ||
     fail "install.sh failed — see $DIR/.git/crew-smoke/install.log"
@@ -117,10 +117,10 @@ else
     fail "user-level skills shadow the project install (see $DIR/.git/crew-smoke/install.log)"
   SKILLS=$(jq -r --arg p "$PLATFORM" '.[$p].projectSkills' "$ROOT/platforms.json")
   printf '%s\n' .coding-crew/manifest.json "$SKILLS" >.worktreeinclude
-  printf '%s\n' .coding-crew/manifest.json "$SKILLS" .worktreeinclude .scratch/ >>.git/info/exclude
+  printf '%s\n' .coding-crew/manifest.json "$SKILLS" .worktreeinclude .coding-crew/scratch/ >>.git/info/exclude
 fi
 # The local tracker reads the feature from the main checkout.
-mkdir -p ".scratch/$SLUG" && cp -R "$DEMO_DIR/feature/." ".scratch/$SLUG/" || fail "cannot copy the feature"
+mkdir -p ".coding-crew/scratch/$SLUG" && cp -R "$DEMO_DIR/feature/." ".coding-crew/scratch/$SLUG/" || fail "cannot copy the feature"
 DIRTY=$(git status --porcelain)
 [[ -z "$DIRTY" ]] || fail "the install left the demo repo dirty, which solve-feature refuses: $DIRTY"
 echo "SMOKE: repo ready at $DIR ($PLATFORM)"
@@ -132,15 +132,15 @@ echo "$OUT"
 WT=$(sed -n 's/^worktree=//p' <<<"$OUT")
 [[ -n "$WT" ]] || fail "crew-afk dispatch printed no worktree="
 RECORD=1
-echo "SMOKE: waiting for the run (log: $WT/.solve-feature/run.log)"
+echo "SMOKE: waiting for the run (log: $WT/.coding-crew/solve-feature/run.log)"
 LINE=$("${DISPATCH[@]}" wait "$SLUG") || fail "crew-afk wait exited $?: $LINE"
 echo "$LINE"
 [[ "$LINE" =~ \ cost=(\$[0-9.]+) ]] && COST="${BASH_REMATCH[1]}"
 
-OUTCOME=$(head -n 1 "$WT/.solve-feature/outcome" 2>/dev/null)
+OUTCOME=$(head -n 1 "$WT/.coding-crew/solve-feature/outcome" 2>/dev/null)
 [[ "$OUTCOME" =~ pr=([0-9]+) ]] && PR="${BASH_REMATCH[1]}"
 [[ "$OUTCOME" == "ready pr=$PR" && -n "$PR" ]] ||
-  fail "the run ended '${OUTCOME:-without an outcome}', not ready pr=<n> (log: $WT/.solve-feature/run.log)"
+  fail "the run ended '${OUTCOME:-without an outcome}', not ready pr=<n> (log: $WT/.coding-crew/solve-feature/run.log)"
 
 while IFS= read -r cmd || [[ -n "$cmd" ]]; do
   [[ -z "${cmd// }" || "$cmd" =~ ^[[:space:]]*# ]] && continue

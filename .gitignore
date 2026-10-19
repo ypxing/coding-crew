@@ -5,8 +5,8 @@
 .claude/settings*.json
 .claude/agents/
 .claude/skills/
-.scratch/
-.solve-feature/
+.coding-crew/scratch/
+.coding-crew/solve-feature/
 .claude/worktrees/
 .codex/agents/
 .pi/agents/

@@ -14,13 +14,13 @@ setup() {
   cp -RL "$REPO_ROOT/skills/solve-issue/scripts/checks" "$TEMP_DIR/skill/scripts/checks"
   PREFLIGHT="$TEMP_DIR/skill/scripts/preflight.sh"
   WORK="$TEMP_DIR/work"
-  mkdir -p "$WORK/.scratch/feat/issues/open" "$WORK/.scratch/feat/issues/done"
+  mkdir -p "$WORK/.coding-crew/scratch/feat/issues/open" "$WORK/.coding-crew/scratch/feat/issues/done"
   git -C "$WORK" init -q -b main
   git -C "$WORK" config user.email t@test
   git -C "$WORK" config user.name T
   git -C "$WORK" commit -q --allow-empty -m init
   git -C "$WORK" checkout -q -b feature
-  ISSUE="$WORK/.scratch/feat/issues/open/02-second.md"
+  ISSUE="$WORK/.coding-crew/scratch/feat/issues/open/02-second.md"
 }
 
 teardown() {
@@ -46,11 +46,11 @@ _preflight() {
 }
 
 @test "preflight: a Blocked-by file missing from done/ blocks, by file name" {
-  _issue "" '- Issue 01: `.scratch/feat/issues/open/01-first.md`'
+  _issue "" '- Issue 01: `.coding-crew/scratch/feat/issues/open/01-first.md`'
   _preflight
   [ "$status" -eq 1 ]
   [ "$output" = "BLOCKED: depends on 01-first.md which is not yet done" ]
-  touch "$WORK/.scratch/feat/issues/done/01-first.md"
+  touch "$WORK/.coding-crew/scratch/feat/issues/done/01-first.md"
   _preflight
   [ "$status" -eq 0 ]
   [[ "$output" == OK* ]]
@@ -65,31 +65,31 @@ _preflight() {
   [ "$status" -eq 0 ]
 }
 
-@test "preflight: a PRD under .scratch is found in the checkout that holds the issue, not --project-root" {
+@test "preflight: a PRD under .coding-crew/scratch is found in the checkout that holds the issue, not --project-root" {
   mkdir -p "$TEMP_DIR/wt"
-  touch "$WORK/.scratch/feat/PRD.md"
-  _issue '- PRD: `.scratch/feat/PRD.md`' "None"
+  touch "$WORK/.coding-crew/scratch/feat/PRD.md"
+  _issue '- PRD: `.coding-crew/scratch/feat/PRD.md`' "None"
   run bash "$PREFLIGHT" --project-root "$TEMP_DIR/wt" --issue "$ISSUE"
-  [[ "$output" == *"PRD=$WORK/.scratch/feat/PRD.md"* ]]
+  [[ "$output" == *"PRD=$WORK/.coding-crew/scratch/feat/PRD.md"* ]]
 }
 
-@test "preflight: a relative issue ref in a linked worktree resolves in the main checkout, where .scratch/ lives" {
+@test "preflight: a relative issue ref in a linked worktree resolves in the main checkout, where .coding-crew/scratch/ lives" {
   git -C "$WORK" worktree add -q -b wt-branch "$TEMP_DIR/wt"
-  touch "$WORK/.scratch/feat/PRD.md"
-  _issue '- PRD: `.scratch/feat/PRD.md`' '- Issue 01: `.scratch/feat/issues/open/01-first.md`'
-  run bash -c 'cd "$1" && bash "$2" --project-root "$1" --issue .scratch/feat/issues/open/02-second.md' _ "$TEMP_DIR/wt" "$PREFLIGHT"
+  touch "$WORK/.coding-crew/scratch/feat/PRD.md"
+  _issue '- PRD: `.coding-crew/scratch/feat/PRD.md`' '- Issue 01: `.coding-crew/scratch/feat/issues/open/01-first.md`'
+  run bash -c 'cd "$1" && bash "$2" --project-root "$1" --issue .coding-crew/scratch/feat/issues/open/02-second.md' _ "$TEMP_DIR/wt" "$PREFLIGHT"
   [ "$status" -eq 1 ]
   [ "$output" = "BLOCKED: depends on 01-first.md which is not yet done" ]
-  touch "$WORK/.scratch/feat/issues/done/01-first.md"
-  run bash -c 'cd "$1" && bash "$2" --project-root "$1" --issue .scratch/feat/issues/open/02-second.md' _ "$TEMP_DIR/wt" "$PREFLIGHT"
+  touch "$WORK/.coding-crew/scratch/feat/issues/done/01-first.md"
+  run bash -c 'cd "$1" && bash "$2" --project-root "$1" --issue .coding-crew/scratch/feat/issues/open/02-second.md' _ "$TEMP_DIR/wt" "$PREFLIGHT"
   [ "$status" -eq 0 ]
   # git names the main checkout by its physical path: macOS's /var is /private/var.
-  [[ "$output" == *"PRD=$(cd "$WORK" && pwd -P)/.scratch/feat/PRD.md"* ]]
+  [[ "$output" == *"PRD=$(cd "$WORK" && pwd -P)/.coding-crew/scratch/feat/PRD.md"* ]]
 }
 
-@test "preflight: the PRD is the one Context Documents names; without a PRD line there is none, whatever .scratch holds" {
+@test "preflight: the PRD is the one Context Documents names; without a PRD line there is none, whatever .coding-crew/scratch holds" {
   mkdir -p "$WORK/docs"
-  touch "$WORK/docs/prd.md" "$WORK/.scratch/feat/PRD.md"
+  touch "$WORK/docs/prd.md" "$WORK/.coding-crew/scratch/feat/PRD.md"
   _issue '- PRD: `docs/prd.md`' "None"
   _preflight
   [[ "$output" == *"PRD=$WORK/docs/prd.md"* ]]

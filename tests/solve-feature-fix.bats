@@ -7,12 +7,12 @@ load helpers/solve-feature
 
 # --- fix: after the review -------------------------------------------------------------
 
-# fix_stops <reason> — exit 1, nothing pushed, the stop in .solve-feature/outcome, the PR left as it was.
+# fix_stops <reason> — exit 1, nothing pushed, the stop in .coding-crew/solve-feature/outcome, the PR left as it was.
 fix_stops() {
   [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
   [[ "$output" == *"solve-feature: review fix failed: $1"* ]] || { echo "$output"; return 1; }
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$TIP" ] || { echo pushed; return 1; }
-  [[ "$(cat .solve-feature/outcome)" == "stopped: review fix failed: $1"* ]]
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: review fix failed: $1"* ]]
   ! grep -qE '^pr (ready|edit)' "$STATE/gh.log" || false
 }
 
@@ -24,12 +24,12 @@ fix_stops() {
   run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "branch changed to 'elsewhere'"
   git checkout -q feature/feat
-  rm .solve-feature/pr-10.review.json
+  rm .coding-crew/solve-feature/pr-10.review.json
   run bash "$SCRIPT" fix feat 10 feature/feat
-  fix_stops "no review report at $WORK/.solve-feature/pr-10.review.json"
+  fix_stops "no review report at $WORK/.coding-crew/solve-feature/pr-10.review.json"
   report 'not json'
   run bash "$SCRIPT" fix feat 10 feature/feat
-  fix_stops "unreadable review report $WORK/.solve-feature/pr-10.review.json"
+  fix_stops "unreadable review report $WORK/.coding-crew/solve-feature/pr-10.review.json"
   [ "$(wc -l < "$STATE/checks.log")" -eq "$checks" ]
   [ "$(cat fixed.txt)" = fixed ]
 }
@@ -39,7 +39,7 @@ fix_stops() {
   TIP=$(git rev-parse HEAD)
   local checks; checks=$(wc -l < "$STATE/checks.log")
   run bash "$SCRIPT" fix feat 10 feature/feat
-  fix_stops "the review report's gaps is not a list: $WORK/.solve-feature/pr-10.review.json"
+  fix_stops "the review report's gaps is not a list: $WORK/.coding-crew/solve-feature/pr-10.review.json"
   [ "$(wc -l < "$STATE/checks.log")" -eq "$checks" ]
 }
 
@@ -49,7 +49,7 @@ fix_stops() {
   : > "$STATE/checks.log"
   CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "run-checks.sh exit 1; once fixed and committed, run fix feat 10 feature/feat, then describe feat 10"
-  [[ "$output" == *"log: $WORK/.solve-feature/pr-10.checks.log"* ]]
+  [[ "$output" == *"log: $WORK/.coding-crew/solve-feature/pr-10.checks.log"* ]]
   [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
   # The fixer's edits stay in one local, unpushed commit.
   [ "$(git rev-parse HEAD~1)" = "$TIP" ]
@@ -173,14 +173,14 @@ push_says() {
   refuse_pushes
   run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "git push failed: pre-receive hook declined"
-  [ "$(head -n1 .solve-feature/pr-10.head)" = "$TIP" ]
+  [ "$(head -n1 .coding-crew/solve-feature/pr-10.head)" = "$TIP" ]
   rm "$TEMP_DIR/origin.git/hooks/pre-receive"
   git push -q origin feature/feat
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ -z "$(attention)" ]
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
-  [ ! -e .solve-feature/pr-10.head ]
+  [ ! -e .coding-crew/solve-feature/pr-10.head ]
 }
 
 @test "a fix pushed by hand after fix stopped still counts as the fixer's after a later run stops again" {
@@ -200,7 +200,7 @@ push_says() {
   fix_ready
   CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -ne 0 ]
-  git rev-parse HEAD >>.solve-feature/pr-10.head
+  git rev-parse HEAD >>.coding-crew/solve-feature/pr-10.head
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ -z "$(attention)" ]
@@ -212,7 +212,7 @@ push_says() {
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
-  [ ! -e .solve-feature/pr-10.head ]
+  [ ! -e .coding-crew/solve-feature/pr-10.head ]
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(attention)" = "the fixer changed nothing" ]
@@ -226,7 +226,7 @@ push_says() {
   [ "$(attention)" = "the fixer changed nothing" ]
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
   # A fixer that said why it changed nothing is listed for what it said, as it wrote it, not twice.
-  printf -- '- a:1 needs a design call\n\nb:2 too\n' > .solve-feature/pr-10.unfixed.md
+  printf -- '- a:1 needs a design call\n\nb:2 too\n' > .coding-crew/solve-feature/pr-10.unfixed.md
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$(attention)" = "$(printf -- '- a:1 needs a design call\nb:2 too')" ]
 }
@@ -242,12 +242,12 @@ push_says() {
   [ -z "$(git status --porcelain)" ]
   pushed
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
-  [ -f .solve-feature/pr-10.attention.md ]
+  [ -f .coding-crew/solve-feature/pr-10.attention.md ]
   [ -z "$(attention)" ]
   ! grep -q '^pr ready' "$STATE/gh.log" || false
-  [ ! -e .solve-feature/stopped ]
-  [ ! -e .solve-feature/reviewed ]
-  [ ! -e .solve-feature/outcome ]
+  [ ! -e .coding-crew/solve-feature/stopped ]
+  [ ! -e .coding-crew/solve-feature/reviewed ]
+  [ ! -e .coding-crew/solve-feature/outcome ]
 }
 
 @test "fix leaves config.json and an untracked dev commands file out of its commit and stages every other change" {
@@ -294,11 +294,11 @@ push_says() {
 
 @test "a gap, an unmet spec and each unfixed line are handed to describe as needing attention" {
   fix_ready '{"spec":"unmet","gaps":["no logout endpoint"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"},{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
-  printf -- '#2: race on the lock: needs a design call\n\n' > .solve-feature/pr-10.unfixed.md
+  printf -- '#2: race on the lock: needs a design call\n\n' > .coding-crew/solve-feature/pr-10.unfixed.md
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(attention)" = "$(printf 'no logout endpoint\nthe reviewer found the spec unmet\n#2: race on the lock: needs a design call')" ]
-  [ ! -e .solve-feature/pr-10.unfixed.md ]
+  [ ! -e .coding-crew/solve-feature/pr-10.unfixed.md ]
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=3 review-again=yes" ]
 
   # The spec unmet with no gap named still needs a person.
@@ -344,11 +344,11 @@ push_says() {
 
 @test "a second fix after a re-review leaves only its own gaps and unfixed lines needing attention" {
   fix_ready '{"spec":"met","gaps":["first gap"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
-  echo 'first unfixed' > .solve-feature/pr-10.unfixed.md
+  echo 'first unfixed' > .coding-crew/solve-feature/pr-10.unfixed.md
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$(attention)" = "$(printf 'first gap\nfirst unfixed')" ]
   report '{"spec":"met","gaps":["second gap"],"findings":[{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
-  echo 'second unfixed' > .solve-feature/pr-10.unfixed.md
+  echo 'second unfixed' > .coding-crew/solve-feature/pr-10.unfixed.md
   echo second > fixed.txt
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
@@ -357,7 +357,7 @@ push_says() {
 
 @test "fix posts nothing on the PR" {
   fix_ready '{"spec":"unmet","gaps":["g"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
-  echo 'x' > .solve-feature/pr-10.unfixed.md
+  echo 'x' > .coding-crew/solve-feature/pr-10.unfixed.md
   : > "$STATE/gh.log"
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]

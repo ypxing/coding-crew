@@ -94,7 +94,7 @@ bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$PWD"
 ## Step 3 — GitHub Actions
 
 Only with `tracker=github`. With `local`, say "The solve-feature Actions workflow needs the github tracker: its
-label trigger reads a root issue's `Feature:` line, and `.scratch/` issues are not in the runner's checkout",
+label trigger reads a root issue's `Feature:` line, and `.coding-crew/scratch/` issues are not in the runner's checkout",
 and go to Step 4.
 
 ```bash

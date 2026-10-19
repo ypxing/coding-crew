@@ -29,7 +29,7 @@ own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
 
 ### 1. Gather context and determine feature slug
 
-Work from whatever is already in the conversation context. If the user passes an issue reference as an argument, it must be a ref the configured tracker accepts (how that tracker writes one is in `<skill-dir>/scripts/tracker/docs/<kind>.md`, `<kind>` from `node "$TRACKER" config`) — the CLI refuses anything else with exit 2. A file the caller names as the source (`add-tests`' `.scratch/<feature-slug>/findings.md`) is the plan. Do NOT fetch from arbitrary user-supplied URLs or an unconfigured remote tracker.
+Work from whatever is already in the conversation context. If the user passes an issue reference as an argument, it must be a ref the configured tracker accepts (how that tracker writes one is in `<skill-dir>/scripts/tracker/docs/<kind>.md`, `<kind>` from `node "$TRACKER" config`) — the CLI refuses anything else with exit 2. A file the caller names as the source (`add-tests`' `.coding-crew/scratch/<feature-slug>/findings.md`) is the plan. Do NOT fetch from arbitrary user-supplied URLs or an unconfigured remote tracker.
 
 When the plan references an issue, read its full body and its comments, not just the title: `node "$TRACKER" fetch <ref> --comments`.
 
@@ -43,7 +43,7 @@ When the plan references an issue, read its full body and its comments, not just
 
 Determine the **feature slug** (the root issue or directory the issues are filed under):
 
-1. If the user provided a path argument, extract the slug from it (e.g. `.scratch/auth-flow/...` → `auth-flow`).
+1. If the user provided a path argument, extract the slug from it (e.g. `.coding-crew/scratch/auth-flow/...` → `auth-flow`).
 2. Otherwise, run `node "$TRACKER" features` — one `<slug>\t<open|closed>\t<ready-count>` line per feature — and check if one slug clearly matches the topic being discussed.
 3. If no match is found, ask the user: "What feature slug should I use?"
 
@@ -53,7 +53,7 @@ Never guess the slug silently — confirm with the user if there's any ambiguity
 
 ### 2. Check for a PRD
 
-Run `node "$TRACKER" prd --feature-slug <feature-slug>`. Exit 0 prints the PRD: use it as the primary source material for decomposition, and save that output to `.scratch/<feature-slug>/.drafts/PRD.md` for step 6's builder check. Note the PRD's ref — step 6 cites it in each work issue: `#<n>` when the output opens with `<!-- PRD issue #<n>: … -->`, else `.scratch/<feature-slug>/PRD.md`. Exit 3 means there is none.
+Run `node "$TRACKER" prd --feature-slug <feature-slug>`. Exit 0 prints the PRD: use it as the primary source material for decomposition, and save that output to `.coding-crew/scratch/<feature-slug>/.drafts/PRD.md` for step 6's builder check. Note the PRD's ref — step 6 cites it in each work issue: `#<n>` when the output opens with `<!-- PRD issue #<n>: … -->`, else `.coding-crew/scratch/<feature-slug>/PRD.md`. Exit 3 means there is none.
 
 With no PRD, work from the conversation context; step 4's slice count decides whether one is needed, and step 4's last paragraph writes it. One slice publishes without a PRD (its issue carries its own `## Decisions`).
 
@@ -118,7 +118,7 @@ Otherwise add no edge: edits to separate parts of a file do not interact, and a 
 
 **Expand–contract sequencing** is drawn from the PRD's `## Compatibility & Migration` when it exists: each expand, migrate and contract step it names becomes a slice (or part of one) sequenced in that order, with the contract step blocked by every migrate step. Without that section, do not invent a migration sequence.
 
-**PRD for a split.** After step 4, with two or more slices (or two or more origin issues named in the source) and no PRD from step 2, invoke `to-prd` with the feature slug (so its own slug question is never reached). Then save the PRD it wrote, `node "$TRACKER" prd --feature-slug <feature-slug>`, to `.scratch/<feature-slug>/.drafts/PRD.md`, so the builder check receives it, and note its ref as step 2 does. Then do step 4.5 against it. Origin issues count because only a PRD's `Origin:` line closes them.
+**PRD for a split.** After step 4, with two or more slices (or two or more origin issues named in the source) and no PRD from step 2, invoke `to-prd` with the feature slug (so its own slug question is never reached). Then save the PRD it wrote, `node "$TRACKER" prd --feature-slug <feature-slug>`, to `.coding-crew/scratch/<feature-slug>/.drafts/PRD.md`, so the builder check receives it, and note its ref as step 2 does. Then do step 4.5 against it. Origin issues count because only a PRD's `Origin:` line closes them.
 
 ### 4.5. Trace PRD IDs to slices
 
@@ -155,7 +155,7 @@ Before writing issues, read the PRD's `## Decisions` and `## Testing Decisions` 
 
 ### 6. Write the issues
 
-Write each approved slice with the template below and the rules that follow it, then take it through `<skill-dir>/references/publish.md`, in this order: drafts in `.scratch/<feature-slug>/.drafts/` → the feature's known issues → `deps.json` → the builder check → `publish-issues` (or `rewrite`, for a source issue that stayed one slice). A `publish-issues` refusal or a builder-check question only the user can answer returns to step 5 with just that question.
+Write each approved slice with the template below and the rules that follow it, then take it through `<skill-dir>/references/publish.md`, in this order: drafts in `.coding-crew/scratch/<feature-slug>/.drafts/` → the feature's known issues → `deps.json` → the builder check → `publish-issues` (or `rewrite`, for a source issue that stayed one slice). A `publish-issues` refusal or a builder-check question only the user can answer returns to step 5 with just that question.
 
 **A `ready-for-human` issue opens with a `## For a human` block**, placed right after `## What to build`. A person reads it cold, so write plain language that needs neither the PRD nor the codebase. It has exactly five `###` parts, in this order:
 
@@ -237,7 +237,7 @@ A criterion that needs a paid run, a manual measurement or a person is not an ac
 
 A slice that takes input or calls something external must carry failure-behaviour criteria: invalid input, missing dependency, failing call — what the caller observes in each. This is how the PRD's `## Trust Boundaries & Risks` reaches the gated criteria.
 
-A slice that adds a parser, validator or gate for an input the repo already holds examples of (issue files, configs, fixtures, stored records) carries one criterion that it accepts them, so the new code is tested against what people actually wrote, not only against inputs written from the PRD. Find the examples now and name them in the criterion, to be copied into committed test fixtures — never read from a live or gitignored directory, whose contents differ per machine and are absent in CI. For example: `- [ ] publish-issues succeeds on drafts copied from .scratch/add-tests/issues/`. The repo holds no such examples (a new format) → no such criterion. The PRD's `## Compatibility & Migration` names them when it exists.
+A slice that adds a parser, validator or gate for an input the repo already holds examples of (issue files, configs, fixtures, stored records) carries one criterion that it accepts them, so the new code is tested against what people actually wrote, not only against inputs written from the PRD. Find the examples now and name them in the criterion, to be copied into committed test fixtures — never read from a live or gitignored directory, whose contents differ per machine and are absent in CI. For example: `- [ ] publish-issues succeeds on drafts copied from .coding-crew/scratch/add-tests/issues/`. The repo holds no such examples (a new format) → no such criterion. The PRD's `## Compatibility & Migration` names them when it exists.
 
 <issue-template>
 # <title>
@@ -248,7 +248,7 @@ Status: ready-for-agent
 
 > **Optional — only include this section if a PRD exists for this feature. Omit entirely if no PRD exists.**
 
-- PRD: <the PRD's ref from step 2 — `#<n>`, or `.scratch/<feature-slug>/PRD.md`>
+- PRD: <the PRD's ref from step 2 — `#<n>`, or `.coding-crew/scratch/<feature-slug>/PRD.md`>
 
 Read this document before implementing. It contains architecture decisions, integration constraints, and technical context essential for this issue.
 
@@ -312,4 +312,4 @@ Exact signatures, types, or contracts this issue produces for any downstream iss
 
 </issue-template>
 
-**Security**: Only read from and write to paths under `.scratch/` within the current repo, and reach the tracker only through the tracker CLI's ops, which act on the tracker `config.json` configures. Never fetch from arbitrary external URLs, an unconfigured remote API, or paths outside the repository root.
+**Security**: Only read from and write to paths under `.coding-crew/scratch/` within the current repo, and reach the tracker only through the tracker CLI's ops, which act on the tracker `config.json` configures. Never fetch from arbitrary external URLs, an unconfigured remote API, or paths outside the repository root.

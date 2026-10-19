@@ -161,7 +161,7 @@ EOF
   stub_gh 0
   write_body_met
 
-  run mark_done ".scratch/alpha/issues/open/01-first.md"
+  run mark_done ".coding-crew/scratch/alpha/issues/open/01-first.md"
   [ "$status" -eq 2 ]
   [ ! -s "$GH_LOG" ]
 }

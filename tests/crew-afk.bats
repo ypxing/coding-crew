@@ -52,7 +52,7 @@ SH
 teardown() {
   touch "$T/release"
   local pid
-  for pid in $(cat "$T"/*/*/.solve-feature/run.pid 2>/dev/null); do
+  for pid in $(cat "$T"/*/*/.coding-crew/solve-feature/run.pid 2>/dev/null); do
     for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
   done
   rm -rf "$T"
@@ -64,7 +64,7 @@ field() { sed -n "s/^$1=//p" <<<"$output"; }
   run bash "$SCRIPT" dispatch report-cli "${LAUNCH[@]}"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(field worktree)" = "$WT" ]
-  [ "$(field log)" = "$WT/.solve-feature/run.log" ]
+  [ "$(field log)" = "$WT/.coding-crew/solve-feature/run.log" ]
   pid=$(field pid)
   ! grep -q '^session=' <<<"$output"
   kill -0 "$pid"
@@ -76,8 +76,8 @@ field() { sed -n "s/^$1=//p" <<<"$output"; }
   [ "$(cat "$T/timeout-argv")" = "1h claude -p Use the solve-feature skill on report-cli --output-format json" ]
   [ "$(cat "$T/claude-argv")" = $'-p\nUse the solve-feature skill on report-cli\n--output-format\njson' ]
   [ "$(cat "$T/claude-cwd")" = "$WT" ]
-  [ ! -e "$WT/.solve-feature/run.session" ]
-  [ "$(cat "$WT/.solve-feature/run.dest")" = local ]
+  [ ! -e "$WT/.coding-crew/solve-feature/run.session" ]
+  [ "$(cat "$WT/.coding-crew/solve-feature/run.dest")" = local ]
   [ -z "$(git -C "$WT" status --porcelain)" ]
 }
 
@@ -104,7 +104,7 @@ field() { sed -n "s/^$1=//p" <<<"$output"; }
 
 wait_run() { # <worktree> — release the stub, then wait for the run's pid to exit
   touch "$T/release"
-  local pid; pid=$(cat "$1/.solve-feature/run.pid")
+  local pid; pid=$(cat "$1/.coding-crew/solve-feature/run.pid")
   for _ in $(seq 1 100); do kill -0 "$pid" 2>/dev/null || return 0; sleep 0.1; done
   return 1
 }
@@ -123,13 +123,13 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
 
 @test "a dispatch while the slug's run is live exits 1 naming the pid and starts nothing" {
   bash "$SCRIPT" dispatch report-cli "${LAUNCH[@]}" >/dev/null
-  pid=$(cat "$WT/.solve-feature/run.pid")
+  pid=$(cat "$WT/.coding-crew/solve-feature/run.pid")
   for _ in $(seq 1 50); do [ -f "$T/claude-argv" ] && break; sleep 0.1; done
   rm -f "$T/claude-argv"
   run bash "$SCRIPT" dispatch report-cli "${LAUNCH[@]}"
   [ "$status" -eq 1 ]
   [[ "$output" == *"a run for report-cli is still going (pid $pid)"* ]]
-  [ "$(cat "$WT/.solve-feature/run.pid")" = "$pid" ]
+  [ "$(cat "$WT/.coding-crew/solve-feature/run.pid")" = "$pid" ]
   sleep 0.3
   [ ! -f "$T/claude-argv" ]
 }
@@ -177,10 +177,10 @@ SH
 
 @test "status prints a live run as running, then its outcome line once solve-feature wrote one" {
   bash "$SCRIPT" dispatch report-cli "${LAUNCH[@]}" >/dev/null
-  pid=$(cat "$WT/.solve-feature/run.pid")
+  pid=$(cat "$WT/.coding-crew/solve-feature/run.pid")
   run bash "$SCRIPT" status
   [ "$output" = "report-cli: running (pid $pid)" ]
-  echo 'ready pr=7' > "$WT/.solve-feature/outcome"
+  echo 'ready pr=7' > "$WT/.coding-crew/solve-feature/outcome"
   run bash "$SCRIPT" status report-cli
   [ "$output" = "report-cli: ready pr=7" ]
   run bash "$SCRIPT" status other
@@ -190,7 +190,7 @@ SH
 @test "status on a run that ended without an outcome names the log and the re-run, and no resume line" {
   ended_run
   run bash "$SCRIPT" status
-  [ "$output" = "report-cli: ended without an outcome — log: $WT/.solve-feature/run.log; re-run /crew-afk report-cli to continue" ]
+  [ "$output" = "report-cli: ended without an outcome — log: $WT/.coding-crew/solve-feature/run.log; re-run /crew-afk report-cli to continue" ]
 }
 
 @test "wait blocks while the run is going, then prints the status line once the outcome is written" {
@@ -200,7 +200,7 @@ SH
   waiter=$!
   sleep 0.5
   kill -0 "$waiter"
-  echo 'ready pr=7' > "$WT/.solve-feature/outcome"
+  echo 'ready pr=7' > "$WT/.coding-crew/solve-feature/outcome"
   touch "$T/release"
   wait "$waiter"
   [ "$(cat "$T/wait-out")" = 'report-cli: ready pr=7 cost=$1.73 (23 min)' ]
@@ -209,7 +209,7 @@ SH
 @test "wait on a local run keeps blocking after the outcome until the run's process is gone, then prints its cost" {
   export CREW_AFK_WAIT_INTERVAL=0.1
   bash "$SCRIPT" dispatch report-cli "${LAUNCH[@]}" >/dev/null
-  echo 'ready pr=7' > "$WT/.solve-feature/outcome"
+  echo 'ready pr=7' > "$WT/.coding-crew/solve-feature/outcome"
   bash "$SCRIPT" wait report-cli >"$T/wait-out" &
   waiter=$!
   sleep 0.5
@@ -223,14 +223,14 @@ SH
 @test "status adds the cost and minutes from the claude result that ends run.log, and only when there is one" {
   bash "$SCRIPT" dispatch report-cli "${LAUNCH[@]}" >/dev/null
   wait_run "$WT"
-  echo 'ready pr=7' > "$WT/.solve-feature/outcome"
-  printf 'x\n{"type":"result","total_cost_usd":1.734,"duration_ms":1380000}\n' > "$WT/.solve-feature/run.log"
+  echo 'ready pr=7' > "$WT/.coding-crew/solve-feature/outcome"
+  printf 'x\n{"type":"result","total_cost_usd":1.734,"duration_ms":1380000}\n' > "$WT/.coding-crew/solve-feature/run.log"
   run bash "$SCRIPT" status report-cli
   [ "$output" = 'report-cli: ready pr=7 cost=$1.73 (23 min)' ]
-  printf 'claude: error\n' > "$WT/.solve-feature/run.log"
+  printf 'claude: error\n' > "$WT/.coding-crew/solve-feature/run.log"
   run bash "$SCRIPT" status report-cli
   [ "$output" = 'report-cli: ready pr=7' ]
-  rm "$WT/.solve-feature/run.log"
+  rm "$WT/.coding-crew/solve-feature/run.log"
   run bash "$SCRIPT" status report-cli
   [ "$output" = 'report-cli: ready pr=7' ]
 }
@@ -253,7 +253,7 @@ SH
   waiter=$!
   sleep 0.5
   kill -0 "$waiter"
-  echo 'ready pr=9' > "$OWT/.solve-feature/outcome"
+  echo 'ready pr=9' > "$OWT/.coding-crew/solve-feature/outcome"
   wait "$waiter"
   [ "$(cat "$T/wait-out")" = "report-cli: ready pr=9" ]
 }
@@ -262,13 +262,13 @@ SH
   export CREW_AFK_WAIT_INTERVAL=0.1
   stub_orca
   bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
-  touch -t 202001010000 "$T/orca-wt/app-report-cli/.solve-feature/run.slug"
+  touch -t 202001010000 "$T/orca-wt/app-report-cli/.coding-crew/solve-feature/run.slug"
   bash "$SCRIPT" dispatch report-cli "${LAUNCH[@]}" >/dev/null
   bash "$SCRIPT" wait report-cli >"$T/wait-out" &
   waiter=$!
   sleep 0.5
   kill -0 "$waiter"
-  echo 'ready pr=7' > "$WT/.solve-feature/outcome"
+  echo 'ready pr=7' > "$WT/.coding-crew/solve-feature/outcome"
   touch "$T/release"
   for _ in $(seq 1 30); do kill -0 "$waiter" 2>/dev/null || break; sleep 0.1; done
   ! kill -0 "$waiter" 2>/dev/null || { kill "$waiter"; echo "wait did not return"; return 1; }
@@ -288,7 +288,7 @@ SH
 
 @test "status leaves out a worktree crew-afk did not dispatch, such as a solve-feature run started by hand" {
   git -C "$MAIN" worktree add -q --detach "$T/by-hand"
-  mkdir -p "$T/by-hand/.solve-feature"
+  mkdir -p "$T/by-hand/.coding-crew/solve-feature"
   run bash "$SCRIPT" status
   [ "$output" = "no crew-afk run" ]
 }

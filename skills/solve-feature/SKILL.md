@@ -25,7 +25,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      left, go to step 3.
    2. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Use the solve-issue skill on <ref>; write your outcome and
-     report to <repo>/.solve-feature/coder.report.md`. When `coder-model=`
+     report to <repo>/.coding-crew/solve-feature/coder.report.md`. When `coder-model=`
      is non-empty, run it on the model in your own list that matches that name (a family, with an optional
      version): a version you do not offer → the closest model of the same family; a family you do not offer → your
      own model. When it is empty, on your own. Wait for it to finish.
@@ -34,14 +34,14 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
 3. **Review, fix and describe**, on `<n>`, the last `pr=` printed (by `land`, else `start`). With none, `next`
    printed why nothing landed: report it and end.
    1. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working directory —
-     with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.solve-feature/spec.md; write the report to <repo>/.solve-feature/pr-<n>.review.json`.
+     with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.coding-crew/solve-feature/spec.md; write the report to <repo>/.coding-crew/solve-feature/pr-<n>.review.json`.
      When `reviewer-model=` is non-empty, run it on the model in your own list that matches that name, as for
      `coder-model=`; when it is empty, on your own. Wait for it to finish.
-   2. Only when `jq '.findings // [] | length' .solve-feature/pr-<n>.review.json` prints more than 0:
+   2. Only when `jq '.findings // [] | length' .coding-crew/solve-feature/pr-<n>.review.json` prints more than 0:
      run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Use the tdd skill to fix every
-     finding in <repo>/.solve-feature/pr-<n>.review.json; list any you could not fix, one per line,
-     in <repo>/.solve-feature/pr-<n>.unfixed.md, and leave that file absent if you fixed them all. This
+     finding in <repo>/.coding-crew/solve-feature/pr-<n>.review.json; list any you could not fix, one per line,
+     in <repo>/.coding-crew/solve-feature/pr-<n>.unfixed.md, and leave that file absent if you fixed them all. This
      run is non-interactive: the report's findings are the approved plan; ask no questions`. Run it on `coder-model=` as for each issue's coder.
      Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" fix <slug> <n> <branch>` — always, whatever the subagents
@@ -49,9 +49,9 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      Report its last line, `FIX: findings=<k> needs-attention=<a> review-again=yes|no`. After the first review,
      `review-again=yes` means run 3.1–3.3 once more; after the second review, go on to 3.4 whatever it prints.
    4. Run a **fresh subagent** — none of this conversation, the repo's working directory — with exactly
-     this prompt: `Use the write-pr skill on PR #<n>; its intent is the spec in <repo>/.solve-feature/spec.md
-     and its checks passed (<repo>/.solve-feature/pr-<n>.checks.log). Write it to
-     <repo>/.solve-feature/pr-<n>.summary.md`. Wait for it to finish.
+     this prompt: `Use the write-pr skill on PR #<n>; its intent is the spec in <repo>/.coding-crew/solve-feature/spec.md
+     and its checks passed (<repo>/.coding-crew/solve-feature/pr-<n>.checks.log). Write it to
+     <repo>/.coding-crew/solve-feature/pr-<n>.summary.md`. Wait for it to finish.
    5. `bash "<skill-dir>/scripts/solve-feature.sh" describe <slug> <n>` — writes the PR's body and title, marks the
      draft ready when nothing needs a person, and prints the run's outcome, `ready pr=<n>` or
      `needs-attention pr=<n>`. Report it.
@@ -68,7 +68,7 @@ commits when in the same checkout. A push stop of `start` or after a review was 
 Run it where an unattended agent may change the checkout — a worktree or a container, not the one
 the user works in. Nothing takes a lock: never start a second run on a slug whose run is still going.
 
-Every run ends with one line in `<repo>/.solve-feature/outcome` — `ready pr=<n>`, `needs-attention pr=<n>` or
+Every run ends with one line in `<repo>/.coding-crew/solve-feature/outcome` — `ready pr=<n>`, `needs-attention pr=<n>` or
 `stopped: <what> failed: <reason>` — for a host to read; no file means the run never finished. `<what>` is the
 subcommand that stopped (`start failed: …`, `next failed: nothing landed: …`), or the issue ref or `review` and
 the step (`2 checks failed: …`, `review fix failed: …`).

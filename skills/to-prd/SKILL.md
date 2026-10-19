@@ -53,7 +53,7 @@ Report every change as "said X → actually Y (source)". Fix each decision built
 
    After a `crew-grill` or `crew-brainstorm` summary, re-check only what the PRD adds beyond it — the summary just went through this pass; a standalone run re-checks everything the PRD cites. Necessity is settled by the design you were handed. Revise each corrected decision in the PRD before publishing it, and report the corrections to the user.
 
-6. Then write the PRD to `.scratch/<feature-slug>/.prd-draft.md` and publish it, with that path as `<file>`:
+6. Then write the PRD to `.coding-crew/scratch/<feature-slug>/.prd-draft.md` and publish it, with that path as `<file>`:
 
    ```bash
    node "$TRACKER" publish-prd --feature-slug <feature-slug> --title "<feature title>" --body-file <file>
@@ -64,9 +64,9 @@ Report every change as "said X → actually Y (source)". Fix each decision built
    - **local** — the PRD is a file with no other title, so the body you write opens with `# PRD: <feature title>`.
    - **github** — `--title` titles the issue `PRD: <feature title>`, so the body has no such heading. The PRD becomes the feature's root issue, or a sub-issue of the root the feature already has.
 
-**Security**: Only write to paths under `.scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `config.json` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
+**Security**: Only write to paths under `.coding-crew/scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `config.json` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
 
-> **Never commit `PRD.md`.** (Local tracker only — on a remote tracker the PRD is an issue, with no local file to accidentally commit.) This file lives under `.scratch/`, which the tracker CLI gitignores (`.scratch/.gitignore`). Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`.
+> **Never commit `PRD.md`.** (Local tracker only — on a remote tracker the PRD is an issue, with no local file to accidentally commit.) This file lives under `.coding-crew/scratch/`, which the tracker CLI gitignores (`.coding-crew/scratch/.gitignore`). Do not run `git add -f`, `git add .coding-crew/scratch/`, or any command that stages files under `.coding-crew/scratch/`.
 
 <prd-template>
 

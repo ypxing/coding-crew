@@ -43,14 +43,14 @@ wt="$BATS_TEST_TMPDIR/wt"
 rm -rf "$wt"
 git worktree add -q --detach "$wt" >&2
 touch "$wt/ok.txt"
-mkdir -p "$wt/.solve-feature"
+mkdir -p "$wt/.coding-crew/solve-feature"
 # A different cost from wait's: the smoke takes its cost from the wait line, not from the log.
-printf 'starting\n{"type":"result","subtype":"success","total_cost_usd":9.99}\n' > "$wt/.solve-feature/run.log"
-echo '{"findings":[{"severity":"LOW"},{"severity":"HIGH"}]}' > "$wt/.solve-feature/pr-9.review.json"
-echo "${OUTCOME:-ready pr=9}" > "$wt/.solve-feature/outcome"
+printf 'starting\n{"type":"result","subtype":"success","total_cost_usd":9.99}\n' > "$wt/.coding-crew/solve-feature/run.log"
+echo '{"findings":[{"severity":"LOW"},{"severity":"HIGH"}]}' > "$wt/.coding-crew/solve-feature/pr-9.review.json"
+echo "${OUTCOME:-ready pr=9}" > "$wt/.coding-crew/solve-feature/outcome"
 sleep 0.2 &
 echo "worktree=$wt"
-echo "log=$wt/.solve-feature/run.log"
+echo "log=$wt/.coding-crew/solve-feature/run.log"
 echo "pid=$!"
 SH
   # `npx skills add`: logs its argv and dir, then writes what a single-agent install writes — the skills

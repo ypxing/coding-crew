@@ -14,7 +14,7 @@
 #   BLOCKED: depends on <file> which is not yet done
 #   BLOCKED: checks library missing from scripts/checks — re-install coding-crew
 # --issue is optional: an issue handed over inline has no Blocked by or PRD to resolve, and no slug. A PRD path is
-# resolved against the checkout that holds the issue's .scratch/, then against --project-root.
+# resolved against the checkout that holds the issue's .coding-crew/scratch/, then against --project-root.
 
 set -uo pipefail
 
@@ -50,8 +50,8 @@ if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
   exit 1
 fi
 
-# A relative ref names a path in --project-root, else in the main checkout: .scratch/ is gitignored, so in a
-# linked worktree the tracker's `.scratch/…` refs exist only there.
+# A relative ref names a path in --project-root, else in the main checkout: .coding-crew/scratch/ is gitignored, so in a
+# linked worktree the tracker's `.coding-crew/scratch/…` refs exist only there.
 case "$ISSUE" in
   "" | /*) ;;
   *)
@@ -78,9 +78,9 @@ if [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
     | grep -oE '[A-Za-z0-9._-]+\.md' | awk '!seen[$0]++')
 fi
 
-# .scratch/ is gitignored, so it lives in the checkout that wrote the issue, not always this one.
+# .coding-crew/scratch/ is gitignored, so it lives in the checkout that wrote the issue, not always this one.
 ISSUE_ROOT="$PROJECT_ROOT"
-case "$ISSUE" in */.scratch/*) ISSUE_ROOT="${ISSUE%%/.scratch/*}" ;; esac
+case "$ISSUE" in */.coding-crew/scratch/*) ISSUE_ROOT="${ISSUE%%/.coding-crew/scratch/*}" ;; esac
 
 PRD=""
 if [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then

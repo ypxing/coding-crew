@@ -23,7 +23,8 @@ scan_skill_paths() {
   local lib_token="[^[:space:]\"'\`(=]*($libs)/[^[:space:]\"'\`)]*"
   local lib_ok="(^|/)scripts/($libs)/|\\\$\{?SELF[A-Z_]*\}?/($libs)/"
   while IFS= read -r f; do
-    hits+=$(grep -nE "$into_skill" "$root/$f" | sed "s|^|$f:|")$'\n'
+    # .coding-crew/solve-feature/ is solve-feature's run directory in the consuming repo, not the skill.
+    hits+=$(sed 's#\.coding-crew/solve-feature/#<run-dir>/#g' "$root/$f" | grep -nE "$into_skill" | sed "s|^|$f:|")$'\n'
     hits+=$(grep -noE "$lib_token" "$root/$f" | while IFS=: read -r n tok; do
       [[ "$tok" =~ $lib_ok ]] || echo "$f:$n: $tok"
     done)$'\n'

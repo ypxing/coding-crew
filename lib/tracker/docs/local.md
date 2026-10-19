@@ -1,6 +1,6 @@
 # Issue tracker: Local Markdown
 
-Issues and PRDs for this repo live as markdown files in `.scratch/`.
+Issues and PRDs for this repo live as markdown files in `.coding-crew/scratch/`.
 
 ## Tracker config
 
@@ -26,7 +26,7 @@ TRACKER="<skills-dir>/solve-issue/scripts/tracker/cli.mjs"   # e.g. ~/.claude/sk
 ```
 
 ```bash
-node "$TRACKER" fetch <ref> [--comments]                  # print one issue; <ref> is its path under .scratch/
+node "$TRACKER" fetch <ref> [--comments]                  # print one issue; <ref> is its path under .coding-crew/scratch/
 node "$TRACKER" features                                  # list the features: <slug>, open|closed, count of issues that can start now
 node "$TRACKER" prd --feature-slug <slug>                 # print the feature's PRD.md
 node "$TRACKER" next --feature-slug <slug>                # the absolute path of the next issue to run, or exit 3
@@ -42,25 +42,25 @@ node "$TRACKER" reopen <ref>                              # undo mark-done: read
 ```
 
 Exit codes, every op: `0` ok, `1` the op failed (stderr says why), `2` a usage error or a ref
-outside `.scratch/`, `3` not found.
+outside `.coding-crew/scratch/`, `3` not found.
 
 `next` prints the path of the first open file, in filename order, whose `Status:` is
 `ready-for-agent` and whose every blocker in `issues-deps.json` sits in the feature's `done/`; it prints nothing and exits `3` when there is none.
 
-`features` prints one tab-separated line per `.scratch/<slug>/` directory that has an `issues/`
+`features` prints one tab-separated line per `.coding-crew/scratch/<slug>/` directory that has an `issues/`
 subdirectory, sorted by slug: `<slug>`, `open` (`issues/open/` holds an `.md` file) or `closed`, and
 the count of issues that can start now: `Status: ready-for-agent` files in `issues/open/` whose
 every blocker is in the feature's `issues/done/`, as `next` reads them. A directory without `issues/` is
-not listed, and no `.scratch/` prints nothing.
+not listed, and no `.coding-crew/scratch/` prints nothing.
 
-`publish-issues` writes each draft to `.scratch/<slug>/issues/open/<NN>-<slug>.md` (numbered from
-`01`) and the drafts' `deps.json` to `.scratch/<slug>/issues/issues-deps.json` — a flat filename
+`publish-issues` writes each draft to `.coding-crew/scratch/<slug>/issues/open/<NN>-<slug>.md` (numbered from
+`01`) and the drafts' `deps.json` to `.coding-crew/scratch/<slug>/issues/issues-deps.json` — a flat filename
 → blocker-filenames map. That file, not each issue's `## Blocked by` prose, is what `next` and
 `features` read to decide whether an issue can start: it is the only source of blockers, an
 issue without an entry (or a feature without the file) has none, and a `## Blocked by` edited by
 hand after publish does not change dispatch; `rewrite` sets the issue's entry from its new `## Blocked by`. It exits `4` when the feature
 already has issues in `done/` and `5` when it has open ones and `--replace` is absent; both write
-nothing. `publish-prd` writes `.scratch/<slug>/PRD.md`.
+nothing. `publish-prd` writes `.coding-crew/scratch/<slug>/PRD.md`.
 
 `mark-done` does not evaluate criteria for you — it only checks that you already did. Before
 running it, verify every `- [ ]` in `## Acceptance criteria` (and `## Cross-cutting Requirements`,
@@ -76,7 +76,7 @@ Pass `--force` only for a descope a person approved. On success it sets `Status:
 `issues/done/` (sibling of `issues/open/`); an issue already in `done/` exits 0.
 
 `done` means implemented and merged into the feature branch, not shipped — for this tracker
-there is no later state: nothing outside `.scratch/` reads it, so no PR has anything to close.
+there is no later state: nothing outside `.coding-crew/scratch/` reads it, so no PR has anything to close.
 
 ## Reopen an issue
 
@@ -86,7 +86,7 @@ ticked criteria ticked. solve-feature runs it when an issue's checks fail after 
 
 To put a finished issue in a human's hands instead:
 
-1. Move the file from `.scratch/<slug>/issues/done/` back to `.scratch/<slug>/issues/open/`.
+1. Move the file from `.coding-crew/scratch/<slug>/issues/done/` back to `.coding-crew/scratch/<slug>/issues/open/`.
 2. Set its `Status:` line to `ready-for-human`.
 
 ## Labels
@@ -104,10 +104,10 @@ The agents speak in terms of six canonical triage labels, each the `Status:` lin
 
 ## Workspace
 
-Each feature slug maps to a directory under `.scratch/`. Whenever the tracker CLI writes there, it creates `.scratch/.gitignore` holding `*` if none exists, so issue files never dirty the repo's tree; an existing one is left as it is.
+Each feature slug maps to a directory under `.coding-crew/scratch/`. Whenever the tracker CLI writes there, it creates `.coding-crew/scratch/.gitignore` holding `*` if none exists, so issue files never dirty the repo's tree; an existing one is left as it is.
 
 ```
-.scratch/<feature-slug>/
+.coding-crew/scratch/<feature-slug>/
 ├── PRD.md                    ← optional product requirements doc
 └── issues/
     ├── issues-deps.json      ← optional; filename → blocker-filenames map (written by publish-issues and rewrite)

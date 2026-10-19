@@ -4,7 +4,7 @@ Read this when step 5's quiz has approved the breakdown. Every command runs from
 
 ## Drafts
 
-Render every approved slice as a draft in `.scratch/<feature-slug>/.drafts/` — the same files whatever the tracker is: `NN-<slug>.md`, numbered from `01` in dependency order (blockers first), opening with a `# <title>` line and a `Status:` line (`Status: ready-for-agent` unless the user specifies otherwise), then the issue body template from SKILL.md. `## Blocked by` names another draft by its filename, or an issue that already exists by the filename `known` gives it (below). The CLI turns each draft filename into the ref its issue is created under.
+Render every approved slice as a draft in `.coding-crew/scratch/<feature-slug>/.drafts/` — the same files whatever the tracker is: `NN-<slug>.md`, numbered from `01` in dependency order (blockers first), opening with a `# <title>` line and a `Status:` line (`Status: ready-for-agent` unless the user specifies otherwise), then the issue body template from SKILL.md. `## Blocked by` names another draft by its filename, or an issue that already exists by the filename `known` gives it (below). The CLI turns each draft filename into the ref its issue is created under.
 
 Number the drafts working the **frontier**: any issue whose blockers are all done. For a linear chain that means top-to-bottom; for a DAG with multiple independent roots, number all currently unblocked issues before their dependents.
 
@@ -13,14 +13,14 @@ Number the drafts working the **frontier**: any issue whose blockers are all don
 Write the feature's existing issues beside the drafts:
 
 ```bash
-node "$TRACKER" known --feature-slug <feature-slug> --out .scratch/<feature-slug>/.drafts/known
+node "$TRACKER" known --feature-slug <feature-slug> --out .coding-crew/scratch/<feature-slug>/.drafts/known
 ```
 
 One file per issue already in the feature, named by the ref a `## Blocked by` entry uses for it.
 
 ## Dependency map
 
-Write `.scratch/<feature-slug>/.drafts/deps.json` with the drafts — a flat map from each draft's filename to the filenames of the drafts blocking it, e.g.:
+Write `.coding-crew/scratch/<feature-slug>/.drafts/deps.json` with the drafts — a flat map from each draft's filename to the filenames of the drafts blocking it, e.g.:
 
 ```json
 {
@@ -40,7 +40,7 @@ Source it from the same blocking edges the user confirmed in the quiz — do not
 
 Before publishing, a fresh subagent reads the drafts cold, the way their implementer will: the writer fills omissions from memory, and that is the blind spot this check exists for. Skip it when every draft carries a column-0 `Source:` line (findings already judged, step 1). When the session has no subagent tool, print `builder check skipped: no subagent tool` and publish: never read the drafts yourself in its place.
 
-Give the subagent only the paths of the drafts, `.scratch/<feature-slug>/.drafts/PRD.md` and `known/` when they exist, and read access to the repo. Never give it the conversation, a design summary or the quiz answers. Its prompt:
+Give the subagent only the paths of the drafts, `.coding-crew/scratch/<feature-slug>/.drafts/PRD.md` and `known/` when they exist, and read access to the repo. Never give it the conversation, a design summary or the quiz answers. Its prompt:
 
 ```text
 You are the engineer who will implement these issues. You can read the repo but cannot talk to whoever wrote them. Read each draft in <drafts dir> and <PRD path> if one exists; known/ holds the feature's existing issues. Your job is the omissions and ambiguities you would have to guess at: report only the questions where a wrong guess changes what you build or how a criterion is checked. For each one, give the draft, the question, and why the answer matters. A contradiction between two drafts, or between a draft and the code, is a question like any other. Rank them by importance. Skip anything a draft leaves to the implementer, anything you could reasonably decide, and wording. If nothing important is left, say "nothing important left".
@@ -57,7 +57,7 @@ Print `builder check: N answered, M (auto), K asked`. One round: dispatch no sec
 ## Publish
 
 ```bash
-node "$TRACKER" publish-issues --feature-slug <feature-slug> --drafts .scratch/<feature-slug>/.drafts
+node "$TRACKER" publish-issues --feature-slug <feature-slug> --drafts .coding-crew/scratch/<feature-slug>/.drafts
 ```
 
 It creates the issues in dependency order and prints one `<draft> <ref>` line per issue; the drafts directory (`known/` and `PRD.md` included) is deleted after a full publish. Finish by telling the user the feature slug, the PRD's ref when one was written, and those `<draft> <ref>` lines, with each `ready-for-human` issue marked as one a person must act on: the slug is what every later step takes. Two exits are questions for the user, and both write nothing:

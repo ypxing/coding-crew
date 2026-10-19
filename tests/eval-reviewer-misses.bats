@@ -131,7 +131,7 @@ run_eval() {
   (cd "$R" && node scripts/eval-reviewer-misses.mjs --base "$BASEREF" --head main "$@")
 }
 
-out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
+out_dir() { ls -d "$R"/.coding-crew/scratch/eval-reviewer-misses/*/ | tail -1; }
 
 @test "dry run lists the cases, writes each ref's crew-review prompt, and calls no model" {
   FAKE_FORBID=1 run run_eval --dry-run

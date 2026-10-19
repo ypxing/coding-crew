@@ -4,12 +4,12 @@
 # writer (before `describe`) as subagents of the host agent; every guard is an exit code here.
 #   start <slug> [--branch <name>]  preconditions, the slug among the tracker's features, the branch (--branch, else
 #                                   feature/<slug>; an existing one gets origin's default branch merged in and
-#                                   pushed), .solve-feature/spec.md; prints branch=, coder-model=,
+#                                   pushed), .coding-crew/solve-feature/spec.md; prints branch=, coder-model=,
 #                                   reviewer-model= (CREW_CODER_MODEL / CREW_REVIEWER_MODEL, else
 #                                   .coding-crew/config.json solveFeature.models, else
 #                                   ~/.coding-crew/config.json's) and pr=
 #   next <slug>                     the next ready issue, saved for land; prints its ref. The coder writes its
-#                                   report to .solve-feature/coder.report.md, which land's solve stop names
+#                                   report to .coding-crew/solve-feature/coder.report.md, which land's solve stop names
 #   land <slug> <ref> <branch>      the coder left <branch> clean with <ref> closed: merge in what others pushed to
 #                                   origin/<branch>, and once the checks pass push, and open the draft PR if the
 #                                   branch has none; prints pr=<n>. Failed checks reopen <ref> and push its work
@@ -23,7 +23,7 @@
 #                                   pr-<pr>.head until the attention file is written)
 #   describe <slug> <pr>            write the PR's whole body and title, mark the draft ready when nothing needs a
 #                                   person, then write the outcome
-# .solve-feature/outcome holds the run's result in one line: `ready pr=<n>`, `needs-attention pr=<n>` or
+# .coding-crew/solve-feature/outcome holds the run's result in one line: `ready pr=<n>`, `needs-attention pr=<n>` or
 # `stopped: <what> failed: <reason>`, <what> the subcommand (die, nothing_left) or `<ref> <step>` (stop).
 # Exit: 0 ok; 1 a stop; 2 a usage error; 3 from next when no ready issue is left.
 set -euo pipefail
@@ -55,8 +55,8 @@ for t in gh jq node git; do command -v "$t" >/dev/null || die "$t not found on P
 # The tracker's own SLUG rule: the slug reaches argv, so nothing else gets through.
 [[ "$SLUG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid feature slug: '$SLUG'"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"; cd "$ROOT"
-mkdir -p "$ROOT/.solve-feature" && echo '*' >"$ROOT/.solve-feature/.gitignore" # ignored in any repo, so the tree stays clean
-LOGS="$ROOT/.solve-feature"
+mkdir -p "$ROOT/.coding-crew/solve-feature" && echo '*' >"$ROOT/.coding-crew/solve-feature/.gitignore" # ignored in any repo, so the tree stays clean
+LOGS="$ROOT/.coding-crew/solve-feature"
 # The main checkout, as the tracker finds it: its .coding-crew/ files are read from every worktree, committed or not.
 MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 [ "$(basename "$MAIN_ROOT")" = .git ] && MAIN_ROOT=$(dirname "$MAIN_ROOT") || MAIN_ROOT="$ROOT"
@@ -103,7 +103,7 @@ pr_view() { # sets PR_N when the branch has an OPEN PR, else clears it
   PR_N=$(jq -r 'select(.state == "OPEN") | .number' <<<"$view" 2>/dev/null || true)
 }
 
-# .solve-feature/spec.md, which the reviewer and the PR body read: the PRD, then every issue of the feature, open
+# .coding-crew/solve-feature/spec.md, which the reviewer and the PR body read: the PRD, then every issue of the feature, open
 # or closed, with its acceptance criteria. All of them: an issue another run landed is met in the code, and one
 # still open is a gap a person must see.
 write_spec() {
