@@ -1,9 +1,10 @@
 # Shared bats helper for the solve-feature.sh tests (solve-feature*.bats): setup, the stubs and the
 # helpers more than one of those files uses.
 #
-# solve-feature.sh start|next|land|fix|describe — the guards of solve-feature's loop, which SKILL.md drives with
-# host subagents: start checks the slug, picks the branch and writes the spec, next saves the next ready issue,
-# land asserts what the coder left (branch, clean tree, issue closed, checks) and pushes it into a draft PR, fix
+# solve-feature.sh start|next|land|reviewed|fix|describe — the guards of solve-feature's loop, which SKILL.md drives
+# with host subagents: start checks the slug, picks the branch and writes the spec, next saves the next ready issue,
+# land asserts what the coder left (branch, clean tree, issue closed, checks) and pushes it into a draft PR, reviewed
+# discards what the reviewer changed in the tree, fix
 # gates, commits and pushes what the review's fixer left, and describe writes the PR body, marks it ready when
 # nothing needs a person and writes .coding-crew/solve-feature/outcome.
 #
