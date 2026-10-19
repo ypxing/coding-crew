@@ -26,16 +26,17 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    2. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Use the solve-issue skill on <ref>; write your outcome and
      report to <repo>/.solve-feature/coder.report.md`. When `coder-model=`
-     is non-empty and your host accepts that model name for a subagent, run it on that model;
-     otherwise on your own. Wait for it to finish.
+     is non-empty, run it on the model in your own list that matches that name (a family, with an optional
+     version): a version you do not offer → the closest model of the same family; a family you do not offer → your
+     own model. When it is empty, on your own. Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" land <slug> <ref> <branch>`, with `start`'s `branch=` — always,
      whatever the subagent reported: `land` is what checks and records its result. It prints `pr=<n>`.
 3. **Review, fix and describe**, on `<n>`, the last `pr=` printed (by `land`, else `start`). With none, `next`
    printed why nothing landed: report it and end.
    1. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working directory —
      with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.solve-feature/spec.md; write the report to <repo>/.solve-feature/pr-<n>.review.json`.
-     When `reviewer-model=` is non-empty and your host accepts that model name, run it on that model; otherwise on
-     your own. Wait for it to finish.
+     When `reviewer-model=` is non-empty, run it on the model in your own list that matches that name, as for
+     `coder-model=`; when it is empty, on your own. Wait for it to finish.
    2. Only when `jq '.findings // [] | length' .solve-feature/pr-<n>.review.json` prints more than 0:
      run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Use the tdd skill to fix every
@@ -75,4 +76,4 @@ the step (`2 checks failed: …`, `review fix failed: …`).
 | Setting                                         | Effect                                                         |
 | ----------------------------------------------- | -------------------------------------------------------------- |
 | `--branch <name>`                               | The branch the run uses, never the default branch (default: one named after the slug) |
-| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model, when your host accepts the name: the project's file, then `~/.coding-crew/config.json` for each key it lacks (an Actions runner sees only the project's committed file), then the default (your own) |
+| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model name, a family with an optional version (`opus`, `claude-opus-5-5`, `opus 5.5`): the host runs the subagent on the matching model in its own list, the closest of the same family when it lacks that version, its own model when it lacks the family. Read from the project's file, then `~/.coding-crew/config.json` for each key it lacks (an Actions runner sees only the project's committed file), then the default (your own) |

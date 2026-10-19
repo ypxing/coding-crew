@@ -42,6 +42,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- solve-feature: a `solveFeature.models` value is read as a model family with an optional version (`opus`,
+  `claude-opus-5-5`, `opus 5.5`), which each host matches against its own models, so one committed value works on
+  Claude Code and Copilot; the Actions summary page lists the model ids a Claude run's subagents ran on (#583).
 - tracker, solve-feature, configure-tracker, setup-coding-crew: a user-level `~/.coding-crew/config.json` holds
   defaults for `tracker` and `solveFeature.models`, which a project's `.coding-crew/config.json` overrides value by
   value. configure-tracker asks whether to save for this project (default) or all your projects; enabling Actions in
