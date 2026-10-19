@@ -51,8 +51,8 @@ your host, do the review yourself.
 
 Leave the repo as you found it: never edit, commit or change its tree. Run what helps — the tests, the scripts
 under review, experiments — in a scratch copy when they would write to it, in a new directory from `mktemp -d`, never
-a fixed path such as `/tmp/<name>`: other reviews share the machine. When a command fails for a missing
-dependency, install them in the scratch copy with the dep-install skill. Start helper subagents when
+a fixed path such as `/tmp/<name>`: other reviews share the machine. When running the tests would help and the
+scratch copy has no dependencies installed, install them there first with the dep-install skill. Start helper subagents when
 they help; you write every finding yourself.
 
 Gather it yourself: the change's diff (`git diff <base>..HEAD`, or `gh pr diff <n>`) and the spec as Inputs
@@ -79,9 +79,10 @@ Answer three questions.
    - **Old forms and old behaviour.** For each thing the change renames, removes or moves, or makes behave
      differently (when it runs, what it outputs), find whatever still names or assumes the old form — code, docs,
      config, prompts, tests — and read it as it stands now. When the change replaces a path (a new writer, helper
-     or publisher for an old one), compare what the deleted code produced with what the new code produces — every
-     field, side effect and error, read from the diff's removed lines; a difference no spec line asks for is a
-     finding.
+     or publisher for an old one), read the deleted files in full and trace the old path from where it starts to
+     every write or message it ends in — each payload it built, each handler it fed — then compare what it finally
+     stored or sent with what the new path does: every field, side effect and error. A difference no spec line asks
+     for is a finding.
    - **One fact, every writer and reader.** When the change makes one place the record of a fact, check that every
      path writing it keeps it current; when it deletes, renames or maps references, check what still points at the
      old ones. When new code reads an input existing code already reads (a file format, a heading, a flag), find an
