@@ -33,7 +33,8 @@ name: solve-feature
 #
 # Model: the agent CLI's default for the account, unless the repo variable CREW_MODEL names one, passed as
 # `--model` (a Claude Code alias such as `opus`, or a Copilot model name). The subagents run on it too, unless
-# .coding-crew/config.json's solveFeature.models names theirs.
+# .coding-crew/config.json's solveFeature.models names theirs. The repo variables CREW_CODER_MODEL and
+# CREW_REVIEWER_MODEL override solveFeature.models for the coder (and fixer) and the reviewer on this runner only.
 #
 # Billing, Copilot: with `github.token`, a repo owned by an organisation bills the organisation (its budgets,
 # not any user's), which needs the organisation policy "Allow use of Copilot CLI billed to the
@@ -108,6 +109,8 @@ jobs:
     env:
       CREW_AGENT: ${{ vars.CREW_AGENT || 'copilot' }}
       CREW_MODEL: ${{ vars.CREW_MODEL }}
+      CREW_CODER_MODEL: ${{ vars.CREW_CODER_MODEL }}
+      CREW_REVIEWER_MODEL: ${{ vars.CREW_REVIEWER_MODEL }}
     steps:
       - uses: actions/checkout@v4
         with:

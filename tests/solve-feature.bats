@@ -21,7 +21,7 @@ setup() {
   TEMP_DIR=$(cd "$(mktemp -d)" && pwd -P)
   export STATE="$TEMP_DIR/state" HOME="$TEMP_DIR/home"
   mkdir -p "$STATE" "$HOME"
-  unset PR_EXISTS PR_DRAFT PR_HEAD_OID PR_STATE PR_HEAD_REF GH_READY_FAIL TRACKER_KIND SOLVE_FEATURE_HOST
+  unset PR_EXISTS PR_DRAFT PR_HEAD_OID PR_STATE PR_HEAD_REF GH_READY_FAIL TRACKER_KIND SOLVE_FEATURE_HOST CREW_CODER_MODEL CREW_REVIEWER_MODEL
 
   INSTALL="$HOME/skill/scripts"
   mkdir -p "$HOME/skill"
@@ -477,6 +477,36 @@ main_moves() {
   run bash "$SCRIPT" start feat
   [ "$(out coder-model)" = sonnet ]
   [ "$(out reviewer-model)" = opus ]
+}
+
+@test "start takes each model from CREW_CODER_MODEL / CREW_REVIEWER_MODEL before both config files, printed as set; an empty one falls through" {
+  mkdir -p "$HOME/.coding-crew"
+  echo '{"solveFeature":{"models":{"coder":"haiku","reviewer":"haiku"}}}' > "$HOME/.coding-crew/config.json"
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  echo '{"tracker":{"kind":"github"},"solveFeature":{"models":{"coder":"sonnet","reviewer":"opus"}}}' > .coding-crew/config.json
+  git commit -q -am "project models"
+  run env CREW_CODER_MODEL='gpt-5.4' CREW_REVIEWER_MODEL='opus 5.5' bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out coder-model)" = gpt-5.4 ]
+  [ "$(out reviewer-model)" = 'opus 5.5' ]
+
+  run env CREW_CODER_MODEL='gpt-5.4' bash "$SCRIPT" start feat
+  [ "$(out coder-model)" = gpt-5.4 ]
+  [ "$(out reviewer-model)" = opus ] || { echo "$output"; return 1; }
+  run env CREW_REVIEWER_MODEL='fable' bash "$SCRIPT" start feat
+  [ "$(out coder-model)" = sonnet ]
+  [ "$(out reviewer-model)" = fable ]
+
+  run env CREW_CODER_MODEL= CREW_REVIEWER_MODEL= bash "$SCRIPT" start feat
+  [ "$(out coder-model)" = sonnet ]
+  [ "$(out reviewer-model)" = opus ]
+
+  echo '{"tracker":{"kind":"github"}}' > .coding-crew/config.json
+  git commit -q -am "no project models"
+  run env CREW_CODER_MODEL='claude-opus-5-5' bash "$SCRIPT" start feat
+  [ "$(out coder-model)" = claude-opus-5-5 ]
+  [ "$(out reviewer-model)" = haiku ]
 }
 
 @test "start writes .solve-feature/spec.md: the PRD, then each issue known writes with its criteria as plain bullets" {
@@ -1431,6 +1461,10 @@ yaml_to_json() {
   jq -e '.[0] | (.group | test("solve-feature-.*slug")) and .["cancel-in-progress"] == false' <<<"$conc" >/dev/null
   [ "$(jq -r '.jobs.solve.env.CREW_AGENT' "$json")" = "\${{ vars.CREW_AGENT || 'copilot' }}" ]
   [ "$(jq -r '.jobs.solve.env.CREW_MODEL' "$json")" = '${{ vars.CREW_MODEL }}' ]
+  [ "$(jq -r '.jobs.solve.env.CREW_CODER_MODEL' "$json")" = '${{ vars.CREW_CODER_MODEL }}' ]
+  [ "$(jq -r '.jobs.solve.env.CREW_REVIEWER_MODEL' "$json")" = '${{ vars.CREW_REVIEWER_MODEL }}' ]
+  grep -qxF '      CREW_CODER_MODEL: ${{ vars.CREW_CODER_MODEL }}' "$REPO_ROOT/.github/workflows/solve-feature.yml"
+  grep -qxF '      CREW_REVIEWER_MODEL: ${{ vars.CREW_REVIEWER_MODEL }}' "$REPO_ROOT/.github/workflows/solve-feature.yml"
   # The logs step runs whatever the run step did, and keeps .solve-feature/, hidden files included.
   jq -e '.jobs.solve.steps[-2] | .if == "always()" and (.uses | startswith("actions/upload-artifact@"))
     and .with.path == ".solve-feature/" and .with["include-hidden-files"] == true' "$json" >/dev/null
