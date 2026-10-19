@@ -42,6 +42,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- setup-coding-crew: the GitHub Actions workflow template installs the agent CLI with `npm install -g
+  --ignore-scripts`, so no dependency's lifecycle script runs with the runner's token (flagged by Wiz IaC); for
+  claude it then runs only the package's own `install.cjs`, which fetches the binary. A repo that installed the
+  workflow gets it with `/setup-coding-crew redo actions` (#574).
 - solve-feature: `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL`, set in your shell or as the workflow's repo variables,
   override `solveFeature.models` for the coder (and fixer) and the reviewer, without editing the committed
   `.coding-crew/config.json`; an empty one is ignored (#586).

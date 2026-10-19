@@ -122,9 +122,14 @@ jobs:
 
       - name: Install the agent CLI
         run: |
+          # --ignore-scripts: no dependency's lifecycle script runs with the runner's token. Claude Code's
+          # binary comes from its own postinstall, so that one script runs by name.
           case "$CREW_AGENT" in
-            copilot) npm install -g @github/copilot ;;
-            claude) npm install -g @anthropic-ai/claude-code ;;
+            copilot) npm install -g --ignore-scripts @github/copilot ;;
+            claude)
+              npm install -g --ignore-scripts @anthropic-ai/claude-code
+              node "$(npm root -g)/@anthropic-ai/claude-code/install.cjs"
+              ;;
             *) echo "::error::repo variable CREW_AGENT is '$CREW_AGENT': copilot or claude"; exit 1 ;;
           esac
 

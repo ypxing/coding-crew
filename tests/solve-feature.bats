@@ -1515,6 +1515,17 @@ SH
   run env CREW_AGENT=codex bash -e "$TEMP_DIR/install-step.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"CREW_AGENT is 'codex': copilot or claude"* ]]
+  # No dependency lifecycle scripts run with the runner's token; claude then fetches its binary by its own script.
+  printf '#!/usr/bin/env bash\n[ "$1" = root ] && { echo /g; exit; }\necho "npm $*" >>"$TEMP_DIR/install-argv"\n' > "$STUB/npm"
+  printf '#!/usr/bin/env bash\necho "node $*" >>"$TEMP_DIR/install-argv"\n' > "$STUB/node"
+  chmod +x "$STUB/npm" "$STUB/node"
+  : > "$TEMP_DIR/install-argv"
+  env CREW_AGENT=copilot TEMP_DIR="$TEMP_DIR" bash -e "$TEMP_DIR/install-step.sh"
+  [ "$(cat "$TEMP_DIR/install-argv")" = "npm install -g --ignore-scripts @github/copilot" ]
+  : > "$TEMP_DIR/install-argv"
+  env CREW_AGENT=claude TEMP_DIR="$TEMP_DIR" bash -e "$TEMP_DIR/install-step.sh"
+  [ "$(cat "$TEMP_DIR/install-argv")" = "$(printf '%s\n' 'npm install -g --ignore-scripts @anthropic-ai/claude-code' \
+    'node /g/@anthropic-ai/claude-code/install.cjs')" ]
 
   # The last step, run as Actions would in the checkout whatever the run step did: red unless the outcome line
   # starts with `ready`, and a summary page naming the outcome, the PR, the model and what to read next.
