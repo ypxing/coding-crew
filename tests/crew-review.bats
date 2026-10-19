@@ -44,7 +44,7 @@ SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
   ! grep -qF 'answer its three questions yourself' "$SKILL" || false
   grep -qF 'Start helper subagents whenever they help' "$SKILL"
   grep -qF 'Every judgement about the change is made on your model, never a weaker' "$SKILL"
-  grep -qF 'the report is yours' "$SKILL"
+  grep -qF 'the report is yours, judged across the whole change' "$SKILL"
   ! grep -qF 'you write every finding yourself' "$SKILL" || false
   grep -qF 'print it' "$SKILL"
 }

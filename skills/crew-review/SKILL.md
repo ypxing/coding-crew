@@ -54,7 +54,7 @@ under review, experiments — in a scratch copy when they would write to it, in 
 a fixed path such as `/tmp/<name>`: other reviews share the machine.
 
 Start helper subagents whenever they help. Every judgement about the change is made on your model, never a weaker
-one, and the report is yours.
+one, and the report is yours, judged across the whole change.
 
 Gather it yourself: the change's diff (`git diff <base>..HEAD`, or `gh pr diff <n>`) and the spec as Inputs
 describes it. Read the code at HEAD, not only the diff, and the repo's CLAUDE.md, AGENTS.md and CONTRIBUTING.md

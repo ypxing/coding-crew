@@ -51,8 +51,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 ### Changed
 
 - crew-review: every judgement about the change is made on the reviewer's model, never a weaker one, and the report
-  stays the reviewer's; helper subagents are otherwise unrestricted, so a nested helper on a weaker model no longer
-  writes the PR's review (#592).
+  stays the reviewer's, judged across the whole change; helper subagents are otherwise unrestricted, so a nested
+  helper on a weaker model no longer writes the PR's review (#592).
 - setup-coding-crew: the GitHub Actions workflow template installs the agent CLI with `npm install -g
   --ignore-scripts`, so no dependency's lifecycle script runs with the runner's token (flagged by Wiz IaC); for
   claude it then runs only the package's own `install.cjs`, which fetches the binary. A repo that installed the
