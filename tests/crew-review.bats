@@ -42,12 +42,9 @@ SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
   grep -qF 'When you were started to review it, do the review below' "$SKILL"
   grep -qF 'Use the crew-review skill on <the change>' "$SKILL"
   ! grep -qF 'answer its three questions yourself' "$SKILL" || false
-  grep -qF 'Start helper subagents when they help' "$SKILL"
-  grep -qF 'with no cap on how many' "$SKILL"
-  grep -qF 'returns evidence (command output, `file:line` hits), not verdicts' "$SKILL"
-  grep -qF 'start it on your own model, never a weaker one' "$SKILL"
-  grep -qF 'Check each finding before it goes in the report' "$SKILL"
-  grep -qF 'never hand a helper the whole review or the report' "$SKILL"
+  grep -qF 'Start helper subagents whenever they help' "$SKILL"
+  grep -qF 'Every judgement about the change is made on your model, never a weaker' "$SKILL"
+  grep -qF 'the report is yours' "$SKILL"
   ! grep -qF 'you write every finding yourself' "$SKILL" || false
   grep -qF 'print it' "$SKILL"
 }

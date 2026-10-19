@@ -53,12 +53,8 @@ Leave the repo as you found it: never edit, commit or change its tree. Run what 
 under review, experiments — in a scratch copy when they would write to it, in a new directory from `mktemp -d`, never
 a fixed path such as `/tmp/<name>`: other reviews share the machine.
 
-Start helper subagents when they help, with no cap on how many. An exploring helper gathers facts beyond the diff
-and the spec or runs things — sweeps (every caller, old forms still named), reproductions ("does X break Y?") — on
-any model, and returns evidence (command output, `file:line` hits), not verdicts. On a big change, a reviewing
-helper may review one part of it against the three questions below: start it on your own model, never a weaker one,
-and have it return each finding with its evidence. Check each finding before it goes in the report, and write the
-report yourself: never hand a helper the whole review or the report.
+Start helper subagents whenever they help. Every judgement about the change is made on your model, never a weaker
+one, and the report is yours.
 
 Gather it yourself: the change's diff (`git diff <base>..HEAD`, or `gh pr diff <n>`) and the spec as Inputs
 describes it. Read the code at HEAD, not only the diff, and the repo's CLAUDE.md, AGENTS.md and CONTRIBUTING.md
