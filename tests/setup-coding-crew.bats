@@ -130,3 +130,41 @@ repo_with_worktree() {
   grep -qF 'Use the configure-tracker skill' "$skill"
   ! grep -n 'configure-tracker/' "$skill" || false
 }
+
+# actions_tracker — Step 3's bash block that writes the tracker into the project's config.json.
+actions_tracker() {
+  awk '/^```bash/ { c = 1; b = ""; next } c && /^```/ { c = 0; if (b ~ /Wrote tracker github/) { printf "%s", b; exit } next } c { b = b $0 "\n" }' \
+    "$REPO_ROOT/skills/setup-coding-crew/SKILL.md"
+}
+
+@test "on yes to Actions, Step 3 writes tracker github into a config.json with no tracker section, keeping the rest, then the hint lists it" {
+  local repo="$TEMP_DIR/repo"
+  actions_tracker > "$TEMP_DIR/actions.sh"
+  [ -s "$TEMP_DIR/actions.sh" ]
+  awk '/^## Step 3/ { s = 1 } /^## Step 4/ { s = 0 } s' "$REPO_ROOT/skills/setup-coding-crew/SKILL.md" | grep -q 'Wrote tracker github'
+  step4 > "$TEMP_DIR/hint.sh"
+  mkdir -p "$repo" && cd "$repo" && git init -q -b main
+  git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+
+  run bash "$TEMP_DIR/actions.sh"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "Wrote tracker github to .coding-crew/config.json: the Actions runner sees only the project's files" ]
+  [ "$(jq -c . .coding-crew/config.json)" = '{"tracker":{"kind":"github"}}' ]
+  run bash "$TEMP_DIR/hint.sh"
+  [[ "$output" == *'git add .coding-crew/config.json && git commit'* ]]
+
+  echo '{"solveFeature":{"models":{"coder":"sonnet"}}}' > .coding-crew/config.json
+  git add .coding-crew && git -c user.name=t -c user.email=t@t commit -q -m cfg
+  run bash "$TEMP_DIR/actions.sh"
+  [ "$status" -eq 0 ]
+  [ "$(jq -c . .coding-crew/config.json)" = '{"solveFeature":{"models":{"coder":"sonnet"}},"tracker":{"kind":"github"}}' ]
+  run bash "$TEMP_DIR/hint.sh"
+  [[ "$output" == *'git add .coding-crew/config.json && git commit'* ]]
+
+  echo '{"tracker":{"kind":"local"}}' > .coding-crew/config.json
+  git add .coding-crew && git -c user.name=t -c user.email=t@t commit -q -m local
+  run bash "$TEMP_DIR/actions.sh"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -z "$(git status --porcelain)" ]
+}
