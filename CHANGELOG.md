@@ -42,6 +42,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- solve-feature: `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL`, set in your shell or as the workflow's repo variables,
+  override `solveFeature.models` for the coder (and fixer) and the reviewer, without editing the committed
+  `.coding-crew/config.json`; an empty one is ignored (#586).
 - solve-feature: a `solveFeature.models` value is read as a model family with an optional version (`opus`,
   `claude-opus-5-5`, `opus 5.5`), which each host matches against its own models, so one committed value works on
   Claude Code and Copilot; the Actions summary page lists the model ids a Claude run's subagents ran on (#583).
