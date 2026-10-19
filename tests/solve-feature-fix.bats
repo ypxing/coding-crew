@@ -417,6 +417,17 @@ reviewed_stops() {
   [ "$(discarded)" = "$(printf 'new.txt\nrev.txt\nsub/new.txt\nwork-2.txt')" ]
 }
 
+@test "reviewed discards a nested git repository the reviewer cloned into the tree, so fix never commits it" {
+  reviewed_ready
+  local base; base=$(git rev-parse HEAD)
+  git init -q scratch && echo x > scratch/f.txt
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ ! -e scratch ]
+  [ -z "$(git status --porcelain -uall)" ]
+  [ "$(discarded)" = "scratch/" ]
+}
+
 @test "reviewed keeps config.json and an untracked dev commands file, and lists an empty commit by its hash" {
   loop
   git rm -q --cached .coding-crew/config.json .coding-crew/dev-commands.json && git commit -q -m "setup untracked"
@@ -449,7 +460,7 @@ reviewed_stops() {
   [ "$(discarded)" = "$(printf 'new.txt\nrev.txt')" ]
 }
 
-@test "after a discard fix flags it and deletes the list, and describe leaves the PR a draft needing attention" {
+@test "after a discard fix flags it, and describe leaves the PR a draft needing attention" {
   reviewed_ready
   echo y > new.txt
   run bash "$SCRIPT" reviewed feat 10 feature/feat
@@ -458,11 +469,35 @@ reviewed_stops() {
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(attention)" = "the reviewer changed the tree; discarded: new.txt" ]
-  [ ! -e .coding-crew/solve-feature/pr-10.discarded.md ]
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ]
   [ "${lines[${#lines[@]}-1]}" = "needs-attention pr=10" ]
   ! grep -q '^pr ready' "$STATE/gh.log" || false
+}
+
+@test "a discard stays flagged through a second review round, whose own discard adds to the list" {
+  reviewed_ready
+  echo y > new.txt
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 0 ]
+  echo fixed > fixed.txt
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "${lines[${#lines[@]}-1]}" == *"review-again=yes" ]]
+  # Second round: a clean reviewer, then a fixer that fixes everything.
+  report '{"spec":"met","gaps":[],"findings":[]}'
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 0 ]
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(attention)" = "the reviewer changed the tree; discarded: new.txt" ]
+  run bash "$SCRIPT" describe feat 10
+  [ "${lines[${#lines[@]}-1]}" = "needs-attention pr=10" ]
+  # A second round that discards too lists both rounds' paths.
+  echo z > other.txt
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 0 ]
+  [ "$(discarded)" = "$(printf 'new.txt\nother.txt')" ]
 }
 
 @test "the field case: a zero-finding review whose reviewer rewrote yarn.lock and left package-lock.json gets no commit and pushes neither" {

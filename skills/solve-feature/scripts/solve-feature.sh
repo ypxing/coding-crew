@@ -291,7 +291,7 @@ land() {
 # The reviewer may run the tests and its own experiments but leaves the tree as it found it; what it left anyway
 # (installed dependencies, a commit) is discarded before the fixer runs, so fix never commits it as the fixer's.
 reviewed() {
-  local base="$LOGS/review.base" report="$LOGS/pr-$PR.review.json" saved paths redo
+  local base="$LOGS/review.base" report="$LOGS/pr-$PR.review.json" list="$LOGS/pr-$PR.discarded.md" saved paths redo
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop reviewer "branch changed to '$(git branch --show-current)'"
   [ -s "$base" ] || stop reviewer "no saved head at $base: run next $SLUG first"
   saved=$(cat "$base")
@@ -299,13 +299,15 @@ reviewed() {
     paths=$({ git diff --name-only "$saved" HEAD; git status --porcelain -uall -- "${BRANCH_WORK[@]}" | cut -c4-; } | sort -u)
     # An empty commit changes no path, yet is still the reviewer's.
     [ -n "$paths" ] || paths=$(git log --format=%h "$saved..HEAD")
-    # Written first, so a discard that fails part-way is still flagged once a person finishes it.
-    printf '%s\n' "$paths" >"$LOGS/pr-$PR.discarded.md"
+    # Written first, so a discard that fails part-way is still flagged once a person finishes it. Added to an earlier
+    # round's list, which start alone deletes: describe flags every round's discard.
+    touch "$list" && printf '%s\n' "$paths" | sort -u -o "$list" - "$list"
     redo="clean the tree by hand to $saved, then run reviewed $SLUG $PR $BRANCH"
     # Not --hard: that would also revert a person's uncommitted config.json, which BRANCH_WORK leaves out.
     git reset -q "$saved" && git checkout -q -- "${BRANCH_WORK[@]}" || stop reviewer "git reset failed (see above): $redo"
-    # No -x: ignored files (dependency dirs, this run's own files) stay.
-    git clean -fdq -- "${BRANCH_WORK[@]}" || stop reviewer "git clean failed (see above): $redo"
+    # No -x: ignored files (dependency dirs, this run's own files) stay. -ff: a nested repository (a clone,
+    # a worktree) is the reviewer's too, since start and land require a clean tree; one -f skips it.
+    git clean -ffdq -- "${BRANCH_WORK[@]}" || stop reviewer "git clean failed (see above): $redo"
   fi
   [ -f "$report" ] || stop reviewer "no review report at $report"
   jq -e . "$report" >/dev/null 2>&1 || stop reviewer "unreadable review report $report"
@@ -359,7 +361,7 @@ fix() {
   [ "$total" = 0 ] || [ "$moved" = yes ] || [ -s "$unfixed" ] || attention+=$'\n'"the fixer changed nothing"
   # Fixes to a CRITICAL/HIGH/MEDIUM finding are worth reviewing again; SKILL.md caps that at one re-review.
   [ "$severe" = 0 ] || [ "$moved" = no ] || again=yes
-  rm -f "$unfixed" "$discarded"
+  rm -f "$unfixed"
   # describe reads it: an empty file is a review with nothing needing a person.
   grep -v '^[[:space:]]*$' <<<"$attention" >"$LOGS/pr-$PR.attention.md" || true
   # A second review round starts from the head its reviewer saw.
