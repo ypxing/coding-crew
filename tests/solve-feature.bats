@@ -9,10 +9,10 @@ load helpers/solve-feature
 
 @test "no subcommand, an unknown one or a wrong argument count exits 2 with the usage line" {
   local args
-  for args in "" "feat" "run feat" "next" "land feat 2" "fix feat 10" "fix feat 10 feature/feat x" "fix feat ten feature/feat" "describe feat" "describe feat ten" "start feat other"; do
+  for args in "" "feat" "run feat" "next" "land feat 2" "fix feat 10" "fix feat 10 feature/feat x" "fix feat ten feature/feat" "reviewed feat 10" "reviewed feat ten feature/feat" "describe feat" "describe feat ten" "start feat other"; do
     run bash "$SCRIPT" $args
     [ "$status" -eq 2 ] || { echo "'$args': status $status"; return 1; }
-    [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
+    [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
   done
   [ ! -f "$STATE/gh.log" ]
   [ ! -e "$WORK/.coding-crew/solve-feature/outcome" ]
@@ -356,6 +356,7 @@ EOF
   mkdir -p .coding-crew/solve-feature && echo '*' > .coding-crew/solve-feature/.gitignore && echo 'ready pr=7' > .coding-crew/solve-feature/outcome
   echo old > .coding-crew/solve-feature/pr-7.unfixed.md && echo old > .coding-crew/solve-feature/pr-7.review.json && echo old > .coding-crew/solve-feature/pr-7.head
   echo old > .coding-crew/solve-feature/pr-7.summary.md && echo old > .coding-crew/solve-feature/pr-7.attention.md
+  echo old > .coding-crew/solve-feature/pr-7.discarded.md && echo old > .coding-crew/solve-feature/review.base
   rm "$STATE/prd.md"
   jq 'map(if .number == 2 then .state = "CLOSED" else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
   run bash "$SCRIPT" start feat
@@ -369,6 +370,8 @@ EOF
   [ ! -e .coding-crew/solve-feature/pr-7.summary.md ]
   [ ! -e .coding-crew/solve-feature/pr-7.attention.md ]
   [ ! -e .coding-crew/solve-feature/pr-7.head ]
+  [ ! -e .coding-crew/solve-feature/pr-7.discarded.md ]
+  [ ! -e .coding-crew/solve-feature/review.base ]
 }
 
 # --- next ------------------------------------------------------------------------------
@@ -379,9 +382,12 @@ EOF
   [ "$output" = 2 ]
   [ "$(cat .coding-crew/solve-feature/2.issue.md)" = "$(cat "$STATE/2.md")" ]
   jq 'map(.state = "CLOSED")' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  echo extra > extra.txt && git add extra.txt && git commit -q -m extra
   PR_EXISTS=1 run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
   [ -z "$output" ]
+  # The reviewer runs next, from this head.
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
   [ ! -e .coding-crew/solve-feature/outcome ]
   NEXT_PRINTS='2; rm -rf /' run bash "$SCRIPT" next feat
   [ "$status" -eq 1 ]
@@ -533,6 +539,15 @@ EOF
   local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
   grep -qF 'FIX: findings=<k> needs-attention=<a> review-again=yes|no' "$skill"
   grep -qF '`review-again=yes` means run 3.1–3.3 once more; after the second review, go on to 3.4 whatever it prints' "$skill"
+}
+
+@test "SKILL.md starts the fixer on reviewed's findings=, and a stop's recovery is for a person, never the agent" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
+  grep -qF 'solve-feature.sh" reviewed <slug> <n> <branch>' "$skill"
+  grep -qF 'Only when it prints `findings=` greater than 0' "$skill"
+  ! grep -qF "jq '.findings" "$skill" || false
+  grep -qF 'A non-zero exit of `fix` stops the run like any other: do not start a subagent or fix the checks yourself' "$skill"
+  grep -qF "a stop's recovery steps are for a person, never for you to carry out" "$skill"
 }
 
 @test "install.sh claude --skill solve-feature ships the script, crew-review and setup-coding-crew, and no Actions host" {

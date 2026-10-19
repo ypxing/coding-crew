@@ -37,7 +37,8 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.coding-crew/solve-feature/spec.md; write the report to <repo>/.coding-crew/solve-feature/pr-<n>.review.json`.
      When `reviewer-model=` is non-empty, run it on the model in your own list that matches that name, as for
      `coder-model=`; when it is empty, on your own. Wait for it to finish.
-   2. Only when `jq '.findings // [] | length' .coding-crew/solve-feature/pr-<n>.review.json` prints more than 0:
+   2. `bash "<skill-dir>/scripts/solve-feature.sh" reviewed <slug> <n> <branch>` — always: it discards what the
+     reviewer changed in the tree, flags it for the PR, and prints `findings=<k>` last. Only when it prints `findings=` greater than 0:
      run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Use the tdd skill to fix every
      finding in <repo>/.coding-crew/solve-feature/pr-<n>.review.json; list any you could not fix, one per line,
@@ -48,6 +49,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      reported. It gates the fixes with the checks, commits and pushes them, and records what needs a person.
      Report its last line, `FIX: findings=<k> needs-attention=<a> review-again=yes|no`. After the first review,
      `review-again=yes` means run 3.1–3.3 once more; after the second review, go on to 3.4 whatever it prints.
+     A non-zero exit of `fix` stops the run like any other: do not start a subagent or fix the checks yourself.
    4. Run a **fresh subagent** — none of this conversation, the repo's working directory — with exactly
      this prompt: `Use the write-pr skill on PR #<n>; its intent is the spec in <repo>/.coding-crew/solve-feature/spec.md
      and its checks passed (<repo>/.coding-crew/solve-feature/pr-<n>.checks.log). Write it to
@@ -58,7 +60,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
 
 **Any other non-zero exit stops the run.** Relay the script's message as it printed it (a stop names
 the step, the reason and, for the checks, its log; a `solve` stop, the coder's report) — and end; do
-not retry, fix or close anything.
+not retry, fix or close anything: a stop's recovery steps are for a person, never for you to carry out.
 Once the cause is fixed, a re-run skips the issues already done and reuses the branch and the PR, which `start`
 brings up to date with the default branch first. A `checks`
 stop has already reopened its issue and pushed its work, so the re-run's coder starts from that work; a `land`
@@ -71,7 +73,7 @@ the user works in. Nothing takes a lock: never start a second run on a slug whos
 Every run ends with one line in `<repo>/.coding-crew/solve-feature/outcome` — `ready pr=<n>`, `needs-attention pr=<n>` or
 `stopped: <what> failed: <reason>` — for a host to read; no file means the run never finished. `<what>` is the
 subcommand that stopped (`start failed: …`, `next failed: nothing landed: …`), or the issue ref or `review` and
-the step (`2 checks failed: …`, `review fix failed: …`).
+the step (`2 checks failed: …`, `review reviewer failed: …`, `review fix failed: …`).
 
 | Setting                                         | Effect                                                         |
 | ----------------------------------------------- | -------------------------------------------------------------- |

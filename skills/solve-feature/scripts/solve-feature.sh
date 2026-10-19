@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# solve-feature.sh start|next|land|fix|describe — the guards of solve-feature's loop. SKILL.md drives the loop and
-# runs each issue's coder (between `next` and `land`), the review's reviewer and fixer (before `fix`) and the PR's
-# writer (before `describe`) as subagents of the host agent; every guard is an exit code here.
+# solve-feature.sh start|next|land|reviewed|fix|describe — the guards of solve-feature's loop. SKILL.md drives the
+# loop and runs each issue's coder (between `next` and `land`), the review's reviewer (before `reviewed`) and fixer
+# (before `fix`) and the PR's writer (before `describe`) as subagents of the host agent; every guard is an exit code here.
 #   start <slug> [--branch <name>]  preconditions, the slug among the tracker's features, the branch (--branch, else
 #                                   feature/<slug>; an existing one gets origin's default branch merged in and
 #                                   pushed), .coding-crew/solve-feature/spec.md; prints branch=, coder-model=,
@@ -9,18 +9,23 @@
 #                                   .coding-crew/config.json solveFeature.models, else
 #                                   ~/.coding-crew/config.json's) and pr=
 #   next <slug>                     the next ready issue, saved for land; prints its ref. The coder writes its
-#                                   report to .coding-crew/solve-feature/coder.report.md, which land's solve stop names
+#                                   report to .coding-crew/solve-feature/coder.report.md, which land's solve stop names.
+#                                   Exit 3 saves HEAD to review.base, the head the reviewer starts from
 #   land <slug> <ref> <branch>      the coder left <branch> clean with <ref> closed: merge in what others pushed to
 #                                   origin/<branch>, and once the checks pass push, and open the draft PR if the
 #                                   branch has none; prints pr=<n>. Failed checks reopen <ref> and push its work
 #                                   before the stop, and a failed merge or push reopens it, so a re-run picks it up
+#   reviewed <slug> <pr> <branch>   the reviewer is report-only: discard what it changed against review.base (its
+#                                   commits, tracked edits, untracked branch files; ignored files stay) and list the
+#                                   paths in pr-<pr>.discarded.md for fix; last stdout line `findings=<k>`
 #   fix <slug> <pr> <branch>        the review report is there: commit the fixer's tree, merge in what others pushed
 #                                   to origin/<branch>, and once the checks pass push, and write what needs a person
 #                                   to pr-<pr>.attention.md; last stdout line
 #                                   `FIX: findings=<k> needs-attention=<a> review-again=yes|no`, yes when a
 #                                   CRITICAL/HIGH/MEDIUM finding was there and the branch's own line (first parents)
 #                                   holds a commit past the head fix first saw that review round (kept in
-#                                   pr-<pr>.head until the attention file is written)
+#                                   pr-<pr>.head until the attention file is written). After its push it saves HEAD
+#                                   to review.base, the head a second round's reviewer starts from
 #   describe <slug> <pr>            write the PR's whole body and title, mark the draft ready when nothing needs a
 #                                   person, then write the outcome
 # .coding-crew/solve-feature/outcome holds the run's result in one line: `ready pr=<n>`, `needs-attention pr=<n>` or
@@ -34,7 +39,7 @@ outcome() { [ -z "$LOGS" ] || printf '%s\n' "$1" >"$LOGS/outcome"; }
 die() { echo "solve-feature: $*" >&2; outcome "stopped: $CMD failed: $*"; exit 1; }
 usage() {
   [ -z "${1:-}" ] || echo "solve-feature: $1" >&2
-  echo "usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>" >&2; exit 2
+  echo "usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>" >&2; exit 2
 }
 
 CMD="${1:-}"; [ $# -eq 0 ] || shift
@@ -47,6 +52,7 @@ case "$CMD" in
     esac; done ;;
   next) [ $# -eq 1 ] || usage; SLUG="$1" ;;
   land) [ $# -eq 3 ] || usage; SLUG="$1" REF="$2" BRANCH="$3" ;;
+  reviewed) [ $# -eq 3 ] && [[ "$2" =~ ^[0-9]+$ ]] || usage; SLUG="$1" PR="$2" BRANCH="$3" REF=review ;;
   fix) [ $# -eq 3 ] && [[ "$2" =~ ^[0-9]+$ ]] || usage; SLUG="$1" PR="$2" BRANCH="$3" REF=review ;;
   describe) [ $# -eq 2 ] && [[ "$2" =~ ^[0-9]+$ ]] || usage; SLUG="$1" PR="$2" ;;
   *) usage ;;
@@ -64,7 +70,8 @@ MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 # file this tree tracks is not one: it is the branch's own copy, the one its checks read, counted and committed.
 BRANCH_WORK=(. ':!.coding-crew/config.json')
 git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 || BRANCH_WORK+=(':!.coding-crew/dev-commands.json')
-[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head
+[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head \
+  "$LOGS"/pr-*.discarded.md "$LOGS/review.base"
 # The tracker and checks libraries: this skill's scripts/<lib> (a link into lib/ here, a real directory once installed).
 CLI="$SELF/tracker/cli.mjs" CHECKS="$SELF/checks"
 [ -f "$CLI" ] || die "tracker CLI not found ($CLI): re-install coding-crew"
@@ -179,6 +186,7 @@ start() {
 }
 
 nothing_left() { # exit 3; with no open PR on the branch, the run has nothing to review and stops here
+  git rev-parse HEAD >"$LOGS/review.base"
   BRANCH=$(git branch --show-current); pr_view
   if [ -z "$PR_N" ]; then
     echo "solve-feature: nothing landed: no ready issue for $SLUG and no open PR" >&2
@@ -280,11 +288,34 @@ land() {
   echo "pr=$PR_N"
 }
 
+# The reviewer may run the tests and its own experiments but leaves the tree as it found it; what it left anyway
+# (installed dependencies, a commit) is discarded before the fixer runs, so fix never commits it as the fixer's.
+reviewed() {
+  local base="$LOGS/review.base" report="$LOGS/pr-$PR.review.json" saved paths redo
+  [ "$(git branch --show-current)" = "$BRANCH" ] || stop reviewer "branch changed to '$(git branch --show-current)'"
+  [ -s "$base" ] || stop reviewer "no saved head at $base: run next $SLUG first"
+  saved=$(cat "$base")
+  if [ "$(git rev-parse HEAD)" != "$saved" ] || [ -n "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ]; then
+    paths=$({ git diff --name-only "$saved" HEAD; git status --porcelain -uall -- "${BRANCH_WORK[@]}" | cut -c4-; } | sort -u)
+    # An empty commit changes no path, yet is still the reviewer's.
+    [ -n "$paths" ] || paths=$(git log --format=%h "$saved..HEAD")
+    # Written first, so a discard that fails part-way is still flagged once a person finishes it.
+    printf '%s\n' "$paths" >"$LOGS/pr-$PR.discarded.md"
+    redo="clean the tree by hand to $saved, then run reviewed $SLUG $PR $BRANCH"
+    git reset -q --hard "$saved" || stop reviewer "git reset failed (see above): $redo"
+    # No -x: ignored files (dependency dirs, this run's own files) stay.
+    git clean -fdq -- "${BRANCH_WORK[@]}" || stop reviewer "git clean failed (see above): $redo"
+  fi
+  [ -f "$report" ] || stop reviewer "no review report at $report"
+  jq -e . "$report" >/dev/null 2>&1 || stop reviewer "unreadable review report $report"
+  echo "findings=$(jq '.findings // [] | length' "$report")"
+}
+
 # The fixer's edits are committed, then what others pushed to the branch merged in (git refuses a merge over staged
 # changes), then the checks run on that clean tree, so the push carries exactly what was gated.
 fix() {
   local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.md" clog="$LOGS/pr-$PR.checks.log"
-  local headf="$LOGS/pr-$PR.head" head_oid spec rc=0 total severe moved=no again=no attention=""
+  local discarded="$LOGS/pr-$PR.discarded.md" headf="$LOGS/pr-$PR.head" head_oid spec rc=0 total severe moved=no again=no attention=""
   checks_lib
   # The round's first run keeps the PR's head, so a re-run after a person pushed the fix by hand still sees it moved.
   # Its first line: a file an earlier version wrote also lists the tips it merged.
@@ -313,6 +344,7 @@ fix() {
   [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /setup-coding-crew, then re-run" "$clog"
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
+  git rev-parse HEAD >"$LOGS/review.base"
 
   # "Changed nothing" is no commit on the branch's own line past the round's head: what merge_in brought in sits
   # behind a merge's second parent, and a fix committed here and pushed by hand still counts.
@@ -322,10 +354,11 @@ fix() {
   attention=$(jq -r '.gaps // [] | .[] | tostring' "$report")
   [ "$spec" = met ] || attention+=$'\n'"the reviewer found the spec unmet"
   [ ! -f "$unfixed" ] || attention+=$'\n'"$(cat "$unfixed")"
+  [ ! -f "$discarded" ] || attention+=$'\n'"the reviewer changed the tree; discarded: $(paste -sd' ' "$discarded")"
   [ "$total" = 0 ] || [ "$moved" = yes ] || [ -s "$unfixed" ] || attention+=$'\n'"the fixer changed nothing"
   # Fixes to a CRITICAL/HIGH/MEDIUM finding are worth reviewing again; SKILL.md caps that at one re-review.
   [ "$severe" = 0 ] || [ "$moved" = no ] || again=yes
-  rm -f "$unfixed"
+  rm -f "$unfixed" "$discarded"
   # describe reads it: an empty file is a review with nothing needing a person.
   grep -v '^[[:space:]]*$' <<<"$attention" >"$LOGS/pr-$PR.attention.md" || true
   # A second review round starts from the head its reviewer saw.

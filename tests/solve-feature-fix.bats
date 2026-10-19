@@ -363,3 +363,179 @@ push_says() {
   [ "$status" -eq 0 ]
   [ "$(grep -E '^(pr|api|issue|repo) ' "$STATE/gh.log" | cut -d' ' -f1-3 | sort -u)" = "pr view 10" ]
 }
+
+# --- reviewed: between the reviewer and the fixer ----------------------------------------
+
+# reviewed_ready [<report json>] — both issues landed in PR #10 and next's exit 3 saved the reviewer's starting head;
+# the reviewer's report is there (default: met, two findings).
+reviewed_ready() {
+  loop
+  [ "$LAST_PR" = 10 ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+  local two='{"spec":"met","gaps":[],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"},{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
+  report "${1:-$two}"
+}
+discarded() { cat .coding-crew/solve-feature/pr-10.discarded.md; }
+
+# reviewed_stops <reason> — exit 1, the stop in outcome under the review's reviewer step.
+reviewed_stops() {
+  [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
+  [[ "$output" == *"solve-feature: review reviewer failed: $1"* ]] || { echo "$output"; return 1; }
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: review reviewer failed: $1"* ]]
+}
+
+@test "reviewed on the tree and head the reviewer left as it found them prints findings= and changes nothing" {
+  reviewed_ready
+  local tip; tip=$(git rev-parse HEAD)
+  echo kept > ignored.log && echo ignored.log >> .git/info/exclude
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "${lines[${#lines[@]}-1]}" = "findings=2" ]
+  [ "$(git rev-parse HEAD)" = "$tip" ]
+  [ -z "$(git status --porcelain)" ]
+  [ "$(cat ignored.log)" = kept ]
+  [ ! -e .coding-crew/solve-feature/pr-10.discarded.md ]
+  report '{"spec":"met","gaps":[],"findings":[]}'
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "${lines[${#lines[@]}-1]}" = "findings=0" ]
+}
+
+@test "reviewed discards a reviewer's commit, modified file and untracked files, keeps ignored and run files, and lists what it discarded" {
+  reviewed_ready
+  local base; base=$(git rev-parse HEAD)
+  echo kept > ignored.log && echo ignored.log >> .git/info/exclude
+  echo rev > rev.txt && git add rev.txt && git commit -q -m "reviewer's commit"
+  echo changed >> work-2.txt
+  mkdir -p sub && echo x > sub/new.txt && echo y > new.txt
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "${lines[${#lines[@]}-1]}" = "findings=2" ]
+  [ "$(git rev-parse HEAD)" = "$base" ]
+  [ -z "$(git status --porcelain -uall)" ]
+  [ "$(cat ignored.log)" = kept ]
+  [ -f .coding-crew/solve-feature/spec.md ] && [ -f .coding-crew/solve-feature/pr-10.review.json ]
+  [ "$(discarded)" = "$(printf 'new.txt\nrev.txt\nsub/new.txt\nwork-2.txt')" ]
+}
+
+@test "reviewed keeps config.json and an untracked dev commands file, and lists an empty commit by its hash" {
+  loop
+  git rm -q --cached .coding-crew/config.json .coding-crew/dev-commands.json && git commit -q -m "setup untracked"
+  run bash "$SCRIPT" next feat; [ "$status" -eq 3 ]
+  report '{"spec":"met","gaps":[],"findings":[]}'
+  local base; base=$(git rev-parse HEAD)
+  echo '{"test":"make check"}' > .coding-crew/dev-commands.json
+  git commit -q --allow-empty -m "reviewer's empty commit"
+  local empty; empty=$(git rev-parse --short HEAD)
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git rev-parse HEAD)" = "$base" ]
+  [ "$(cat .coding-crew/dev-commands.json)" = '{"test":"make check"}' ]
+  [ -f .coding-crew/config.json ]
+  [ "$(discarded)" = "$empty" ]
+}
+
+@test "after a discard fix flags it and deletes the list, and describe leaves the PR a draft needing attention" {
+  reviewed_ready
+  echo y > new.txt
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 0 ]
+  echo fixed > fixed.txt
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(attention)" = "the reviewer changed the tree; discarded: new.txt" ]
+  [ ! -e .coding-crew/solve-feature/pr-10.discarded.md ]
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ]
+  [ "${lines[${#lines[@]}-1]}" = "needs-attention pr=10" ]
+  ! grep -q '^pr ready' "$STATE/gh.log" || false
+}
+
+@test "the field case: a zero-finding review whose reviewer rewrote yarn.lock and left package-lock.json gets no commit and pushes neither" {
+  loop
+  echo v1 > yarn.lock && git add yarn.lock && git commit -q -m "yarn.lock" && git push -q origin feature/feat
+  run bash "$SCRIPT" next feat; [ "$status" -eq 3 ]
+  report '{"spec":"met","gaps":[],"findings":[]}'
+  local tip; tip=$(git rev-parse HEAD)
+  echo v2 > yarn.lock && echo '{}' > package-lock.json
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "${lines[${#lines[@]}-1]}" = "findings=0" ]
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git rev-parse HEAD)" = "$tip" ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$tip" ]
+  [ "$(git show origin/feature/feat:yarn.lock)" = v1 ]
+  [ ! -e package-lock.json ]
+  [ "$(attention)" = "the reviewer changed the tree; discarded: package-lock.json yarn.lock" ]
+}
+
+@test "reviewed on another branch, or with no saved head, stops and discards nothing" {
+  reviewed_ready
+  git checkout -q -b elsewhere
+  echo y > new.txt
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  reviewed_stops "branch changed to 'elsewhere'"
+  [ -f new.txt ]
+  git checkout -q feature/feat
+  rm .coding-crew/solve-feature/review.base
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  reviewed_stops "no saved head at $WORK/.coding-crew/solve-feature/review.base: run next feat first"
+  [ -f new.txt ]
+  [ ! -e .coding-crew/solve-feature/pr-10.discarded.md ]
+}
+
+# git_fails <subcommand> — a git whose <subcommand> fails; every other git command is the real one.
+git_fails() {
+  local real; real=$(command -v git)
+  printf '#!/usr/bin/env bash\nif [ "$1" = %s ]; then echo "fatal: no" >&2; exit 1; fi\nexec "%s" "$@"\n' "$1" "$real" > "$STUB/git"
+  chmod +x "$STUB/git"
+}
+
+@test "a failing reset or clean stops reviewed naming it" {
+  reviewed_ready
+  local base; base=$(git rev-parse HEAD)
+  echo y > new.txt
+  git_fails clean
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  reviewed_stops "git clean failed (see above): clean the tree by hand to $base, then run reviewed feat 10 feature/feat"
+  git_fails reset
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  reviewed_stops "git reset failed (see above): clean the tree by hand to $base, then run reviewed feat 10 feature/feat"
+}
+
+@test "a missing or unreadable report stops reviewed after its discard" {
+  reviewed_ready
+  echo y > new.txt
+  rm .coding-crew/solve-feature/pr-10.review.json
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  reviewed_stops "no review report at $WORK/.coding-crew/solve-feature/pr-10.review.json"
+  [ ! -e new.txt ]
+  report 'not json'
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  reviewed_stops "unreadable review report $WORK/.coding-crew/solve-feature/pr-10.review.json"
+}
+
+@test "fix saves the head after its push, so a second round's reviewed compares with what that reviewer saw" {
+  fix_ready
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ ! -e .coding-crew/solve-feature/pr-10.discarded.md ]
+}
+
+@test "a re-run after a fix push stop keeps its unpushed local commits: reviewed discards nothing" {
+  fix_ready
+  refuse_pushes
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 1 ]
+  rm "$TEMP_DIR/origin.git/hooks/pre-receive"
+  local tip; tip=$(git rev-parse HEAD)
+  run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
+  run bash "$SCRIPT" next feat; [ "$status" -eq 3 ]
+  report '{"spec":"met","gaps":[],"findings":[]}'
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git rev-parse HEAD)" = "$tip" ]
+  [ ! -e .coding-crew/solve-feature/pr-10.discarded.md ]
+}
