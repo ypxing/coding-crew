@@ -26,7 +26,8 @@ name: solve-feature
 # issue's checks has already pushed its work and made the issue ready again, so a re-run picks it up there.
 # An issue whose change touches .github/workflows/ cannot land from a runner: the job's GITHUB_TOKEN never gets the
 # `workflows` scope (no `permissions:` key grants it), so GitHub refuses the push. Run such an issue locally, with
-# /crew-afk or /solve-feature.
+# /crew-afk or /solve-feature. A runner's checkout is thrown away with the job, so before the upload the job bundles
+# the commits no push reached into the artifact's unpushed.bundle, and the summary page says how to fetch them.
 # The last step also writes the run's summary page: the outcome, the PR, the model, and on a stop the coder's
 # report and the checks log's tail, so the run says why it stopped without the artifact.
 #
@@ -212,6 +213,13 @@ jobs:
             fi
           done <<<"$held"
 
+      # Empty when every commit was pushed: git then refuses the bundle and writes no file.
+      - name: Bundle the unpushed commits
+        if: always()
+        run: |
+          mkdir -p .solve-feature
+          git bundle create .solve-feature/unpushed.bundle --branches --not --remotes 2>/dev/null || true
+
       - name: Keep the run's logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -236,6 +244,8 @@ jobs:
             echo "### solve-feature $SLUG: \`\` $line \`\`"
             [ -z "$pr" ] || echo "- PR: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr"
             echo "- Agent: $CREW_AGENT, model ${model:-${CREW_MODEL:-unpinned (the CLI default)}}"
+            [ ! -s "$logs/unpushed.bundle" ] ||
+              echo "- Unpushed commits: in the artifact's unpushed.bundle. In a clone where git can push, fetch them with \`gh run download $GITHUB_RUN_ID -n solve-feature-$SLUG-$GITHUB_RUN_ATTEMPT -D /tmp/sf-$GITHUB_RUN_ID && git fetch /tmp/sf-$GITHUB_RUN_ID/unpushed.bundle 'refs/heads/*:refs/heads/*'\`, then run /solve-feature $SLUG there"
             ref=${line#stopped: }
             case "$line" in
               "stopped: "*" solve failed: "*) files="$logs/coder.report.md" ;;
