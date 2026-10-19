@@ -1542,6 +1542,39 @@ SH
   ! grep -q 'FAIL: test_x' "$GITHUB_STEP_SUMMARY" || false
 }
 
+@test "setup-coding-crew's hosts/github-actions.yml: commits no push reached go into the artifact's unpushed.bundle, which the summary says how to fetch; a pushed run writes none" {
+  local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
+  run yaml_to_json "$wf" "$json"
+  [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
+  [ "$status" -eq 0 ]
+  jq -e '.jobs.solve.steps[-3] | .name == "Bundle the unpushed commits" and .if == "always()"' "$json" >/dev/null
+  jq -r '.jobs.solve.steps[-3].run' "$json" > "$TEMP_DIR/bundle-step.sh"
+  jq -r '.jobs.solve.steps[-1].run' "$json" > "$TEMP_DIR/last-step.sh"
+  export GITHUB_STEP_SUMMARY="$TEMP_DIR/summary.md" GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=o/r \
+    GITHUB_RUN_ID=99 GITHUB_RUN_ATTEMPT=1 CREW_AGENT=claude CREW_MODEL= SLUG=feat
+
+  run bash -e "$TEMP_DIR/bundle-step.sh"
+  [ "$status" -eq 0 ]
+  [ ! -e .solve-feature/unpushed.bundle ]
+  echo 'stopped: 3 push failed: refused' > .solve-feature/outcome
+  : > "$GITHUB_STEP_SUMMARY"
+  run bash -e "$TEMP_DIR/last-step.sh"
+  ! grep -q 'Unpushed commits' "$GITHUB_STEP_SUMMARY" || false
+
+  git switch -q -c feature/feat
+  echo x > x.txt && git add x.txt && git commit -q -m 'the coder'
+  run bash -e "$TEMP_DIR/bundle-step.sh"
+  [ "$status" -eq 0 ]
+  [ "$(git bundle list-heads .solve-feature/unpushed.bundle)" = "$(git rev-parse HEAD) refs/heads/feature/feat" ]
+  run bash -e "$TEMP_DIR/last-step.sh"
+  grep -qF -- '- Unpushed commits: ' "$GITHUB_STEP_SUMMARY"
+  grep -qF '`gh run download 99 -n solve-feature-feat-1 -D /tmp/sf-99 && git fetch /tmp/sf-99/unpushed.bundle '\''refs/heads/*:refs/heads/*'\''`, then run /solve-feature feat there' "$GITHUB_STEP_SUMMARY"
+  # The fetch it prints recovers the branch in a clone that has only origin.
+  git clone -q "$TEMP_DIR/origin.git" "$TEMP_DIR/clone"
+  git -C "$TEMP_DIR/clone" fetch -q "$PWD/.solve-feature/unpushed.bundle" 'refs/heads/*:refs/heads/*'
+  [ "$(git -C "$TEMP_DIR/clone" rev-parse feature/feat)" = "$(git rev-parse HEAD)" ]
+}
+
 @test "setup-coding-crew's hosts/github-actions.yml: after the run, the runs held on the PR's head are approved, a refused one's workflow dispatched on the PR's branch instead, warning when both fail" {
   local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
   run yaml_to_json "$wf" "$json"
