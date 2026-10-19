@@ -434,6 +434,21 @@ reviewed_stops() {
   [ "$(discarded)" = "$empty" ]
 }
 
+@test "reviewed keeps a tracked config.json's uncommitted local edit when it discards the reviewer's changes" {
+  reviewed_ready
+  local base; base=$(git rev-parse HEAD)
+  git ls-files --error-unmatch .coding-crew/config.json >/dev/null
+  echo '{"local":"edit"}' > .coding-crew/config.json
+  echo rev > rev.txt && git add rev.txt && git commit -q -m "reviewer's commit"
+  echo y > new.txt
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git rev-parse HEAD)" = "$base" ]
+  [ "$(cat .coding-crew/config.json)" = '{"local":"edit"}' ]
+  [ "$(git status --porcelain -uall)" = " M .coding-crew/config.json" ]
+  [ "$(discarded)" = "$(printf 'new.txt\nrev.txt')" ]
+}
+
 @test "after a discard fix flags it and deletes the list, and describe leaves the PR a draft needing attention" {
   reviewed_ready
   echo y > new.txt

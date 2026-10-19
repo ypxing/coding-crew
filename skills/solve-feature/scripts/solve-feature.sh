@@ -302,7 +302,8 @@ reviewed() {
     # Written first, so a discard that fails part-way is still flagged once a person finishes it.
     printf '%s\n' "$paths" >"$LOGS/pr-$PR.discarded.md"
     redo="clean the tree by hand to $saved, then run reviewed $SLUG $PR $BRANCH"
-    git reset -q --hard "$saved" || stop reviewer "git reset failed (see above): $redo"
+    # Not --hard: that would also revert a person's uncommitted config.json, which BRANCH_WORK leaves out.
+    git reset -q "$saved" && git checkout -q -- "${BRANCH_WORK[@]}" || stop reviewer "git reset failed (see above): $redo"
     # No -x: ignored files (dependency dirs, this run's own files) stay.
     git clean -fdq -- "${BRANCH_WORK[@]}" || stop reviewer "git clean failed (see above): $redo"
   fi
