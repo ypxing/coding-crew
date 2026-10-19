@@ -946,7 +946,7 @@ const LABELLING_OPS = {
 };
 
 for (const [name, setup] of Object.entries(LABELLING_OPS)) {
-  test(`${name} (github) in a repo with no status labels creates all six with --force, once, before the first label is applied`, async () => {
+  test(`${name} (github) in a repo with no status labels creates all six with a fixed colour, once, before the first label is applied`, async () => {
     const dir = root({ github: true });
     const [argv, exec] = setup(dir);
     const r = await cli(dir, argv, exec);
@@ -954,12 +954,21 @@ for (const [name, setup] of Object.entries(LABELLING_OPS)) {
     const lines = exec.calls.map((c) => c.slice(1).join(" "));
     const creates = lines.filter((l) => l.startsWith("label create"));
     assert.deepEqual(creates.map((l) => l.split(" ")[2]).sort(), [...STATUS_LABELS].sort());
-    for (const l of creates) assert.ok(l.includes("--force"), l);
+    // No --force: a re-run must not recolour a label a team edited; a fixed --color stops gh picking a random one.
+    for (const l of creates) assert.ok(!l.includes("--force") && /--color [0-9a-f]{6}\b/.test(l), l);
     const firstLabel = lines.findIndex((l) => / --(add-)?label /.test(`${l} `));
     const lastCreate = lines.findLastIndex((l) => l.startsWith("label create"));
     assert.ok(lastCreate < firstLabel, lines.join("\n"));
   });
 }
+
+test("a gh label create that fails because the label already exists counts as created", async () => {
+  const dir = root({ github: true });
+  const exec = fakeGithub([ghIssue(12, { body: MET })], { fail: { "label create": { stderr: 'label with name "ready-for-agent" already exists; use `--force` to update its color and description' } } });
+  const r = await cli(dir, ["mark-done", "12"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.ok(exec.calls.some((c) => c[1] === "issue" && c[2] === "edit"));
+});
 
 test("a failing gh label create exits 1 with gh's error and the label's name", async () => {
   const dir = root({ github: true });

@@ -5,7 +5,8 @@
 #   start <slug> [--branch <name>]  preconditions, the slug among the tracker's features, the branch (--branch, else
 #                                   feature/<slug>; an existing one gets origin's default branch merged in and
 #                                   pushed), .solve-feature/spec.md; prints branch=, coder-model=,
-#                                   reviewer-model= (.coding-crew/config.json solveFeature.models) and pr=
+#                                   reviewer-model= (.coding-crew/config.json solveFeature.models, else
+#                                   ~/.coding-crew/config.json's) and pr=
 #   next <slug>                     the next ready issue, saved for land; prints its ref. The coder writes its
 #                                   report to .solve-feature/coder.report.md, which land's solve stop names
 #   land <slug> <ref> <branch>      the coder left <branch> clean with <ref> closed: merge in what others pushed to

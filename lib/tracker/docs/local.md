@@ -4,7 +4,7 @@ Issues and PRDs for this repo live as markdown files in `.scratch/`.
 
 ## Tracker config
 
-The tracker this repo uses is the `tracker` section of `.coding-crew/config.json`:
+The tracker this repo uses is the `tracker` section of `.coding-crew/config.json`, else `~/.coding-crew/config.json`'s:
 
 ```json
 { "tracker": { "kind": "local" } }
