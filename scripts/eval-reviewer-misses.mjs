@@ -221,7 +221,7 @@ async function main() {
   const versions = { base: o.base, head: o.head };
   console.log(`cases: ${cases.map((c) => c.name).join(", ") || "(none)"}; ${o.runs} run(s) each on base=${o.base} head=${o.head}`);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const outDir = o.resume ?? path.join(ROOT, ".scratch", "eval-reviewer-misses", stamp);
+  const outDir = o.resume ?? path.join(ROOT, ".coding-crew", "scratch", "eval-reviewer-misses", stamp);
   if (o.resume && !fs.existsSync(outDir)) throw new Error(`--resume: ${outDir} does not exist`);
   fs.mkdirSync(outDir, { recursive: true });
 

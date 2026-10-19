@@ -70,7 +70,7 @@ prompts_dir() {
   local rel d
   rel=$(sed -n 's/^Prompts: //p' <<<"$1")
   d="$REPO_ROOT/$rel"
-  [ -n "$rel" ] && [[ "$rel" != *..* ]] && [[ "$d" == "$REPO_ROOT/.scratch/eval-design-skills/"?* ]] || {
+  [ -n "$rel" ] && [[ "$rel" != *..* ]] && [[ "$d" == "$REPO_ROOT/.coding-crew/scratch/eval-design-skills/"?* ]] || {
     echo "unexpected Prompts dir: '$rel'" >&2; return 1; }
   printf '%s' "$d"
 }
@@ -114,7 +114,7 @@ run_eval() {
 @test "base reads the committed skill, head reads the worktree" {
   run run_eval --runs 1
   [ "$status" -eq 0 ]
-  d=$(ls -d "$R"/.scratch/eval-design-skills/*/)
+  d=$(ls -d "$R"/.coding-crew/scratch/eval-design-skills/*/)
   grep -q 'SKILL-V1-SECRET' "$d/c1-base-1.out.md"
   grep -q 'SKILL-V2-SECRET' "$d/c1-head-1.out.md"
 }
@@ -143,7 +143,7 @@ run_eval() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"c1-head-1: FAILED"* ]]
   [ "$(grep -c '^### Output' "$T/judge-prompt.txt")" -eq 1 ]
-  d=$(ls -d "$R"/.scratch/eval-design-skills/*/)
+  d=$(ls -d "$R"/.coding-crew/scratch/eval-design-skills/*/)
   grep -q 'c1 head #1: run failed' "$d/summary.md"
 }
 
@@ -239,7 +239,7 @@ EOF
   add_slice_case
   run run_eval --skill to-issues --runs 1
   [ "$status" -eq 0 ]
-  d=$(ls -d "$R"/.scratch/eval-design-skills/*/)
+  d=$(ls -d "$R"/.coding-crew/scratch/eval-design-skills/*/)
   grep -q 'SKILL-V1-SECRET to-issues' "$d/s1-base-1.prompt.txt"
   grep -q 'SKILL-V2-SECRET to-issues' "$d/s1-head-1.prompt.txt"
   grep -q 'SKILL-V1-SECRET' "$d/s1-base-1.out.md"
@@ -299,7 +299,7 @@ EOF
   add_prepublish_case
   run run_eval --skill to-issues --case p1 --runs 1
   [ "$status" -eq 0 ]
-  d=$(ls -d "$R"/.scratch/eval-design-skills/*/)
+  d=$(ls -d "$R"/.coding-crew/scratch/eval-design-skills/*/)
   grep -q 'ARGUMENTS: Draft: build the widget' "$d/p1-head-1.prompt.txt"
   last=$(tail -n 1 "$d/p1-head-1.prompt.txt")
   [[ "$last" == "EVAL MODE"* ]]

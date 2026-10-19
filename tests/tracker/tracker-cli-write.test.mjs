@@ -18,7 +18,7 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
 function root({ github = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "crew-tracker-cli-write-"));
-  mkdirSync(join(dir, ".scratch"), { recursive: true });
+  mkdirSync(join(dir, ".coding-crew/scratch"), { recursive: true });
   if (github) {
     mkdirSync(join(dir, ".coding-crew/docs"), { recursive: true });
     writeFileSync(join(dir, ".coding-crew/docs/issue-tracker.md"), "---\ntracker: github\n---\n");
@@ -71,7 +71,7 @@ const DRAFT_B =
   "# Add b\n\nStatus: ready-for-human\n\n## What to build\n\nB.\n\n## Acceptance criteria\n\n- [ ] b works\n\n## Blocked by\n\n- 01-a.md\n";
 
 function drafts(dir, { deps = { "02-b.md": ["01-a.md"] }, files = { "01-a.md": DRAFT_A, "02-b.md": DRAFT_B } } = {}) {
-  const d = join(dir, ".scratch/feat/.drafts");
+  const d = join(dir, ".coding-crew/scratch/feat/.drafts");
   mkdirSync(d, { recursive: true });
   for (const [name, text] of Object.entries(files)) writeFileSync(join(d, name), text);
   if (deps !== null) writeFileSync(join(d, "deps.json"), JSON.stringify(deps));
@@ -159,14 +159,14 @@ test("publish-issues exits 1 and creates nothing when a Blocked by entry names n
     assert.equal(r.code, 1, `github=${github}: ${r.stderr}`);
     assert.match(r.stderr, /03-typo\.md/);
     if (github) assert.equal(ghCreates(exec).length, 0);
-    assert.equal(existsSync(join(dir, ".scratch/feat/issues/open")), false);
+    assert.equal(existsSync(join(dir, ".coding-crew/scratch/feat/issues/open")), false);
     assert.deepEqual(readdirSync(d).sort(), ["01-c.md", "deps.json"]);
   }
 });
 
 test("publish-issues (local) --replace exits 1 and writes nothing when a draft is blocked by an open issue it would delete", async () => {
   const dir = root();
-  const issues = join(dir, ".scratch/feat/issues");
+  const issues = join(dir, ".coding-crew/scratch/feat/issues");
   mkdirSync(join(issues, "open"), { recursive: true });
   writeFileSync(join(issues, "open/01-old.md"), "# Old\n\nStatus: ready-for-agent\n");
   const blocked = "# Add c\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 01-old.md\n";
@@ -189,10 +189,10 @@ test("publish-issues (github) deletes the drafts directory after a full publish"
 
 test("publish-issues (github) never refuses a re-run: a feature's issues only accumulate", async () => {
   const dir = root({ github: true });
-  mkdirSync(join(dir, ".scratch/feat/issues/done"), { recursive: true });
-  writeFileSync(join(dir, ".scratch/feat/issues/done/01-old.md"), "# Old\n");
-  mkdirSync(join(dir, ".scratch/feat/issues/open"), { recursive: true });
-  writeFileSync(join(dir, ".scratch/feat/issues/open/02-old.md"), "# Old\n");
+  mkdirSync(join(dir, ".coding-crew/scratch/feat/issues/done"), { recursive: true });
+  writeFileSync(join(dir, ".coding-crew/scratch/feat/issues/done/01-old.md"), "# Old\n");
+  mkdirSync(join(dir, ".coding-crew/scratch/feat/issues/open"), { recursive: true });
+  writeFileSync(join(dir, ".coding-crew/scratch/feat/issues/open/02-old.md"), "# Old\n");
   const d = drafts(dir);
   const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d], fakeGithub(ghFeature("feat", ghIssue(3))));
   assert.equal(r.code, 0, r.stderr);
@@ -217,18 +217,18 @@ test("publish-issues (local) writes open/NN-<slug>.md and issues-deps.json with 
   const d = drafts(dir);
   const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
   assert.equal(r.code, 0, r.stderr);
-  const open = join(dir, ".scratch/feat/issues/open");
+  const open = join(dir, ".coding-crew/scratch/feat/issues/open");
   assert.deepEqual(readdirSync(open).sort(), ["01-a.md", "02-b.md"]);
   assert.equal(readFileSync(join(open, "01-a.md"), "utf8"), DRAFT_A);
   assert.equal(readFileSync(join(open, "02-b.md"), "utf8"), DRAFT_B);
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), "utf8")), { "01-a.md": [], "02-b.md": ["01-a.md"] });
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".coding-crew/scratch/feat/issues/issues-deps.json"), "utf8")), { "01-a.md": [], "02-b.md": ["01-a.md"] });
   assert.equal(r.stdout, `01-a.md ${join(open, "01-a.md")}\n02-b.md ${join(open, "02-b.md")}\n`);
   assert.equal(existsSync(d), false);
 });
 
 test("publish-issues (local) numbers the drafts after any existing issue and rewrites Blocked by to match", async () => {
   const dir = root();
-  const issues = join(dir, ".scratch/feat/issues");
+  const issues = join(dir, ".coding-crew/scratch/feat/issues");
   mkdirSync(join(issues, "open"), { recursive: true });
   writeFileSync(join(issues, "open/03-old.md"), "# Old\n\nStatus: ready-for-agent\n");
   const d = drafts(dir);
@@ -244,7 +244,7 @@ test("publish-issues (local) writes every draft into issues-deps.json, [] for an
   const d = drafts(dir, { files: { "01-a.md": DRAFT_A, "02-b.md": DRAFT_B, "03-c.md": DRAFT_A.replace("Add a", "Add c") } });
   const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
   assert.equal(r.code, 0, r.stderr);
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), "utf8")), {
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".coding-crew/scratch/feat/issues/issues-deps.json"), "utf8")), {
     "01-a.md": [],
     "02-b.md": ["01-a.md"],
     "03-c.md": [],
@@ -263,30 +263,30 @@ test("publish-issues exits 1 and creates nothing when a draft's Blocked by and d
     assert.match(r.stderr, /## Blocked by: \[01-a\.md\]/);
     assert.match(r.stderr, /names a draft by its filename/);
     if (github) assert.equal(ghCreates(exec).length, 0);
-    assert.equal(existsSync(join(dir, ".scratch/feat/issues")), false);
+    assert.equal(existsSync(join(dir, ".coding-crew/scratch/feat/issues")), false);
     assert.deepEqual(readdirSync(d).sort(), ["01-a.md", "02-b.md", "deps.json"]);
   }
 });
 
 test("publish-issues (local) refuses a draft whose Blocked by names a draft only as Issue #<n>: a draft is named by its filename", async () => {
   const dir = root();
-  const d = join(dir, ".scratch/feat/.drafts");
+  const d = join(dir, ".coding-crew/scratch/feat/.drafts");
   cpSync(join(REPO, "tests/tracker/fixtures/publish-clean"), d, { recursive: true });
   const docs = join(d, "03-docs.md");
   writeFileSync(docs, readFileSync(docs, "utf8").replace("- 02-cli.md", "- Issue #2"));
   const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
   assert.equal(r.code, 1, r.stderr);
   assert.match(r.stderr, /03-docs\.md: deps\.json: \[02-cli\.md\] differs from ## Blocked by: \[\]/);
-  assert.equal(existsSync(join(dir, ".scratch/feat/issues")), false);
+  assert.equal(existsSync(join(dir, ".coding-crew/scratch/feat/issues")), false);
 });
 
 test("publish-issues (local) publishes the clean drafts, whose Blocked by names each draft blocker by its filename", async () => {
   const dir = root();
-  const d = join(dir, ".scratch/feat/.drafts");
+  const d = join(dir, ".coding-crew/scratch/feat/.drafts");
   cpSync(join(REPO, "tests/tracker/fixtures/publish-clean"), d, { recursive: true });
   const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
   assert.equal(r.code, 0, r.stderr);
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".scratch/feat/issues/issues-deps.json"), "utf8")), {
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".coding-crew/scratch/feat/issues/issues-deps.json"), "utf8")), {
     "01-store.md": [],
     "02-cli.md": ["01-store.md"],
     "03-docs.md": ["02-cli.md"],
@@ -296,7 +296,7 @@ test("publish-issues (local) publishes the clean drafts, whose Blocked by names 
 test("publish-issues (local) publishes the smoke demo's issues with its deps", async () => {
   const dir = root();
   const demo = join(REPO, "scripts/smoke-crew-afk/demo/feature/issues");
-  const d = join(dir, ".scratch/feat/.drafts");
+  const d = join(dir, ".coding-crew/scratch/feat/.drafts");
   cpSync(join(demo, "open"), d, { recursive: true });
   const present = new Set(readdirSync(d));
   const all = JSON.parse(readFileSync(join(demo, "issues-deps.json"), "utf8"));
@@ -313,8 +313,8 @@ function tree(dir) {
 test("publish-issues (local) exits 4 and writes nothing when the feature has done issues, --replace or not", async () => {
   for (const extra of [[], ["--replace"]]) {
     const dir = root();
-    mkdirSync(join(dir, ".scratch/feat/issues/done"), { recursive: true });
-    writeFileSync(join(dir, ".scratch/feat/issues/done/01-old.md"), "# Old\n");
+    mkdirSync(join(dir, ".coding-crew/scratch/feat/issues/done"), { recursive: true });
+    writeFileSync(join(dir, ".coding-crew/scratch/feat/issues/done/01-old.md"), "# Old\n");
     const d = drafts(dir);
     const before = tree(dir);
     const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d, ...extra]);
@@ -326,8 +326,8 @@ test("publish-issues (local) exits 4 and writes nothing when the feature has don
 
 test("publish-issues (local) exits 5 and writes nothing when open issues exist and --replace is absent", async () => {
   const dir = root();
-  mkdirSync(join(dir, ".scratch/feat/issues/open"), { recursive: true });
-  writeFileSync(join(dir, ".scratch/feat/issues/open/01-old.md"), "# Old\n");
+  mkdirSync(join(dir, ".coding-crew/scratch/feat/issues/open"), { recursive: true });
+  writeFileSync(join(dir, ".coding-crew/scratch/feat/issues/open/01-old.md"), "# Old\n");
   const d = drafts(dir);
   const before = tree(dir);
   const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
@@ -350,7 +350,7 @@ test("publish-issues exits 1 before creating anything on a deps.json cycle or an
       const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
       assert.equal(r.code, 1, JSON.stringify(deps));
       assert.match(r.stderr, /cycle|not a draft/, JSON.stringify(deps));
-      assert.equal(existsSync(join(dir, ".scratch/feat/issues")), false);
+      assert.equal(existsSync(join(dir, ".coding-crew/scratch/feat/issues")), false);
       assert.deepEqual(readdirSync(d).sort(), ["01-a.md", "02-b.md", "deps.json"]);
     }
   }
@@ -364,7 +364,7 @@ test("publish-issues exits 2 for a missing drafts directory or deps.json", async
   const missingDeps = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
   assert.equal(missingDeps.code, 2);
   assert.match(missingDeps.stderr, /deps\.json/);
-  assert.equal(existsSync(join(dir, ".scratch/feat/issues")), false);
+  assert.equal(existsSync(join(dir, ".coding-crew/scratch/feat/issues")), false);
 });
 
 test("publish-issues exits 1 for a draft without its title or Status: line", async () => {
@@ -377,13 +377,13 @@ test("publish-issues exits 1 for a draft without its title or Status: line", asy
 
 // --- publish-prd ---------------------------------------------------------------------
 
-test("publish-prd (local) writes .scratch/S/PRD.md and prints its path", async () => {
+test("publish-prd (local) writes .coding-crew/scratch/S/PRD.md and prints its path", async () => {
   const dir = root();
   writeFileSync(join(dir, "prd.md"), "# PRD: Feat\n\n## Decisions\n");
   const r = await cli(dir, ["publish-prd", "--feature-slug", "feat", "--title", "Feat", "--body-file", join(dir, "prd.md")]);
   assert.equal(r.code, 0, r.stderr);
-  assert.equal(readFileSync(join(dir, ".scratch/feat/PRD.md"), "utf8"), "# PRD: Feat\n\n## Decisions\n");
-  assert.equal(r.stdout, `${join(dir, ".scratch/feat/PRD.md")}\n`);
+  assert.equal(readFileSync(join(dir, ".coding-crew/scratch/feat/PRD.md"), "utf8"), "# PRD: Feat\n\n## Decisions\n");
+  assert.equal(r.stdout, `${join(dir, ".coding-crew/scratch/feat/PRD.md")}\n`);
 });
 
 test("publish-prd (github) creates 'PRD: <title>' as the feature's root, marker added, when the slug has none; no pin", async () => {
@@ -570,7 +570,7 @@ test("rewrite (github) rewrites a Blocked by entry naming a known file <n>-<slug
 
 test("rewrite (local) leaves a Blocked by entry naming a known issue file as that filename", async () => {
   const dir = root();
-  const open = join(dir, ".scratch/feat/issues/open");
+  const open = join(dir, ".coding-crew/scratch/feat/issues/open");
   mkdirSync(open, { recursive: true });
   const path = join(open, "02-x.md");
   writeFileSync(path, "# X\n\nStatus: needs-triage\n\nold\n");
@@ -586,7 +586,7 @@ test("rewrite (local) records the rewritten Blocked by in issues-deps.json, so d
   const unblocked = DRAFT_A.replace("Add a", "Add b").replace("ready-for-agent", "ready-for-human");
   const d = drafts(dir, { deps: {}, files: { "01-a.md": DRAFT_A.replace("ready-for-agent", "ready-for-human"), "02-b.md": unblocked } });
   assert.equal((await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d])).code, 0);
-  const issues = join(dir, ".scratch/feat/issues");
+  const issues = join(dir, ".coding-crew/scratch/feat/issues");
   const path = join(issues, "open/02-b.md");
   writeFileSync(join(dir, "body.md"), `${unblocked}\n## Blocked by\n\n- 01-a.md\n`);
   const r = await cli(dir, ["rewrite", path, "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"]);
@@ -609,7 +609,7 @@ test("rewrite (github) exits 3 for an issue that does not exist, 2 for a non-num
 
 test("rewrite (local) overwrites the issue at its path with the new body and Status: ST, Source: kept", async () => {
   const dir = root();
-  const open = join(dir, ".scratch/feat/issues/open");
+  const open = join(dir, ".coding-crew/scratch/feat/issues/open");
   cpSync(join(REPO, "tests/tracker/fixtures/promoted/issues"), open, { recursive: true });
   const path = join(open, "50-fix-finding.md");
   const fixture = readFileSync(path, "utf8");
@@ -619,14 +619,14 @@ test("rewrite (local) overwrites the issue at its path with the new body and Sta
   assert.equal(r.code, 0, r.stderr);
   const text = readFileSync(path, "utf8");
   assert.match(text, /^Status: ready-for-agent$/m);
-  assert.match(text, /^Source: \.scratch\/feat\/review\.md \(crew\/feat\/01-thing\)$/m);
+  assert.match(text, /^Source: \S+\/feat\/review\.md \(crew\/feat\/01-thing\)$/m);
   assert.match(text, /The reviewer found/);
   assert.equal(text.replace(/^Status: ready-for-agent\n\n/m, ""), body);
 });
 
 test("rewrite (local) replaces an existing Status: line rather than adding a second", async () => {
   const dir = root();
-  const open = join(dir, ".scratch/feat/issues/open");
+  const open = join(dir, ".coding-crew/scratch/feat/issues/open");
   mkdirSync(open, { recursive: true });
   const path = join(open, "01-x.md");
   writeFileSync(path, "# X\n\nStatus: needs-triage\n\nold\n");
@@ -639,7 +639,7 @@ test("rewrite (local) replaces an existing Status: line rather than adding a sec
 test("rewrite (local) exits 3 for a missing issue file", async () => {
   const dir = root();
   writeFileSync(join(dir, "body.md"), "b\n");
-  const r = await cli(dir, ["rewrite", join(dir, ".scratch/feat/issues/open/09-x.md"), "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"]);
+  const r = await cli(dir, ["rewrite", join(dir, ".coding-crew/scratch/feat/issues/open/09-x.md"), "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"]);
   assert.equal(r.code, 3);
 });
 
@@ -649,7 +649,7 @@ const MET = "# T\n\nStatus: ready-for-agent\n\n## Acceptance criteria\n\n- [x] o
 const UNMET = `${MET}\n## Cross-cutting Requirements\n\n- [ ] docs\n`;
 
 function localIssue(dir, text = MET) {
-  const open = join(dir, ".scratch/feat/issues/open");
+  const open = join(dir, ".coding-crew/scratch/feat/issues/open");
   mkdirSync(open, { recursive: true });
   writeFileSync(join(open, "01-t.md"), text);
   return join(open, "01-t.md");
@@ -660,7 +660,7 @@ test("mark-done (local) sets Status: done and moves the file to done/", async ()
   const path = localIssue(dir);
   const r = await cli(dir, ["mark-done", path]);
   assert.equal(r.code, 0, r.stderr);
-  const done = join(dir, ".scratch/feat/issues/done/01-t.md");
+  const done = join(dir, ".coding-crew/scratch/feat/issues/done/01-t.md");
   assert.equal(existsSync(path), false);
   assert.match(readFileSync(done, "utf8"), /^Status: done$/m);
 });
@@ -672,7 +672,7 @@ test("mark-done (local) exits 0 for an issue already in done/, by either path", 
   const again = await cli(dir, ["mark-done", path]);
   assert.equal(again.code, 0);
   assert.match(again.stdout + again.stderr, /already closed/);
-  assert.equal((await cli(dir, ["mark-done", join(dir, ".scratch/feat/issues/done/01-t.md")])).code, 0);
+  assert.equal((await cli(dir, ["mark-done", join(dir, ".coding-crew/scratch/feat/issues/done/01-t.md")])).code, 0);
 });
 
 test("mark-done with no issue ref is a usage error", async () => {
@@ -720,15 +720,15 @@ test("reopen (local) moves a done issue back to open/ as ready-for-agent, by eit
   const r = await cli(dir, ["reopen", path]);
   assert.equal(r.code, 0, r.stderr);
   assert.match(r.stdout, /^REOPENED: 01-t\.md → /);
-  assert.equal(existsSync(join(dir, ".scratch/feat/issues/done/01-t.md")), false);
+  assert.equal(existsSync(join(dir, ".coding-crew/scratch/feat/issues/done/01-t.md")), false);
   assert.match(readFileSync(path, "utf8"), /^Status: ready-for-agent$/m);
   assert.match(readFileSync(path, "utf8"), /- \[x\] one/);
 
   await cli(dir, ["mark-done", path]);
-  assert.equal((await cli(dir, ["reopen", join(dir, ".scratch/feat/issues/done/01-t.md")])).code, 0);
+  assert.equal((await cli(dir, ["reopen", join(dir, ".coding-crew/scratch/feat/issues/done/01-t.md")])).code, 0);
   assert.equal(existsSync(path), true);
   assert.equal((await cli(dir, ["reopen", path])).code, 0, "an issue already open is made ready in place");
-  assert.equal((await cli(dir, ["reopen", join(dir, ".scratch/feat/issues/open/nope.md")])).code, 3);
+  assert.equal((await cli(dir, ["reopen", join(dir, ".coding-crew/scratch/feat/issues/open/nope.md")])).code, 3);
   assert.equal((await cli(dir, ["reopen"])).code, 2);
 });
 
@@ -776,9 +776,9 @@ test("tick (local) leaves a body with no criteria section alone, so mark-done st
   assert.equal((await cli(dir, ["mark-done", path])).code, 4);
 });
 
-test("tick exits 3 for a missing issue and 2 for a ref outside .scratch/ or no ref", async () => {
+test("tick exits 3 for a missing issue and 2 for a ref outside .coding-crew/scratch/ or no ref", async () => {
   const dir = root();
-  assert.equal((await cli(dir, ["tick", join(dir, ".scratch/feat/issues/open/nope.md")])).code, 3);
+  assert.equal((await cli(dir, ["tick", join(dir, ".coding-crew/scratch/feat/issues/open/nope.md")])).code, 3);
   assert.equal((await cli(dir, ["tick", join(dir, "elsewhere.md")])).code, 2);
   assert.equal((await cli(dir, ["tick"])).code, 2);
 });
@@ -830,10 +830,10 @@ test("write-section (local) replaces or appends the section in the file; (github
 
 test("mark-done (local) on an issue already in done/ makes its Status: done in place", async () => {
   const dir = root();
-  const done = join(dir, ".scratch/feat/issues/done");
+  const done = join(dir, ".coding-crew/scratch/feat/issues/done");
   mkdirSync(done, { recursive: true });
   writeFileSync(join(done, "01-t.md"), "# T\n\nStatus: complete\n");
-  const r = await cli(dir, ["mark-done", join(dir, ".scratch/feat/issues/open/01-t.md")]);
+  const r = await cli(dir, ["mark-done", join(dir, ".coding-crew/scratch/feat/issues/open/01-t.md")]);
   assert.equal(r.code, 0, r.stderr);
   assert.match(readFileSync(join(done, "01-t.md"), "utf8"), /^Status: done$/m);
 });
@@ -882,7 +882,7 @@ test("mark-done --force closes a body with no acceptance-criteria section, on bo
   const path = localIssue(dir, NO_SECTION);
   const local = await cli(dir, ["mark-done", path, "--force"]);
   assert.equal(local.code, 0, local.stderr);
-  assert.equal(existsSync(join(dir, ".scratch/feat/issues/done/01-t.md")), true);
+  assert.equal(existsSync(join(dir, ".coding-crew/scratch/feat/issues/done/01-t.md")), true);
 
   const exec = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: NO_SECTION }, "label create": {}, "issue edit 12": {} });
   const gh = await cli(root({ github: true }), ["mark-done", "12", "--force"], exec);
@@ -901,7 +901,7 @@ test("mark-done --force skips the criteria guards", async () => {
   const path = localIssue(dir, UNMET);
   const r = await cli(dir, ["mark-done", path, "--force"]);
   assert.equal(r.code, 0, r.stderr);
-  assert.equal(existsSync(join(dir, ".scratch/feat/issues/done/01-t.md")), true);
+  assert.equal(existsSync(join(dir, ".coding-crew/scratch/feat/issues/done/01-t.md")), true);
 
   const exec = fakeGh({ "issue view 12 --json labels": { stdout: '{"labels":[{"name":"ready-for-agent"}]}' }, "issue view 12": { stdout: UNMET }, "label create": {}, "issue edit 12": {} });
   const gh = await cli(root({ github: true }), ["mark-done", "12", "--force"], exec);
@@ -925,7 +925,7 @@ test("mark-done (github) adds awaiting-merge, removes the ready labels it carrie
 
 test("mark-done (local) exits 1 for an issue that exists nowhere", async () => {
   const dir = root();
-  const r = await cli(dir, ["mark-done", join(dir, ".scratch/feat/issues/open/09-none.md")]);
+  const r = await cli(dir, ["mark-done", join(dir, ".coding-crew/scratch/feat/issues/open/09-none.md")]);
   assert.equal(r.code, 1);
   assert.match(r.stderr, /not found/);
 });

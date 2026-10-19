@@ -16,6 +16,6 @@ launch() { # <slug> <worktree> <argv…>
   shift 2
   timeout=$(command -v timeout || command -v gtimeout) || die "timeout not found on PATH (macOS: brew install coreutils)"
   (cd "$wt" || exit 1
-    nohup "$timeout" 1h "$@" >"$wt/.solve-feature/run.log" 2>&1 </dev/null &
-    echo $! >"$wt/.solve-feature/run.pid")
+    nohup "$timeout" 1h "$@" >"$wt/.coding-crew/solve-feature/run.log" 2>&1 </dev/null &
+    echo $! >"$wt/.coding-crew/solve-feature/run.pid")
 }

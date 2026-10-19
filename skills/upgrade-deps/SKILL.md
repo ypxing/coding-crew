@@ -339,7 +339,7 @@ criteria / Blocked by / Interfaces where relevant).
 
 ### 8. Publish
 
-Write the drafted issues from step 7 to one file, `.scratch/<feature-slug>/upgrade-drafts.md`
+Write the drafted issues from step 7 to one file, `.coding-crew/scratch/<feature-slug>/upgrade-drafts.md`
 (the slug from step 1): one section per issue, each with its `Status:` line per step 7's decision
 (`ready-for-agent` or `ready-for-human`) and its `## Blocked by` naming the blocking draft (the
 `Blocked by` edges from step 4's coupling analysis).

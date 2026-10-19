@@ -83,7 +83,7 @@ No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`,
 The tracker is `.coding-crew/config.json`'s `tracker` section (`github` today); how each kind works is in `lib/tracker/docs/<kind>.md`.
 
 - **One writer per issue:** change an issue's status or checkboxes only through the tracker CLI (`tick`, `mark-done`), never by editing it directly
-- **Local tracker:** issues live in `.scratch/<feature-slug>/issues/{open,done}/`, PRDs in `.scratch/<feature-slug>/PRD.md`
+- **Local tracker:** issues live in `.coding-crew/scratch/<feature-slug>/issues/{open,done}/`, PRDs in `.coding-crew/scratch/<feature-slug>/PRD.md`
 
 ---
 

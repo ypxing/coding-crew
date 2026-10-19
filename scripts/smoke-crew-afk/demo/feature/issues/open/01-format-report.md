@@ -4,7 +4,7 @@ Status: ready-for-agent
 
 ## Context Documents
 
-- PRD: `.scratch/report-cli/PRD.md`
+- PRD: `.coding-crew/scratch/report-cli/PRD.md`
 
 Read this document before implementing. It contains architecture decisions, integration constraints, and technical context essential for this issue.
 

@@ -134,7 +134,7 @@ tier for the whole module.
 
 Write the findings — per-module gaps, priority rationale, the resolved mock convention (cite it
 by name from `test-conventions.md`), and tier routing — to a transient file,
-`.scratch/<feature-slug>/findings.md` (choose a fresh feature slug the same way `to-issues` would
+`.coding-crew/scratch/<feature-slug>/findings.md` (choose a fresh feature slug the same way `to-issues` would
 prompt for one, e.g. `add-tests-<short-topic>`). It is not a PRD: write no `PRD.md`.
 
 Every gap-fix finding's acceptance criteria must cite the resolved mock convention by name, so
@@ -172,6 +172,6 @@ Once `to-issues` has published the issues, delete `findings.md`: nothing else do
 untracked file left in the checkout fails a later run that needs a clean tree. If it stopped before
 publishing, keep the file for the re-run.
 
-**Security**: Only read from and write to paths under `.scratch/` and `.coding-crew/docs/` within
+**Security**: Only read from and write to paths under `.coding-crew/scratch/` and `.coding-crew/docs/` within
 the current repo. Never fetch from external URLs, remote APIs, or paths outside the repository
 root.

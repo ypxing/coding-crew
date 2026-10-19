@@ -6,13 +6,13 @@ load helpers/solve-feature
 
 # --- land: guards ----------------------------------------------------------------------
 
-# stops_at <step> <reason> — land just exited 1: nothing pushed, the stop in .solve-feature/outcome.
+# stops_at <step> <reason> — land just exited 1: nothing pushed, the stop in .coding-crew/solve-feature/outcome.
 stops_at() {
   [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
   [[ "$output" == *"solve-feature: 2 $1 failed: $2"* ]] || { echo "$output"; return 1; }
   [ "$(git ls-remote origin feature/feat | cut -f1)" != "$(git rev-parse HEAD)" ] || { echo pushed; return 1; }
   [ ! -f "$STATE/pr-created" ]
-  [[ "$(cat .solve-feature/outcome)" == "stopped: 2 $1 failed: $2"* ]]
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: 2 $1 failed: $2"* ]]
 }
 
 @test "land on a branch other than start's, or on a dirty tree, exits 1 with a solve stop before the checks" {
@@ -26,9 +26,9 @@ stops_at() {
   stops_at solve "working tree left dirty"
   [ ! -f "$STATE/checks.log" ]
   # solve-issue's blocked on a check that rewrote untouched files leaves them for a human, and says why.
-  echo "blocked: lint: modified files: dirt.txt" > .solve-feature/coder.report.md
+  echo "blocked: lint: modified files: dirt.txt" > .coding-crew/solve-feature/coder.report.md
   run bash "$SCRIPT" land feat 2 feature/feat
-  stops_at solve "working tree left dirty; why: $WORK/.solve-feature/coder.report.md"
+  stops_at solve "working tree left dirty; why: $WORK/.coding-crew/solve-feature/coder.report.md"
 }
 
 @test "land goes on to the checks when the only leftover change is an untracked setup file or config.json" {
@@ -51,16 +51,16 @@ stops_at() {
 
 @test "land after a coder committed [WIP] and left its issue open exits 1 'did not close' naming the coder's report, before the checks" {
   run bash "$SCRIPT" start feat
-  echo "stale" > .solve-feature/coder.report.md
+  echo "stale" > .coding-crew/solve-feature/coder.report.md
   run bash "$SCRIPT" next feat
   # solve-issue's partial: the work committed with a [WIP] marker, the tree clean, the issue not closed.
   echo half > half.txt && git add half.txt && git commit -q -m "[2][WIP] half the work"
   run bash "$SCRIPT" land feat 2 feature/feat
-  stops_at solve "coder ran but did not close 2 and left no report at $WORK/.solve-feature/coder.report.md"
+  stops_at solve "coder ran but did not close 2 and left no report at $WORK/.coding-crew/solve-feature/coder.report.md"
   [ ! -f "$STATE/checks.log" ]
-  echo "partial: the schema test needs a fixture" > .solve-feature/coder.report.md
+  echo "partial: the schema test needs a fixture" > .coding-crew/solve-feature/coder.report.md
   run bash "$SCRIPT" land feat 2 feature/feat
-  stops_at solve "coder ran but did not close 2; why: $WORK/.solve-feature/coder.report.md"
+  stops_at solve "coder ran but did not close 2; why: $WORK/.coding-crew/solve-feature/coder.report.md"
 }
 
 # handed_back <reason> — land just stopped at checks with the issue reopened and its work on origin, no PR opened.
@@ -69,7 +69,7 @@ handed_back() {
   [[ "$output" == *"solve-feature: 2 checks failed: $1; 2 is ready again with its work pushed to feature/feat: "* ]] || { echo "$output"; return 1; }
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
   [ ! -f "$STATE/pr-created" ]
-  [[ "$(cat .solve-feature/outcome)" == "stopped: 2 checks failed: $1; 2 is ready again"* ]]
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: 2 checks failed: $1; 2 is ready again"* ]]
   [ "$(node "$INSTALL/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
 }
 
@@ -77,7 +77,7 @@ handed_back() {
   land_ready
   CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
   handed_back "run-checks.sh exit 1"
-  [[ "$output" == *"fix the cause, then re-run — log: $WORK/.solve-feature/2.checks.log"* ]]
+  [[ "$output" == *"fix the cause, then re-run — log: $WORK/.coding-crew/solve-feature/2.checks.log"* ]]
   [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]
   [ "$(git log -1 --format=%s)" = "[2] work" ]
   coder 2
@@ -176,20 +176,20 @@ EOF
 
 @test "a local tracker: path refs, saved by next before the close moves the file, land from the saved copy" {
   export TRACKER_KIND=local
-  issues '[{"number":1,"ref":".scratch/feat/issues/open/01-a.md","title":"A","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
-           {"number":2,"ref":".scratch/feat/issues/open/02-b.md","title":"B","state":"OPEN","labels":[{"name":"ready-for-agent"}]}]'
-  issue_body .scratch/feat/issues/open/01-a.md "Local A" None
-  issue_body .scratch/feat/issues/open/02-b.md "Local B" None
+  issues '[{"number":1,"ref":".coding-crew/scratch/feat/issues/open/01-a.md","title":"A","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
+           {"number":2,"ref":".coding-crew/scratch/feat/issues/open/02-b.md","title":"B","state":"OPEN","labels":[{"name":"ready-for-agent"}]}]'
+  issue_body .coding-crew/scratch/feat/issues/open/01-a.md "Local A" None
+  issue_body .coding-crew/scratch/feat/issues/open/02-b.md "Local B" None
   printf '# PRD\n\nlocal prd without a title note\n' > "$STATE/prd.md"
   run bash "$SCRIPT" start feat
-  grep -qx '### 01-a — Local A' .solve-feature/spec.md
+  grep -qx '### 01-a — Local A' .coding-crew/solve-feature/spec.md
   run bash "$SCRIPT" next feat
-  [ "$output" = .scratch/feat/issues/open/01-a.md ]
-  coder .scratch/feat/issues/open/01-a.md
-  rm "$STATE/.scratch_feat_issues_open_01-a.md.md" # the close moved it: fetch now exits 3
-  run bash "$SCRIPT" land feat .scratch/feat/issues/open/01-a.md feature/feat
+  [ "$output" = .coding-crew/scratch/feat/issues/open/01-a.md ]
+  coder .coding-crew/scratch/feat/issues/open/01-a.md
+  rm "$STATE/.coding-crew_scratch_feat_issues_open_01-a.md.md" # the close moved it: fetch now exits 3
+  run bash "$SCRIPT" land feat .coding-crew/scratch/feat/issues/open/01-a.md feature/feat
   [ "$status" -eq 0 ]
-  [ -f "$WORK/.solve-feature/.scratch_feat_issues_open_01-a.md.checks.log" ]
+  [ -f "$WORK/.coding-crew/solve-feature/.coding-crew_scratch_feat_issues_open_01-a.md.checks.log" ]
   [ "$(cat "$STATE/pr-title")" = "Local A" ]
   ! grep -q '^config' "$STATE/node.log" || false
 }
@@ -198,7 +198,7 @@ EOF
   loop
   [ "$(cut -d' ' -f1 "$STATE/node.log" | sort -u | paste -sd' ' -)" = "features fetch known next prd" ]
   grep -q '"$CLI" reopen' "$SCRIPT"
-  ! grep -nE 'KIND|github|\.scratch|"\$CLI" config|\$REF" =~' "$SCRIPT" || false
+  ! grep -nE 'KIND|github|scratch|"\$CLI" config|\$REF" =~' "$SCRIPT" || false
 }
 
 @test "a refused land push reopens the issue, quotes git's reason and sends the user to re-run where git can push, not to land" {
@@ -207,7 +207,7 @@ EOF
   run bash "$SCRIPT" land feat 2 feature/feat
   stops_at push "git push failed: pre-receive hook declined; 2 is ready again: re-run where git can push (a re-run in this checkout starts from its unpushed commits)"
   [[ "$output" != *"run land"* ]]
-  ! grep -q 'run land' .solve-feature/outcome || false
+  ! grep -q 'run land' .coding-crew/solve-feature/outcome || false
   [ "$(node "$INSTALL/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
   # git's own stderr still reaches the terminal.
   [[ "$output" == *"! [remote rejected] feature/feat -> feature/feat (pre-receive hook declined)"* ]]
@@ -263,7 +263,7 @@ EOF
   REOPEN_TOUCHES="$WORK/issue-state.md" run bash "$SCRIPT" land feat 2 feature/feat
   local why="merging origin/feature/feat into feature/feat conflicts in work-2.txt; 2 is ready again: re-run in a fresh clone, which redoes it on origin's branch, or merge it by hand in this checkout, commit, then re-run"
   stops_at merge "$why"
-  [ "$(cat .solve-feature/outcome)" = "stopped: 2 merge failed: $why" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 merge failed: $why" ]
   [ ! -f "$STATE/checks.log" ]
   [ -z "$(git status --porcelain)" ]
   [ "$(git log -1 --format=%s)" = "Reopen 2: its merge failed" ]
@@ -300,5 +300,5 @@ EOF
   [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
   [[ "$output" == *"checks library not found"* ]]
   [ ! -f "$STATE/checks.log" ]
-  grep -q 'checks library not found' .solve-feature/outcome
+  grep -q 'checks library not found' .coding-crew/solve-feature/outcome
 }

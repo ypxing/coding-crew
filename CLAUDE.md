@@ -46,7 +46,7 @@ scripts/cut-release.sh --dry-run --demo-smoke /tmp/smoke.log   # or --no-demo-sm
 - Code comments follow solve-issue's comment rule (`skills/solve-issue/SKILL.md`, Step 4).
 - One writer per issue file: don't add code paths where an agent edits an issue's `Status:`/checkboxes directly — that's the tracker CLI's job (`tick`, `mark-done`).
 - `CHANGELOG.md`: add one entry at the top of `[Unreleased]` (component prefix, what changed for a user, issue/PR number). Read only its first ~20 lines to do it, not the whole file.
-- Issues (this repo's own dev use) live in `.scratch/<feature-slug>/issues/{open,done}/`; the tracker is set in `.coding-crew/config.json` (`{"tracker": {"kind": …}}`); see `lib/tracker/docs/<kind>.md`.
+- Issues (this repo's own dev use) live in `.coding-crew/scratch/<feature-slug>/issues/{open,done}/`; the tracker is set in `.coding-crew/config.json` (`{"tracker": {"kind": …}}`); see `lib/tracker/docs/<kind>.md`.
 
 ## Axes of variation
 

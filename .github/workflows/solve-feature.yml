@@ -20,9 +20,9 @@ name: solve-feature
 # after the session the job approves the runs held on the PR's head (hence `actions: write`). Where GitHub refuses,
 # it dispatches that workflow on the PR's branch instead, which needs `workflow_dispatch:` in it.
 # The session's exit code does not carry a stop, so the last step reads the run's one-line
-# .solve-feature/outcome and fails the job on anything but `ready pr=<n>`: `needs-attention pr=<n>`,
+# .coding-crew/solve-feature/outcome and fails the job on anything but `ready pr=<n>`: `needs-attention pr=<n>`,
 # `stopped: <what> failed: <reason>`, or no file at all (the session ended before the run finished). The step before it
-# uploads .solve-feature/ (the checks logs a stop names, the coder's report) as the run's artifact. A stop at an
+# uploads .coding-crew/solve-feature/ (the checks logs a stop names, the coder's report) as the run's artifact. A stop at an
 # issue's checks has already pushed its work and made the issue ready again, so a re-run picks it up there.
 # An issue whose change touches .github/workflows/ cannot land from a runner: the job's GITHUB_TOKEN never gets the
 # `workflows` scope (no `permissions:` key grants it), so GitHub refuses the push. Run such an issue locally, with
@@ -176,9 +176,9 @@ jobs:
                 { echo "::error::Claude Code needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1; }
               # Plain -p prints only the session's last message, at its end; tee -p keeps the session going should
               # the filter die.
-              mkdir -p .solve-feature && echo '*' > .solve-feature/.gitignore
+              mkdir -p .coding-crew/solve-feature && echo '*' > .coding-crew/solve-feature/.gitignore
               claude -p "/solve-feature $SLUG" --dangerously-skip-permissions "${model[@]}" --output-format stream-json --verbose |
-                tee -p .solve-feature/session.jsonl | jq --unbuffered -Rr '
+                tee -p .coding-crew/solve-feature/session.jsonl | jq --unbuffered -Rr '
                   fromjson? | try (
                     (if .parent_tool_use_id then "    " else "" end) as $pad
                     | if .type == "system" and .subtype == "init" then "model: \(.model)"
@@ -204,8 +204,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pr=$(sed -n 's/.*pr=\([0-9][0-9]*\).*/\1/p' .solve-feature/outcome 2>/dev/null || true)
-          [ -n "$pr" ] || { echo "No PR in .solve-feature/outcome: no CI to start."; exit 0; }
+          pr=$(sed -n 's/.*pr=\([0-9][0-9]*\).*/\1/p' .coding-crew/solve-feature/outcome 2>/dev/null || true)
+          [ -n "$pr" ] || { echo "No PR in .coding-crew/solve-feature/outcome: no CI to start."; exit 0; }
           read -r branch sha < <(gh pr view "$pr" --json headRefName,headRefOid --jq '"\(.headRefName) \(.headRefOid)"') ||
             { echo "::warning::could not read PR #$pr's head: its CI waits for approval"; exit 0; }
           # GitHub holds a bot-made PR's run as `action_required`, with no jobs run.
@@ -229,15 +229,15 @@ jobs:
       - name: Bundle the unpushed commits
         if: always()
         run: |
-          mkdir -p .solve-feature
-          git bundle create .solve-feature/unpushed.bundle --branches --not --remotes 2>/dev/null || true
+          mkdir -p .coding-crew/solve-feature
+          git bundle create .coding-crew/solve-feature/unpushed.bundle --branches --not --remotes 2>/dev/null || true
 
       - name: Keep the run's logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: solve-feature-${{ needs.slug.outputs.slug }}-${{ github.run_attempt }}
-          path: .solve-feature/
+          path: .coding-crew/solve-feature/
           include-hidden-files: true
           if-no-files-found: ignore
 
@@ -246,7 +246,7 @@ jobs:
         env:
           SLUG: ${{ needs.slug.outputs.slug }}
         run: |
-          logs=.solve-feature
+          logs=.coding-crew/solve-feature
           line=$(cat "$logs/outcome" 2>/dev/null) ||
             line="never finished: the session ended early or never started (see the first failed step)"
           model=$(jq -r 'select(.type == "system" and .subtype == "init") | .model' "$logs/session.jsonl" 2>/dev/null | head -n 1)

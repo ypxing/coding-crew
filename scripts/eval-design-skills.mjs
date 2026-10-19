@@ -232,7 +232,7 @@ async function main() {
   const skills = {};
   for (const c of cases) for (const [v, ref] of Object.entries(versions)) skills[`${c.skill}@${v}`] ??= skillText(c.skill, ref);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const outDir = path.join(ROOT, ".scratch", "eval-design-skills", stamp);
+  const outDir = path.join(ROOT, ".coding-crew", "scratch", "eval-design-skills", stamp);
   fs.mkdirSync(outDir, { recursive: true });
   if (o.dryRun) {
     for (const p of plan) {

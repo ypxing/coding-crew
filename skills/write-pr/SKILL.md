@@ -15,7 +15,7 @@ the change exists, what it changes at a high level, and what a bad merge would c
 ## 1. Gather
 
 - **The intent.** A PRD, issue or plan the caller names, or that the commits reference
-  (`Closes #n`, an issue slug, a `.scratch/<feature>/` path) — read it. The body explains the
+  (`Closes #n`, an issue slug, a `.coding-crew/scratch/<feature>/` path) — read it. The body explains the
   change in its terms.
 - **The range.** `git log --oneline <base>..HEAD` and `git diff --stat <base>..HEAD`, where
   `<base>` is the given ref; given a PR number, `origin/` plus its base branch (`gh pr view <n> --json

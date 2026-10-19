@@ -12,7 +12,7 @@
 #       one without, once the outcome is written
 # A destination is scripts/destinations/<name>.sh: `prepare <slug> <base-branch>` prints the worktree path;
 # `launch <slug> <worktree> <argv…>` starts the run there, and a detached one writes its pid to
-# <worktree>/.solve-feature/run.pid. Exit: 0 ok; 1 a stop; 2 a usage error.
+# <worktree>/.coding-crew/solve-feature/run.pid. Exit: 0 ok; 1 a stop; 2 a usage error.
 set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 die() { echo "crew-afk: $*" >&2; exit 1; }
@@ -64,11 +64,11 @@ dispatch() {
   source "$SELF/destinations/$to.sh"
 
   # git refuses a branch checked out twice, but a detached second run would race the first on one checkout.
-  pid=$(live_pid "$WORKTREES/$slug/.solve-feature") && die "a run for $slug is still going (pid $pid)"
+  pid=$(live_pid "$WORKTREES/$slug/.coding-crew/solve-feature") && die "a run for $slug is still going (pid $pid)"
   base=$(git -C "$MAIN" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
   wt=$(prepare "$slug" "${base:-main}")
   include "$wt"
-  logs="$wt/.solve-feature"
+  logs="$wt/.coding-crew/solve-feature"
   mkdir -p "$logs" && echo '*' >"$logs/.gitignore"
   # A stale outcome would read as this run's result until solve-feature's start clears it.
   rm -f "$logs/outcome" "$logs/run.pid" "$logs/run.log" "$logs/run.branch"
@@ -92,7 +92,7 @@ cost() {
 
 # report <worktree> <slug> — what status prints for one worktree's run: its outcome line, or why there is none
 report() {
-  local slug="$2" logs="$1/.solve-feature" pid branch
+  local slug="$2" logs="$1/.coding-crew/solve-feature" pid branch
   if [ -s "$logs/outcome" ]; then echo "$slug: $(head -n 1 "$logs/outcome")$(cost "$logs")"
   elif pid=$(live_pid "$logs"); then echo "$slug: running (pid $pid)"
   elif [ ! -f "$logs/run.pid" ]; then echo "$slug: no outcome yet — $(cat "$logs/run.dest") run, see its terminal"
@@ -111,7 +111,7 @@ status() {
   while IFS= read -r wt; do
     # dispatch writes run.slug on every run: without it, the worktree's run is not crew-afk's to report. The
     # slug comes from it, not the directory: orca names its worktree after the repo too.
-    [ "$wt" != "$MAIN" ] && slug=$(cat "$wt/.solve-feature/run.slug" 2>/dev/null) || continue
+    [ "$wt" != "$MAIN" ] && slug=$(cat "$wt/.coding-crew/solve-feature/run.slug" 2>/dev/null) || continue
     [ -z "$filter" ] || [ "$slug" = "$filter" ] || continue
     found=1
     report "$wt" "$slug"
@@ -125,8 +125,8 @@ wait_for() {
   # Only the slug's latest dispatch, the newest run.slug: an older worktree's run whose terminal closed with no
   # outcome stays `no outcome yet` for good, and would keep the wait from ever seeing this run end.
   while IFS= read -r wt; do
-    [ "$wt" != "$MAIN" ] && [ "$(cat "$wt/.solve-feature/run.slug" 2>/dev/null)" = "$slug" ] || continue
-    [ -z "$run" ] || [ "$wt/.solve-feature/run.slug" -nt "$run/.solve-feature/run.slug" ] || continue
+    [ "$wt" != "$MAIN" ] && [ "$(cat "$wt/.coding-crew/solve-feature/run.slug" 2>/dev/null)" = "$slug" ] || continue
+    [ -z "$run" ] || [ "$wt/.coding-crew/solve-feature/run.slug" -nt "$run/.coding-crew/solve-feature/run.slug" ] || continue
     run=$wt
   done < <(worktrees)
   [ -n "$run" ] || { echo "no crew-afk run for $slug"; return; }
@@ -135,7 +135,7 @@ wait_for() {
   # that ends the log, so a live process keeps the wait going past the outcome. Liveness is read before the
   # report: a process that exits in between has its whole log read by the report.
   while :; do
-    live=$(live_pid "$run/.solve-feature") || live=""
+    live=$(live_pid "$run/.coding-crew/solve-feature") || live=""
     out=$(report "$run" "$slug")
     case "$out" in *": running (pid "* | *": no outcome yet — "*) ;; *) [ -n "$live" ] || break ;; esac
     sleep "${CREW_AFK_WAIT_INTERVAL:-5}"

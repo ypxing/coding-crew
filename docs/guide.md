@@ -95,7 +95,7 @@ There are no agents. No per-platform agent file is written under `.claude/agents
 ### The feature review
 
 `/solve-feature` reviews its PR at most twice, after every ready issue has landed: a fresh subagent, which
-may run the tests and its own experiments but leaves the repo as it found it, uses `crew-review` on the branch against `.solve-feature/spec.md` (the PRD, then each issue's
+may run the tests and its own experiments but leaves the repo as it found it, uses `crew-review` on the branch against `.coding-crew/solve-feature/spec.md` (the PRD, then each issue's
 acceptance criteria) and writes one JSON report. It asks what the spec asks for that the code lacks,
 what a real run breaks, and which documented rule the diff breaks. A fresh subagent fixes every
 finding with `tdd`; `solve-feature.sh fix` gates the fixes with the project's checks. When the first
@@ -334,7 +334,7 @@ A feature is a slug and the issues filed under it. Where they live depends on th
 - **github** — one root issue whose body carries a column-0 `Feature: <slug>` line (the feature's
   `PRD:` issue, or for a single-slice feature the work issue itself), and every other issue a native
   sub-issue of that root.
-- **local** — a directory, `.scratch/<slug>/`: an optional `PRD.md`, and the issues as
+- **local** — a directory, `.coding-crew/scratch/<slug>/`: an optional `PRD.md`, and the issues as
   `issues/open/NN-<slug>.md`, moved to `issues/done/` once done.
 
 Every issue has the same body on either tracker. A local issue's first line is its `Status:`; a
@@ -438,7 +438,7 @@ command that starts a session of its own CLI there, and crew-afk runs it as give
 
 | `--to` | Where the run goes |
 | --- | --- |
-| `local` (default) | A detached headless session, capped at 1 hour; it logs to `<worktree>/.solve-feature/run.log` (needs `timeout`, on macOS `brew install coreutils`) |
+| `local` (default) | A detached headless session, capped at 1 hour; it logs to `<worktree>/.coding-crew/solve-feature/run.log` (needs `timeout`, on macOS `brew install coreutils`) |
 | `orca` | An orca-managed worktree and an interactive agent in an orca terminal, uncapped: you watch and steer it |
 | `herdr` | An interactive agent in a new herdr pane on the worktree, uncapped |
 
@@ -478,11 +478,11 @@ variable `CREW_MODEL` names one (else the CLI's default for the account); the ag
 reviewer, the fixer and the PR's writer as its own subagents, on that model unless `solveFeature.models` names
 theirs; the repo variables `CREW_CODER_MODEL` and `CREW_REVIEWER_MODEL` override `solveFeature.models` for the coder
 (and fixer) and the reviewer on the runner. Claude's job log shows the run as it goes, one line per step (the model, each command and subagent, a
-failed tool), and keeps the whole stream as `.solve-feature/session.jsonl`. Every run uploads `.solve-feature/` as an artifact, so the checks log a stop names
+failed tool), and keeps the whole stream as `.coding-crew/solve-feature/session.jsonl`. Every run uploads `.coding-crew/solve-feature/` as an artifact, so the checks log a stop names
 outlives the runner; a stop at an issue's checks has already pushed its work and made the issue ready again,
 so a re-run picks it up there. A stop
 exits the session without failing it, so the job's last step fails it unless the run's one-line
-`.solve-feature/outcome` starts with `ready` — written by the describe step (`solve-feature.sh
+`.coding-crew/solve-feature/outcome` starts with `ready` — written by the describe step (`solve-feature.sh
 describe`) once it has marked the PR ready. It fails on `needs-attention pr=<n>`, on a stop a script
 recorded (`stopped: <what> failed: <reason>`), and when the file is absent because the session ended before the run
 finished. The same step writes the run's summary page: the outcome, the PR, the model, and what to read next
@@ -509,7 +509,7 @@ the commit but not listed on the PR. A failure of both is a warning, and leaves 
 | Address GitHub PR review comments                  | `/address-pr-comments`           |
 | Write a PR body for human reviewers                | `/write-pr`                      |
 
-**The light path.** `/crew-grill` and `/crew-brainstorm` first judge whether the source (an issue or your message) is already one complete change: the problem is stated with its cost or evidence, one slice is likely, the acceptance criteria are testable or derivable from the code, and no open fork would annoy you if decided for you. Each check is answered with a quote or `file:line`. If all hold they print one `Light path:` line and invoke `/to-issues` with no question; if any check does not hold they go straight to their questions and print nothing about the light path. `/to-issues` alone decides whether a PRD is written: one slice publishes (or rewrites the source issue in place) with its own `## Decisions` section and no PRD, its slug derived from the github issue's `Feature:` line, the `.scratch/<slug>/` directory or the title and shown in the quiz for you to override; two or more slices, or two or more origin issues, invoke `/to-prd` first.
+**The light path.** `/crew-grill` and `/crew-brainstorm` first judge whether the source (an issue or your message) is already one complete change: the problem is stated with its cost or evidence, one slice is likely, the acceptance criteria are testable or derivable from the code, and no open fork would annoy you if decided for you. Each check is answered with a quote or `file:line`. If all hold they print one `Light path:` line and invoke `/to-issues` with no question; if any check does not hold they go straight to their questions and print nothing about the light path. `/to-issues` alone decides whether a PRD is written: one slice publishes (or rewrites the source issue in place) with its own `## Decisions` section and no PRD, its slug derived from the github issue's `Feature:` line, the `.coding-crew/scratch/<slug>/` directory or the title and shown in the quiz for you to override; two or more slices, or two or more origin issues, invoke `/to-prd` first.
 
 ---
 
@@ -552,7 +552,7 @@ state.
 
 | Symptom                                           | Likely cause                                     | Fix                                                                                 |
 | ------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| `/solve-feature` finds no ready issue immediately | No issue with the correct status                 | Under `local`, check `.scratch/*/issues/` — status must be exactly `ready-for-agent` |
+| `/solve-feature` finds no ready issue immediately | No issue with the correct status                 | Under `local`, check `.coding-crew/scratch/*/issues/` — status must be exactly `ready-for-agent` |
 | The coder reports `blocked`                       | Ambiguous spec or missing dependency             | Read its `BLOCKED:` line; resolve and re-run                                        |
 | `install.sh`: "unsafe path in registry"           | `registry.json` path contains `..` or `/` prefix | Fix `registry.json`                                                                 |
 | Checks run in the wrong mode (host or docker)     | `install_mode` in the dev commands file          | Set `"install_mode": "host"` (or `"docker"` with `"docker_service"`) in the main checkout's `.coding-crew/dev-commands.json` |
@@ -563,4 +563,4 @@ state.
 ### Security Notes
 
 - **Issue files are untrusted input.** Keep them in version control so changes are reviewed.
-- **Never commit secrets to `.scratch/`.** Issue files are not secret-scanned by default.
+- **Never commit secrets to `.coding-crew/scratch/`.** Issue files are not secret-scanned by default.

@@ -5,7 +5,7 @@ description: >
   builds with TDD, verifies the project's checks, commits and marks the issue done. Works in a worktree or on
   a branch, on any platform. Use when one issue — a tracker ref, an issue file or inline content — should be
   implemented and committed.
-argument-hint: "An issue file (e.g. .scratch/auth/issues/01-add-logout.md), a tracker ref (e.g. 42) or the issue's content inline"
+argument-hint: "An issue file (e.g. .coding-crew/scratch/auth/issues/01-add-logout.md), a tracker ref (e.g. 42) or the issue's content inline"
 ---
 
 # Solve Issue
