@@ -423,7 +423,7 @@ branch into it first (a conflict stops the run for you to merge by hand).
 | Setting | Effect |
 | --- | --- |
 | `--branch <name>` | The branch the run uses, never the default branch (default: one named after the slug) |
-| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model name, a family with an optional version (`opus`, `claude-opus-5-5`, `opus 5.5`): the host runs the subagent on the matching model in its own list, the closest of the same family when it lacks that version, its own model when it lacks the family. Read from the project's file, then `~/.coding-crew/config.json` for each key it lacks (an Actions runner sees only the project's committed file), then the default (your own) |
+| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model name, a family with an optional version (`opus`, `claude-opus-5-5`, `opus 5.5`): the host runs the subagent on the matching model in its own list, the closest of the same family when it lacks that version, its own model when it lacks the family. Read from `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` when set and non-empty (a name for the one host where you set it: your shell, your agent CLI's settings `env`, or the workflow's repo variables), then the project's file, then `~/.coding-crew/config.json` for each key it lacks (an Actions runner sees only the project's committed file), then the default (your own) |
 
 **Checks that modify files.** A check that leaves the tree modified fails. An auto-fixing lint
 (`make lint` running `--write`) can stay configured: run it once, commit what it rewrote, and re-run.
@@ -476,7 +476,8 @@ The job launches the skill with `copilot -p "Use the solve-feature skill on $SLU
 --verbose` (every tool and path: the skill's scripts are outside the checkout), adding `--model` when the repo
 variable `CREW_MODEL` names one (else the CLI's default for the account); the agent runs each coder, the
 reviewer, the fixer and the PR's writer as its own subagents, on that model unless `solveFeature.models` names
-theirs. Claude's job log shows the run as it goes, one line per step (the model, each command and subagent, a
+theirs; the repo variables `CREW_CODER_MODEL` and `CREW_REVIEWER_MODEL` override `solveFeature.models` for the coder
+(and fixer) and the reviewer on the runner. Claude's job log shows the run as it goes, one line per step (the model, each command and subagent, a
 failed tool), and keeps the whole stream as `.solve-feature/session.jsonl`. Every run uploads `.solve-feature/` as an artifact, so the checks log a stop names
 outlives the runner; a stop at an issue's checks has already pushed its work and made the issue ready again,
 so a re-run picks it up there. A stop

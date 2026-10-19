@@ -5,7 +5,8 @@
 #   start <slug> [--branch <name>]  preconditions, the slug among the tracker's features, the branch (--branch, else
 #                                   feature/<slug>; an existing one gets origin's default branch merged in and
 #                                   pushed), .solve-feature/spec.md; prints branch=, coder-model=,
-#                                   reviewer-model= (.coding-crew/config.json solveFeature.models, else
+#                                   reviewer-model= (CREW_CODER_MODEL / CREW_REVIEWER_MODEL, else
+#                                   .coding-crew/config.json solveFeature.models, else
 #                                   ~/.coding-crew/config.json's) and pr=
 #   next <slug>                     the next ready issue, saved for land; prints its ref. The coder writes its
 #                                   report to .solve-feature/coder.report.md, which land's solve stop names
@@ -129,9 +130,13 @@ die_setup_clash() {
   done
 }
 
-# model <coder|reviewer> — solveFeature.models.<key> from the project's config.json, else the user-level one's, else empty.
+# model <coder|reviewer> — CREW_CODER_MODEL / CREW_REVIEWER_MODEL, else solveFeature.models.<key> from the project's
+# config.json, else the user-level one's, else empty. An empty variable counts as unset: an Actions repo variable that
+# does not exist expands to "".
 model() {
   local cfg m
+  case $1 in coder) m=${CREW_CODER_MODEL:-} ;; reviewer) m=${CREW_REVIEWER_MODEL:-} ;; esac
+  [ -z "$m" ] || { echo "$m"; return; }
   for cfg in "$MAIN_ROOT/.coding-crew/config.json" "$HOME/.coding-crew/config.json"; do
     m=$(jq -r --arg k "$1" '.solveFeature.models[$k] | strings' "$cfg" 2>/dev/null || true)
     [ -z "$m" ] || { echo "$m"; return; }
