@@ -18,24 +18,32 @@ nothing ready: your caller decides what to do with the report.
 
 Your caller names them; a bare number is a PR, nothing at all is the current branch.
 
-- **The change.** A **branch**: it must be checked out at HEAD (`git branch --show-current`); if it is not, tell
-  the caller to check it out and stop. The change is `<base>..HEAD`, `<base>` the ref the
-  caller names, else `git merge-base HEAD origin/<default branch>`. A **PR**: HEAD must be its head (`gh pr view <n>
-  --json headRefOid`); if it is not, tell the caller to run `gh pr checkout <n>` and stop. The change is `gh pr diff
-  <n>`.
-- **The spec.** A file; an issue ref, read with the tracker CLI's `fetch` (`node "<skill-dir>/scripts/tracker/cli.mjs" fetch
-  <ref>`, `<skill-dir>` being the directory you read this file from); or, given a PR and no spec, the PR body's
-  `<details><summary>Spec</summary>` block when it has one, else the whole body. A branch with no spec named has none.
+- **The change.**
+  - A **branch** must be checked out at HEAD (`git branch --show-current`); if it is not, tell the caller to check
+    it out and stop. The change is `<base>..HEAD`, `<base>` the ref the caller names, else
+    `git merge-base HEAD origin/<default branch>`.
+  - A **PR**'s head must be HEAD (`gh pr view <n> --json headRefOid`); if it is not, tell the caller to run
+    `gh pr checkout <n>` and stop. The change is `gh pr diff <n>`.
+- **The spec.**
+  - A file.
+  - An issue ref, read with the tracker CLI's `fetch` (`node "<skill-dir>/scripts/tracker/cli.mjs" fetch <ref>`,
+    `<skill-dir>` being the directory you read this file from).
+  - Given a PR and no spec, the PR body's `<details><summary>Spec</summary>` block when it has one, else the whole
+    body. A branch with no spec named has none.
 - **The report's path.** Write the report there; with none, print it.
 
 ## Run
 
 Review from a context that did not write the change. When you were started to review it, do the review below
-yourself. Otherwise — this conversation wrote or discussed the change — run the review in one **fresh subagent**:
-none of this conversation, the repo's working directory, the prompt `Use the crew-review skill on <the change>
-against <the spec, or: no spec>; write the report to <path>` (or `print the report`), and tools to read files,
-run any shell command and write scratch files outside the repo (it writes its report with one). On Claude Code that
-is a general-purpose agent: Explore and Plan cannot write. Wait for it to finish.
+yourself. Otherwise — this conversation wrote or discussed the change — run the review in one **fresh subagent**
+and wait for it to finish. Give it:
+
+- none of this conversation, and the repo's working directory;
+- the prompt `Use the crew-review skill on <the change> against <the spec, or: no spec>; write the report to
+  <path>` (or `print the report`);
+- tools to read files, run any shell command and write scratch files outside the repo. It writes its report with
+  them, so an agent type limited to exploring or planning will not do.
+
 If HEAD moved or the tree changed, say so: the reviewer did not leave the repo as it found it. With no subagent on
 your host, do the review yourself.
 
@@ -59,38 +67,51 @@ Answer three questions.
 1. **Spec.** What does the spec require that the code at HEAD lacks or does differently? What does the change
    build that the spec did not ask for (a flag, an option, a guard, an abstraction no requirement
    needs)? Quote the spec line, or name the addition. With no spec, skip this question.
-2. **What breaks.** A defect is something a real run hits: name the input or sequence and the bad
-   outcome. Reproduce it where a few commands can — a test, a run of the script, a small experiment in the scratch
-   copy — else trace it in the code; a reproduction that does not trigger it is not evidence it is absent, so trace
-   it then too. Look past the diff: callers, what it calls,
-   state an older version or an earlier run left, re-runs, error and recovery paths, and how the
-   change's commits combine. For each thing the change renames, removes or moves, find whatever still names
-   or relies on the old form — code, docs, prompts, tests — and read it as it stands now. A spec decision can be
-   wrong: when following it causes a defect, report the defect and quote the decision. For each new or changed
-   test, check it fails when the behaviour it covers breaks — where a few commands can, break that behaviour in
-   the scratch copy and run the test; one that cannot fail is a finding naming the test.
-   Count hostile input: credentials in source; text from outside the project (an issue, a PR, a fetched file, an
-   environment value) reaching a shell, eval, path or URL unescaped; an auth or access-control bypass, or a check
-   that an error or missing value skips; a secret or sensitive data logged, returned or committed; a dependency added
-   at a version with a known advisory. A concrete hole only, not a missing hardening measure.
-   Count a second reader: new code that reads an input existing code already reads (a file format, a heading, a
-   flag) is a finding only when the two disagree — an input the old reader accepts that the new one rejects or reads
-   differently — citing both readers' `file:line`. Duplication alone is not. Count dead code the change adds
-   (commented-out code, an unused import, an unreachable branch) or leaves with no caller by removing or moving what
-   called it, although no run hits it.
+2. **What breaks.** A defect is something a real run hits: name the input or sequence and the bad outcome.
+   Reproduce it where a few commands can — a test, a run of the script, a small experiment in the scratch copy —
+   else trace it in the code; a reproduction that does not trigger it is not evidence it is absent, so trace it
+   then too. Work through each of these:
+   - **Look past the diff:** callers, what it calls, state an older version or an earlier run left, re-runs, error
+     and recovery paths, and how the change's commits combine. Check every place the code actually runs — another
+     OS or shell, a container or the host, a missing environment variable, two copies running at once — not only the
+     one the spec pictured.
+   - **Old forms and old behaviour.** For each thing the change renames, removes or moves, or makes behave
+     differently (when it runs, what it outputs), find whatever still names or assumes the old form — code, docs,
+     config, prompts, tests — and read it as it stands now. When the change replaces a path (a new writer, helper
+     or publisher for an old one), read the deleted files in full and trace the old path from where it starts to
+     every write or message it ends in — each payload it built, each handler it fed — then compare what it finally
+     stored or sent with what the new path does: every field, side effect and error. A difference no spec line asks
+     for is a finding.
+   - **One fact, every writer and reader.** When the change makes one place the record of a fact, check that every
+     path writing it keeps it current; when it deletes, renames or maps references, check what still points at the
+     old ones. When new code reads an input existing code already reads (a file format, a heading, a flag), find an
+     input the two accept or read differently, citing both `file:line`; duplication alone is not a finding.
+   - **Gates and premises.** For each gate, stamp, lock or cache key the change adds or relies on, name what passes it
+     that should not: state from another version, an older run or a different input. When the change rests
+     on a claim — a spec decision, or how a tool behaves (run the tool) — check it; when following it causes a
+     defect, report the defect and quote the claim.
+   - **Tests that cannot fail.** For each new or changed test, check it fails when the behaviour it covers breaks:
+     where a few commands can, break that behaviour in the scratch copy and run the test. One that cannot fail is a
+     finding naming the test.
+   - **Hostile input:** credentials in source; text from outside the project (an issue, a PR, a fetched file, an
+     environment value) reaching a shell, eval, path or URL unescaped; an auth or access-control bypass, or a check
+     that an error or missing value skips; a secret or sensitive data logged, returned or committed; a dependency
+     added at a version with a known advisory. A concrete hole only, not a missing hardening measure.
+   - **Dead code** the change adds (commented-out code, an unused import, an unreachable branch) or leaves with no
+     caller by removing or moving what called it, although no run hits it.
 3. **Standards.** Where does the diff break a rule the repo documents? Name the file and the rule.
    Only a documented rule counts; tooling-enforced rules, naming and taste do not.
 
-Do not report input nothing can supply (the project's own components never produce it and it comes
-from no outside source), a missing guard for a case no path reaches, or a preference. Suggest the smallest fix; where removing code fixes it, say that rather
-than adding a guard. One finding per defect, listing every place it occurs. No findings is a valid
-answer.
+Do not report input nothing can supply (the project's own components never produce it and it comes from no
+outside source), a missing guard for a case no path reaches, or a preference. Suggest the smallest fix; where
+removing code fixes it, say that rather than adding a guard. One finding per defect, listing every place it occurs.
+No findings is a valid answer.
 
 Severity: CRITICAL loses data, opens a security hole or breaks the main path; HIGH is wrong behaviour a
 user hits; MEDIUM is a broken error or recovery path, or a broken documented rule; LOW is a wrong
 doc or message, or dead code.
 
-As your last action, write the report as JSON to the path you were given, or print it when you were given none:
+Finish by writing the report as JSON to the path you were given, or printing it when you were given none:
 
 ```json
 {"spec": "met|unmet|none",
@@ -100,5 +121,5 @@ As your last action, write the report as JSON to the path you were given, or pri
                "fix": "<the smallest change>"}]}
 ```
 
-`spec` is `met` when `gaps` is empty, and `none` with empty `gaps` when there was no spec. Then explain in a few
-lines of prose.
+`spec` is `met` when `gaps` is empty, and `none` with empty `gaps` when there was no spec. Close with a few lines
+of prose explaining it.
