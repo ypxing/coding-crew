@@ -7,7 +7,8 @@ REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
 run_node_test() {
   command -v node >/dev/null 2>&1 || skip "node not installed"
   cd "$REPO_ROOT"
-  run node --test "$1"
+  # A temp HOME: a developer's real ~/.coding-crew/config.json must not pick a test's tracker.
+  HOME="$BATS_TEST_TMPDIR/home" run node --test "$1"
   if [ "$status" -ne 0 ]; then
     echo "$output" >&3
   fi
