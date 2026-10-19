@@ -11,7 +11,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - tracker, solve-feature, crew-afk: the working directories moved under `.coding-crew/`: `.scratch/` is now
   `.coding-crew/scratch/` and `.solve-feature/` is now `.coding-crew/solve-feature/`, each still self-ignored. With
   the local tracker, move your issues and repoint their PRD lines once, from the main checkout:
-  `mv .scratch .coding-crew/scratch && grep -rl '\.scratch/' .coding-crew/scratch --include='*.md' | xargs sed -i.bak 's#\.scratch/#.coding-crew/scratch/#g' && find .coding-crew/scratch -name '*.md.bak' -delete`.
+  `mkdir -p .coding-crew/scratch && cp -R .scratch/. .coding-crew/scratch/ && rm -rf .scratch && find .coding-crew/scratch -name '*.md' -exec sed -i.bak 's#\.scratch/#.coding-crew/scratch/#g' {} + && find .coding-crew/scratch -name '*.md.bak' -delete`.
   Until you do, `features` prints nothing and `/solve-feature` finds no issue (your files are untouched). A
   committed solve-feature GitHub Actions workflow reads the old `.solve-feature/` and now fails with "never
   finished: the session ended early or never started" even though the session ran: run
