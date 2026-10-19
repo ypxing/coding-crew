@@ -230,12 +230,17 @@ jobs:
           line=$(cat "$logs/outcome" 2>/dev/null) ||
             line="never finished: the session ended early or never started (see the first failed step)"
           model=$(jq -r 'select(.type == "system" and .subtype == "init") | .model' "$logs/session.jsonl" 2>/dev/null | head -n 1)
+          # Claude Code writes "<synthetic>" as the model of messages it makes up itself (API errors, interruptions).
+          subagent_models=$(jq -Rrn '[inputs | fromjson? | objects | select(.type == "assistant" and .parent_tool_use_id != null)
+            | .message.model? | strings | select(. != "<synthetic>")]
+            | reduce .[] as $m ([]; if index([$m]) then . else . + [$m] end) | join(", ")' "$logs/session.jsonl" 2>/dev/null || true)
           pr=$(sed -n 's/.*pr=\([0-9][0-9]*\).*/\1/p' <<<"$line")
           {
             # A double-backtick span: git's reason can quote names in single backticks.
             echo "### solve-feature $SLUG: \`\` $line \`\`"
             [ -z "$pr" ] || echo "- PR: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr"
             echo "- Agent: $CREW_AGENT, model ${model:-${CREW_MODEL:-unpinned (the CLI default)}}"
+            [ -z "$subagent_models" ] || echo "- Subagent models: $subagent_models"
             ref=${line#stopped: }
             case "$line" in
               "stopped: "*" solve failed: "*) files="$logs/coder.report.md" ;;

@@ -1464,8 +1464,8 @@ yaml_to_json() {
 echo "$*" >"$TEMP_DIR/claude-argv"
 cat <<'J'
 {"type":"system","subtype":"init","model":"claude-opus-5-5"}
-{"type":"assistant","message":{"content":[{"type":"text","text":"Starting."},{"type":"tool_use","name":"Bash","input":{"command":"bash s.sh start feat\necho"}}]},"parent_tool_use_id":null}
-{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Agent","input":{"description":"Coder for 7","model":"opus"}}]},"parent_tool_use_id":null}
+{"type":"assistant","message":{"model":"claude-opus-5-5","content":[{"type":"text","text":"Starting."},{"type":"tool_use","name":"Bash","input":{"command":"bash s.sh start feat\necho"}}]},"parent_tool_use_id":null}
+{"type":"assistant","message":{"model":"claude-opus-5-5","content":[{"type":"tool_use","name":"Agent","input":{"description":"Coder for 7","model":"opus"}}]},"parent_tool_use_id":null}
 {"type":"user","message":{"content":[{"type":"tool_result","is_error":true,"content":"no such file\nmore"}]},"parent_tool_use_id":"t2"}
 {"type":"result","subtype":"error_max_turns","num_turns":3,"duration_ms":120000,"total_cost_usd":1.5}
 J
@@ -1505,8 +1505,24 @@ SH
   [[ "$output" == *"needs-attention pr=10"* ]]
   grep -qxF -- '- PR: https://github.com/o/r/pull/10' "$GITHUB_STEP_SUMMARY"
   grep -qxF -- '- Agent: claude, model claude-opus-5-5' "$GITHUB_STEP_SUMMARY"
+  ! grep -q 'Subagent models' "$GITHUB_STEP_SUMMARY" || false
   grep -qxF -- '- the flaky test' "$GITHUB_STEP_SUMMARY"
   ! grep -q 'report of the last coder' "$GITHUB_STEP_SUMMARY" || false
+  # The models the subagents ran on: distinct, in first-seen order, right after the Agent line; the main session's
+  # own messages, Claude Code's made-up <synthetic> ones and a message with no model add nothing.
+  cat >> .solve-feature/session.jsonl <<'J'
+{"type":"assistant","message":{"model":"claude-opus-5-5","content":[]},"parent_tool_use_id":null}
+{"type":"assistant","message":{"model":"claude-sonnet-5-5","content":[]},"parent_tool_use_id":"t1"}
+{"type":"assistant","message":{"model":"<synthetic>","content":[]},"parent_tool_use_id":"t1"}
+{"type":"assistant","message":{"model":"claude-haiku-5-5","content":[]},"parent_tool_use_id":"t2"}
+{"type":"assistant","message":{"content":[]},"parent_tool_use_id":"t2"}
+{"type":"assistant","message":{"model":"claude-sonnet-5-5","content":[]},"parent_tool_use_id":"t3"}
+J
+  : > "$GITHUB_STEP_SUMMARY"
+  run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -ne 0 ]
+  [ "$(grep -A1 -xF -- '- Agent: claude, model claude-opus-5-5' "$GITHUB_STEP_SUMMARY" | tail -n 1)" = \
+    '- Subagent models: claude-sonnet-5-5, claude-haiku-5-5' ]
   echo 'stopped: 2 checks failed: run-checks.sh exit 1' > .solve-feature/outcome
   echo 'FAIL: test_x' > .solve-feature/2.checks.log
   : > "$GITHUB_STEP_SUMMARY"
