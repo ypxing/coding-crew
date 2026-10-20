@@ -13,8 +13,10 @@ disable-model-invocation: true
 
 # Upgrade Deps
 
-Plan safe dependency upgrades and hand them off as issues. This skill never edits
-`package.json`/lockfiles or runs the upgrade itself — it analyzes, then files issues.
+Plan safe dependency upgrades and hand them off as issues. This skill never edits the checkout's
+`package.json` or lockfiles and never performs an upgrade: it gathers evidence, then files issues whose
+bodies say what was checked and how sure each finding is, so whoever picks one up does not redo the
+analysis or mistake "not checked" for "clean".
 
 Ecosystem support: npm, yarn, pnpm (Node.js). If the repo uses another package manager,
 stop and ask the user before proceeding.
@@ -34,308 +36,157 @@ stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, 
 own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
 <!-- /fragment:tracker-configuration -->
 
+
 ## Running commands
 
 `PROJECT_ROOT` is the repo root, `git rev-parse --show-toplevel`; carry it as a literal, since each
-bash call is a fresh shell. Every project command in this skill — `outdated`, `audit`, `ls`/`why`,
-the dry-run resolutions, and step 6d's checks — runs through the checks library, which runs it where
-the dev commands file's install mode says (inside the container in docker mode, never against the
-host's `node_modules`, which may not even exist there):
+bash call is a fresh shell. Every project command — the package manager's and the checks — runs
+through the checks library, which runs it where the dev commands file's install mode says (in docker
+mode the host may have no `node_modules` at all):
 
 ```bash
 bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"
 ```
 
-Do not install up front. Only when a command fails for a missing dependency (module-not-found, a
-package manager or tool not found) invoke the `dep-install` skill, with `PROJECT_ROOT` set, then
-retry that command once.
+Do not install up front. Only when a command fails for a missing dependency invoke the `dep-install`
+skill, with `PROJECT_ROOT` set, then retry that command once.
 
-Resolve the `test`, `lint` and `typecheck` commands from the dev commands file now: run
-`(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")` and follow its prompt, if it prints one.
+The checks come from the dev commands file (`bash "<skill-dir>/scripts/checks/commands-file.sh"
+--project-root "$PROJECT_ROOT"` prints its path): run `(cd "$PROJECT_ROOT" && bash
+"<skill-dir>/scripts/checks/discover-commands.sh")` first and follow its prompt, if it prints one.
+With `typecheck` null, major bumps lose their mechanical breaking-change signal: say so in each issue
+it affects.
 
-`bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT"` prints the dev
-commands file's path. Step 6 needs `typecheck` to get a mechanical breaking-change signal on major
-bumps; if it resolves to `null`, that step falls back to changelog review alone for every major
-bump — say so when it happens rather than silently skipping the signal.
+When the project has its own outdated or audit wrapper (a Makefile target, a dev commands entry), use
+it: it carries the project's severity threshold and workspace scoping, which you neither loosen nor
+tighten.
 
 ## Process
 
 ### 1. Determine feature slug
 
-Default to `deps-upgrade`. Check whether that feature already exists with `node "$TRACKER"
-features` (one `<slug>\t<open|closed>\t<ready-count>` line per feature). If it lists
-`deps-upgrade`, ask the user whether to reuse it (adding more packages to the same batch) or start
-a fresh dated slug (`deps-upgrade-YYYY-MM-DD`). Never guess silently.
+`deps-upgrade`, unless `node "$TRACKER" features` (one `<slug>\t<open|closed>\t<ready-count>` line
+per feature) already lists it: then ask the user whether to add to that feature or start a fresh
+`deps-upgrade-YYYY-MM-DD`. Never pick silently.
 
-### 2. Inventory outdated dependencies, per workspace
+### 2. Inventory
 
-First check whether the project already has its own wrapper for this — a Makefile target
-(`make outdated`, `make audit`) or a script recorded in the dev commands file alongside
-`test`/`lint`/`typecheck`. If one exists, use it: it already encodes the project's chosen
-flags (severity level, workspace scoping, docker routing) — don't invent a raw
-package-manager invocation that bypasses it.
+Every package outdated in any workspace, with **Current**, **Wanted** (the highest version its declared
+range allows), **Latest** and every workspace that declares it — one row per package, however many
+workspaces or ranges declare it. Classify each:
 
-Otherwise, find every `package.json` in the repo (including workspaces/monorepo packages)
-and run the manager-appropriate outdated command:
+- **In-range** — Latest satisfies the declared range, so only a reinstall moves it, however large the
+  jump looks: the semver contract is trusted here, and the batch issue's real test run verifies it.
+- **Range-edit** — moving to Latest needs a new declared range. Steps 4–6 analyse these.
 
-- npm: `npm outdated --json`
-- yarn classic: `yarn outdated --json` — in practice this often doesn't emit clean JSON;
-  if it errors or the JSON doesn't parse, fall back to the plain-table output and parse that
-  instead of forcing `--json`.
-- yarn berry: `yarn outdated`
-- pnpm: `pnpm outdated --format json`
+### 3. Advisories
 
-For every package, record **Current**, **Wanted** (highest version satisfying the existing
-declared range), **Latest**, and every workspace that declares it. A package declared with
-different ranges in different workspaces is one row with multiple workspace entries, not
-several separate findings.
+Every advisory the audit reports is accounted for, including those on transitive-only packages with no
+inventory row (a `follow-redirects` advisory pulled in by `axios`): name the direct dependencies that
+pull it in, and when another bump in this batch already fixes it, say which instead of filing a
+duplicate. For each advisory:
 
-Classify each package as:
+- **Fixed version**, and whether reaching it is in-range or a range-edit. A fix listed only on a higher
+  major does not prove the current major has none: confirm against the advisory's affected ranges or
+  the registry's published versions, since backports happen.
+- **Exploitability**: whether the code reaches the function or option the advisory names, with the
+  call site, or the search that found none. That function comes from the advisory's own text or its
+  fix, never its title or a guess: with neither at hand, the finding is inconclusive. Reachable is
+  high priority whatever its semver size; unreachable is lower priority, said explicitly.
 
-- **In-range** — `Latest` (or the version you intend to move to) already satisfies the
-  declared range, so `Wanted == Latest` and no `package.json` edit is needed, only a
-  reinstall. This holds regardless of how large the absolute version jump looks (e.g. an
-  SDK that reved hundreds of releases without a major bump) — trust the semver contract, but
-  still verify it with the batch issue's real test run in step 7, not a rubber stamp.
-- **Range-edit** — `Latest > Wanted`, so moving to `Latest` requires bumping the declared
-  range in `package.json`. These need individual analysis (steps 4–6) before filing.
+An advisory-driven package gets its own issue (or joins its coupled group), never the in-range batch,
+even when its fix is in range, so its audit re-check is not buried in unrelated bumps.
 
-### 3. Run a security audit and check exploitability
+### 4. Conflicts and coupling (range-edit packages)
 
-Prefer the project's own audit wrapper if one exists (same check as step 2 — a Makefile
-target often bakes in a severity threshold, e.g. `moderate`, that you should not silently
-loosen or tighten). Otherwise run the manager's audit command directly (`npm audit --json`,
-`yarn audit --json` / `yarn npm audit --json` for berry, `pnpm audit --json`) and
-cross-reference advisories against the inventory from step 2.
+- **Conflicts** — whether the bump resolves, as the package manager's resolver answers on a dry run or
+  lockfile-only update (on a scratch copy when that writes a lockfile, its commands run with
+  `--project-root` set to that copy), never inferred from today's `ls`/`why` tree, which cannot see the
+  post-bump state. A clean resolution is the issue's
+  conflict-clean evidence; a failed or unobtainable one makes it `ready-for-human` (step 7).
+- **Coupled groups** — packages that must move together (a plugin and its host, a family such as
+  `@opentelemetry/*` that does not mix majors) are one issue.
+- **Sequencing** — tooling that is not version-coupled but must move in order (a formatter's
+  flat-config support landing after the linter's migration) is a `Blocked by` edge between issues, not
+  a merged group.
 
-Cross-referencing against step 2 alone misses any advisory on a package that never appears
-there — a transitive-only dependency (e.g. `follow-redirects` pulled in by `axios`) has no
-row of its own in step 2 but can still carry its own CVE. After cross-referencing, scan the
-raw audit output a second time for every advisory whose package has no matching step-2 row,
-and file those too. For each: name the direct dependency (or dependencies) that pull it in,
-and check whether another issue already in this batch resolves it as a side effect of its
-own bump (e.g. bumping `axios` to a version that vendors a fixed `follow-redirects`) — if so,
-say which issue and don't file a duplicate; if not, file it on its own per the CVE rule below.
+### 5. Call sites (range-edit packages)
 
-For every advisory hit:
+Every use of the package across all workspaces, as `file:line` plus the export used ("`axios.get(...)`
+at `apps/foo/client.ts:31`"; "imports the package" is not enough). Tests that mutate the package's
+exports directly (`pkg.method = jest.fn()` rather than `jest.mock('pkg')`) are call sites too, and
+often the most fragile across a major. A package with no call sites gets a lighter issue — the safety
+checklist, no usage tests — labelled unused.
 
-- Note the fixed version and whether reaching it is an in-range or range-edit move. If the
-  advisory's fixed-in version happens to be a higher major than the package's current major,
-  don't infer from the version number alone that no patched release exists on the current
-  major — confirm it against the advisory's own affected-range statement or `npm view <pkg>
-  versions`/the registry, since a patch can and sometimes does land as a backport on the
-  older major too.
-- Check real exploitability, don't just trust the severity label: grep the codebase for the
-  vulnerable function/feature named in the advisory (e.g. a specific parser, propagator, or
-  option). If it's never invoked, say so explicitly and treat the bump as lower priority
-  despite the advisory; if it's reachable, treat it as high priority regardless of semver
-  size.
-- A CVE-driven package always gets its own issue (or joins a coupled group) — never folds
-  into the in-range safe-batch from step 7, even if the fix happens to be in-range, so its
-  advisory-clean re-check (step 7) isn't buried in an unrelated batch.
+### 6. Breaking-change evidence (major bumps only)
 
-### 4. Map transitive impact (range-edit packages only)
+Each major bump's issue reports all five of these, each with what it found or why it could not be
+obtained ("no types shipped", "tags not in the repo"). A silent omission reads as "checked and clean".
 
-For each range-edit candidate, check the wider tree before treating the bump as isolated:
+- **a. Code diff** — whether the published tarballs of the two versions differ in anything but the
+  `version` field and docs (`README*`, `CHANGELOG*`, `HISTORY*`, `LICENSE*`, `docs/`); `exports`,
+  `main`, `engines` and every other manifest field count. No difference proves no impact; otherwise list
+  the changed files.
+- **b. API diff** — each export step 5 found in use that the declared types (shipped or `@types/<pkg>`)
+  removed, renamed or re-signed: a confirmed break, cited with its call site.
+- **c. Breaking commits** — commits between the two versions' tags in the package's declared
+  repository marked `BREAKING CHANGE:` or `!:`, each mapped to a used export or listed as unmapped.
+- **d. Checks under the bump** — `typecheck`, `test` and `lint`, as the dev commands file holds them,
+  run with the bump applied and reinstalled in one disposable git worktree, every command with
+  `--project-root` set to that worktree (never `$PROJECT_ROOT`, whose tree is unbumped), removed once
+  the results are in: the only place this skill changes a manifest or lockfile. A failure names the
+  test or rule and its location. A clean run is "typecheck/test/lint clean", never "no breaking changes": the suite is silent on what it
+  does not exercise.
+- **e. Changelog** — entries naming the used exports, in the package's shipped changelog or its
+  declared repository's release notes. "No entry names `<API>`" is absence of evidence, said as such,
+  and a changelog that cannot be found is said too.
 
-- `npm ls <pkg>` / `pnpm why <pkg>` / `yarn why <pkg>` — every version of `<pkg>` currently
-  pulled in, and by which direct dependencies. This is inventory only — it shows today's
-  tree, not what happens after the bump.
-- Then get a mechanical, resolver-verified answer instead of inferring conflicts from that
-  tree by eye: simulate the bump and let the package manager's own resolution fail loudly if
-  it can't be satisfied.
-  - npm: `npm install <pkg>@<target> --package-lock-only --dry-run` — resolves the full tree
-    without touching `node_modules`; nonzero exit with `ERESOLVE` output means a real
-    peer/transitive conflict, not a guess.
-  - pnpm: `pnpm add <pkg>@<target> --lockfile-only` (run against a scratch copy of the
-    workspace, since this does write a new lockfile) — pnpm's stricter peer resolution fails
-    the same way.
-  - yarn berry: `yarn up <pkg>@<target> --mode=update-lockfile` — updates the lockfile only
-    and reports resolution failures without installing.
-  - Run it through `run.sh` (see "Running commands"), same as every other command in this
-    skill.
-- Treat a clean dry-run/lockfile-only resolution as the actual conflict-clean finding for
-  step 7's safety checklist — not the `ls`/`why` inventory, which can't see the post-bump
-  state. If you can't get a clean resolution, don't guess — this pushes the issue to
-  `ready-for-human` in step 7.
-- Identify packages that must move together (e.g. a plugin and its peer host, or a family
-  like `@opentelemetry/core` + `sdk-metrics` that don't mix major versions) — these become
-  **one** issue, not several, in step 7. Also identify build-tool coupling that isn't a
-  version constraint but still needs sequencing (e.g. a formatter's flat-config support
-  landing only after the linter's own flat-config migration) — express these as `Blocked by`
-  edges between issues, not merged groups.
-
-### 5. Scan the codebase for actual usage (range-edit packages only)
-
-For each range-edit candidate, grep the repo (all workspaces) for real call sites:
-
-- `import ... from '<pkg>'`, `require('<pkg>')`, dynamic imports, re-exports.
-- Record each call site as `file:line` plus which exported API is used there (e.g.
-  "`axios.get(...)` at `apps/foo/client.ts:31`") — vague "imports the package" isn't enough.
-- Also check test files: a test that mocks or mutates the package's exports directly (e.g.
-  reassigning `pkg.method = jest.fn()` instead of `jest.mock('pkg')`) is itself a call site
-  and often the most fragile one across a major bump.
-- A package with zero call sites (transitive-only, or unused) skips straight to a lighter
-  issue: no usage-test requirement, just the safety checklist — call this out explicitly
-  (e.g. "unused" grouping) rather than filing it like a normal bump.
-
-### 6. Mechanical impact signals — major bumps only
-
-Skip this step for patch/minor range-edit bumps; go straight to drafting. For every **major**
-version bump, run these signals in order — each is cheaper/more decisive than the next, and a
-decisive answer from an earlier one doesn't excuse skipping the later ones, since they catch
-different failure classes. **6a is a required minimum for every major bump — it is nearly
-free (no worktree, no install) and skipping straight to a changelog text search (6e) is not a
-substitute for it.** 6b–6d are not optional-in-practice either: attempt each and state its
-result in the issue, even when that result is just "skipped because X" (no types available,
-repo unreachable, tags unresolvable) — a silent omission reads as "not checked," which is
-indistinguishable from "checked and clean" to whoever picks up the issue next.
-
-**6a. Tarball diff — is there even a code change?** The cheapest, most decisive check: many
-"major" bumps only move for a `package.json` metadata reason (dropped Node engine support,
-loosened a peer range) and ship no code diff at all.
-
-- `npm pack <pkg>@<current>` and `npm pack <pkg>@<target>` (or the yarn/pnpm equivalent) into
-  a scratch temp dir — this downloads tarballs only, touches no project file, needs no
-  worktree.
-- Extract both and diff recursively, excluding only the `version` field's value inside
-  `package.json` and non-code files (`README*`, `CHANGELOG*`, `HISTORY*`, `LICENSE*`, `docs/`).
-  Everything else — including other `package.json` fields like `exports`/`main`/`engines` —
-  counts as a real difference.
-- If the diff is empty: state plainly "no code changes between vX and vY, only
-  metadata/docs differ" — this is a **provable absence of impact**, not an inferred one, and
-  feeds the status exception below.
-- If the diff is non-empty, list the changed files and move on to 6b; don't try to eyeball
-  runtime significance from a raw diff here.
-
-**6b. Structural API diff.** If 6a found real code changes and the package ships its own type
-declarations (or has a matching `@types/<pkg>`):
-
-- Extract each version's declared types (via `package.json`'s `types`/`typings` field, or the
-  matching `@types` package) and diff exported members — functions, classes, interfaces,
-  types — restricting attention to the exports actually used in step 5's call sites.
-- Any call-site export that was removed, renamed, or had its signature changed is a
-  **confirmed breaking change** — cite the exact export and call site.
-- No types available: say so and skip to 6c; don't substitute a guess.
-
-**6c. Breaking-change commit mining.** If the package's declared repository is reachable via
-WebFetch (never an arbitrary URL — only that declared repo) and the current/target versions
-resolve to git tags there:
-
-- List commits between the two tags whose subject/body contains a `BREAKING CHANGE:` footer
-  or a conventional-commit `!:` marker (`feat!:`, `fix!:`, etc.) — this is a structured signal
-  a hand-maintained changelog file can omit even when the project otherwise follows
-  conventional commits.
-- For each hit, note whether it names an export/API found in step 5's usage; if you can't map
-  a commit to a specific export, list it anyway and say the mapping is uncertain rather than
-  dropping it.
-- Tags unresolvable or repo unreachable: say so explicitly and skip.
-
-**6d. Worktree-verified typecheck/test/lint.** Create **one** disposable git worktree off the
-current branch, bump this package/group to `<target>` there, reinstall, and run whichever of
-`typecheck`/`test`/`lint` the dev commands file holds as real commands (see "Running commands") in
-that worktree — every command through `run.sh` with `--project-root <the worktree>`. Delete the
-worktree immediately after collecting all results.
-
-- This is the one exception to the rule at the top of this skill (never edit
-  `package.json`/lockfiles): the edit exists only inside the disposable worktree and is never
-  merged, committed to a real branch, or left behind.
-- Report each command's pass/fail; on failure, cite the exact failing test/lint rule and
-  location, not just "tests failed."
-- A clean run is evidence the existing test suite's coverage holds up under the bump, not
-  proof of full behavioral safety — a suite with gaps stays silent on exactly the behavior it
-  doesn't exercise. State it as "typecheck/test/lint clean," never round it up to "no breaking
-  changes."
-
-**6e. Changelog review (text search — last resort for anything 6a–6d didn't already prove).**
-
-- Don't diff the whole changelog. Search it (shipped `CHANGELOG.md`/`HISTORY.md` inside the
-  package, or its declared repository's release notes via WebFetch — never an arbitrary URL)
-  specifically for entries naming the exports/APIs found in use in step 5.
-- Report findings honestly and specifically: "no entry found naming `<API>`" is evidence of
-  absence for that name, not proof of safety — say so, especially when the version span
-  crosses more than one major stabilization or the diff is too large to review
-  entry-by-entry. Don't launder that uncertainty into a clean "no breaking changes" claim.
-- If the changelog can't be located at all for a major bump with real usage, say so
-  explicitly rather than silently treating it as safe.
+Fetch only from a package's declared repository and the registry, never any other URL.
 
 ### 7. Decide status and draft issues
 
-**Batch all in-range packages from step 2 into one issue** (`01-safe-batch` or similar),
-minus any CVE-driven package pulled out in step 3. Table columns: Package, Current, Wanted,
-Workspace(s). Acceptance criteria: reinstall via the package manager (never hand-edit the
-lockfile), full typecheck/lint/test/build green, audit re-check clean. `Status:
-ready-for-agent`.
+**The in-range batch** — one issue (`01-safe-batch` or similar) for every in-range package except the
+advisory-driven ones. Table columns: Package, Current, Wanted, Workspace(s). Acceptance criteria:
+reinstall via the package manager (never hand-edit the lockfile), full typecheck/lint/test/build green,
+audit re-check clean. `Status: ready-for-agent`.
 
-**Draft one issue per range-edit package or coupled group** (per step 4's grouping). Order
-so bumps with clean transitive resolution and confined, changelog-covered usage are
-dispatched first; sequence anything blocked by another package's move behind it.
+**One issue per range-edit package or coupled group**, ordered so clean-resolving, confined bumps come
+first and anything sequenced behind another package's move is blocked by it. Each carries:
 
-Each range-edit issue must include:
-
-- Table of package(s), Current → Latest, and every workspace affected
-- Why it's being bumped: version-currency, or (if from step 3) the CVE id, fixed-in version,
-  and the exploitability finding
-- Usage found: the exact call sites from step 5
-- Mechanical impact signals (major bumps only): the findings from step 6a–6e in order —
-  tarball diff, API diff, breaking-change commits, worktree typecheck/test/lint, changelog —
-  each stated with its actual confidence, not rounded up to "safe"
-- Transitive conflicts from step 4 and how this issue resolves them
-- Every call site from step 5 as its own acceptance-criterion line requiring a new or
-  updated test exercising it
-- The safety checklist below, as acceptance criteria
-
-**Safety checklist (required on every non-batch issue):**
-
-- [ ] Full test suite passes after the bump
-- [ ] Typecheck/build passes after the bump
-- [ ] New/updated tests added for every impacted call site listed above
-- [ ] No peer-dependency or transitive version conflicts remain (dry-run/lockfile-only
-      resolution from step 4 clean, re-verified after the real bump)
-- [ ] If this bump addresses a security advisory, the audit command shows it resolved
+- the package table: Current → Latest, every workspace affected
+- why: currency, or the advisory id, fixed-in version and exploitability finding
+- the call sites from step 5
+- step 6's five findings (major bumps), each at its actual confidence, never rounded up to "safe"
+- the conflicts from step 4 and how this issue resolves them
+- one acceptance criterion per call site, requiring a new or updated test that exercises it
+- the safety checklist, as acceptance criteria:
+  - [ ] Full test suite passes after the bump
+  - [ ] Typecheck/build passes after the bump
+  - [ ] New/updated tests added for every impacted call site listed above
+  - [ ] No peer-dependency or transitive version conflicts remain (resolution from step 4 clean,
+        re-verified after the real bump)
+  - [ ] If this bump addresses a security advisory, the audit command shows it resolved
 
 **Status decision.**
 
-- Any **major**-version range-edit bump — or a coupled group containing one — defaults to
-  `Status: ready-for-human`, regardless of how cleanly steps 3–6 came back. A major bump only
-  guarantees the package's own declared semver contract, not that a coder will notice a
-  subtlety a diligent review happens to catch (e.g. a test that mutates an export directly
-  becoming fragile under a new dual CJS/ESM build). Don't compute your way out of this with a
-  clean per-case risk score — treat "every check passed" as the normal case for a major bump
-  needing a human, not an exception to it. This is about behavior that *did* change and every
-  proxy check happened to miss it — a false negative your checks can't rule out, so it stays
-  human-gated no matter how many checks came back clean.
-  - **Exception — zero-code-impact major.** If 6a's tarball diff found **no code changes at
-    all** between current and target (only metadata/docs differ), and 6b found no confirmed
-    export break, and 6c found no unmapped `BREAKING CHANGE` commit touching a used export,
-    and 6d's available checks (typecheck/test/lint) all ran clean — downgrade to `Status:
-    ready-for-agent`. This is not the same exception the paragraph above forbids: there, the
-    checks are proxies for behavior that could still have changed underneath them; here, 6a
-    has already proven the shipped artifact itself didn't change, so there is no behavior left
-    to have changed. State this reasoning explicitly in the issue ("major version bump, zero
-    code diff between vX and vY per tarball comparison") so a reviewer can verify the claim
-    without redoing the diff.
-  - **"It's just a dev-tool/config dependency, no runtime impact" is not grounds for
-    downgrading a major bump's status on its own** — that reasoning is about *blast radius*,
-    not about whether behavior changed, and it isn't one of the checks above. A lint/build
-    tool major can still hide a judgment-call regression a mechanical check won't catch (e.g.
-    a coder mass-suppressing lint rules just to get `make lint` green again after a ruleset
-    bump). Only the zero-code-impact exception above downgrades a major; "it's just eslint"
-    by itself doesn't.
-- **Minor/patch** range-edit bumps default to `Status: ready-for-agent`, unless any of these
-  hold, in which case escalate to `ready-for-human` and say which:
-  - Step 4 found a transitive/peer conflict with no clean resolution
-  - Step 3 found a CVE fix whose exploitability check was inconclusive
+- **Major** — a major range-edit bump, or a coupled group containing one, is `ready-for-human`
+  however cleanly steps 3–6 came back: each is a proxy that can miss a behaviour change, so "every
+  check passed" is the normal case for a major, not an exception to it. "It's only a dev tool" changes
+  nothing either: that is blast radius, not whether behaviour changed (a linter major invites a
+  mass-suppressed ruleset). The one exception is **zero code impact**: 6a found no code difference, 6b
+  no confirmed break, 6c no breaking commit touching a used export and none left unmapped, and 6d's
+  checks ran clean. Then it is `ready-for-agent`, with that reasoning in the issue ("major version bump, zero code diff between
+  vX and vY per tarball comparison") so a reviewer can verify it without redoing the diff.
+- **Minor/patch** — `ready-for-agent`, unless step 4 found a conflict with no clean resolution or step
+  3's exploitability check was inconclusive: then `ready-for-human`, saying which.
 
-When the decision is `ready-for-human`, step 8 publishes the draft through `to-issues` as
-`ready-for-human` with the reason, as to-issues' Kind B: the bump stays agent work, the person's
+A `ready-for-human` draft is published as to-issues' Kind B: the bump stays agent work, the person's
 steps are the review of the impacted call sites, and the last step relabels the issue
 `ready-for-agent` so an agent makes the bump.
 
-Either way, state the reasoning in the issue body — what was checked and what the finding
-was — so whoever picks it up (human or coder) knows what's already been verified. Use the
-same issue body template as `to-issues` (Context Documents / What to build / Acceptance
-criteria / Blocked by / Interfaces where relevant).
+Every body states what was checked and what each check found, in the same issue body template as
+`to-issues` (Context Documents / What to build / Acceptance criteria / Blocked by / Interfaces where
+relevant).
 
 ### 8. Publish
 

@@ -245,8 +245,6 @@ REPO/.claude/skills/solve-issue/scripts/tracker/tracker-config.mjs exec=0
 REPO/.claude/skills/tdd/ /
 REPO/.claude/skills/tdd/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/tdd/references/ /
-REPO/.claude/skills/tdd/references/deep-modules.md exec=0
-REPO/.claude/skills/tdd/references/interface-design.md exec=0
 REPO/.claude/skills/tdd/references/mocking.md exec=0
 REPO/.claude/skills/tdd/references/tests.md exec=0
 REPO/.claude/skills/to-issues/ /

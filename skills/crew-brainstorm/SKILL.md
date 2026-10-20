@@ -88,12 +88,11 @@ Simplicity never cuts structure the design needs now: one owner per concern, no 
 
 ### Presenting the design
 
-- Once you believe you understand what you're building, present the design
 - Scale each section to its complexity: a few sentences if straightforward, up to 200-300 words if nuanced
 - Ask after each section whether it looks right so far
 - Cover: architecture, components, data flow, error handling, testing
+- In existing code, follow its patterns; include a targeted improvement where existing code's problems affect this work (a file grown too large, tangled responsibilities), and no unrelated refactoring
 - Every default you chose is marked as yours, tagged `(auto)`, never written as something the user agreed to: a default they never heard is one they couldn't reject. Only what they said goes in as theirs.
-- Be ready to go back and clarify if something doesn't make sense
 - Before asking for final approval, run the subtraction pass (the size test above), then the verification pass:
 
 <!-- fragment:verification-pass -->
@@ -107,18 +106,6 @@ Report every change as "said X → actually Y (source)". Fix each decision built
 <!-- /fragment:verification-pass -->
 
 - Then ask for final approval of the whole design, showing what you cut and every correction the verification pass made
-
-### Design for isolation and clarity
-
-- Break the system into smaller units that each have one clear purpose, communicate through well-defined interfaces, and can be understood and tested independently
-- For each unit, you should be able to answer: what does it do, how do you use it, and what does it depend on?
-- Can someone understand what a unit does without reading its internals? Can you change the internals without breaking consumers? If not, the boundaries need work.
-
-### Working in existing codebases
-
-- Explore the current structure before proposing changes. Follow existing patterns.
-- Where existing code has problems that affect the work (e.g., a file that's grown too large, unclear boundaries, tangled responsibilities), include targeted improvements as part of the design - the way a good developer improves code they're working in.
-- Don't propose unrelated refactoring. Stay focused on what serves the current goal.
 
 ## After the Design
 
