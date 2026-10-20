@@ -50,6 +50,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- crew-review: a reviewer started to review a change reviews it itself, and a review handed to a fresh subagent
+  runs on the reviewer's own model; a Copilot reviewer on Opus had handed the review to a nested agent with no model
+  set, which marked a PR with three bugs ready with no findings.
 - crew-review: every judgement about the change is made on the reviewer's model, never a weaker one, and the report
   stays the reviewer's, judged across the whole change; helper subagents are otherwise unrestricted, so a nested
   helper on a weaker model no longer writes the PR's review (#592).

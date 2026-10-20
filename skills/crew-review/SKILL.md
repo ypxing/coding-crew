@@ -35,10 +35,12 @@ Your caller names them; a bare number is a PR, nothing at all is the current bra
 ## Run
 
 Review from a context that did not write the change. When you were started to review it, do the review below
-yourself. Otherwise — this conversation wrote or discussed the change — run the review in one **fresh subagent**
-and wait for it to finish. Give it:
+yourself: a conversation that opens with a request to review the change, as a subagent's prompt does, is that.
+Otherwise — this conversation wrote or discussed the change — run the review in one **fresh subagent** and wait
+for it to finish. Give it:
 
 - none of this conversation, and the repo's working directory;
+- your own model: a host can start a subagent with no model named on a weaker one;
 - the prompt `Use the crew-review skill on <the change> against <the spec, or: no spec>; write the report to
   <path>` (or `print the report`);
 - tools to read files, run any shell command and write scratch files outside the repo. It writes its report with
