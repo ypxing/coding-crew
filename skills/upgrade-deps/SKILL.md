@@ -90,8 +90,9 @@ duplicate. For each advisory:
   major does not prove the current major has none: confirm against the advisory's affected ranges or
   the registry's published versions, since backports happen.
 - **Exploitability**: whether the code reaches the function or option the advisory names, with the
-  call site, or the search that found none. Reachable is high priority whatever its semver size;
-  unreachable is lower priority, said explicitly.
+  call site, or the search that found none. That function comes from the advisory's own text or its
+  fix, never its title or a guess: with neither at hand, the finding is inconclusive. Reachable is
+  high priority whatever its semver size; unreachable is lower priority, said explicitly.
 
 An advisory-driven package gets its own issue (or joins its coupled group), never the in-range batch,
 even when its fix is in range, so its audit re-check is not buried in unrelated bumps.
