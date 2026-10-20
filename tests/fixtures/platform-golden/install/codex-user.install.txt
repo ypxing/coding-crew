@@ -251,8 +251,6 @@ HOME/.agents/skills/solve-issue/scripts/tracker/tracker-config.mjs exec=0
 HOME/.agents/skills/tdd/ /
 HOME/.agents/skills/tdd/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/tdd/references/ /
-HOME/.agents/skills/tdd/references/deep-modules.md exec=0
-HOME/.agents/skills/tdd/references/interface-design.md exec=0
 HOME/.agents/skills/tdd/references/mocking.md exec=0
 HOME/.agents/skills/tdd/references/tests.md exec=0
 HOME/.agents/skills/to-issues/ /

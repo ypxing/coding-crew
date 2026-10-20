@@ -38,18 +38,15 @@ WRONG (horizontal):          RIGHT (vertical):
 
 ### 1. Planning
 
-When exploring the codebase, use the project's domain glossary so that test names and interface vocabulary match the project's language, and respect ADRs in the area you're touching.
-
-Before writing any code:
-
-- [ ] Confirm with user which interface changes are needed and which behaviours to test, in priority order — you can't test everything, so focus on critical paths and complex logic, and get approval on that plan
-- [ ] Identify opportunities for deep modules (see `references/deep-modules.md` alongside this skill file)
-- [ ] Design interfaces for testability (see `references/interface-design.md` alongside this skill file)
-- [ ] List the behaviors to test (not implementation steps)
+Before writing any code, have a plan the user approved: the behaviours to test (behaviours, not
+implementation steps), in priority order — not everything, the critical paths and complex logic — and
+the interface changes they need. Name both in the project's domain glossary vocabulary, consistent with
+the ADRs in the area you touch; the interfaces are small, take their dependencies rather than create
+them, and return results rather than hide side effects, so the tests can reach them.
 
 **Non-interactive runs.** With no human in the loop — a headless/`-p` invocation, a subagent, or
-a program named as your caller — the confirm-and-approve box cannot be
-satisfied and must not be waited on. Treat the task your caller gave as the approved plan, derive
+a program named as your caller — the user's approval cannot be had
+and must not be waited on. Treat the task your caller gave as the approved plan, derive
 the interface and behaviour list from it, record that list in your notes, and go straight to §2. Never ask a question nobody will read.
 
 ### 2. Tracer Bullet
@@ -94,27 +91,14 @@ RED:   Write next test → run it → confirm failure output
 GREEN: Minimal code to pass → run it → confirm pass
 ```
 
-Rules:
-
-- One test at a time
-- Run the test after writing it — paste the failure before touching source
-- Only enough code to pass current test
-- Don't anticipate future tests
-- Keep tests focused on observable behavior
+Write only enough code to pass the current test, never for a test you expect to write later.
 
 ### 4. Refactor
 
-After all tests pass, look for refactor candidates:
-
-- [ ] Extract duplication
-- [ ] Break long methods into private helpers (keep tests on the public interface)
-- [ ] Move logic that envies another module's data to where that data lives
-- [ ] Replace primitive obsession with value objects
-- [ ] Combine or deepen shallow modules (move complexity behind simple interfaces)
-- [ ] Apply SOLID principles where natural
-- [ ] Consider what new code reveals about existing code
-- [ ] Remove any abstraction this cycle added that isn't earning its keep (interface with one implementation, config for a value that never changes)
-- [ ] Run tests after each refactor step
+Once every test passes, leave the code you touched no worse structured than you found it: no
+duplication you added, complexity behind small interfaces, tests still on the public interface, and no
+abstraction this cycle added that isn't earning its keep (an interface with one implementation, config
+for a value that never changes). The tests pass after every refactor step.
 
 **Never refactor while RED.** Get to GREEN first.
 

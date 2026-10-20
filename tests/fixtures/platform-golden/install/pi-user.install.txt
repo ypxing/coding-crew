@@ -254,8 +254,6 @@ HOME/.pi/agent/skills/solve-issue/scripts/tracker/tracker-config.mjs exec=0
 HOME/.pi/agent/skills/tdd/ /
 HOME/.pi/agent/skills/tdd/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/tdd/references/ /
-HOME/.pi/agent/skills/tdd/references/deep-modules.md exec=0
-HOME/.pi/agent/skills/tdd/references/interface-design.md exec=0
 HOME/.pi/agent/skills/tdd/references/mocking.md exec=0
 HOME/.pi/agent/skills/tdd/references/tests.md exec=0
 HOME/.pi/agent/skills/to-issues/ /
