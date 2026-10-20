@@ -53,7 +53,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - upgrade-deps, address-pr-comments, tdd, solve-issue, crew-brainstorm, add-tests, dep-install: the prompts state
   what each step must produce and leave how to the agent: per-package-manager command recipes, query and script
   listings, and textbook checklists are gone (upgrade-deps 358 → 206 lines), and tdd's `deep-modules.md` and
-  `interface-design.md` references are removed.
+  `interface-design.md` references are removed (#598).
 - crew-review: a reviewer started to review a change reviews it itself, and a review handed to a fresh subagent
   runs on the reviewer's own model; a Copilot reviewer on Opus had handed the review to a nested agent with no model
   set, which marked a PR with three bugs ready with no findings.
