@@ -53,9 +53,13 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - solve-feature: SKILL.md drops what the run never reads (the outcome-file format, now in the guide's "Running a
   feature", and the models row's lookup order, already there) and the per-stop re-run notes each stop message carries;
   the script drops an old-version head-file test and the empty-commit case of the reviewer discard (#599).
+- write-pr: the title follows the PR-title format the repo documents or enforces (contributing or agent
+  instructions, a PR template, a CI check on titles), its type prefix and ticket ID included, with the placeholder
+  the rule allows when no ticket is known; a solve-feature run no longer ends `needs-attention` over a title its
+  fixer cannot change.
 - crew-review: a reviewer started to review a change reviews it itself, and a review handed to a fresh subagent
   runs on the reviewer's own model; a Copilot reviewer on Opus had handed the review to a nested agent with no model
-  set, which marked a PR with three bugs ready with no findings.
+  set, which marked a PR with three bugs ready with no findings (#596).
 - crew-review: every judgement about the change is made on the reviewer's model, never a weaker one, and the report
   stays the reviewer's, judged across the whole change; helper subagents are otherwise unrestricted, so a nested
   helper on a weaker model no longer writes the PR's review (#592).
