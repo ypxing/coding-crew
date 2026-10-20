@@ -50,6 +50,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- dep-install: in docker mode, each install removes the repo's dependency volumes that no live checkout uses any more
+  (a removed worktree's, and a checkout's own from before its lockfile changed), so runs no longer fill the disk with
+  a full dependency copy per lockfile change and per feature; a volume a container has mounted is left for the next
+  install (#599)
 - solve-feature: SKILL.md drops what the run never reads (the outcome-file format, now in the guide's "Running a
   feature", and the models row's lookup order, already there) and the per-stop re-run notes each stop message carries;
   the script drops an old-version head-file test and the empty-commit case of the reviewer discard (#599).

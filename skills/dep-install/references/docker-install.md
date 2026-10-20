@@ -27,6 +27,10 @@ no install command. Still apply the retry rule if a later command fails with a m
 error: a package installed into the volume since the stamp was written (an in-container `npm install
 foo`) is not in the lockfile, and `--force` reinstalls.
 
+Each call also removes the repo's dependency volumes no live checkout's override names (`prune-volumes.sh`):
+a removed worktree's, and a checkout's own from before its lockfile changed. Only volumes an override of this
+repo named are touched, and one a container has mounted is left for the next call.
+
 `docker-install.sh` reads `docker_service`, `install` and `registry_auth` from the dev commands
 file itself (`scripts/checks/commands-file.sh` names it); dep-install's Step 1 has already made sure
 they were asked. Do not look for an install command or a registry auth command yourself.
