@@ -62,20 +62,12 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
 the step, the reason and, for the checks, its log; a `solve` stop, the coder's report) — and end; do
 not retry, fix or close anything: a stop's recovery steps are for a person, never for you to carry out.
 Once the cause is fixed, a re-run skips the issues already done and reuses the branch and the PR, which `start`
-brings up to date with the default branch first. A `checks`
-stop has already reopened its issue and pushed its work, so the re-run's coder starts from that work; a `land`
-`push` stop has already reopened its issue too, so a re-run where git can push redoes it, from its unpushed
-commits when in the same checkout. A push stop of `start` or after a review was fixed names its own recovery.
+brings up to date with the default branch first.
 
 Run it where an unattended agent may change the checkout — a worktree or a container, not the one
 the user works in. Nothing takes a lock: never start a second run on a slug whose run is still going.
 
-Every run ends with one line in `<repo>/.coding-crew/solve-feature/outcome` — `ready pr=<n>`, `needs-attention pr=<n>` or
-`stopped: <what> failed: <reason>` — for a host to read; no file means the run never finished. `<what>` is the
-subcommand that stopped (`start failed: …`, `next failed: nothing landed: …`), or the issue ref or `review` and
-the step (`2 checks failed: …`, `review reviewer failed: …`, `review fix failed: …`).
-
 | Setting                                         | Effect                                                         |
 | ----------------------------------------------- | -------------------------------------------------------------- |
 | `--branch <name>`                               | The branch the run uses, never the default branch (default: one named after the slug) |
-| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model name, a family with an optional version (`opus`, `claude-opus-5-5`, `opus 5.5`): the host runs the subagent on the matching model in its own list, the closest of the same family when it lacks that version, its own model when it lacks the family. Read from `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` when set and non-empty (a name for the one host where you set it: your shell, your agent CLI's settings `env`, or the workflow's repo variables), then the project's file, then `~/.coding-crew/config.json` for each key it lacks (an Actions runner sees only the project's committed file), then the default (your own) |
+| `solveFeature.models.coder` / `.reviewer`       | The coder and fixer / reviewer model name; `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` override it, and `start` prints the one it resolved |

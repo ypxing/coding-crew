@@ -196,17 +196,6 @@ push_says() {
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
 }
 
-@test "a fix re-run reads the round's head from an earlier version's head file, which also listed the tips it merged" {
-  fix_ready
-  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -ne 0 ]
-  git rev-parse HEAD >>.coding-crew/solve-feature/pr-10.head
-  run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ -z "$(attention)" ]
-  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
-}
-
 @test "a second review round compares with its own head: a round-2 fixer that changed nothing is flagged" {
   fix_ready
   run bash "$SCRIPT" fix feat 10 feature/feat
@@ -428,21 +417,20 @@ reviewed_stops() {
   [ "$(discarded)" = "scratch/" ]
 }
 
-@test "reviewed keeps config.json and an untracked dev commands file, and lists an empty commit by its hash" {
+@test "reviewed keeps config.json and an untracked dev commands file" {
   loop
   git rm -q --cached .coding-crew/config.json .coding-crew/dev-commands.json && git commit -q -m "setup untracked"
   run bash "$SCRIPT" next feat; [ "$status" -eq 3 ]
   report '{"spec":"met","gaps":[],"findings":[]}'
   local base; base=$(git rev-parse HEAD)
   echo '{"test":"make check"}' > .coding-crew/dev-commands.json
-  git commit -q --allow-empty -m "reviewer's empty commit"
-  local empty; empty=$(git rev-parse --short HEAD)
+  echo scratch > reviewer.txt
   run bash "$SCRIPT" reviewed feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(git rev-parse HEAD)" = "$base" ]
   [ "$(cat .coding-crew/dev-commands.json)" = '{"test":"make check"}' ]
   [ -f .coding-crew/config.json ]
-  [ "$(discarded)" = "$empty" ]
+  [ "$(discarded)" = "reviewer.txt" ]
 }
 
 @test "reviewed keeps a tracked config.json's uncommitted local edit when it discards the reviewer's changes" {
