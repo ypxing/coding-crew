@@ -40,6 +40,8 @@ SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
   ! grep -qi 'read-only' "$SKILL" || false
   grep -qF 'If HEAD moved or the tree changed, say so' "$SKILL"
   grep -qF 'When you were started to review it, do the review below' "$SKILL"
+  grep -qF 'a conversation that opens with a request to review the change' "$SKILL"
+  grep -qF -- '- your own model: a host can start a subagent with no model named on a weaker one;' "$SKILL"
   grep -qF 'Use the crew-review skill on <the change>' "$SKILL"
   ! grep -qF 'answer its three questions yourself' "$SKILL" || false
   grep -qF 'Start helper subagents whenever they help' "$SKILL"
