@@ -36,10 +36,6 @@ the lockfile, and `--force` reinstalls.
 - **3** — the install command failed. Report `BLOCKED` with the stderr tail it prints, which ends
   `docker-install: failed — service <s>, step <step>, exit <n>`.
 
-Each call also removes the repo's dependency volumes no live checkout's override names (`prune-volumes.sh`):
-a removed worktree's, and a checkout's own from before its lockfile changed. Only volumes an override of this
-repo named are touched, and one a container has mounted is left for the next call.
-
 ## 2. Every later command through `run.sh`
 
 ```bash
