@@ -50,9 +50,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
-- write-pr: the title follows the PR-title format the repo documents (CONTRIBUTING.md, AGENTS.md, CLAUDE.md or a
-  standards doc), its type prefix and ticket ID included, with the placeholder the rule allows when no ticket is
-  known; a solve-feature run no longer ends `needs-attention` over a title its fixer cannot change.
+- write-pr: the title follows the PR-title format the repo documents or enforces (contributing or agent
+  instructions, a PR template, a CI check on titles), its type prefix and ticket ID included, with the placeholder
+  the rule allows when no ticket is known; a solve-feature run no longer ends `needs-attention` over a title its
+  fixer cannot change.
 - crew-review: a reviewer started to review a change reviews it itself, and a review handed to a fresh subagent
   runs on the reviewer's own model; a Copilot reviewer on Opus had handed the review to a nested agent with no model
   set, which marked a PR with three bugs ready with no findings (#596).
