@@ -11,7 +11,8 @@
 # only when the root dependency volume (named by lockfile hash) lacks a .crew-stamp; --force deletes
 # the stamp first. An install command that runs docker itself (e.g. `make deps` wrapping `docker compose
 # run`) runs on the host, as run.sh runs such a check, its compose calls given the override by the shim.
-# A failed install removes the override again, so the next run.sh call retries it.
+# A failed install removes the override again, so the next run.sh call retries it. Once the override is
+# written, prune-volumes.sh removes the repo's volumes no live checkout names any more.
 # Exit codes: 0 installed (now or already), 1 argument or filesystem error, 2 nothing to install (no
 # compose file, service or ecosystem), 3 install failed (no stamp written)
 # Every failure ends with one line on stderr: `docker-install: failed — service <s>, step <step>, exit <n>`.
@@ -115,6 +116,7 @@ bash "$SELF_DIR/ensure-env.sh" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 ||
 GENERATED=1
 GEN_OUT="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" 2>&1)" \
   || _fail 1 "generate override" "gen-override.sh failed: $GEN_OUT"
+bash "$SELF_DIR/prune-volumes.sh" --project-root "$PROJECT_ROOT"
 
 # The stamp lives in the first (root) dependency volume: only an install that ran fills it.
 STAMP_DIR="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query vendor-paths 2>/dev/null | head -1)"
