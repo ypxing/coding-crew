@@ -99,8 +99,9 @@ even when its fix is in range, so its audit re-check is not buried in unrelated 
 ### 4. Conflicts and coupling (range-edit packages)
 
 - **Conflicts** — whether the bump resolves, as the package manager's resolver answers on a dry run or
-  lockfile-only update (on a scratch copy when that writes a lockfile), never inferred from today's
-  `ls`/`why` tree, which cannot see the post-bump state. A clean resolution is the issue's
+  lockfile-only update (on a scratch copy when that writes a lockfile, its commands run with
+  `--project-root` set to that copy), never inferred from today's `ls`/`why` tree, which cannot see the
+  post-bump state. A clean resolution is the issue's
   conflict-clean evidence; a failed or unobtainable one makes it `ready-for-human` (step 7).
 - **Coupled groups** — packages that must move together (a plugin and its host, a family such as
   `@opentelemetry/*` that does not mix majors) are one issue.
@@ -130,9 +131,10 @@ obtained ("no types shipped", "tags not in the repo"). A silent omission reads a
 - **c. Breaking commits** — commits between the two versions' tags in the package's declared
   repository marked `BREAKING CHANGE:` or `!:`, each mapped to a used export or listed as unmapped.
 - **d. Checks under the bump** — `typecheck`, `test` and `lint`, as the dev commands file holds them,
-  run with the bump applied in one disposable git worktree, removed once the results are in: the only
-  place this skill changes a manifest or lockfile. A failure names the test or rule and its location. A
-  clean run is "typecheck/test/lint clean", never "no breaking changes": the suite is silent on what it
+  run with the bump applied and reinstalled in one disposable git worktree, every command with
+  `--project-root` set to that worktree (never `$PROJECT_ROOT`, whose tree is unbumped), removed once
+  the results are in: the only place this skill changes a manifest or lockfile. A failure names the
+  test or rule and its location. A clean run is "typecheck/test/lint clean", never "no breaking changes": the suite is silent on what it
   does not exercise.
 - **e. Changelog** — entries naming the used exports, in the package's shipped changelog or its
   declared repository's release notes. "No entry names `<API>`" is absence of evidence, said as such,
@@ -171,8 +173,8 @@ first and anything sequenced behind another package's move is blocked by it. Eac
   check passed" is the normal case for a major, not an exception to it. "It's only a dev tool" changes
   nothing either: that is blast radius, not whether behaviour changed (a linter major invites a
   mass-suppressed ruleset). The one exception is **zero code impact**: 6a found no code difference, 6b
-  no confirmed break, 6c no breaking commit touching a used export, and 6d's checks ran clean. Then it
-  is `ready-for-agent`, with that reasoning in the issue ("major version bump, zero code diff between
+  no confirmed break, 6c no breaking commit touching a used export and none left unmapped, and 6d's
+  checks ran clean. Then it is `ready-for-agent`, with that reasoning in the issue ("major version bump, zero code diff between
   vX and vY per tarball comparison") so a reviewer can verify it without redoing the diff.
 - **Minor/patch** — `ready-for-agent`, unless step 4 found a conflict with no clean resolution or step
   3's exploitability check was inconclusive: then `ready-for-human`, saying which.

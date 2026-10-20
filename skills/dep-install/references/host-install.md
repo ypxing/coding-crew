@@ -22,5 +22,7 @@ Exit codes:
 - Every command runs from `PROJECT_ROOT`, through the ecosystem's standard runner (`npm test`, `go test ./...`,
   `cargo test`, `pytest`, `bundle exec rspec`), never a binary path you built (`./node_modules/.bin/jest`).
 - Install runs **once**; again only after you add a package.
+- `cargo fetch` downloads sources only: when the tests need compiled proc-macro crates, also run
+  `cargo build --quiet`.
 - Never inject auth tokens or dummy credentials.
 - Lockfile changes are staged or committed only when you added a package.
