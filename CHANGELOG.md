@@ -52,7 +52,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 - solve-feature: SKILL.md drops what the run never reads (the outcome-file format, now in the guide's "Running a
   feature", and the models row's lookup order, already there) and the per-stop re-run notes each stop message carries;
-  the script drops an old-version head-file test and the empty-commit case of the reviewer discard.
+  the script drops an old-version head-file test and the empty-commit case of the reviewer discard (#599).
 - crew-review: a reviewer started to review a change reviews it itself, and a review handed to a fresh subagent
   runs on the reviewer's own model; a Copilot reviewer on Opus had handed the review to a nested agent with no model
   set, which marked a PR with three bugs ready with no findings.
