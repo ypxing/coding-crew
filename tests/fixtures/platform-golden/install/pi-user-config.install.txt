@@ -246,8 +246,6 @@ CONFIG/skills/solve-issue/scripts/tracker/tracker-config.mjs exec=0
 CONFIG/skills/tdd/ /
 CONFIG/skills/tdd/SKILL.md exec=0 unrendered=0
 CONFIG/skills/tdd/references/ /
-CONFIG/skills/tdd/references/deep-modules.md exec=0
-CONFIG/skills/tdd/references/interface-design.md exec=0
 CONFIG/skills/tdd/references/mocking.md exec=0
 CONFIG/skills/tdd/references/tests.md exec=0
 CONFIG/skills/to-issues/ /

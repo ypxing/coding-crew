@@ -245,8 +245,6 @@ HOME/.claude/skills/solve-issue/scripts/tracker/tracker-config.mjs exec=0
 HOME/.claude/skills/tdd/ /
 HOME/.claude/skills/tdd/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/tdd/references/ /
-HOME/.claude/skills/tdd/references/deep-modules.md exec=0
-HOME/.claude/skills/tdd/references/interface-design.md exec=0
 HOME/.claude/skills/tdd/references/mocking.md exec=0
 HOME/.claude/skills/tdd/references/tests.md exec=0
 HOME/.claude/skills/to-issues/ /

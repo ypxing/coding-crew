@@ -21,19 +21,14 @@ bash call is a fresh shell. The commands come from the dev commands file
 (`.coding-crew/dev-commands.json`). Run
 `(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")` and follow its prompt, if it prints one.
 
-Then read the two fields this skill needs:
-
-```bash
-COMMANDS_FILE=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT")
-grep -o '"coverage"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$COMMANDS_FILE"
-grep -o '"integration"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$COMMANDS_FILE"
-```
+Then read its `coverage` and `integration` fields (`bash "<skill-dir>/scripts/checks/commands-file.sh"
+--project-root "$PROJECT_ROOT"` prints its path).
 
 **If `coverage` resolves to `null`** (a model already looked and confirmed no coverage command
 exists) or is absent (discovery had no files to read), tell the user plainly and stop. A `null` is never asked again, so name both ways out:
 
 > "This project has no coverage command configured, so I can't find coverage gaps. Set
-> `"coverage"` in the dev commands file (`<the path COMMANDS_FILE holds>`) to the command that
+> `"coverage"` in the dev commands file (`<its path>`) to the command that
 > produces a coverage report, or rerun step 1's discovery with `--refresh` once the
 > project documents one, then re-run `/add-tests`."
 
@@ -58,10 +53,9 @@ Run the discovered `coverage` command through the checks library:
 bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<coverage command>"
 ```
 
-Read whatever report format it produces (lcov,
-Cobertura XML, a JS test runner's JSON summary, `go tool cover`'s profile, …) yourself, as a
-model — extract per-file statement/branch coverage from the raw report. Do not write or invoke a
-parser per format; the report formats vary too much for that to stay maintainable.
+Take per-file statement and branch coverage from the raw report yourself, whatever its format (lcov,
+Cobertura XML, a JSON summary, `go tool cover`'s profile, …), never through a parser written or
+installed for it: the formats vary too much for one to stay maintained.
 
 ### 4. Score and cap under-covered files
 

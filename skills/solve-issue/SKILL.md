@@ -135,11 +135,13 @@ found) means invoke `dep-install` then. Do not probe `node_modules`, `.venv` or 
 
 ### 3. Explore before coding
 
-1. Read `CLAUDE.md` (or `AGENTS.md`) at `$PROJECT_ROOT` if it exists and is not already in your context.
-2. Grep for similar patterns — existing utilities, helpers and conventions to reuse.
-3. Identify callers of the files you plan to change.
-4. For each file from Step 1, read it and its test file; their test style, naming and patterns are
-   the style contract for Step 4. Expand the list if exploration reveals more files. Do not guess.
+Before writing code, know from the code, never from a guess:
+
+- the project's rules: `CLAUDE.md` (or `AGENTS.md`) at `$PROJECT_ROOT`, when it exists;
+- the utilities, helpers and conventions already there to reuse;
+- the callers of every file you plan to change;
+- every such file and its test file, Step 1's list grown by what exploration turns up: their test
+  style, naming and patterns are the style contract for Step 4.
 
 **Bug-fix issues:** if multiple callers share the broken behavior, fix it in the function they all
 route through, not only at the call site the issue names.
@@ -265,20 +267,12 @@ Example: `[01-auth-logout] Add user logout endpoint`. Do not push.
 
 ### 6.5. The dev commands file
 
-The dev commands file is this tree's `.coding-crew/dev-commands.json` when this branch tracks it, else the main
-checkout's, committed or not. Step 5's `DISCOVER` may write it. A tracked copy is this branch's: commit it with
-Step 6's prefix. An untracked one is the user's to commit once satisfied:
-
-```bash
-DEV=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PROJECT_ROOT")
-if git -C "$PROJECT_ROOT" ls-files --error-unmatch -- "$DEV" >/dev/null 2>&1; then
-  [ -z "$(git -C "$PROJECT_ROOT" status --porcelain -- "$DEV")" ] ||
-    PROJECT_ROOT="$PROJECT_ROOT" bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
-      --prefix "<Step 6's prefix>" --message "Record the discovered dev commands" --files .coding-crew/dev-commands.json
-elif [ -n "$(git -C "$(dirname "$(dirname "$DEV")")" status --porcelain -- "$DEV" 2>/dev/null)" ]; then
-  echo "Reminder: $DEV is untracked or modified — review and commit it."
-fi
-```
+The dev commands file (`bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root
+"$PROJECT_ROOT"` prints its path) is this tree's `.coding-crew/dev-commands.json` when this branch tracks
+it, else the main checkout's, committed or not. Step 5's `DISCOVER` may write it. When it has
+uncommitted changes, a copy this branch tracks is this branch's: commit it as Step 6 does, with its prefix and the
+message `Record the discovered dev commands`. An untracked one is the user's to commit once satisfied:
+print `Reminder: <its path> is untracked or modified — review and commit it.`
 
 ### 7. Mark done
 
