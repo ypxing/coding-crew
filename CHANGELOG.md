@@ -53,7 +53,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - solve-feature: `next` prints `reviewer-model=` again when no issue is left, right before the review, so the
   reviewer runs on its model rather than the session's (a Copilot run reviewed on Sonnet with Opus set). The
   Actions workflow's Copilot run now streams JSON as Claude's does: the job log shows one line per step and each
-  subagent's model, the summary page lists the subagent models, and the artifact keeps `session.jsonl` and the CLI's logs.
+  subagent's model, the summary page lists the subagent models, and the artifact keeps `session.jsonl` and the CLI's logs (#600).
 - dep-install: in docker mode, each install removes the repo's dependency volumes that no live checkout uses any more
   (a removed worktree's, and a checkout's own from before its lockfile changed), so runs no longer fill the disk with
   a full dependency copy per lockfile change and per feature; a volume a container has mounted is left for the next
