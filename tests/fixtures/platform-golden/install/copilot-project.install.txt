@@ -50,6 +50,16 @@ REPO/.github/skills/address-pr-comments/scripts/git-workflow/ /
 REPO/.github/skills/address-pr-comments/scripts/git-workflow/README.md exec=0
 REPO/.github/skills/address-pr-comments/scripts/git-workflow/branch-safety-check.sh exec=1
 REPO/.github/skills/address-pr-comments/scripts/git-workflow/commit-changes.sh exec=1
+REPO/.github/skills/address-pr-comments/scripts/tracker/ /
+REPO/.github/skills/address-pr-comments/scripts/tracker/body-format.mjs exec=0
+REPO/.github/skills/address-pr-comments/scripts/tracker/cli.mjs exec=0
+REPO/.github/skills/address-pr-comments/scripts/tracker/docs/ /
+REPO/.github/skills/address-pr-comments/scripts/tracker/docs/github.md exec=0
+REPO/.github/skills/address-pr-comments/scripts/tracker/docs/local.md exec=0
+REPO/.github/skills/address-pr-comments/scripts/tracker/github.mjs exec=0
+REPO/.github/skills/address-pr-comments/scripts/tracker/index.mjs exec=0
+REPO/.github/skills/address-pr-comments/scripts/tracker/local.mjs exec=0
+REPO/.github/skills/address-pr-comments/scripts/tracker/tracker-config.mjs exec=0
 REPO/.github/skills/configure-tracker/ /
 REPO/.github/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/configure-tracker/scripts/ /

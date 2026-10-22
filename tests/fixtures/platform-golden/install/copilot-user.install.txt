@@ -50,6 +50,16 @@ HOME/.copilot/skills/address-pr-comments/scripts/git-workflow/ /
 HOME/.copilot/skills/address-pr-comments/scripts/git-workflow/README.md exec=0
 HOME/.copilot/skills/address-pr-comments/scripts/git-workflow/branch-safety-check.sh exec=1
 HOME/.copilot/skills/address-pr-comments/scripts/git-workflow/commit-changes.sh exec=1
+HOME/.copilot/skills/address-pr-comments/scripts/tracker/ /
+HOME/.copilot/skills/address-pr-comments/scripts/tracker/body-format.mjs exec=0
+HOME/.copilot/skills/address-pr-comments/scripts/tracker/cli.mjs exec=0
+HOME/.copilot/skills/address-pr-comments/scripts/tracker/docs/ /
+HOME/.copilot/skills/address-pr-comments/scripts/tracker/docs/github.md exec=0
+HOME/.copilot/skills/address-pr-comments/scripts/tracker/docs/local.md exec=0
+HOME/.copilot/skills/address-pr-comments/scripts/tracker/github.mjs exec=0
+HOME/.copilot/skills/address-pr-comments/scripts/tracker/index.mjs exec=0
+HOME/.copilot/skills/address-pr-comments/scripts/tracker/local.mjs exec=0
+HOME/.copilot/skills/address-pr-comments/scripts/tracker/tracker-config.mjs exec=0
 HOME/.copilot/skills/configure-tracker/ /
 HOME/.copilot/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 HOME/.copilot/skills/configure-tracker/scripts/ /

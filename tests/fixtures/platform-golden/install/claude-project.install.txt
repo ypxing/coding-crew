@@ -48,6 +48,16 @@ REPO/.claude/skills/address-pr-comments/scripts/git-workflow/ /
 REPO/.claude/skills/address-pr-comments/scripts/git-workflow/README.md exec=0
 REPO/.claude/skills/address-pr-comments/scripts/git-workflow/branch-safety-check.sh exec=1
 REPO/.claude/skills/address-pr-comments/scripts/git-workflow/commit-changes.sh exec=1
+REPO/.claude/skills/address-pr-comments/scripts/tracker/ /
+REPO/.claude/skills/address-pr-comments/scripts/tracker/body-format.mjs exec=0
+REPO/.claude/skills/address-pr-comments/scripts/tracker/cli.mjs exec=0
+REPO/.claude/skills/address-pr-comments/scripts/tracker/docs/ /
+REPO/.claude/skills/address-pr-comments/scripts/tracker/docs/github.md exec=0
+REPO/.claude/skills/address-pr-comments/scripts/tracker/docs/local.md exec=0
+REPO/.claude/skills/address-pr-comments/scripts/tracker/github.mjs exec=0
+REPO/.claude/skills/address-pr-comments/scripts/tracker/index.mjs exec=0
+REPO/.claude/skills/address-pr-comments/scripts/tracker/local.mjs exec=0
+REPO/.claude/skills/address-pr-comments/scripts/tracker/tracker-config.mjs exec=0
 REPO/.claude/skills/configure-tracker/ /
 REPO/.claude/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/configure-tracker/scripts/ /

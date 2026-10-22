@@ -3,8 +3,8 @@ name: address-pr-comments
 description: >
   Fetches every review comment on the current branch's open pull request, challenges each one critically,
   implements the sensible ones with TDD, commits the touched files and prints a summary; on a solve-feature PR
-  it also pushes once the project's checks pass. Use when a PR has review comments to work through. Trigger
-  with /address-pr-comments.
+  it instead files the accepted ones as one issue of the PR's feature, runs solve-feature on it and replies on
+  each thread. Use when a PR has review comments to work through. Trigger with /address-pr-comments.
 argument-hint: "Optional PR number or URL (defaults to current branch's open PR)"
 ---
 
@@ -40,7 +40,11 @@ bash call is a fresh shell. Do not install dependencies up front. Run project co
 one fails for a missing dependency (module-not-found, import error, test runner not found) invoke the
 `dep-install` skill, with `PROJECT_ROOT` set, then retry the command once.
 
-`gh` must be installed and authenticated (`gh auth status`); if not, stop with what is missing.
+`gh` must be installed and authenticated (`gh auth status`); if not, stop with what is missing. The tracker
+CLI is `TRACKER=<skill-dir>/scripts/tracker/cli.mjs`, run as `node "$TRACKER" <op> …`.
+
+**Non-interactive run.** A run whose prompt says it is non-interactive (`Use the address-pr-comments skill on
+PR #<n>; this run is non-interactive`) asks nothing: Step 3 decides without confirmation, as it says.
 
 ## Step 1 — Identify the PR
 
@@ -50,12 +54,12 @@ If the user passed a PR number or URL as an argument, use it. Otherwise run:
 gh pr view --json number,url,title,body
 ```
 
-Confirm the PR number with the user before proceeding if it is ambiguous. Keep `body` for Step 5.
+Confirm the PR number with the user before proceeding if it is ambiguous. Keep `body` for the test below.
 
 **solve-feature PR.** A PR whose body has the solve-feature block (a `<!-- solve-feature:begin -->`
 line) is solve-feature's. Its `<slug>` is the one the block's `<!-- solve-feature:slug <slug> -->`
 line names. The head branch alone never makes a PR solve-feature's: its name is the run's choice
-(`--branch`).
+(`--branch`). On one, also keep the PR's `headRefName` and `isDraft` (`gh pr view <n> --json headRefName,isDraft`).
 
 ## Step 2 — Fetch all review comments
 
@@ -63,8 +67,15 @@ Every comment on the PR: top-level comments and review bodies (`gh pr view <numb
 and every inline review thread with its path, line, replies and resolved state — which only GraphQL's
 `reviewThreads` carries (`gh api graphql`, paginated past the first page when there is one).
 
-Triage each thread as one item, its replies read together. Skip a thread whose `isResolved` is true
-unless the user says otherwise.
+Triage each thread as one item, its replies read together, keeping its node `id` and URL. Skip a thread whose
+`isResolved` is true unless the user says otherwise.
+
+**Which threads a round handles, on a solve-feature PR:** the unresolved ones whose last comment is not by the
+identity you post as — your `gh api user --jq .login`, `github-actions` on GitHub Actions. GraphQL names a bot
+without the `[bot]` suffix REST gives it, so compare logins with that suffix removed. A thread you already
+answered waits until someone replies on it, so a repeated round re-posts and re-files nothing. Its top-level
+comments and review bodies are context for judging those threads, never items: a round files nothing for one and
+replies to none, since nothing marks one handled and every later round would act on it again.
 
 ## Step 3 — Challenge each comment
 
@@ -85,7 +96,63 @@ Show the user a triage table before making any changes:
 
 Ask the user to confirm or override any **Debatable** or **Dismiss** entries before proceeding to Step 4.
 
+**Non-interactive** (Step 0.1): skip the confirmation and decide each Debatable yourself:
+
+- A real concern the feature's spec allows → accepted, as an Actionable one.
+- One that contradicts a decision in the feature's spec (on a solve-feature PR, its PRD: `node "$TRACKER" prd
+  --feature-slug <slug>`), or asks for a change in the areas the ground rules guard → reply on the thread with
+  your counter-argument, @mentioning the feature root issue's assignees, else its author, and leave the thread
+  open for them. The root is the issue whose body has a `Feature: <slug>` line at column 0 (the tracker CLI
+  writes it only on the root): `gh issue list --state all --search '"Feature: <slug>" in:body' --json
+  number,body`; then `gh issue view <root> --json assignees,author`. With the local tracker there is no GitHub
+  root issue: the reply carries no @mention.
+- **Dismiss** → reply with the reason. Resolve the thread only when it is Copilot's (its comments by
+  `copilot-pull-request-reviewer`, as GraphQL names it); a person's stays open for that person.
+
+A reply that leaves a thread open for a person asks them to answer by replying on it: a reply starts the next round
+on GitHub Actions, resolving the thread alone does not.
+
+Every reply, resolve and unresolve goes through `gh api graphql` (`addPullRequestReviewThreadReply`,
+`resolveReviewThread`, `unresolveReviewThread`, each on the thread's node `id`).
+
+## Step 3.5 — solve-feature PR: file the fixes, run solve-feature
+
+On a solve-feature PR (Step 1's test), interactive or not, this step replaces Steps 4–5: you do not edit, commit
+or push code yourself. solve-feature codes, checks and reviews the fix on the same branch and PR, and stays the
+one writer of the PR body and its ready state. On any other PR skip this step.
+
+1. **No accepted thread** → file nothing, and go to 4 anyway when the feature has a ready issue (`node "$TRACKER"
+   next --feature-slug <slug>` exits 0: a run this round's own displaced, on GitHub Actions, left it unworked) or
+   the round leaves no unresolved thread on a PR that is a draft (a person's decision closed the last one, so
+   solve-feature marks it ready), or leaves one on a PR that is not a draft (solve-feature turns it back into a
+   draft and lists the open threads). Otherwise go to Step 6.
+2. **File one issue.** First write the feature's issues into a new temporary directory (`mktemp -d`, outside the
+   checkout; `node "$TRACKER" known --feature-slug <slug> --out <dir>`). An accepted thread whose link an unticked
+   `- [ ]` criterion there already cites was filed by an earlier round whose run stopped: it is not filed again.
+   When every accepted thread is already cited, file nothing and go to 3. Otherwise, in another new temporary
+   directory, write `01-review-comments.md` and a `deps.json` holding `{}`. The draft opens with `# Address review
+   comments on PR #<n>` and `Status: ready-for-agent`, then `## What to build`, and `## Acceptance criteria` with
+   one `- [ ]` criterion per accepted thread not already cited: the reviewer's requirement in your own words, ending with the thread's
+   link. `## Blocked by` is `None - can start immediately`. Publish it into the PR's feature:
+   `node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> --append` (`--append` adds it beside the
+   feature's landed issues); a non-zero exit stops the round with its stderr.
+3. **Resolve** each accepted thread, before solve-feature runs: its `describe` counts unresolved threads.
+4. **Run solve-feature.** Remove `$PROJECT_ROOT/.coding-crew/solve-feature/outcome` if present, then use the
+   `solve-feature` skill on `<slug> --branch <headRefName>` (without `--branch` it picks its own default
+   branch, and a PR on another branch would get a second PR).
+5. **Close the loop** from its outcome file, one line:
+   - `ready pr=<n>` or `needs-attention pr=<n>` — its review runs only once no ready issue is left, so the new
+     issue landed: reply `Fixed in <sha>` (the branch's head, `git rev-parse --short HEAD`) on each accepted thread.
+   - `stopped: …`, or no outcome file — `unresolveReviewThread` each accepted thread, so the next round sees it.
+
+   The GitHub tracker never closes an issue mid-run (`mark-done` labels it `awaiting-merge`), so read the
+   outcome, not the issue's state.
+
+Then go to Step 6.
+
 ## Step 4 — Implement actionable changes with TDD
+
+Not on a solve-feature PR: Step 3.5 replaced Steps 4–5 there.
 
 For each **Actionable** comment (in dependency order — test infrastructure before business logic):
 
@@ -111,25 +178,13 @@ bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
   --coauthor "<your agent name> <your agent's commit email>"
 ```
 
-**Push — solve-feature PRs only** (Step 1's test). On one, after the commit, run the project's
-checks:
-
-```bash
-bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT"
-```
-
-- It prints `DISCOVER` — the dev commands file has no checks yet. Run
-  `(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")`, follow its prompt, then run `run-checks.sh` again.
-
-- It prints `CHECKS: pass` — run a plain `git push`: never forced, no `--force` or
-  `--force-with-lease`. A rejected push is reported in the Summary, never retried with force.
-- Anything else (`CHECKS: fail`) — stop here, show the failing output, and do not push. The Summary says the push was not made and why.
-
-On any other PR, do not push — leave that to the user.
+Do not push — leave that to the user.
 
 ## Step 6 — Summary
 
-Print a markdown summary with three sections, plus whether Step 5 pushed:
+Print a markdown summary with three sections. On a solve-feature PR add the issue Step 3.5 filed (or that it
+filed none), solve-feature's outcome line, and each handled thread's end state (resolved, unresolved again, or
+left open for whom):
 
 ### Addressed
 

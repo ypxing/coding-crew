@@ -23,7 +23,7 @@ setup() {
   TEMP_DIR=$(cd "$(mktemp -d)" && pwd -P)
   export STATE="$TEMP_DIR/state" HOME="$TEMP_DIR/home"
   mkdir -p "$STATE" "$HOME"
-  unset PR_EXISTS PR_DRAFT PR_HEAD_OID PR_STATE PR_HEAD_REF GH_READY_FAIL TRACKER_KIND SOLVE_FEATURE_HOST CREW_CODER_MODEL CREW_REVIEWER_MODEL
+  unset PR_EXISTS PR_DRAFT PR_HEAD_OID PR_STATE PR_HEAD_REF GH_READY_FAIL GH_UNDO_FAIL GH_THREADS_FAIL TRACKER_KIND SOLVE_FEATURE_HOST CREW_CODER_MODEL CREW_REVIEWER_MODEL
 
   INSTALL="$HOME/skill/scripts"
   mkdir -p "$HOME/skill"
@@ -135,7 +135,15 @@ case "$1 $2" in
   "pr create") k=$(( $(ls "$STATE" | grep -c '^pr-create\.[0-9]*$') + 1 )); printf '%s\n' "$@" > "$STATE/pr-create.$k"
     cp "$file" "$STATE/pr-body"; touch "$STATE/pr-created"; echo "https://github.com/o/r/pull/10" ;;
   "pr edit") k=$(( $(ls "$STATE" | grep -c '^pr-edit\.[0-9]*$') + 1 )); printf '%s\n' "$@" > "$STATE/pr-edit.$k"; cp "$file" "$STATE/pr-body" ;;
-  "pr ready") [ -z "${GH_READY_FAIL:-}" ] || exit 1 ;;
+  "pr ready") if [ "${4:-}" = --undo ]; then [ -z "${GH_UNDO_FAIL:-}" ] || exit 1; else [ -z "${GH_READY_FAIL:-}" ] || exit 1; fi ;;
+  # The review threads, one JSON document per page as `--paginate` prints them: $STATE/threads.<k>, else one empty
+  # page. Without --paginate only the first page.
+  "api graphql")
+    [ -z "${GH_THREADS_FAIL:-}" ] || { echo "gh: GraphQL: boom" >&2; exit 1; }
+    pages=$(ls "$STATE" | grep '^threads\.[0-9]*$' | sort -t. -k2 -n || true)
+    [ -n "$pages" ] || { echo '{"data":{"repository":{"pullRequest":{"url":"https://github.com/o/r/pull/10","reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}'; exit 0; }
+    [[ " $* " == *" --paginate "* ]] || pages=$(head -n1 <<<"$pages")
+    for f in $pages; do cat "$STATE/$f"; done ;;
   *) exit 1 ;;
 esac
 EOF
@@ -223,4 +231,17 @@ fixed() {
   fix_ready "$@"
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "fix: $output"; return 1; }
+}
+
+# threads <resolved…> … — the PR's review threads, one argument per page, each a space-separated list of
+# true/false isResolved values: `threads "false true" "false"` is two pages holding two unresolved threads.
+threads() {
+  local k=0 page
+  for page in "$@"; do
+    k=$((k + 1))
+    jq -n --arg r "$page" --argjson more "$([ "$k" -lt $# ] && echo true || echo false)" --arg c "c$k" \
+      '{data: {repository: {pullRequest: {url: "https://github.com/o/r/pull/10",
+        reviewThreads: {nodes: [$r | split(" ")[] | select(. != "") | {isResolved: (. == "true")}],
+          pageInfo: {hasNextPage: $more, endCursor: $c}}}}}}' >"$STATE/threads.$k"
+  done
 }
