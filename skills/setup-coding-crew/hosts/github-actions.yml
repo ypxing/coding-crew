@@ -165,14 +165,33 @@ jobs:
           [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || unset CLAUDE_CODE_OAUTH_TOKEN
           model=()
           [ -z "$CREW_MODEL" ] || model=(--model "$CREW_MODEL")
+          # The whole event stream is kept for the artifact; tee -p keeps the session going should the filter die.
+          mkdir -p .coding-crew/solve-feature && echo '*' > .coding-crew/solve-feature/.gitignore
           case "$CREW_AGENT" in
-            copilot) copilot -p "Use the solve-feature skill on $SLUG" --allow-all --no-color "${model[@]}" ;;
+            copilot)
+              copilot -p "Use the solve-feature skill on $SLUG" --allow-all --no-color "${model[@]}" --output-format json \
+                --log-dir .coding-crew/solve-feature/copilot-logs |
+                tee -p .coding-crew/solve-feature/session.jsonl | jq --unbuffered -Rr '
+                  fromjson? | select(.ephemeral != true) | try (
+                    (if .data.parentToolCallId? then "    " else "" end) as $pad | .data as $d
+                    | if .type == "assistant.message" then $d.content | select(. != "") | $pad + .
+                      elif .type == "tool.execution_start" then $d.arguments as $a
+                        | if $d.toolName == "bash" then $pad + "$ " + ($a.command | tostring | split("\n")[0])
+                          elif $d.toolName == "task" then
+                            $pad + "> subagent: \($a.description // "")" + (if $a.model then " (\($a.model))" else "" end)
+                          else $pad + "\($d.toolName) \($a.path // $a.skill // "")" end
+                      elif .type == "tool.execution_complete" and ($d.success == false or ($d.shellExecution.exitCode // 0) != 0) then
+                        $pad + "  failed: " + ($d.error.message? // $d.error // $d.result.content? // "exit \($d.shellExecution.exitCode)"
+                          | tostring | split("\n")[0])
+                      elif .type == "subagent.completed" then "< subagent \($d.agentDisplayName) ran on \($d.model)"
+                      elif .type == "result" then
+                        "session: exit \(.exitCode), \(.usage.sessionDurationMs / 60000 | floor) min, \(.usage.premiumRequests) premium requests"
+                      else empty end
+                  ) catch empty' ;;
             claude)
               [ -n "${ANTHROPIC_API_KEY:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ] ||
                 { echo "::error::Claude Code needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1; }
-              # Plain -p prints only the session's last message, at its end; tee -p keeps the session going should
-              # the filter die.
-              mkdir -p .coding-crew/solve-feature && echo '*' > .coding-crew/solve-feature/.gitignore
+              # Plain -p prints only the session's last message, at its end.
               claude -p "/solve-feature $SLUG" --dangerously-skip-permissions "${model[@]}" --output-format stream-json --verbose |
                 tee -p .coding-crew/solve-feature/session.jsonl | jq --unbuffered -Rr '
                   fromjson? | try (
@@ -245,10 +264,15 @@ jobs:
           logs=.coding-crew/solve-feature
           line=$(cat "$logs/outcome" 2>/dev/null) ||
             line="never finished: the session ended early or never started (see the first failed step)"
-          model=$(jq -r 'select(.type == "system" and .subtype == "init") | .model' "$logs/session.jsonl" 2>/dev/null | head -n 1)
+          # Claude's session names its model in the init event, Copilot's on each top-level message.
+          model=$(jq -r '(select(.type == "system" and .subtype == "init") | .model),
+            (select(.type == "assistant.message" and .data.parentToolCallId == null) | .data.model)' \
+            "$logs/session.jsonl" 2>/dev/null | head -n 1)
           # Claude Code writes "<synthetic>" as the model of messages it makes up itself (API errors, interruptions).
-          subagent_models=$(jq -Rrn '[inputs | fromjson? | objects | select(.type == "assistant" and .parent_tool_use_id != null)
-            | .message.model? | strings | select(. != "<synthetic>")]
+          subagent_models=$(jq -Rrn '[inputs | fromjson? | objects
+            | (select(.type == "assistant" and .parent_tool_use_id != null) | .message.model?),
+              (select(.type == "subagent.completed") | .data.model?)
+            | strings | select(. != "<synthetic>")]
             | reduce .[] as $m ([]; if index([$m]) then . else . + [$m] end) | join(", ")' "$logs/session.jsonl" 2>/dev/null || true)
           pr=$(sed -n 's/.*pr=\([0-9][0-9]*\).*/\1/p' <<<"$line")
           {

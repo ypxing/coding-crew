@@ -168,11 +168,15 @@ nothing_left() { # exit 3; with no open PR on the branch, the run has nothing to
   if [ -z "$PR_N" ]; then
     echo "solve-feature: nothing landed: no ready issue for $SLUG and no open PR" >&2
     outcome "stopped: next failed: nothing landed: no ready issue for $SLUG and no open PR"
+  else
+    # Again here, beside the review step: start's line is issues behind by now, and a run lost it once (PR 343).
+    echo "reviewer-model=$(model reviewer)"
   fi
   exit 3
 }
 
-# next — the next ready issue, saved for land; prints its ref, or exits 3 when none is left.
+# next — the next ready issue, saved for land; prints its ref, or exits 3 when none is left (printing reviewer-model=
+# when there is a PR to review).
 next() {
   local rc=0 ref
   ref=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?

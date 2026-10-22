@@ -476,13 +476,14 @@ to GitHub Copilot with no API key; `claude` runs Claude Code on an `ANTHROPIC_AP
 workflow by hand with the slug. The file's header explains billing.
 
 The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all
---no-color` or `claude -p "/solve-feature $SLUG" --dangerously-skip-permissions --output-format stream-json
+--no-color --output-format json` or `claude -p "/solve-feature $SLUG" --dangerously-skip-permissions --output-format stream-json
 --verbose` (every tool and path: the skill's scripts are outside the checkout), adding `--model` when the repo
 variable `CREW_MODEL` names one (else the CLI's default for the account); the agent runs each coder, the
 reviewer, the fixer and the PR's writer as its own subagents, on that model unless `solveFeature.models` names
 theirs; the repo variables `CREW_CODER_MODEL` and `CREW_REVIEWER_MODEL` override `solveFeature.models` for the coder
 (and fixer) and the reviewer on the runner. Claude's job log shows the run as it goes, one line per step (the model, each command and subagent, a
-failed tool), and keeps the whole stream as `.coding-crew/solve-feature/session.jsonl`. Every run uploads `.coding-crew/solve-feature/` as an artifact, so the checks log a stop names
+failed tool), Copilot's too (each subagent's model as it ends). Both keep the whole stream as `.coding-crew/solve-feature/session.jsonl`
+(Copilot's own logs beside it, in `copilot-logs/`). Every run uploads `.coding-crew/solve-feature/` as an artifact, so the checks log a stop names
 outlives the runner; a stop at an issue's checks has already pushed its work and made the issue ready again,
 so a re-run picks it up there. A stop
 exits the session without failing it, so the job's last step fails it unless the run's one-line
