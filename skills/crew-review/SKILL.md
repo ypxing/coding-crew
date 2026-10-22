@@ -107,9 +107,14 @@ Answer three questions.
    Only a documented rule counts; tooling-enforced rules, naming and taste do not.
 
 Do not report input nothing can supply (the project's own components never produce it and it comes from no
-outside source), a missing guard for a case no path reaches, or a preference. Suggest the smallest fix; where
-removing code fixes it, say that rather than adding a guard. One finding per defect, listing every place it occurs.
-No findings is a valid answer.
+outside source), a missing guard for a case no path reaches, or a preference. One finding per defect, listing every
+place it occurs. No findings is a valid answer.
+
+Each finding gets one fix, never a choice of fixes: the one that adds the least behaviour — no trigger, flag,
+permission, input or path the spec does not name. Where removing code fixes it, say that rather than adding a guard.
+A fix that rests on how a tool, API or platform behaves is checked like the change's own claims (Gates and
+premises), never written from memory. When only a change to a spec decision fixes the defect, it is not a finding:
+it is a gap, quoting that decision, for a person to decide.
 
 Severity: CRITICAL loses data, opens a security hole or breaks the main path; HIGH is wrong behaviour a
 user hits; MEDIUM is a broken error or recovery path, or a broken documented rule; LOW is a wrong
@@ -119,10 +124,10 @@ Finish by writing the report as JSON to the path you were given, or printing it 
 
 ```json
 {"spec": "met|unmet|none",
- "gaps": ["each spec requirement the code at HEAD lacks or does differently (question 1)"],
+ "gaps": ["each spec requirement the code at HEAD lacks or does differently (question 1), and each defect only a change to a spec decision fixes, quoting it"],
  "findings": [{"severity": "CRITICAL|HIGH|MEDIUM|LOW", "location": "<file:line>",
                "issue": "<trigger → bad outcome, or the rule broken, or the addition no requirement needs>",
-               "fix": "<the smallest change>"}]}
+               "fix": "<the one fix>"}]}
 ```
 
 `spec` is `met` when `gaps` is empty, and `none` with empty `gaps` when there was no spec. Close with a few lines
