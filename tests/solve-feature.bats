@@ -636,15 +636,24 @@ yaml_to_json() {
   cat > "$STUB/copilot" <<'SH'
 #!/usr/bin/env bash
 cat <<'J'
-{"type":"session.mcp_server_status_changed","data":{"status":"pending"},"ephemeral":true}
-{"type":"assistant.message","data":{"content":"Starting."}}
+{"type":"assistant.message_delta","data":{"deltaContent":"Sta"},"ephemeral":true}
+{"type":"assistant.message","data":{"model":"claude-sonnet-5.5","content":"Starting."}}
+{"type":"assistant.message","data":{"model":"claude-sonnet-5.5","content":""}}
+{"type":"tool.execution_start","data":{"toolName":"bash","arguments":{"command":"bash s.sh start feat\necho"}}}
+{"type":"tool.execution_start","data":{"toolName":"task","arguments":{"description":"Review","model":"claude-opus-5.5"}}}
+{"type":"tool.execution_start","data":{"toolName":"skill","arguments":{"skill":"crew-review"},"parentToolCallId":"t1"}}
+{"type":"tool.execution_complete","data":{"success":true,"shellExecution":{"exitCode":2},"result":{"content":"no such file\nmore"},"parentToolCallId":"t1"}}
+{"type":"tool.execution_complete","data":{"success":true,"shellExecution":{"exitCode":0},"parentToolCallId":"t1"}}
+{"type":"subagent.completed","data":{"agentDisplayName":"reviewer","model":"claude-opus-5.5"}}
+{"type":"result","exitCode":0,"usage":{"premiumRequests":1,"sessionDurationMs":381782}}
 J
 exit 4
 SH
   run env CREW_AGENT=copilot CREW_MODEL= SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/run-step.sh"
   [ "$status" -eq 4 ]
-  [ "$output" = 'assistant.message {"content":"Starting."}' ]
-  [ "$(wc -l < .coding-crew/solve-feature/session.jsonl)" -eq 2 ]
+  [ "$output" = "$(printf '%s\n' Starting. '$ bash s.sh start feat' '> subagent: Review (claude-opus-5.5)' '    skill crew-review' \
+    '      failed: no such file' '< subagent reviewer ran on claude-opus-5.5' 'session: exit 0, 6 min, 1 premium requests')" ]
+  [ "$(wc -l < .coding-crew/solve-feature/session.jsonl)" -eq 10 ]
   run env CREW_AGENT=claude CREW_MODEL= SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/run-step.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"* ]]
@@ -729,6 +738,19 @@ J
   [ "$status" -ne 0 ]
   [ "$(grep -A1 -xF -- '- Agent: claude, model claude-opus-5-5' "$GITHUB_STEP_SUMMARY" | tail -n 1)" = \
     '- Subagent models: claude-sonnet-5-5, claude-haiku-5-5' ]
+  # Copilot's session: the model of its first top-level message, and each subagent's from its completed event.
+  cp .coding-crew/solve-feature/session.jsonl "$TEMP_DIR/claude-session.jsonl"
+  cat > .coding-crew/solve-feature/session.jsonl <<'J'
+{"type":"assistant.message","data":{"model":"claude-opus-5.5","content":"","parentToolCallId":"t1"}}
+{"type":"assistant.message","data":{"model":"claude-sonnet-5.5","content":"Starting."}}
+{"type":"subagent.completed","data":{"model":"claude-opus-5.5"}}
+{"type":"subagent.completed","data":{"model":"claude-sonnet-5.5"}}
+J
+  : > "$GITHUB_STEP_SUMMARY"
+  CREW_AGENT=copilot run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$(grep -A1 -xF -- '- Agent: copilot, model claude-sonnet-5.5' "$GITHUB_STEP_SUMMARY" | tail -n 1)" = \
+    '- Subagent models: claude-opus-5.5, claude-sonnet-5.5' ]
+  mv "$TEMP_DIR/claude-session.jsonl" .coding-crew/solve-feature/session.jsonl
   echo 'stopped: 2 checks failed: run-checks.sh exit 1' > .coding-crew/solve-feature/outcome
   echo 'FAIL: test_x' > .coding-crew/solve-feature/2.checks.log
   : > "$GITHUB_STEP_SUMMARY"
