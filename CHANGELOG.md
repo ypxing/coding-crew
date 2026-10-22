@@ -50,6 +50,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- solve-feature: the fixer judges each review finding before acting on it instead of applying the reviewer's fix as
+  given: it checks any tool or platform fact a fix rests on, adds no trigger, flag, permission, input or path the
+  spec does not name, and lists a finding that is wrong, or that only a change to a spec decision fixes, for a person
+  (#604's fixer added a workflow trigger its PRD had ruled out, and GitHub has no such trigger) (#605).
 - setup-coding-crew: the solve-feature Actions workflow also runs on a review submitted on a solve-feature PR (a
   thread reply included, an approval not), by Copilot's reviewer or a user with write access, running `/address-pr-comments` on the
   PR non-interactively in the feature's concurrency group, where a newer run cancels a pending one (a round runs
