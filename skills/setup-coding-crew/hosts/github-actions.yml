@@ -165,14 +165,18 @@ jobs:
           [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || unset CLAUDE_CODE_OAUTH_TOKEN
           model=()
           [ -z "$CREW_MODEL" ] || model=(--model "$CREW_MODEL")
+          # The whole event stream is kept for the artifact; tee -p keeps the session going should the filter die.
+          mkdir -p .coding-crew/solve-feature && echo '*' > .coding-crew/solve-feature/.gitignore
           case "$CREW_AGENT" in
-            copilot) copilot -p "Use the solve-feature skill on $SLUG" --allow-all --no-color "${model[@]}" ;;
+            copilot)
+              copilot -p "Use the solve-feature skill on $SLUG" --allow-all --no-color "${model[@]}" --output-format json \
+                --log-dir .coding-crew/solve-feature/copilot-logs |
+                tee -p .coding-crew/solve-feature/session.jsonl | jq --unbuffered -Rr '
+                  fromjson? | select(.ephemeral != true) | "\(.type) \(.data | tostring | .[0:300])"' ;;
             claude)
               [ -n "${ANTHROPIC_API_KEY:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ] ||
                 { echo "::error::Claude Code needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1; }
-              # Plain -p prints only the session's last message, at its end; tee -p keeps the session going should
-              # the filter die.
-              mkdir -p .coding-crew/solve-feature && echo '*' > .coding-crew/solve-feature/.gitignore
+              # Plain -p prints only the session's last message, at its end.
               claude -p "/solve-feature $SLUG" --dangerously-skip-permissions "${model[@]}" --output-format stream-json --verbose |
                 tee -p .coding-crew/solve-feature/session.jsonl | jq --unbuffered -Rr '
                   fromjson? | try (

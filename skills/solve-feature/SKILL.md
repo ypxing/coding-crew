@@ -22,7 +22,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    `coder-model=`, `reviewer-model=` and `pr=`; keep them.
 2. **Per issue**, until `next` exits 3:
    1. `bash "<skill-dir>/scripts/solve-feature.sh" next <slug>` — prints the issue's ref. Exit 3: no ready issue is
-     left, go to step 3.
+     left, go to step 3; it prints `reviewer-model=` again, for step 3.
    2. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Use the solve-issue skill on <ref>; write your outcome and
      report to <repo>/.coding-crew/solve-feature/coder.report.md`. When `coder-model=`
@@ -35,8 +35,8 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    printed why nothing landed: report it and end.
    1. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working directory —
      with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.coding-crew/solve-feature/spec.md; write the report to <repo>/.coding-crew/solve-feature/pr-<n>.review.json`.
-     When `reviewer-model=` is non-empty, run it on the model in your own list that matches that name, as for
-     `coder-model=`; when it is empty, on your own. Wait for it to finish.
+     When `reviewer-model=` (as `next` last printed it) is non-empty, run it on the model in your own list that
+     matches that name, as for `coder-model=`, naming that model in the call; when it is empty, on your own. Wait for it to finish.
    2. `bash "<skill-dir>/scripts/solve-feature.sh" reviewed <slug> <n> <branch>` — always: it discards what the
      reviewer changed in the tree, flags it for the PR, and prints `findings=<k>` last. Only when it prints `findings=` greater than 0:
      run a **fresh subagent** — none of this conversation, full tool access, the repo's working

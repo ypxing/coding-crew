@@ -376,7 +376,7 @@ EOF
 
 # --- next ------------------------------------------------------------------------------
 
-@test "next prints the ready ref and saves its issue; exit 3 when none is left; a ref fetch rejects exits 1" {
+@test "next prints the ready ref and saves its issue; exit 3 when none is left, with reviewer-model=; a ref fetch rejects exits 1" {
   run bash "$SCRIPT" next feat
   [ "$status" -eq 0 ]
   [ "$output" = 2 ]
@@ -385,7 +385,11 @@ EOF
   echo extra > extra.txt && git add extra.txt && git commit -q -m extra
   PR_EXISTS=1 run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ -z "$output" ]
+  [ "$output" = "reviewer-model=" ]
+  # Printed again beside the review step, resolved as start resolves it.
+  PR_EXISTS=1 CREW_REVIEWER_MODEL=opus run bash "$SCRIPT" next feat
+  [ "$status" -eq 3 ]
+  [ "$output" = "reviewer-model=opus" ]
   # The reviewer runs next, from this head.
   [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
   [ ! -e .coding-crew/solve-feature/outcome ]
@@ -621,11 +625,26 @@ yaml_to_json() {
     printf '#!/usr/bin/env bash\necho "%s $*"; env | grep -E "^(ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN)=" | sort\n' "$a" > "$STUB/$a"
     chmod +x "$STUB/$a"
   done
+  # Copilot streams JSON too: the whole stream is kept for the artifact, its CLI logs beside it, and the log gets
+  # one line per event that is not ephemeral.
+  local cp_flags='--output-format json --log-dir .coding-crew/solve-feature/copilot-logs'
   run env CREW_AGENT=copilot CREW_MODEL= SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/run-step.sh"
   [ "$status" -eq 0 ]
-  [ "$output" = "copilot -p Use the solve-feature skill on feat --allow-all --no-color" ]
+  [ "$(head -n 1 .coding-crew/solve-feature/session.jsonl)" = "copilot -p Use the solve-feature skill on feat --allow-all --no-color $cp_flags" ]
   run env CREW_AGENT=copilot CREW_MODEL=gpt-5 SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/run-step.sh"
-  [ "$output" = "copilot -p Use the solve-feature skill on feat --allow-all --no-color --model gpt-5" ]
+  [ "$(head -n 1 .coding-crew/solve-feature/session.jsonl)" = "copilot -p Use the solve-feature skill on feat --allow-all --no-color --model gpt-5 $cp_flags" ]
+  cat > "$STUB/copilot" <<'SH'
+#!/usr/bin/env bash
+cat <<'J'
+{"type":"session.mcp_server_status_changed","data":{"status":"pending"},"ephemeral":true}
+{"type":"assistant.message","data":{"content":"Starting."}}
+J
+exit 4
+SH
+  run env CREW_AGENT=copilot CREW_MODEL= SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/run-step.sh"
+  [ "$status" -eq 4 ]
+  [ "$output" = 'assistant.message {"content":"Starting."}' ]
+  [ "$(wc -l < .coding-crew/solve-feature/session.jsonl)" -eq 2 ]
   run env CREW_AGENT=claude CREW_MODEL= SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/run-step.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"* ]]
