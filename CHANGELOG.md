@@ -50,6 +50,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- setup-coding-crew: the solve-feature Actions workflow also runs on a review submitted on a solve-feature PR (a
+  thread reply included) by Copilot's reviewer or a user with write access, running `/address-pr-comments` on the
+  PR non-interactively in the feature's concurrency group; such a round ends green with a notice when it ran no
+  solve-feature or ended needs-attention. After a run ends ready on a PR Copilot has not reviewed, the job requests
+  Copilot's review with the new optional `COPILOT_GITHUB_TOKEN` secret (a PAT with Pull requests: write), warning
+  when it is unset or refused. Run `/setup-coding-crew redo actions` to take it (#603).
 - solve-feature, address-pr-comments: `start` turns an open PR that is ready back into a draft before any coder
   runs, and `describe` leaves the PR a draft, listing `<k> unresolved review threads: <PR URL>` under Needs
   attention, while any review thread is open. On a solve-feature PR, `/address-pr-comments` no longer fixes and

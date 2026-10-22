@@ -500,6 +500,16 @@ the PR's head commit, so the PR's CI runs and shows on the PR. Where GitHub refu
 that workflow on the PR's branch instead, which needs a `workflow_dispatch:` trigger in it; that run's checks are on
 the commit but not listed on the PR. A failure of both is a warning, and leaves the run waiting for approval.
 
+Review comments start a round on their own: a review submitted on a solve-feature PR (one whose body has the
+`<!-- solve-feature:begin -->` block; a reply on a review thread is submitted as a review too), by Copilot's reviewer
+or a user with write, maintain or admin permission, runs `/address-pr-comments` on that PR non-interactively, in the
+feature's concurrency group. Anyone else's review starts no session. A round that ran no solve-feature (every thread
+dismissed or waiting on a person) or ended `needs-attention` ends with a notice, not a failed job; a stop still
+fails. GitHub never starts Copilot's automatic review on a PR the bot marks ready, so after a run that ends `ready
+pr=<n>` on a PR Copilot has not reviewed, the job requests it with the repo secret `COPILOT_GITHUB_TOKEN` (a
+fine-grained PAT with Pull requests: write), used for that one call only; unset or refused, the job warns and you
+request Copilot by hand.
+
 ---
 
 ### Planning Skills

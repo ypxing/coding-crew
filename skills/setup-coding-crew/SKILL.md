@@ -145,7 +145,9 @@ carry on to Step 4: the workflow file is written. Tell the user that once gh's e
 `/setup-coding-crew redo actions` (or run the failed `gh` command themselves): a plain re-run finds the
 workflow `identical` and runs neither. With `claude`, tell the user to add the secret themselves with
 `! gh secret set ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`), which prompts for the value; never ask for
-it in the conversation. Then point the user to the workflow's header comment (`# Billing`) for who pays for the
+it in the conversation. For Copilot's review of a PR a run marks ready, the user may add a fine-grained PAT with
+Pull requests: write the same way, `! gh secret set COPILOT_GITHUB_TOKEN`; without it the job warns and they
+request Copilot by hand. Then point the user to the workflow's header comment (`# Billing`) for who pays for the
 runs, and say how a run starts: label a feature's root issue `run-agent`, or run the workflow by hand with
 the slug. Tell them too that an issue whose change touches `.github/workflows/` cannot land from a runner — the
 workflow's `GITHUB_TOKEN` never gets the `workflows` scope — so such an issue is run locally, for example with
