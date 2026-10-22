@@ -52,7 +52,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 - setup-coding-crew: the solve-feature Actions workflow also runs on a review submitted on a solve-feature PR (a
   thread reply included) by Copilot's reviewer or a user with write access, running `/address-pr-comments` on the
-  PR non-interactively in the feature's concurrency group; such a round ends green with a notice when it ran no
+  PR non-interactively in the feature's concurrency group, where a newer run cancels a pending one (a round runs
+  solve-feature whenever the feature has a ready issue, so a label run it displaced is not lost); such a round ends green with a notice when it ran no
   solve-feature or ended needs-attention. After a run ends ready on a PR Copilot has not reviewed, the job requests
   Copilot's review with the new optional `COPILOT_GITHUB_TOKEN` secret (a PAT with Pull requests: write), warning
   when it is unset or refused. Run `/setup-coding-crew redo actions` to take it (#603).
@@ -60,7 +61,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   runs, and `describe` leaves the PR a draft, listing `<k> unresolved review threads: <PR URL>` under Needs
   attention, while any review thread is open. On a solve-feature PR, `/address-pr-comments` no longer fixes and
   pushes itself: it files the accepted comments as one `ready-for-agent` issue of the PR's feature, runs
-  `solve-feature` on it, then replies `Fixed in <sha>` on each thread (or re-opens it when the run stopped); a run
+  `solve-feature` on it (`publish-issues --append`, new, adds it beside the feature's landed issues with the local
+  tracker), then replies `Fixed in <sha>` on each thread (or re-opens it when the run stopped); a run
   whose prompt says it is non-interactive asks nothing (#602).
 - solve-feature: `next` prints `reviewer-model=` again when no issue is left, right before the review, so the
   reviewer runs on its model rather than the session's (a Copilot run reviewed on Sonnet with Opus set). The

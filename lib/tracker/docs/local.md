@@ -32,7 +32,7 @@ node "$TRACKER" prd --feature-slug <slug>                 # print the feature's 
 node "$TRACKER" next --feature-slug <slug>                # the absolute path of the next issue to run, or exit 3
 node "$TRACKER" closing-refs --feature-slug <slug>        # prints nothing: a local issue has no PR to close it
 node "$TRACKER" known --feature-slug <slug> --out <dir>   # copy the feature's issues, open and done, into <dir>
-node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace]
+node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace | --append]
 node "$TRACKER" publish-prd --feature-slug <slug> --title "<feature title>" --body-file <file>
 node "$TRACKER" rewrite <ref> --body-file <file> --status <status> --feature-slug <slug>
 node "$TRACKER" tick <ref>                                # check every criterion off
@@ -60,7 +60,8 @@ not listed, and no `.coding-crew/scratch/` prints nothing.
 issue without an entry (or a feature without the file) has none, and a `## Blocked by` edited by
 hand after publish does not change dispatch; `rewrite` sets the issue's entry from its new `## Blocked by`. It exits `4` when the feature
 already has issues in `done/` and `5` when it has open ones and `--replace` is absent; both write
-nothing. `publish-prd` writes `.coding-crew/scratch/<slug>/PRD.md`.
+nothing. `--append` adds the drafts to a feature that already has issues, open or done: numbered after
+its highest one, its existing issues and their `issues-deps.json` entries kept, neither exit applied. `publish-prd` writes `.coding-crew/scratch/<slug>/PRD.md`.
 
 `mark-done` does not evaluate criteria for you — it only checks that you already did. Before
 running it, verify every `- [ ]` in `## Acceptance criteria` (and `## Cross-cutting Requirements`,

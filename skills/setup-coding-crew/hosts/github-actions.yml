@@ -38,7 +38,9 @@ name: solve-feature
 #
 # Review rounds: a review submitted on a solve-feature PR (one whose body has the `<!-- solve-feature:begin -->`
 # block; a reply on a review thread is submitted as a review too) runs the address-pr-comments skill on that PR,
-# non-interactively, in the feature's concurrency group, so it queues behind a label run of the same feature. Only
+# non-interactively, in the feature's concurrency group. That group holds one run in progress and one pending: a newer
+# run, label or round, cancels the pending one. A round still runs solve-feature when the feature has a ready issue,
+# so a label run it cancelled is not lost; a round a later run cancelled waits for the next review. Only
 # Copilot's reviewer (copilot-pull-request-reviewer[bot]) or a user with write, maintain or admin permission starts
 # one: anyone else's review, the agent's own replies included, ends the slug job with a notice and runs no session.
 # A round that started no solve-feature run, or ended needs-attention (the owner was @mentioned on the thread),

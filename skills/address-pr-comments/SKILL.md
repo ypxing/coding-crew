@@ -71,8 +71,9 @@ Triage each thread as one item, its replies read together, keeping its node `id`
 `isResolved` is true unless the user says otherwise.
 
 **Which threads a round handles, on a solve-feature PR:** the unresolved ones whose last comment is not by the
-identity you post as — your `gh api user --jq .login`, `github-actions[bot]` on GitHub Actions. A thread you
-already answered waits until someone replies on it, so a repeated round re-posts and re-files nothing.
+identity you post as — your `gh api user --jq .login`, `github-actions` on GitHub Actions. GraphQL names a bot
+without the `[bot]` suffix REST gives it, so compare logins with that suffix removed. A thread you already
+answered waits until someone replies on it, so a repeated round re-posts and re-files nothing.
 
 ## Step 3 — Challenge each comment
 
@@ -103,8 +104,8 @@ Ask the user to confirm or override any **Debatable** or **Dismiss** entries bef
   writes it only on the root): `gh issue list --state all --search '"Feature: <slug>" in:body' --json
   number,body`; then `gh issue view <root> --json assignees,author`. With the local tracker there is no GitHub
   root issue: the reply carries no @mention.
-- **Dismiss** → reply with the reason. Resolve the thread only when it is Copilot's (its comments by `Copilot`
-  or `copilot-pull-request-reviewer[bot]`); a person's stays open for that person.
+- **Dismiss** → reply with the reason. Resolve the thread only when it is Copilot's (its comments by
+  `copilot-pull-request-reviewer`, as GraphQL names it); a person's stays open for that person.
 
 Every reply, resolve and unresolve goes through `gh api graphql` (`addPullRequestReviewThreadReply`,
 `resolveReviewThread`, `unresolveReviewThread`, each on the thread's node `id`).
@@ -115,16 +116,17 @@ On a solve-feature PR (Step 1's test), interactive or not, this step replaces St
 or push code yourself. solve-feature codes, checks and reviews the fix on the same branch and PR, and stays the
 one writer of the PR body and its ready state. On any other PR skip this step.
 
-1. **No accepted thread** → file nothing and run nothing — unless the round leaves no unresolved thread on a PR
-   that is a draft (a person's decision closed the last one): then go to 4 anyway, so solve-feature marks it
-   ready. Otherwise go to Step 6.
+1. **No accepted thread** → file nothing, and go to 4 anyway when the feature has a ready issue (`node "$TRACKER"
+   next --feature-slug <slug>` exits 0: a run this round's own displaced, on GitHub Actions, left it unworked) or
+   the round leaves no unresolved thread on a PR that is a draft (a person's decision closed the last one, so
+   solve-feature marks it ready). Otherwise go to Step 6.
 2. **File one issue.** In a new temporary directory (`mktemp -d`, outside the checkout), write
    `01-review-comments.md` and a `deps.json` holding `{}`. The draft opens with `# Address review comments on
    PR #<n>` and `Status: ready-for-agent`, then `## What to build`, and `## Acceptance criteria` with one
    `- [ ]` criterion per accepted thread: the reviewer's requirement in your own words, ending with the thread's
    link. `## Blocked by` is `None - can start immediately`. Publish it into the PR's feature:
-   `node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir>`; a non-zero exit stops the round with
-   its stderr.
+   `node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> --append` (`--append` adds it beside the
+   feature's landed issues); a non-zero exit stops the round with its stderr.
 3. **Resolve** each accepted thread, before solve-feature runs: its `describe` counts unresolved threads.
 4. **Run solve-feature.** Remove `$PROJECT_ROOT/.coding-crew/solve-feature/outcome` if present, then use the
    `solve-feature` skill on `<slug> --branch <headRefName>` (without `--branch` it picks its own default

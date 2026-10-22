@@ -460,7 +460,7 @@ Nothing removes a worktree: `git worktree remove <path>` once you are done with 
 
 ### PR rework
 
-Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it pushes its fix commit itself once `solve-issue`'s checks pass (a plain `git push`, never forced; a failing check stops it with the output, unpushed) and suggests no next step: the run already reviewed the PR, fixed its findings and, in its describe step, marked the draft ready unless something needs a person (listed under `Needs attention` in the PR body). On any other PR it does not push.
+Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it files the accepted comments as one `ready-for-agent` issue of the PR's feature and runs `/solve-feature` on the PR's branch, which fixes, checks and reviews it like any other issue and, in its describe step, marks the PR ready unless something needs a person (listed under `Needs attention` in the PR body); it then replies `Fixed in <sha>` on each accepted thread, or re-opens the threads when the run stopped. It never edits or pushes code itself there. On any other PR it fixes the comments and commits, but does not push.
 
 ---
 
@@ -503,7 +503,9 @@ the commit but not listed on the PR. A failure of both is a warning, and leaves 
 Review comments start a round on their own: a review submitted on a solve-feature PR (one whose body has the
 `<!-- solve-feature:begin -->` block; a reply on a review thread is submitted as a review too), by Copilot's reviewer
 or a user with write, maintain or admin permission, runs `/address-pr-comments` on that PR non-interactively, in the
-feature's concurrency group. Anyone else's review starts no session. A round that ran no solve-feature (every thread
+feature's concurrency group. That group holds one run in progress and one pending, and a newer run cancels the
+pending one: a round runs solve-feature whenever the feature has a ready issue, so a label run it displaced is not
+lost, and a round a later run displaced waits for the next review. Anyone else's review starts no session. A round that ran no solve-feature (every thread
 dismissed or waiting on a person) or ended `needs-attention` ends with a notice, not a failed job; a stop still
 fails. GitHub never starts Copilot's automatic review on a PR the bot marks ready, so after a run that ends `ready
 pr=<n>` on a PR Copilot has not reviewed, the job requests it with the repo secret `COPILOT_GITHUB_TOKEN` (a
