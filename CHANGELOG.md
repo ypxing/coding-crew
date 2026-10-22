@@ -50,6 +50,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- solve-feature, address-pr-comments: `start` turns an open PR that is ready back into a draft before any coder
+  runs, and `describe` leaves the PR a draft, listing `<k> unresolved review threads: <PR URL>` under Needs
+  attention, while any review thread is open. On a solve-feature PR, `/address-pr-comments` no longer fixes and
+  pushes itself: it files the accepted comments as one `ready-for-agent` issue of the PR's feature, runs
+  `solve-feature` on it, then replies `Fixed in <sha>` on each thread (or re-opens it when the run stopped); a run
+  whose prompt says it is non-interactive asks nothing (#602).
 - solve-feature: `next` prints `reviewer-model=` again when no issue is left, right before the review, so the
   reviewer runs on its model rather than the session's (a Copilot run reviewed on Sonnet with Opus set). The
   Actions workflow's Copilot run now streams JSON as Claude's does: the job log shows one line per step and each
