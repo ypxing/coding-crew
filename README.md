@@ -134,7 +134,7 @@ Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to t
 | `/crew-afk`              | Start a feature's run in its own worktree; see how it ended |
 | `/solve-feature`         | Run one feature's issues on one branch, each one verified  |
 | `/crew-review`           | Review a branch or PR against its spec; report only        |
-| `/address-pr-comments`   | Fix PR review comments, push once your checks pass         |
+| `/address-pr-comments`   | Fix PR review comments                                     |
 | `/solve-issue`           | Build one issue end to end, yourself                       |
 | `/add-tests`             | Find risky untested code and plan tests for it             |
 | `/upgrade-deps`          | Audit outdated packages and plan safe upgrades             |

@@ -54,6 +54,20 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   given: it checks any tool or platform fact a fix rests on, adds no trigger, flag, permission, input or path the
   spec does not name, and lists a finding that is wrong, or that only a change to a spec decision fixes, for a person
   (#604's fixer added a workflow trigger its PRD had ruled out, and GitHub has no such trigger) (#605).
+- setup-coding-crew: the solve-feature Actions workflow also runs on a review submitted on a solve-feature PR (a
+  thread reply included, an approval not), by Copilot's reviewer or a user with write access, running `/address-pr-comments` on the
+  PR non-interactively in the feature's concurrency group, where a newer run cancels a pending one (a round runs
+  solve-feature whenever the feature has a ready issue, so a label run it displaced is not lost); such a round ends green with a notice when it ran no
+  solve-feature or ended needs-attention. After a run ends ready on a PR Copilot has not reviewed, the job requests
+  Copilot's review with the new optional `COPILOT_GITHUB_TOKEN` secret (a PAT with Pull requests: write), warning
+  when it is unset or refused. Run `/setup-coding-crew redo actions` to take it (#603).
+- solve-feature, address-pr-comments: `start` turns an open PR that is ready back into a draft before any coder
+  runs, and `describe` leaves the PR a draft, listing `<k> unresolved review threads: <PR URL>` under Needs
+  attention, while any review thread is open. On a solve-feature PR, `/address-pr-comments` no longer fixes and
+  pushes itself: it files the accepted comments as one `ready-for-agent` issue of the PR's feature, runs
+  `solve-feature` on it (`publish-issues --append`, new, adds it beside the feature's landed issues with the local
+  tracker), then replies `Fixed in <sha>` on each thread (or re-opens it when the run stopped); a run
+  whose prompt says it is non-interactive asks nothing (#602).
 - solve-feature: `next` prints `reviewer-model=` again when no issue is left, right before the review, so the
   reviewer runs on its model rather than the session's (a Copilot run reviewed on Sonnet with Opus set). The
   Actions workflow's Copilot run now streams JSON as Claude's does: the job log shows one line per step and each

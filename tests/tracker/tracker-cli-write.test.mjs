@@ -324,6 +324,34 @@ test("publish-issues (local) exits 4 and writes nothing when the feature has don
   }
 });
 
+test("publish-issues (local) --append adds the drafts after the feature's open and done issues, keeping them and their deps", async () => {
+  const dir = root();
+  const issues = join(dir, ".coding-crew/scratch/feat/issues");
+  mkdirSync(join(issues, "done"), { recursive: true });
+  mkdirSync(join(issues, "open"), { recursive: true });
+  writeFileSync(join(issues, "done/01-old.md"), "# Old\n");
+  writeFileSync(join(issues, "open/02-wip.md"), "# Wip\n\nStatus: ready-for-agent\n");
+  writeFileSync(join(issues, "issues-deps.json"), JSON.stringify({ "01-old.md": [], "02-wip.md": ["01-old.md"] }));
+  const d = drafts(dir, { deps: {}, files: { "01-review-comments.md": DRAFT_A } });
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d, "--append"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(readdirSync(join(issues, "open")).sort(), ["02-wip.md", "03-review-comments.md"]);
+  assert.deepEqual(readdirSync(join(issues, "done")), ["01-old.md"]);
+  assert.deepEqual(JSON.parse(readFileSync(join(issues, "issues-deps.json"), "utf8")), {
+    "01-old.md": [],
+    "02-wip.md": ["01-old.md"],
+    "03-review-comments.md": [],
+  });
+});
+
+test("publish-issues exits 2 for --append with --replace", async () => {
+  const dir = root();
+  const d = drafts(dir);
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d, "--append", "--replace"]);
+  assert.equal(r.code, 2, r.stderr);
+  assert.equal(existsSync(join(dir, ".coding-crew/scratch/feat/issues")), false);
+});
+
 test("publish-issues (local) exits 5 and writes nothing when open issues exist and --replace is absent", async () => {
   const dir = root();
   mkdirSync(join(dir, ".coding-crew/scratch/feat/issues/open"), { recursive: true });
