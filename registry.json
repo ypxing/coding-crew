@@ -56,11 +56,13 @@
       "source-dir": "address-pr-comments",
       "deps": [
         "dep-install",
-        "tdd"
+        "tdd",
+        "solve-feature"
       ],
       "libs": [
         "checks",
-        "git-workflow"
+        "git-workflow",
+        "tracker"
       ]
     },
     "to-issues": {

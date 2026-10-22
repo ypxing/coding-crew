@@ -151,12 +151,13 @@ EOF
   [ "$(git rev-parse origin/feature/feat)" = "$(git rev-parse feature/feat)" ]
 }
 
-@test "an existing open PR is reused as it is: no create, no edit, its draft state untouched" {
+@test "an existing open PR is reused as it is: no create, no edit, and only start's conversion to a draft" {
   export PR_EXISTS=1 PR_DRAFT=false
   loop
   [ "$LAST_PR" = 9 ]
   [ ! -f "$STATE/pr-created" ]
-  ! grep -qE '^pr (create|edit|ready)' "$STATE/gh.log" || false
+  ! grep -qE '^pr (create|edit)' "$STATE/gh.log" || false
+  [ "$(grep '^pr ready' "$STATE/gh.log")" = "pr ready 9 --undo" ]
   [ "$(cat "$STATE/pr-body")" = "hand intro" ]
 }
 

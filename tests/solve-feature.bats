@@ -4,6 +4,7 @@
 # fix in solve-feature-fix.bats. Setup and the stubs: helpers/solve-feature.bash.
 
 load helpers/solve-feature
+load helpers/yaml
 
 # --- usage and preconditions ---------------------------------------------------------
 
@@ -281,6 +282,31 @@ main_moves() {
   [ "$(out reviewer-model)" = opus ]
 }
 
+@test "start converts the branch's open PR to a draft before printing pr= when it is ready; a draft or no PR gets no such call" {
+  PR_EXISTS=1 PR_DRAFT=false run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out pr)" = 9 ]
+  [ "$(grep '^pr ready' "$STATE/gh.log")" = "pr ready 9 --undo" ]
+
+  : >"$STATE/gh.log"
+  PR_EXISTS=1 PR_DRAFT=true run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ]
+  [ "$(out pr)" = 9 ]
+  ! grep -q '^pr ready' "$STATE/gh.log" || false
+
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ]
+  ! grep -q '^pr ready' "$STATE/gh.log" || false
+}
+
+@test "start whose gh pr ready --undo fails exits 1 naming the command to run, before printing pr=" {
+  PR_EXISTS=1 PR_DRAFT=false GH_UNDO_FAIL=1 run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"gh pr ready 9 --undo"* ]]
+  [[ "$output" != *"pr=9"* ]]
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: start failed: "*"gh pr ready 9 --undo"* ]]
+}
+
 @test "start takes each model the project's config.json lacks from \$HOME/.coding-crew/config.json" {
   mkdir -p "$HOME/.coding-crew"
   echo '{"solveFeature":{"models":{"coder":"haiku","reviewer":"opus"}}}' > "$HOME/.coding-crew/config.json"
@@ -524,6 +550,41 @@ EOF
   [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: describe failed: gh pr ready 10 failed"* ]]
 }
 
+@test "describe with unresolved review threads across pages lists their count and the PR under Needs attention, leaving it a draft" {
+  fixed
+  threads "false true" "true false false"
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(sed -n '/^## Needs attention$/,/^<details>/p' "$STATE/pr-body")" = "$(printf '## Needs attention\n\n- 3 unresolved review threads: https://github.com/o/r/pull/10\n\n<details><summary>Spec</summary>')" ]
+  grep -q '^api graphql .*--paginate' "$STATE/gh.log"
+  ! grep -q '^pr ready' "$STATE/gh.log" || false
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention pr=10" ]
+  [ "${lines[${#lines[@]}-1]}" = "needs-attention pr=10" ]
+
+  # A second describe counts them again rather than stacking the line.
+  run bash "$SCRIPT" describe feat 10
+  [ "$(grep -c 'unresolved review threads' "$STATE/pr-body")" -eq 1 ]
+}
+
+@test "describe with only resolved review threads marks the PR ready" {
+  fixed
+  threads "true" "true"
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  ! grep -q 'unresolved review threads' "$STATE/pr-body" || false
+  grep -q '^pr ready 10$' "$STATE/gh.log"
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "ready pr=10" ]
+}
+
+@test "describe whose review-thread query fails stops without marking the PR ready" {
+  fixed
+  GH_THREADS_FAIL=1 run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"review threads"* ]]
+  ! grep -q '^pr ready' "$STATE/gh.log" || false
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: describe failed: "* ]]
+}
+
 # --- packaging and the skill -------------------------------------------------------------
 
 @test ".coding-crew/solve-feature/ is gitignored here" {
@@ -574,18 +635,6 @@ EOF
 }
 
 # --- hosts -------------------------------------------------------------------------------
-
-# YAML → JSON with whatever parser the machine has: js-yaml for node, else PyYAML. Exit 3 when
-# neither exists, the parser's own non-zero exit when the file does not parse.
-yaml_to_json() {
-  if node -e 'require.resolve("js-yaml")' >/dev/null 2>&1; then
-    node -e 'const y=require("js-yaml"),fs=require("fs");fs.writeFileSync(process.argv[2],JSON.stringify(y.load(fs.readFileSync(process.argv[1],"utf8"))))' "$1" "$2"
-  elif python3 -c 'import yaml' >/dev/null 2>&1; then
-    python3 -c 'import sys,json,yaml;json.dump(yaml.safe_load(open(sys.argv[1])),open(sys.argv[2],"w"))' "$1" "$2"
-  else
-    return 3
-  fi
-}
 
 @test "setup-coding-crew's hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, five write permissions (actions: write so it can approve or dispatch PR CI), a slug concurrency group, the skill launched by the agent, the logs kept, then a step reading the outcome" {
   local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json" line

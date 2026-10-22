@@ -36,6 +36,21 @@ name: solve-feature
 # .coding-crew/config.json's solveFeature.models names theirs. The repo variables CREW_CODER_MODEL and
 # CREW_REVIEWER_MODEL override solveFeature.models for the coder (and fixer) and the reviewer on this runner only.
 #
+# Review rounds: a review submitted on a solve-feature PR (one whose body has the `<!-- solve-feature:begin -->`
+# block; a reply on a review thread is submitted as a review too), other than an approval, runs the
+# address-pr-comments skill on that PR, non-interactively, in the feature's concurrency group. That group holds one run in progress and one pending: a newer
+# run, label or round, cancels the pending one. A round still runs solve-feature when the feature has a ready issue,
+# so a label run it cancelled is not lost; a round a later run cancelled waits for the next review. Only
+# Copilot's reviewer (copilot-pull-request-reviewer[bot]) or a user with write, maintain or admin permission starts
+# one: anyone else's review, the agent's own replies included, ends the slug job with a notice and runs no session.
+# A round that started no solve-feature run, or ended needs-attention (the owner was @mentioned on the thread),
+# ends with a notice rather than a failed job; a stopped one still fails.
+#
+# Copilot's review: GitHub never starts it on a PR the bot marks ready, so after a run that ends `ready pr=<n>`
+# on a PR Copilot has not reviewed yet, the job requests it with the repo secret COPILOT_GITHUB_TOKEN, a
+# fine-grained PAT of the owner's with "Pull requests: write" (and "Copilot Requests"). That one `gh pr edit` call
+# is all it is used for; unset or refused, the job warns and the owner requests Copilot by hand.
+#
 # Billing, Copilot: with `github.token`, a repo owned by an organisation bills the organisation (its budgets,
 # not any user's), which needs the organisation policy "Allow use of Copilot CLI billed to the
 # organization" (on by default where the Copilot CLI policy is on); a repo owned by a personal
@@ -48,6 +63,9 @@ name: solve-feature
 on:
   issues:
     types: [labeled]
+  # Not pull_request_review_comment: a reply on a thread is a submitted review too, so it would start a second round.
+  pull_request_review:
+    types: [submitted]
   workflow_dispatch:
     inputs:
       slug:
@@ -72,20 +90,41 @@ permissions:
 
 jobs:
   # The slug is a job of its own because a concurrency group can only read a job's outputs, never
-  # a step's: the group below needs the slug, and the label trigger has it only in the issue body.
+  # a step's: the group below needs the slug, and the label trigger has it only in the issue body, a review round
+  # in the PR body. No slug output skips the solve job.
   slug:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'run-agent'
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'run-agent' || (github.event_name == 'pull_request_review' && github.event.review.state != 'approved')
     outputs:
       slug: ${{ steps.slug.outputs.slug }}
+      pr: ${{ steps.slug.outputs.pr }}
     steps:
       - name: Read the slug
         id: slug
         env:
           INPUT_SLUG: ${{ inputs.slug }}
           ISSUE_BODY: ${{ github.event.issue.body }}
-        # The body goes through a file: interpolated into the shell line it could run as code.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REVIEW_AUTHOR: ${{ github.event.review.user.login }}
+          GH_TOKEN: ${{ github.token }}
+        # A body goes through a file: interpolated into the shell line it could run as code.
         run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request_review ]; then
+            printf '%s\n' "$PR_BODY" > "$RUNNER_TEMP/pr-body.md"
+            grep -qxF '<!-- solve-feature:begin -->' "$RUNNER_TEMP/pr-body.md" ||
+              { echo "::notice::PR #$PR_NUMBER has no solve-feature block: no round"; exit 0; }
+            if [ "$REVIEW_AUTHOR" != 'copilot-pull-request-reviewer[bot]' ]; then
+              # .permission is the legacy name (maintain reads as write), .role_name the role.
+              perm=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$REVIEW_AUTHOR/permission" --jq '.permission, .role_name' || true)
+              grep -qxE 'write|maintain|admin' <<<"$perm" ||
+                { echo "::notice::$REVIEW_AUTHOR has no write access to this repo: their review starts no round"; exit 0; }
+            fi
+            slug="$(sed -n 's/^<!-- solve-feature:slug \([^ ]*\) -->$/\1/p' "$RUNNER_TEMP/pr-body.md" | head -n 1)"
+            [ -n "$slug" ] || { echo "::notice::PR #$PR_NUMBER's solve-feature block has no slug line: no round"; exit 0; }
+            printf 'slug=%s\npr=%s\n' "$slug" "$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ -n "$INPUT_SLUG" ]; then
             slug="$INPUT_SLUG"
           else
@@ -100,9 +139,10 @@ jobs:
 
   solve:
     needs: slug
+    if: needs.slug.outputs.slug != ''
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    # One run per feature at a time (the loop takes no lock); a second trigger waits, never cancels.
+    # One run per feature at a time (the loop takes no lock); a newer trigger replaces a pending one (see Review rounds above).
     concurrency:
       group: solve-feature-${{ needs.slug.outputs.slug }}
       cancel-in-progress: false
@@ -140,7 +180,7 @@ jobs:
       - name: Install coding-crew (user-level)
         run: |
           git clone --depth 1 --branch "$CODING_CREW_REF" https://github.com/ypxing/coding-crew /tmp/coding-crew
-          TARGET_REPO="$HOME" bash /tmp/coding-crew/install.sh "$CREW_AGENT" --skills solve-feature,crew-review
+          TARGET_REPO="$HOME" bash /tmp/coding-crew/install.sh "$CREW_AGENT" --skills solve-feature,crew-review,address-pr-comments
 
       - name: Git identity for the runner
         run: |
@@ -150,6 +190,7 @@ jobs:
       - name: Run solve-feature
         env:
           SLUG: ${{ needs.slug.outputs.slug }}
+          REVIEW_PR: ${{ needs.slug.outputs.pr }}
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           # To bill a person rather than the organisation, or when the organisation policy is off,
@@ -167,9 +208,14 @@ jobs:
           [ -z "$CREW_MODEL" ] || model=(--model "$CREW_MODEL")
           # The whole event stream is kept for the artifact; tee -p keeps the session going should the filter die.
           mkdir -p .coding-crew/solve-feature && echo '*' > .coding-crew/solve-feature/.gitignore
+          prompt="Use the solve-feature skill on $SLUG" claude_prompt="/solve-feature $SLUG"
+          if [ -n "$REVIEW_PR" ]; then
+            prompt="Use the address-pr-comments skill on PR #$REVIEW_PR; this run is non-interactive"
+            claude_prompt="/address-pr-comments $REVIEW_PR $prompt"
+          fi
           case "$CREW_AGENT" in
             copilot)
-              copilot -p "Use the solve-feature skill on $SLUG" --allow-all --no-color "${model[@]}" --output-format json \
+              copilot -p "$prompt" --allow-all --no-color "${model[@]}" --output-format json \
                 --log-dir .coding-crew/solve-feature/copilot-logs |
                 tee -p .coding-crew/solve-feature/session.jsonl | jq --unbuffered -Rr '
                   fromjson? | select(.ephemeral != true) | try (
@@ -192,7 +238,7 @@ jobs:
               [ -n "${ANTHROPIC_API_KEY:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ] ||
                 { echo "::error::Claude Code needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1; }
               # Plain -p prints only the session's last message, at its end.
-              claude -p "/solve-feature $SLUG" --dangerously-skip-permissions "${model[@]}" --output-format stream-json --verbose |
+              claude -p "$claude_prompt" --dangerously-skip-permissions "${model[@]}" --output-format stream-json --verbose |
                 tee -p .coding-crew/solve-feature/session.jsonl | jq --unbuffered -Rr '
                   fromjson? | try (
                     (if .parent_tool_use_id then "    " else "" end) as $pad
@@ -240,6 +286,25 @@ jobs:
             fi
           done <<<"$held"
 
+      # Its own step, so the PAT is this step's alone; the reviews are listed with the workflow's token.
+      - name: Ask Copilot for its review
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          READ_TOKEN: ${{ github.token }}
+        run: |
+          pr=$(sed -n 's/^ready pr=\([0-9][0-9]*\)$/\1/p' .coding-crew/solve-feature/outcome 2>/dev/null || true)
+          [ -n "$pr" ] || { echo "The PR is not ready: no Copilot review to request."; exit 0; }
+          reviewers=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$GITHUB_REPOSITORY/pulls/$pr/reviews" --paginate --jq '.[].user.login') ||
+            { echo "::warning::could not list PR #$pr's reviews: request Copilot's review by hand"; exit 0; }
+          # Copilot reviews a PR once; a request after its review would start another, every ready round.
+          ! grep -qxF 'copilot-pull-request-reviewer[bot]' <<<"$reviewers" || { echo "Copilot has reviewed PR #$pr."; exit 0; }
+          [ -n "$GH_TOKEN" ] ||
+            { echo "::warning::the repo secret COPILOT_GITHUB_TOKEN is unset: request Copilot's review on PR #$pr by hand"; exit 0; }
+          if gh pr edit "$pr" --add-reviewer @copilot; then echo "Requested Copilot's review on PR #$pr."
+          else echo "::warning::GitHub refused COPILOT_GITHUB_TOKEN's request for Copilot's review on PR #$pr: request it by hand"
+          fi
+
       # Empty when every commit was pushed: git then refuses the bundle and writes no file.
       - name: Bundle the unpushed commits
         if: always()
@@ -260,10 +325,14 @@ jobs:
         if: always()
         env:
           SLUG: ${{ needs.slug.outputs.slug }}
+          REVIEW_PR: ${{ needs.slug.outputs.pr }}
         run: |
           logs=.coding-crew/solve-feature
-          line=$(cat "$logs/outcome" 2>/dev/null) ||
-            line="never finished: the session ended early or never started (see the first failed step)"
+          # A review round writes no outcome when it started no solve-feature run (nothing to fix).
+          if line=$(cat "$logs/outcome" 2>/dev/null); then :
+          elif [ -n "$REVIEW_PR" ]; then line="no solve-feature run this round"
+          else line="never finished: the session ended early or never started (see the first failed step)"
+          fi
           # Claude's session names its model in the init event, Copilot's on each top-level message.
           model=$(jq -r '(select(.type == "system" and .subtype == "init") | .model),
             (select(.type == "assistant.message" and .data.parentToolCallId == null) | .data.model)' \
@@ -275,6 +344,7 @@ jobs:
             | strings | select(. != "<synthetic>")]
             | reduce .[] as $m ([]; if index([$m]) then . else . + [$m] end) | join(", ")' "$logs/session.jsonl" 2>/dev/null || true)
           pr=$(sed -n 's/.*pr=\([0-9][0-9]*\).*/\1/p' <<<"$line")
+          pr=${pr:-$REVIEW_PR}
           {
             # A double-backtick span: git's reason can quote names in single backticks.
             echo "### solve-feature $SLUG: \`\` $line \`\`"
@@ -297,7 +367,11 @@ jobs:
               printf '\n<details open><summary>%s</summary>\n\n```text\n%s\n```\n\n</details>\n' "${f#"$logs"/}" "$(tail -n 60 "$f")"
             done
           } >> "$GITHUB_STEP_SUMMARY"
+          # A review round waiting on a person is not a failure: the PR's draft state and open threads show it.
           case "$line" in
             ready*) echo "solve-feature: $line" ;;
+            "no solve-feature run this round" | needs-attention*)
+              [ -n "$REVIEW_PR" ] || { echo "::error::solve-feature: $line"; exit 1; }
+              echo "::notice::address-pr-comments on PR #$REVIEW_PR: $line" ;;
             *) echo "::error::solve-feature: $line"; exit 1 ;;
           esac
