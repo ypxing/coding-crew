@@ -3,7 +3,7 @@ mode: feature
 base_sha: baf33cda1e39
 head_sha: 04b2e54d68eb
 slug: pr-comment-round
-via: origin/feature/pr-comment-round
+via: refs/pull/604/head
 ---
 Replay of the second feature review of #604 (pr-comment-round), range `baf33cda1e39..04b2e54d68eb`. The SHAs are
 reachable through `origin/feature/pr-comment-round`; fetch it before running if they do not resolve.
