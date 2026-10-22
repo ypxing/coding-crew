@@ -190,16 +190,15 @@ step_run() {
   [ -s "$TEMP_DIR/$1-step.sh" ]
 }
 
-@test "host file: a submitted review or a resolved thread starts a round (a review comment alone does not), the solve job runs only on a slug, and no run line interpolates an expression" {
+@test "host file: a submitted review other than an approval starts a round (a review comment or a resolved thread alone does not), the solve job runs only on a slug, and no run line interpolates an expression" {
   host_json
   local on='(.on // .["true"])'
   [ "$(jq -c "$on.pull_request_review.types" "$JSON")" = '["submitted"]' ]
-  [ "$(jq -c "$on.pull_request_review_thread.types" "$JSON")" = '["resolved"]' ]
+  [ "$(jq -r "$on | has(\"pull_request_review_thread\")" "$JSON")" = false ]
   [ "$(jq -r "$on | has(\"pull_request_review_comment\")" "$JSON")" = false ]
   [ "$(jq -c "$on.issues.types" "$JSON")" = '["labeled"]' ]
-  jq -e '.jobs.slug.if | test("workflow_dispatch") and test("run-agent") and test("pull_request_review") and test("pull_request_review_thread")' "$JSON" >/dev/null
-  # A resolved thread has no review: its author is the event's sender.
-  jq -e '.jobs.slug.steps[0].env.REVIEW_AUTHOR | test("github.event.review.user.login") and test("github.event.sender.login")' "$JSON" >/dev/null
+  jq -e '.jobs.slug.if | test("workflow_dispatch") and test("run-agent") and test("pull_request_review") and test("github.event.review.state != .approved.")' "$JSON" >/dev/null
+  jq -e '.jobs.slug.steps[0].env.REVIEW_AUTHOR == "${{ github.event.review.user.login }}"' "$JSON" >/dev/null
   jq -e '.jobs.solve.if | test("needs.slug.outputs.slug != ..")' "$JSON" >/dev/null
   # The PR body and every other event field reach a shell only through env: interpolated into a run line it runs as code.
   [ "$(jq '[.jobs[].steps[] | .run // empty | select(test("[$][{][{]"))] | length' "$JSON")" -eq 0 ]
@@ -219,7 +218,7 @@ SH
   export TEMP_DIR RUNNER_TEMP="$TEMP_DIR" GITHUB_OUTPUT="$TEMP_DIR/out" GITHUB_REPOSITORY=o/r INPUT_SLUG= ISSUE_BODY= PR_NUMBER=12
   local body=$'Why.\n\n<!-- solve-feature:begin -->\nImplemented by solve-feature (`feat`).\n<!-- solve-feature:slug feat -->\n<!-- solve-feature:end -->'
   # round <author> [gh perm lines] — runs the step for a review event; $output and $GITHUB_OUTPUT hold the result.
-  round() { : > "$GITHUB_OUTPUT"; rm -f "$TEMP_DIR/gh.log"; GITHUB_EVENT_NAME=${EVENT:-pull_request_review} PR_BODY="$PR_BODY" REVIEW_AUTHOR="$1" GH_PERM="$2" run bash -e "$TEMP_DIR/slug-step.sh"; }
+  round() { : > "$GITHUB_OUTPUT"; rm -f "$TEMP_DIR/gh.log"; GITHUB_EVENT_NAME=pull_request_review PR_BODY="$PR_BODY" REVIEW_AUTHOR="$1" GH_PERM="$2" run bash -e "$TEMP_DIR/slug-step.sh"; }
 
   export PR_BODY="$body"
   round 'copilot-pull-request-reviewer[bot]'
@@ -245,11 +244,6 @@ SH
   [ ! -s "$GITHUB_OUTPUT" ]
   [[ "$output" == *"::notice::"* ]]
   round 'github-actions[bot]' $'read\nread'
-  [ ! -s "$GITHUB_OUTPUT" ]
-  # A thread a person resolves starts a round as their review would, with the same author check.
-  EVENT=pull_request_review_thread round alice $'write\nwrite'
-  [ "$(cat "$GITHUB_OUTPUT")" = $'slug=feat\npr=12' ]
-  EVENT=pull_request_review_thread round mallory $'read\nread'
   [ ! -s "$GITHUB_OUTPUT" ]
   # A PR without the block is not solve-feature's, whoever reviewed it.
   PR_BODY=$'Why.\n<!-- solve-feature:slug feat -->' round 'copilot-pull-request-reviewer[bot]'

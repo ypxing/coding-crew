@@ -51,7 +51,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 ### Changed
 
 - setup-coding-crew: the solve-feature Actions workflow also runs on a review submitted on a solve-feature PR (a
-  thread reply included), or a thread resolved on one, by Copilot's reviewer or a user with write access, running `/address-pr-comments` on the
+  thread reply included, an approval not), by Copilot's reviewer or a user with write access, running `/address-pr-comments` on the
   PR non-interactively in the feature's concurrency group, where a newer run cancels a pending one (a round runs
   solve-feature whenever the feature has a ready issue, so a label run it displaced is not lost); such a round ends green with a notice when it ran no
   solve-feature or ended needs-attention. After a run ends ready on a PR Copilot has not reviewed, the job requests

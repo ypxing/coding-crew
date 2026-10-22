@@ -501,11 +501,12 @@ that workflow on the PR's branch instead, which needs a `workflow_dispatch:` tri
 the commit but not listed on the PR. A failure of both is a warning, and leaves the run waiting for approval.
 
 Review comments start a round on their own: a review submitted on a solve-feature PR (one whose body has the
-`<!-- solve-feature:begin -->` block; a reply on a review thread is submitted as a review too), or a thread resolved
-on one, by Copilot's reviewer or a user with write, maintain or admin permission, runs `/address-pr-comments` on that PR non-interactively, in the
+`<!-- solve-feature:begin -->` block; a reply on a review thread is submitted as a review too), other than an
+approval, by Copilot's reviewer or a user with write, maintain or admin permission, runs `/address-pr-comments` on that PR non-interactively, in the
 feature's concurrency group. That group holds one run in progress and one pending, and a newer run cancels the
 pending one: a round runs solve-feature whenever the feature has a ready issue, so a label run it displaced is not
-lost, and a round a later run displaced waits for the next review. Anyone else's review starts no session. A round that ran no solve-feature (every thread
+lost, and a round a later run displaced waits for the next review. Anyone else's review starts no session. Answer the agent's reply on a thread by replying there:
+resolving the thread alone starts no round, so the PR stays a draft until the next review. A round that ran no solve-feature (every thread
 dismissed or waiting on a person) or ended `needs-attention` ends with a notice, not a failed job; a stop still
 fails. GitHub never starts Copilot's automatic review on a PR the bot marks ready, so after a run that ends `ready
 pr=<n>` on a PR Copilot has not reviewed, the job requests it with the repo secret `COPILOT_GITHUB_TOKEN` (a

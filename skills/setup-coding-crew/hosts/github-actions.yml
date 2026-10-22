@@ -37,7 +37,7 @@ name: solve-feature
 # CREW_REVIEWER_MODEL override solveFeature.models for the coder (and fixer) and the reviewer on this runner only.
 #
 # Review rounds: a review submitted on a solve-feature PR (one whose body has the `<!-- solve-feature:begin -->`
-# block; a reply on a review thread is submitted as a review too), or a thread resolved on one, runs the
+# block; a reply on a review thread is submitted as a review too), other than an approval, runs the
 # address-pr-comments skill on that PR, non-interactively, in the feature's concurrency group. That group holds one run in progress and one pending: a newer
 # run, label or round, cancels the pending one. A round still runs solve-feature when the feature has a ready issue,
 # so a label run it cancelled is not lost; a round a later run cancelled waits for the next review. Only
@@ -66,10 +66,6 @@ on:
   # Not pull_request_review_comment: a reply on a thread is a submitted review too, so it would start a second round.
   pull_request_review:
     types: [submitted]
-  # A person who agrees with a reply resolves the thread rather than answering it: that round marks a draft ready.
-  # The agent's own resolves use github.token, which starts no run.
-  pull_request_review_thread:
-    types: [resolved]
   workflow_dispatch:
     inputs:
       slug:
@@ -98,7 +94,7 @@ jobs:
   # in the PR body. No slug output skips the solve job.
   slug:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'run-agent' || github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_thread'
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'run-agent' || (github.event_name == 'pull_request_review' && github.event.review.state != 'approved')
     outputs:
       slug: ${{ steps.slug.outputs.slug }}
       pr: ${{ steps.slug.outputs.pr }}
@@ -110,11 +106,11 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          REVIEW_AUTHOR: ${{ github.event.review.user.login || github.event.sender.login }}
+          REVIEW_AUTHOR: ${{ github.event.review.user.login }}
           GH_TOKEN: ${{ github.token }}
         # A body goes through a file: interpolated into the shell line it could run as code.
         run: |
-          if [ "$GITHUB_EVENT_NAME" = pull_request_review ] || [ "$GITHUB_EVENT_NAME" = pull_request_review_thread ]; then
+          if [ "$GITHUB_EVENT_NAME" = pull_request_review ]; then
             printf '%s\n' "$PR_BODY" > "$RUNNER_TEMP/pr-body.md"
             grep -qxF '<!-- solve-feature:begin -->' "$RUNNER_TEMP/pr-body.md" ||
               { echo "::notice::PR #$PR_NUMBER has no solve-feature block: no round"; exit 0; }

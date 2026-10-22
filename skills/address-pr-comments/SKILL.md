@@ -109,6 +109,9 @@ Ask the user to confirm or override any **Debatable** or **Dismiss** entries bef
 - **Dismiss** → reply with the reason. Resolve the thread only when it is Copilot's (its comments by
   `copilot-pull-request-reviewer`, as GraphQL names it); a person's stays open for that person.
 
+A reply that leaves a thread open for a person asks them to answer by replying on it: a reply starts the next round
+on GitHub Actions, resolving the thread alone does not.
+
 Every reply, resolve and unresolve goes through `gh api graphql` (`addPullRequestReviewThreadReply`,
 `resolveReviewThread`, `unresolveReviewThread`, each on the thread's node `id`).
 
@@ -121,7 +124,8 @@ one writer of the PR body and its ready state. On any other PR skip this step.
 1. **No accepted thread** → file nothing, and go to 4 anyway when the feature has a ready issue (`node "$TRACKER"
    next --feature-slug <slug>` exits 0: a run this round's own displaced, on GitHub Actions, left it unworked) or
    the round leaves no unresolved thread on a PR that is a draft (a person's decision closed the last one, so
-   solve-feature marks it ready). Otherwise go to Step 6.
+   solve-feature marks it ready), or leaves one on a PR that is not a draft (solve-feature turns it back into a
+   draft and lists the open threads). Otherwise go to Step 6.
 2. **File one issue.** First write the feature's issues into a new temporary directory (`mktemp -d`, outside the
    checkout; `node "$TRACKER" known --feature-slug <slug> --out <dir>`). An accepted thread whose link an unticked
    `- [ ]` criterion there already cites was filed by an earlier round whose run stopped: it is not filed again.
