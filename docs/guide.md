@@ -501,8 +501,8 @@ that workflow on the PR's branch instead, which needs a `workflow_dispatch:` tri
 the commit but not listed on the PR. A failure of both is a warning, and leaves the run waiting for approval.
 
 Review comments start a round on their own: a review submitted on a solve-feature PR (one whose body has the
-`<!-- solve-feature:begin -->` block; a reply on a review thread is submitted as a review too), by Copilot's reviewer
-or a user with write, maintain or admin permission, runs `/address-pr-comments` on that PR non-interactively, in the
+`<!-- solve-feature:begin -->` block; a reply on a review thread is submitted as a review too), or a thread resolved
+on one, by Copilot's reviewer or a user with write, maintain or admin permission, runs `/address-pr-comments` on that PR non-interactively, in the
 feature's concurrency group. That group holds one run in progress and one pending, and a newer run cancels the
 pending one: a round runs solve-feature whenever the feature has a ready issue, so a label run it displaced is not
 lost, and a round a later run displaced waits for the next review. Anyone else's review starts no session. A round that ran no solve-feature (every thread

@@ -73,7 +73,9 @@ Triage each thread as one item, its replies read together, keeping its node `id`
 **Which threads a round handles, on a solve-feature PR:** the unresolved ones whose last comment is not by the
 identity you post as — your `gh api user --jq .login`, `github-actions` on GitHub Actions. GraphQL names a bot
 without the `[bot]` suffix REST gives it, so compare logins with that suffix removed. A thread you already
-answered waits until someone replies on it, so a repeated round re-posts and re-files nothing.
+answered waits until someone replies on it, so a repeated round re-posts and re-files nothing. Its top-level
+comments and review bodies are context for judging those threads, never items: a round files nothing for one and
+replies to none, since nothing marks one handled and every later round would act on it again.
 
 ## Step 3 — Challenge each comment
 
@@ -120,10 +122,13 @@ one writer of the PR body and its ready state. On any other PR skip this step.
    next --feature-slug <slug>` exits 0: a run this round's own displaced, on GitHub Actions, left it unworked) or
    the round leaves no unresolved thread on a PR that is a draft (a person's decision closed the last one, so
    solve-feature marks it ready). Otherwise go to Step 6.
-2. **File one issue.** In a new temporary directory (`mktemp -d`, outside the checkout), write
-   `01-review-comments.md` and a `deps.json` holding `{}`. The draft opens with `# Address review comments on
-   PR #<n>` and `Status: ready-for-agent`, then `## What to build`, and `## Acceptance criteria` with one
-   `- [ ]` criterion per accepted thread: the reviewer's requirement in your own words, ending with the thread's
+2. **File one issue.** First write the feature's issues into a new temporary directory (`mktemp -d`, outside the
+   checkout; `node "$TRACKER" known --feature-slug <slug> --out <dir>`). An accepted thread whose link an unticked
+   `- [ ]` criterion there already cites was filed by an earlier round whose run stopped: it is not filed again.
+   When every accepted thread is already cited, file nothing and go to 3. Otherwise, in another new temporary
+   directory, write `01-review-comments.md` and a `deps.json` holding `{}`. The draft opens with `# Address review
+   comments on PR #<n>` and `Status: ready-for-agent`, then `## What to build`, and `## Acceptance criteria` with
+   one `- [ ]` criterion per accepted thread not already cited: the reviewer's requirement in your own words, ending with the thread's
    link. `## Blocked by` is `None - can start immediately`. Publish it into the PR's feature:
    `node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> --append` (`--append` adds it beside the
    feature's landed issues); a non-zero exit stops the round with its stderr.
