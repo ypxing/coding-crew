@@ -50,9 +50,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
-- crew-review: each finding carries one fix, the one adding the least behaviour, with any tool or platform fact it
-  rests on checked; a defect only a change to a spec decision fixes is reported as a gap for a person, not a finding
-  the fixer applies (#604's review added a workflow trigger its PRD had ruled out, and GitHub has no such trigger) (#605).
+- solve-feature: the fixer judges each review finding before acting on it instead of applying the reviewer's fix as
+  given: it checks any tool or platform fact a fix rests on, adds no trigger, flag, permission, input or path the
+  spec does not name, and lists a finding that is wrong, or that only a change to a spec decision fixes, for a person
+  (#604's fixer added a workflow trigger its PRD had ruled out, and GitHub has no such trigger) (#605).
 - solve-feature: `next` prints `reviewer-model=` again when no issue is left, right before the review, so the
   reviewer runs on its model rather than the session's (a Copilot run reviewed on Sonnet with Opus set). The
   Actions workflow's Copilot run now streams JSON as Claude's does: the job log shows one line per step and each

@@ -40,10 +40,13 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    2. `bash "<skill-dir>/scripts/solve-feature.sh" reviewed <slug> <n> <branch>` — always: it discards what the
      reviewer changed in the tree, flags it for the PR, and prints `findings=<k>` last. Only when it prints `findings=` greater than 0:
      run a **fresh subagent** — none of this conversation, full tool access, the repo's working
-     directory — with exactly this prompt: `Use the tdd skill to fix every
-     finding in <repo>/.coding-crew/solve-feature/pr-<n>.review.json; list any you could not fix, one per line,
-     in <repo>/.coding-crew/solve-feature/pr-<n>.unfixed.md, and leave that file absent if you fixed them all. This
-     run is non-interactive: the report's findings are the approved plan; ask no questions`. Run it on `coder-model=` as for each issue's coder.
+     directory — with exactly this prompt: `Judge each finding in <repo>/.coding-crew/solve-feature/pr-<n>.review.json
+     against the code and the spec in <repo>/.coding-crew/solve-feature/spec.md before acting on it: its fix is a
+     reviewer's suggestion, and a tool, API or platform fact a fix rests on is checked, never taken from memory. Use
+     the tdd skill to fix each real defect with the fix that adds no trigger, flag, permission, input or path the spec
+     does not name. List each finding you did not fix, one per line with why — it is wrong, or only changing a spec
+     decision fixes it (quote the decision) — in <repo>/.coding-crew/solve-feature/pr-<n>.unfixed.md, and leave that
+     file absent if you fixed them all. This run is non-interactive; ask no questions`. Run it on `coder-model=` as for each issue's coder.
      Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" fix <slug> <n> <branch>` — always, whatever the subagents
      reported. It gates the fixes with the checks, commits and pushes them, and records what needs a person.
