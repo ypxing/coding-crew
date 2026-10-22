@@ -50,6 +50,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- setup-coding-crew: the Actions workflow lets a Copilot session wait up to an hour for a background subagent
+  (`COPILOT_TASK_WAIT_TIMEOUT_SECONDS`; by default Copilot gave up after 600s and ended the run mid-issue), and the
+  repo variable `CODING_CREW_REF` picks the coding-crew branch or tag the runner installs. Run
+  `/setup-coding-crew redo actions` to take both (#610).
 - solve-feature: the fixer judges each review finding before acting on it instead of applying the reviewer's fix as
   given: it checks any tool or platform fact a fix rests on, adds no trigger, flag, permission, input or path the
   spec does not name, and lists a finding that is wrong, or that only a change to a spec decision fixes, for a person

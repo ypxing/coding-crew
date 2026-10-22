@@ -77,9 +77,10 @@ on:
   #   - cron: "0 6 * * 1-5"
 
 env:
-  # The coding-crew ref the runner installs. Pin it to the first tag cut after solve-feature's
-  # hosts shipped (no tag before that has crew-review); `main` until then.
-  CODING_CREW_REF: main
+  # The coding-crew ref the runner installs: the repo variable CODING_CREW_REF (a branch or tag, e.g. to
+  # try a branch on one run), else `main`. Pin it to the first tag cut after solve-feature's hosts
+  # shipped (no tag before that has crew-review); `main` until then.
+  CODING_CREW_REF: ${{ vars.CODING_CREW_REF || 'main' }}
 
 permissions:
   contents: write
@@ -189,6 +190,8 @@ jobs:
 
       - name: Run solve-feature
         env:
+          # Copilot stops waiting for a background subagent after 600s by default and ends the session mid-issue.
+          COPILOT_TASK_WAIT_TIMEOUT_SECONDS: 3600
           SLUG: ${{ needs.slug.outputs.slug }}
           REVIEW_PR: ${{ needs.slug.outputs.pr }}
           GITHUB_TOKEN: ${{ github.token }}
