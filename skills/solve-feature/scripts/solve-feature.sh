@@ -79,10 +79,11 @@ merge_in() {
   return 1
 }
 
-PR_N=""
-pr_view() { # sets PR_N when the branch has an OPEN PR, else clears it
-  local view; view=$(gh pr view "$BRANCH" --json number,state 2>/dev/null) || view=""
+PR_N="" PR_IS_DRAFT=""
+pr_view() { # sets PR_N and PR_IS_DRAFT (true|false) when the branch has an OPEN PR, else clears them
+  local view; view=$(gh pr view "$BRANCH" --json number,state,isDraft 2>/dev/null) || view=""
   PR_N=$(jq -r 'select(.state == "OPEN") | .number' <<<"$view" 2>/dev/null || true)
+  PR_IS_DRAFT=$(jq -r 'select(.state == "OPEN") | .isDraft' <<<"$view" 2>/dev/null || true)
 }
 
 # .coding-crew/solve-feature/spec.md, which the reviewer and the PR body read: the PRD, then every issue of the feature, open
@@ -156,6 +157,9 @@ start() {
   [ "$(git rev-parse HEAD)" = "$before" ] || push origin "$BRANCH" || die "cannot push $BRANCH after merging origin/$default into it: $PUSH_WHY"
   write_spec
   pr_view
+  # A ready PR would read as reviewed while coders and the review change it; describe marks it ready again.
+  [ -z "$PR_N" ] || [ "$PR_IS_DRAFT" != false ] || gh pr ready "$PR_N" --undo >/dev/null ||
+    die "gh pr ready $PR_N --undo failed: run gh pr ready $PR_N --undo by hand, then re-run"
   echo "branch=$BRANCH"
   echo "coder-model=$(model coder)"
   echo "reviewer-model=$(model reviewer)"
@@ -351,11 +355,30 @@ fix() {
   echo "FIX: findings=$total needs-attention=$(grep -c . "$LOGS/pr-$PR.attention.md" || true) review-again=$again"
 }
 
+# unresolved_threads — sets UNRESOLVED to the count of $PR's unresolved review threads, every page, and PR_URL.
+UNRESOLVED="" PR_URL=""
+unresolved_threads() {
+  local pages
+  pages=$(gh api graphql --paginate -F owner='{owner}' -F repo='{repo}' -F pr="$PR" -f query='
+    query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
+      repository(owner: $owner, name: $repo) { pullRequest(number: $pr) { url
+        reviewThreads(first: 100, after: $endCursor) { nodes { isResolved } pageInfo { hasNextPage endCursor } } } } }') ||
+    die "counting PR $PR's unresolved review threads failed (see above)"
+  UNRESOLVED=$(jq -s '[.[].data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)] | length' <<<"$pages") &&
+    PR_URL=$(jq -rs '.[0].data.repository.pullRequest.url' <<<"$pages") ||
+    die "unreadable review threads for PR $PR"
+}
+
 # The whole body, written once at the end. Readiness and the outcome come after it, so a failed write never leaves a
 # ready PR with land's one-line body. A re-run rewrites all of it, text a person added included.
 describe() {
   local f="$LOGS/pr-$PR.summary.md" att="$LOGS/pr-$PR.attention.md" body="$LOGS/pr-$PR.body.md" title="" refs draft result
   [ -f "$att" ] || die "no review result at $att: run fix $SLUG $PR <branch> first"
+  # A review thread still open needs a person as much as fix's list does. Counted on every run, never written into
+  # fix's file, so a re-run counts afresh.
+  unresolved_threads
+  local need; need=$(cat "$att")
+  [ "$UNRESOLVED" = 0 ] || need=$(printf '%s\n%s unresolved review threads: %s' "$need" "$UNRESOLVED" "$PR_URL" | grep -v '^[[:space:]]*$')
   refs=$(node "$CLI" closing-refs --feature-slug "$SLUG") || die "closing-refs failed for '$SLUG' (see above)"
   [ ! -f "$f" ] || title=$(head -n 1 "$f" | sed -n 's/^# //p')
   {
@@ -364,13 +387,13 @@ describe() {
     printf '> Written by solve-feature (`%s`): its coder, reviewer and fixer were agents; no person has read this body.\n\n' "$SLUG"
     # write-pr's summary minus its title line, which titles the PR instead.
     if [ -f "$f" ]; then if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d'; echo; fi
-    if [ -s "$att" ]; then printf '## Needs attention\n\n'; sed 's/^/- /' "$att"; echo; fi
+    if [ -n "$need" ]; then printf '## Needs attention\n\n'; sed 's/^/- /' <<<"$need"; echo; fi
     printf '<details><summary>Spec</summary>\n\n%s\n\n</details>\n\n' "$(cat "$LOGS/spec.md")"
     [ -z "$refs" ] || printf '%s\n' "$refs"
     printf '%s\n' "<!-- solve-feature:slug $SLUG -->" "$END"
   } >"$body"
   gh pr edit "$PR" ${title:+--title "$title"} --body-file "$body" >/dev/null || die "gh pr edit $PR failed"
-  if [ -s "$att" ]; then result=needs-attention
+  if [ -n "$need" ]; then result=needs-attention
   else
     result=ready draft=$(gh pr view "$PR" --json isDraft | jq -r '.isDraft') || die "gh pr view $PR failed"
     [ "$draft" != true ] || gh pr ready "$PR" >/dev/null || die "gh pr ready $PR failed; the body is written, so run gh pr ready $PR by hand"

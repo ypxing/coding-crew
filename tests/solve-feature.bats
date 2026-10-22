@@ -281,6 +281,31 @@ main_moves() {
   [ "$(out reviewer-model)" = opus ]
 }
 
+@test "start converts the branch's open PR to a draft before printing pr= when it is ready; a draft or no PR gets no such call" {
+  PR_EXISTS=1 PR_DRAFT=false run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out pr)" = 9 ]
+  [ "$(grep '^pr ready' "$STATE/gh.log")" = "pr ready 9 --undo" ]
+
+  : >"$STATE/gh.log"
+  PR_EXISTS=1 PR_DRAFT=true run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ]
+  [ "$(out pr)" = 9 ]
+  ! grep -q '^pr ready' "$STATE/gh.log" || false
+
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ]
+  ! grep -q '^pr ready' "$STATE/gh.log" || false
+}
+
+@test "start whose gh pr ready --undo fails exits 1 naming the command to run, before printing pr=" {
+  PR_EXISTS=1 PR_DRAFT=false GH_UNDO_FAIL=1 run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"gh pr ready 9 --undo"* ]]
+  [[ "$output" != *"pr=9"* ]]
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: start failed: "*"gh pr ready 9 --undo"* ]]
+}
+
 @test "start takes each model the project's config.json lacks from \$HOME/.coding-crew/config.json" {
   mkdir -p "$HOME/.coding-crew"
   echo '{"solveFeature":{"models":{"coder":"haiku","reviewer":"opus"}}}' > "$HOME/.coding-crew/config.json"
@@ -522,6 +547,41 @@ EOF
   GH_READY_FAIL=1 run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 1 ]
   [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: describe failed: gh pr ready 10 failed"* ]]
+}
+
+@test "describe with unresolved review threads across pages lists their count and the PR under Needs attention, leaving it a draft" {
+  fixed
+  threads "false true" "true false false"
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(sed -n '/^## Needs attention$/,/^<details>/p' "$STATE/pr-body")" = "$(printf '## Needs attention\n\n- 3 unresolved review threads: https://github.com/o/r/pull/10\n\n<details><summary>Spec</summary>')" ]
+  grep -q '^api graphql .*--paginate' "$STATE/gh.log"
+  ! grep -q '^pr ready' "$STATE/gh.log" || false
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention pr=10" ]
+  [ "${lines[${#lines[@]}-1]}" = "needs-attention pr=10" ]
+
+  # A second describe counts them again rather than stacking the line.
+  run bash "$SCRIPT" describe feat 10
+  [ "$(grep -c 'unresolved review threads' "$STATE/pr-body")" -eq 1 ]
+}
+
+@test "describe with only resolved review threads marks the PR ready" {
+  fixed
+  threads "true" "true"
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  ! grep -q 'unresolved review threads' "$STATE/pr-body" || false
+  grep -q '^pr ready 10$' "$STATE/gh.log"
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "ready pr=10" ]
+}
+
+@test "describe whose review-thread query fails stops without marking the PR ready" {
+  fixed
+  GH_THREADS_FAIL=1 run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"review threads"* ]]
+  ! grep -q '^pr ready' "$STATE/gh.log" || false
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: describe failed: "* ]]
 }
 
 # --- packaging and the skill -------------------------------------------------------------
