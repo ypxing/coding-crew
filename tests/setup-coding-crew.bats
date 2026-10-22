@@ -1,7 +1,10 @@
 #!/usr/bin/env bats
 
 # The setup-coding-crew skill: what install.sh ships for it, and the pieces of its SKILL.md that are code rather
-# than prose: Step 2's start of the dev commands file and Step 4's commit hint.
+# than prose: Step 2's start of the dev commands file and Step 4's commit hint; the review-round parts of
+# hosts/github-actions.yml (the rest of that file is in solve-feature.bats).
+
+load helpers/yaml
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
@@ -167,4 +170,199 @@ actions_tracker() {
   [ "$status" -eq 0 ]
   [ -z "$output" ]
   [ -z "$(git status --porcelain)" ]
+}
+
+# --- hosts/github-actions.yml: review rounds ---------------------------------------------
+
+# host_json — the host file as $JSON, or skips the test when the machine has no YAML parser; $STUB first on PATH and
+# the test in $TEMP_DIR/work, where a step's run script is run as Actions would.
+host_json() {
+  JSON="$TEMP_DIR/wf.json"
+  run yaml_to_json "$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" "$JSON"
+  [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
+  [ "$status" -eq 0 ]
+  STUB="$TEMP_DIR/stub" && mkdir -p "$STUB" "$TEMP_DIR/work" && cd "$TEMP_DIR/work"
+  export PATH="$STUB:$PATH"
+}
+# step_run <job> <step name> — that step's run script, into $TEMP_DIR/<job>-step.sh.
+step_run() {
+  jq -r --arg n "$2" ".jobs.$1.steps[] | select(.name == \$n) | .run" "$JSON" > "$TEMP_DIR/$1-step.sh"
+  [ -s "$TEMP_DIR/$1-step.sh" ]
+}
+
+@test "host file: a submitted review starts a round (a review comment alone does not), the solve job runs only on a slug, and no run line interpolates an expression" {
+  host_json
+  local on='(.on // .["true"])'
+  [ "$(jq -c "$on.pull_request_review.types" "$JSON")" = '["submitted"]' ]
+  [ "$(jq -r "$on | has(\"pull_request_review_comment\")" "$JSON")" = false ]
+  [ "$(jq -c "$on.issues.types" "$JSON")" = '["labeled"]' ]
+  jq -e '.jobs.slug.if | test("workflow_dispatch") and test("run-agent") and test("pull_request_review")' "$JSON" >/dev/null
+  jq -e '.jobs.solve.if | test("needs.slug.outputs.slug != ..")' "$JSON" >/dev/null
+  # The PR body and every other event field reach a shell only through env: interpolated into a run line it runs as code.
+  [ "$(jq '[.jobs[].steps[] | .run // empty | select(test("[$][{][{]"))] | length' "$JSON")" -eq 0 ]
+  jq -e '.jobs.slug.steps[0].env.PR_BODY == "${{ github.event.pull_request.body }}"' "$JSON" >/dev/null
+}
+
+@test "host file: a review round's slug comes from the PR body's block, only for Copilot's reviewer or a user with write, maintain or admin; a label run's from the root issue, the same slug" {
+  host_json
+  step_run slug "Read the slug"
+  cat > "$STUB/gh" <<'SH'
+#!/usr/bin/env bash
+echo "gh $*" >> "$TEMP_DIR/gh.log"
+[ -z "$GH_FAIL" ] || { echo "HTTP 404" >&2; exit 1; }
+printf '%s\n' $GH_PERM
+SH
+  chmod +x "$STUB/gh"
+  export TEMP_DIR RUNNER_TEMP="$TEMP_DIR" GITHUB_OUTPUT="$TEMP_DIR/out" GITHUB_REPOSITORY=o/r INPUT_SLUG= ISSUE_BODY= PR_NUMBER=12
+  local body=$'Why.\n\n<!-- solve-feature:begin -->\nImplemented by solve-feature (`feat`).\n<!-- solve-feature:slug feat -->\n<!-- solve-feature:end -->'
+  # round <author> [gh perm lines] — runs the step for a review event; $output and $GITHUB_OUTPUT hold the result.
+  round() { : > "$GITHUB_OUTPUT"; rm -f "$TEMP_DIR/gh.log"; GITHUB_EVENT_NAME=pull_request_review PR_BODY="$PR_BODY" REVIEW_AUTHOR="$1" GH_PERM="$2" run bash -e "$TEMP_DIR/slug-step.sh"; }
+
+  export PR_BODY="$body"
+  round 'copilot-pull-request-reviewer[bot]'
+  [ "$status" -eq 0 ]
+  [ "$(cat "$GITHUB_OUTPUT")" = $'slug=feat\npr=12' ]
+  [ ! -e "$TEMP_DIR/gh.log" ]
+  local perm
+  for perm in $'write\nwrite' $'admin\nadmin' $'write\nmaintain'; do
+    round alice "$perm"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$GITHUB_OUTPUT")" = $'slug=feat\npr=12' ] || { echo "$perm: $(cat "$GITHUB_OUTPUT")"; return 1; }
+    [ "$(cat "$TEMP_DIR/gh.log")" = 'gh api repos/o/r/collaborators/alice/permission --jq .permission, .role_name' ]
+  done
+  # Anyone else, the agent's own token included, starts nothing: a notice and no slug, so solve is skipped.
+  for perm in $'read\ntriage' $'none\nnone' $'read\nread'; do
+    round mallory "$perm"
+    [ "$status" -eq 0 ]
+    [ ! -s "$GITHUB_OUTPUT" ]
+    [[ "$output" == *"::notice::"*"mallory"* ]]
+  done
+  GH_FAIL=1 round mallory
+  [ "$status" -eq 0 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::notice::"* ]]
+  round 'github-actions[bot]' $'read\nread'
+  [ ! -s "$GITHUB_OUTPUT" ]
+  # A PR without the block is not solve-feature's, whoever reviewed it.
+  PR_BODY=$'Why.\n<!-- solve-feature:slug feat -->' round 'copilot-pull-request-reviewer[bot]'
+  [ "$status" -eq 0 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::notice::"*"solve-feature"* ]]
+  # A body that is code in a shell line stays text.
+  PR_BODY=$'<!-- solve-feature:begin -->\n$(touch pwned)\n<!-- solve-feature:slug feat -->' round 'copilot-pull-request-reviewer[bot]'
+  [ "$(cat "$GITHUB_OUTPUT")" = $'slug=feat\npr=12' ]
+  [ ! -e pwned ]
+
+  # A label run of the same feature gets the same slug, so both queue in solve-feature-feat; no pr output.
+  : > "$GITHUB_OUTPUT"
+  GITHUB_EVENT_NAME=issues ISSUE_BODY=$'Feature: feat\n\nRoot.' PR_BODY= run bash -e "$TEMP_DIR/slug-step.sh"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
+  : > "$GITHUB_OUTPUT"
+  GITHUB_EVENT_NAME=issues ISSUE_BODY='no line' PR_BODY= run bash -e "$TEMP_DIR/slug-step.sh"
+  [ "$status" -ne 0 ]
+  GITHUB_EVENT_NAME=workflow_dispatch INPUT_SLUG=feat PR_BODY= run bash -e "$TEMP_DIR/slug-step.sh"
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
+  [ "$(jq -r '.jobs.solve.concurrency.group' "$JSON")" = 'solve-feature-${{ needs.slug.outputs.slug }}' ]
+}
+
+@test "host file: a review round's session runs address-pr-comments on the PR, saying it is non-interactive, for both agents; the install includes the skill" {
+  host_json
+  step_run solve "Run solve-feature"
+  for a in copilot claude; do
+    printf '#!/usr/bin/env bash\necho "%s $*"\n' "$a" > "$STUB/$a" && chmod +x "$STUB/$a"
+  done
+  local sentence='Use the address-pr-comments skill on PR #12; this run is non-interactive'
+  run env CREW_AGENT=copilot CREW_MODEL= SLUG=feat REVIEW_PR=12 ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/solve-step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(head -n 1 .coding-crew/solve-feature/session.jsonl)" == "copilot -p $sentence --allow-all "* ]]
+  run env CREW_AGENT=claude CREW_MODEL= SLUG=feat REVIEW_PR=12 ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN=tok bash -e "$TEMP_DIR/solve-step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(head -n 1 .coding-crew/solve-feature/session.jsonl)" == "claude -p /address-pr-comments 12 $sentence --dangerously-skip-permissions "* ]]
+  # A label or dispatch run keeps its prompt.
+  run env CREW_AGENT=copilot CREW_MODEL= SLUG=feat REVIEW_PR= ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/solve-step.sh"
+  [[ "$(head -n 1 .coding-crew/solve-feature/session.jsonl)" == "copilot -p Use the solve-feature skill on feat --allow-all "* ]]
+  jq -e '.jobs.solve.steps[] | select(.name == "Run solve-feature") | .env.REVIEW_PR == "${{ needs.slug.outputs.pr }}"' "$JSON" >/dev/null
+  step_run solve "Install coding-crew (user-level)"
+  grep -qE -- '--skills [a-z,-]*address-pr-comments' "$TEMP_DIR/solve-step.sh"
+}
+
+@test "host file: after a ready run, Copilot is asked to review with the PAT only when it has not reviewed; unset or refused, the step warns and passes" {
+  host_json
+  local name="Ask Copilot for its review"
+  step_run solve "$name"
+  # The PAT is that step's GH_TOKEN, and no other step's; it always runs after the session, before the bundle.
+  [ "$(jq -c '[.jobs[].steps[] | select((.env // {}) | tostring | test("COPILOT_GITHUB_TOKEN")) | .name]' "$JSON")" = "[\"$name\"]" ]
+  jq -e --arg n "$name" '.jobs.solve.steps[] | select(.name == $n) | .env.GH_TOKEN == "${{ secrets.COPILOT_GITHUB_TOKEN }}" and .if == "always()"' "$JSON" >/dev/null
+  [ "$(jq -r '.jobs.solve.steps | map(.name) | (index("Run solve-feature") < index("Ask Copilot for its review")) and (index("Ask Copilot for its review") < index("Bundle the unpushed commits"))' "$JSON")" = true ]
+  cat > "$STUB/gh" <<'SH'
+#!/usr/bin/env bash
+echo "GH_TOKEN=$GH_TOKEN gh $*" >> "$TEMP_DIR/gh.log"
+case "$1 $2" in
+  "api repos/o/r/pulls/12/reviews") [ -z "$GH_LIST_FAIL" ] || exit 1; printf '%s\n' $GH_REVIEWERS ;;
+  "pr edit") [ -z "$GH_EDIT_FAIL" ] || { echo "HTTP 422" >&2; exit 1; } ;;
+esac
+SH
+  chmod +x "$STUB/gh"
+  export TEMP_DIR GITHUB_REPOSITORY=o/r READ_TOKEN=gha GH_REVIEWERS=alice
+  mkdir -p .coding-crew/solve-feature && echo 'ready pr=12' > .coding-crew/solve-feature/outcome
+
+  GH_TOKEN=pat run bash -e "$TEMP_DIR/solve-step.sh"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$TEMP_DIR/gh.log")" = "$(printf '%s\n' 'GH_TOKEN=gha gh api repos/o/r/pulls/12/reviews --paginate --jq .[].user.login' \
+    'GH_TOKEN=pat gh pr edit 12 --add-reviewer @copilot')" ]
+  # Copilot reviewed already: a second request would re-review, every ready round.
+  rm -f "$TEMP_DIR/gh.log"
+  GH_TOKEN=pat GH_REVIEWERS='alice copilot-pull-request-reviewer[bot]' run bash -e "$TEMP_DIR/solve-step.sh"
+  [ "$status" -eq 0 ]
+  ! grep -q 'pr edit' "$TEMP_DIR/gh.log" || false
+  rm -f "$TEMP_DIR/gh.log"
+  GH_TOKEN= run bash -e "$TEMP_DIR/solve-step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::warning::"*"COPILOT_GITHUB_TOKEN"*"by hand"* ]]
+  ! grep -q 'pr edit' "$TEMP_DIR/gh.log" || false
+  GH_TOKEN=pat GH_EDIT_FAIL=1 run bash -e "$TEMP_DIR/solve-step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::warning::"* ]]
+  rm -f "$TEMP_DIR/gh.log"
+  GH_TOKEN=pat GH_LIST_FAIL=1 run bash -e "$TEMP_DIR/solve-step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::warning::"* ]]
+  ! grep -q 'pr edit' "$TEMP_DIR/gh.log" || false
+  for line in 'needs-attention pr=12' 'stopped: 2 checks failed: x' ''; do
+    rm -f "$TEMP_DIR/gh.log" .coding-crew/solve-feature/outcome
+    [ -z "$line" ] || echo "$line" > .coding-crew/solve-feature/outcome
+    GH_TOKEN=pat run bash -e "$TEMP_DIR/solve-step.sh"
+    [ "$status" -eq 0 ]
+    [ ! -e "$TEMP_DIR/gh.log" ]
+  done
+}
+
+@test "host file: a review round with no outcome or needs-attention ends with a notice, a stopped one fails; a label run keeps its rule" {
+  host_json
+  jq -r '.jobs.solve.steps[-1].run' "$JSON" > "$TEMP_DIR/last-step.sh"
+  jq -e '.jobs.solve.steps[-1].env.REVIEW_PR == "${{ needs.slug.outputs.pr }}"' "$JSON" >/dev/null
+  export GITHUB_STEP_SUMMARY="$TEMP_DIR/summary.md" GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=o/r \
+    CREW_AGENT=claude CREW_MODEL= SLUG=feat
+  REVIEW_PR=12 run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::notice::"*"no solve-feature run this round"* ]]
+  grep -qxF -- '- PR: https://github.com/o/r/pull/12' "$GITHUB_STEP_SUMMARY"
+  REVIEW_PR= run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"never finished"* ]]
+  mkdir -p .coding-crew/solve-feature
+  echo 'needs-attention pr=12' > .coding-crew/solve-feature/outcome
+  REVIEW_PR=12 run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::notice::"*"needs-attention pr=12"* ]]
+  REVIEW_PR= run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -ne 0 ]
+  echo 'stopped: 2 checks failed: x' > .coding-crew/solve-feature/outcome
+  REVIEW_PR=12 run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"::error::"*"stopped: 2 checks failed: x"* ]]
+  echo 'ready pr=12' > .coding-crew/solve-feature/outcome
+  REVIEW_PR=12 run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -eq 0 ]
 }

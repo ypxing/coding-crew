@@ -4,6 +4,7 @@
 # fix in solve-feature-fix.bats. Setup and the stubs: helpers/solve-feature.bash.
 
 load helpers/solve-feature
+load helpers/yaml
 
 # --- usage and preconditions ---------------------------------------------------------
 
@@ -634,18 +635,6 @@ EOF
 }
 
 # --- hosts -------------------------------------------------------------------------------
-
-# YAML → JSON with whatever parser the machine has: js-yaml for node, else PyYAML. Exit 3 when
-# neither exists, the parser's own non-zero exit when the file does not parse.
-yaml_to_json() {
-  if node -e 'require.resolve("js-yaml")' >/dev/null 2>&1; then
-    node -e 'const y=require("js-yaml"),fs=require("fs");fs.writeFileSync(process.argv[2],JSON.stringify(y.load(fs.readFileSync(process.argv[1],"utf8"))))' "$1" "$2"
-  elif python3 -c 'import yaml' >/dev/null 2>&1; then
-    python3 -c 'import sys,json,yaml;json.dump(yaml.safe_load(open(sys.argv[1])),open(sys.argv[2],"w"))' "$1" "$2"
-  else
-    return 3
-  fi
-}
 
 @test "setup-coding-crew's hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, five write permissions (actions: write so it can approve or dispatch PR CI), a slug concurrency group, the skill launched by the agent, the logs kept, then a step reading the outcome" {
   local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json" line
