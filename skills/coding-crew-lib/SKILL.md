@@ -1,7 +1,7 @@
 ---
 name: coding-crew-lib
 description: >
-  Required by every coding-crew skill: always install it beside them. Holds the code the other skills share —
+  Required by most coding-crew skills: always install it beside them. Holds the code the other skills share —
   the tracker CLI, the checks library and the git-workflow scripts — and does nothing on its own: no one invokes
   it directly. Use when another coding-crew skill runs its scripts.
 disable-model-invocation: true

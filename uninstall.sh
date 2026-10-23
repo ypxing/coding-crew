@@ -150,15 +150,36 @@ update_manifest() {
 echo "Target: $REPO_ROOT ($LEVEL-level)"
 echo "---"
 
+# lib_users <names> (one per line) — the manifest's skills outside <names> whose registry deps name coding-crew-lib,
+# comma-separated: the skill they run their scripts from by path, so it stays while any of them does.
+lib_users() {
+  local name users=""
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && ! grep -qxF "$name" <<< "$1" || continue
+    jq -e --arg s "$name" '.skills[$s].deps // [] | index("coding-crew-lib")' "$SCRIPT_DIR/registry.json" >/dev/null \
+      && users+="${users:+, }$name"
+  done < <(manifest_list skills)
+  printf '%s' "$users"
+}
+
 if [[ "$MODE" == "skills" ]]; then
   _removed=""
   IFS=',' read -ra _arr <<< "$LIST"
   for _s in "${_arr[@]}"; do
     _s="${_s// /}"
     [[ -n "$_s" ]] || continue
-    remove_skill "$_s"
     _removed+="$_s"$'\n'
   done
+  _users=$(lib_users "$_removed")
+  while IFS= read -r _s; do
+    [[ -n "$_s" ]] || continue
+    if [[ "$_s" == coding-crew-lib && -n "$_users" ]]; then
+      echo "  coding-crew-lib: kept, still needed by $_users (remove them with it, or uninstall everything)"
+      _removed=$(grep -vxF coding-crew-lib <<< "$_removed" || true)
+      continue
+    fi
+    remove_skill "$_s"
+  done <<< "$_removed"
   remove_legacy_lib
   update_manifest "$_removed"
 else

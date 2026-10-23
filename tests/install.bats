@@ -307,6 +307,21 @@ _skills_copied() {
   [ "$(jq 'has("libs")' "$m")" = false ]
 }
 
+@test "uninstall --skill coding-crew-lib keeps it while an installed skill needs it, and removes it with them" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skills tdd,crew-review >/dev/null
+  local m="$TEMP_DIR/.coding-crew/manifest.json"
+  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill coding-crew-lib
+  [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
+  [[ "$output" == *"coding-crew-lib: kept, still needed by crew-review"* ]] || { echo "$output" >&2; return 1; }
+  [ -f "$TEMP_DIR/.claude/skills/coding-crew-lib/scripts/tracker/cli.mjs" ]
+  [ "$(jq -c '.skills' "$m")" = '["coding-crew-lib","crew-review","tdd"]' ]
+  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skills crew-review,coding-crew-lib
+  [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
+  [ ! -e "$TEMP_DIR/.claude/skills/coding-crew-lib" ] && [ ! -e "$TEMP_DIR/.claude/skills/crew-review" ]
+  [ "$(jq -c '.skills' "$m")" = '["tdd"]' ]
+}
+
 @test "direct install is idempotent (produces identical output on repeat runs)" {
   local temp1="$TEMP_DIR/first"
   local temp2="$TEMP_DIR/second"
