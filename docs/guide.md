@@ -250,8 +250,8 @@ from this checkout, for every platform the manifest names. An install made befor
 `rm -rf <root>/.coding-crew/{agents,code-review,crew-afk,dep-install,scripts,skills,solve-issue,to-issues,tracker,write-pr}`.
 
 An install whose skills link into `.coding-crew/lib` updates with `--update` first: a partial run (`--skill`, one
-platform of several, `uninstall.sh --skill`) removes that directory too, and the skills it left alone stop, naming the
-`coding-crew-lib` skill, until `--update` installs it.
+platform of several, `uninstall.sh --skill`) removes that directory too, and the skills it left alone stop with
+"re-install coding-crew" until `--update` reinstalls them.
 
 #### What lands where
 
