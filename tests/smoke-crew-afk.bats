@@ -154,7 +154,7 @@ setup() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"SMOKE: PASS (claude, demo)"* ]]
   ! grep -q '^npx ' "$BATS_TEST_TMPDIR/calls"
-  [ -f "$D/.claude/skills/solve-issue/scripts/tracker/cli.mjs" ]
+  [ -f "$D/.claude/skills/coding-crew-lib/scripts/tracker/cli.mjs" ]
   [ -f "$D/.coding-crew/manifest.json" ]
   [[ "$(tail -n 1 "$RESULTS")" == *"| claude | install | PASS |"* ]]
 }

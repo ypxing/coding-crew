@@ -37,11 +37,11 @@ load helpers/yaml
   [ "$status" -eq 1 ]
   [[ "$output" == *"slug"* ]]
 
-  mv "$INSTALL/tracker/cli.mjs" "$TEMP_DIR/cli.mjs"
+  mv "$LIB/tracker/cli.mjs" "$TEMP_DIR/cli.mjs"
   run bash "$SCRIPT" start feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"tracker CLI not found"* ]]
-  mv "$TEMP_DIR/cli.mjs" "$INSTALL/tracker/cli.mjs"
+  [[ "$output" == *"tracker CLI not found"*"the coding-crew-lib skill"*"npx skills add ypxing/coding-crew -s coding-crew-lib"* ]] || { echo "$output"; return 1; }
+  mv "$TEMP_DIR/cli.mjs" "$LIB/tracker/cli.mjs"
 
   echo dirt > dirt.txt
   run bash "$SCRIPT" start feat
@@ -628,10 +628,15 @@ EOF
   [ -f "$target/.claude/skills/crew-review/SKILL.md" ]
   # solve-feature's DISCOVER stops send the user to /setup-coding-crew, so it ships alongside.
   [ -f "$target/.claude/skills/setup-coding-crew/SKILL.md" ]
-  [ -f "$target/.claude/skills/solve-feature/scripts/checks/run-checks.sh" ]
-  [ -f "$target/.claude/skills/solve-feature/scripts/checks/run.sh" ]
-  [ -f "$target/.claude/skills/solve-feature/scripts/tracker/cli.mjs" ]
-  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","crew-review","tdd","write-pr","setup-coding-crew"]' ]
+  [ -f "$target/.claude/skills/coding-crew-lib/scripts/checks/run-checks.sh" ]
+  [ -f "$target/.claude/skills/coding-crew-lib/scripts/checks/run.sh" ]
+  [ -f "$target/.claude/skills/coding-crew-lib/scripts/tracker/cli.mjs" ]
+  [ ! -e "$target/.claude/skills/solve-feature/scripts/tracker" ]
+  [ "$(jq -c '.skills["solve-feature"].deps' "$REPO_ROOT/registry.json")" = '["solve-issue","crew-review","tdd","write-pr","setup-coding-crew","coding-crew-lib"]' ]
+  # The installed script finds the tracker CLI in coding-crew-lib (the node stub answers next for any scripts/tracker/cli.mjs).
+  git -C "$target" -c user.email=t@example.com -c user.name=test commit -q --allow-empty -m init
+  run bash -c 'cd "$1" && bash .claude/skills/solve-feature/scripts/solve-feature.sh next feat' _ "$target"
+  [ "$status" -eq 0 ] && [ "$output" = 2 ] || { echo "exit $status: $output"; return 1; }
 }
 
 # --- hosts -------------------------------------------------------------------------------

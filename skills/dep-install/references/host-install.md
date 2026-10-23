@@ -4,7 +4,7 @@ Use this when `INSTALL_MODE=host`. `PROJECT_ROOT` is **inherited from the caller
 Each bash call is a fresh shell, so write its literal value into every call.
 
 ```bash
-bash "<skill-dir>/scripts/checks/host-install.sh" --project-root "$PROJECT_ROOT"
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/host-install.sh" --project-root "$PROJECT_ROOT"
 ```
 
 It makes sure `.env` exists (never reading `.env*` content), runs the dev commands file's `registry_auth`

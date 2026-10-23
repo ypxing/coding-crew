@@ -23,15 +23,23 @@ commands", "redo actions"), that step runs again. Every run ends with Step 4.
 
 This skill does not commit or push: it prints the command, and the user runs it.
 
+<!-- fragment:missing-library -->
+**Shared scripts.** The scripts this skill runs live in the `coding-crew-lib` skill, installed beside it at
+`<skill-dir>/../coding-crew-lib` (`<skill-dir>` being the directory you read this file from). Before the first
+command that runs one, check that directory exists. If it does not, stop and tell the user to install it at this
+skill's scope, `npx skills add ypxing/coding-crew -s coding-crew-lib` (adding `-g` when this skill is installed at
+user level), or to re-run coding-crew's `install.sh`.
+<!-- /fragment:missing-library -->
+
 <!-- fragment:tracker-configuration -->
 ## Tracker Configuration
 
-Every tracker op runs through the tracker CLI, `TRACKER=<skill-dir>/scripts/tracker/cli.mjs` (`<skill-dir>` being the
+Every tracker op runs through the tracker CLI, `TRACKER=<skill-dir>/../coding-crew-lib/scripts/tracker/cli.mjs` (`<skill-dir>` being the
 directory you read this file from), as `node "$TRACKER" <op> …`; nothing else reads or writes the tracker. Before the
 first op run `node "$TRACKER" config` (prints `tracker=<kind>` and `configured=yes|no`). On `configured=no` on an
 interactive run, invoke the `configure-tracker` skill, then continue; on a non-interactive run (a headless/`-p`
 invocation or a subagent) never ask: proceed as `local`. The tracker's refs, statuses and labels are in
-`<skill-dir>/scripts/tracker/docs/<kind>.md`.
+`<skill-dir>/../coding-crew-lib/scripts/tracker/docs/<kind>.md`.
 
 Exit codes, every op: 0 ok; 3 not found; on 1 (the op failed) or 2 (a usage error or an invalid ref), report the
 stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, never performing it with the tracker's
@@ -55,13 +63,13 @@ move into it what an earlier version of coding-crew discovered into `.git/coding
 then run discovery — with `--refresh` when the user said "redo commands", which asks all eight fields again:
 
 ```bash
-DEV=$(bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root "$PWD")
+DEV=$(bash "<skill-dir>/../coding-crew-lib/scripts/checks/commands-file.sh" --project-root "$PWD")
 OLD="$(git rev-parse --path-format=absolute --git-common-dir)/coding-crew/dev-commands.json"
 if [ ! -f "$DEV" ]; then
   mkdir -p "$(dirname "$DEV")"
   if [ -f "$OLD" ]; then mv "$OLD" "$DEV"; else echo '{}' > "$DEV"; fi
 fi
-cd "$(dirname "$(dirname "$DEV")")" && bash "<skill-dir>/scripts/checks/discover-commands.sh"   # --refresh on "redo commands"
+cd "$(dirname "$(dirname "$DEV")")" && bash "<skill-dir>/../coding-crew-lib/scripts/checks/discover-commands.sh"   # --refresh on "redo commands"
 ```
 
 - **A prompt** (`Command discovery: <n> source file(s) found`): follow it.
@@ -83,7 +91,7 @@ to decide the install mode (it saves `install_mode` into the dev commands file w
 then, from the main checkout:
 
 ```bash
-bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$PWD"
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/run-checks.sh" --project-root "$PWD"
 ```
 
 - `CHECKS: pass`: say so, and go on.

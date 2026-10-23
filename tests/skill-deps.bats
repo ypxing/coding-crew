@@ -19,7 +19,6 @@ crew-afk crew-brainstorm        # tells the person to plan the feature first
 crew-afk to-issues              # tells the person to plan the feature first
 setup-coding-crew solve-feature # what setup prepares the repo for, and its workflow file
 setup-coding-crew solve-issue   # says which earlier run discovered the dev commands file
-to-issues solve-issue           # For a human: where a person finds the tracker CLI (scripts/tracker/)
 to-issues add-tests             # a caller: names the findings file add-tests hands over
 to-issues crew-grill            # a caller: hands over its design summary
 to-issues crew-brainstorm       # a caller: hands over its design summary
@@ -47,7 +46,8 @@ reach() {
 }
 
 # scan_skill_deps <root> — checks every registry skill under <root> (its registry.json and skills/; a
-# committed SKILL.md is the rendered body, and scripts/<lib> links point into lib/, not the skill) and prints one line per failure, naming the skill and the name;
+# committed SKILL.md is the rendered body, and coding-crew-lib's scripts/<lib> links point into lib/, which find -type f
+# does not follow) and prints one line per failure, naming the skill and the name;
 # exits 1 when any fails.
 scan_skill_deps() {
   local root="$1" reg="$1/registry.json" names alt s dir doc reachable named n fails=""
@@ -63,7 +63,7 @@ scan_skill_deps() {
       grep -qE "^$s $n( |\$)" <<<"$ALLOWLIST" && continue
       fails+="$s: names $n, which its deps do not reach"$'\n'
     done
-    named=$( { printf '%s\n' "$doc"; [ -d "$dir/scripts" ] && find "$dir/scripts" -type f | grep -vE "^$dir/scripts/($(jq -r --arg s "$s" '.skills[$s].libs // [] | join("|")' "$reg"))/" | while IFS= read -r f; do cat "$f"; done; } | named_skills "$alt")
+    named=$( { printf '%s\n' "$doc"; [ -d "$dir/scripts" ] && find "$dir/scripts" -type f | while IFS= read -r f; do cat "$f"; done; } | named_skills "$alt")
     for n in $(jq -r --arg s "$s" '.skills[$s].deps // [] | .[]' "$reg"); do
       grep -qxF "$n" <<<"$named" || fails+="$s: dep $n is not named in its SKILL.md, references/ or scripts/"$'\n'
     done

@@ -54,15 +54,23 @@ inline.
 when it set one; otherwise it is `git rev-parse --show-toplevel`, run in your working directory. Resolve it once and carry
 it as a literal: each bash call is a fresh shell.
 
+<!-- fragment:missing-library -->
+**Shared scripts.** The scripts this skill runs live in the `coding-crew-lib` skill, installed beside it at
+`<skill-dir>/../coding-crew-lib` (`<skill-dir>` being the directory you read this file from). Before the first
+command that runs one, check that directory exists. If it does not, stop and tell the user to install it at this
+skill's scope, `npx skills add ypxing/coding-crew -s coding-crew-lib` (adding `-g` when this skill is installed at
+user level), or to re-run coding-crew's `install.sh`.
+<!-- /fragment:missing-library -->
+
 <!-- fragment:tracker-configuration -->
 ## Tracker Configuration
 
-Every tracker op runs through the tracker CLI, `TRACKER=<skill-dir>/scripts/tracker/cli.mjs` (`<skill-dir>` being the
+Every tracker op runs through the tracker CLI, `TRACKER=<skill-dir>/../coding-crew-lib/scripts/tracker/cli.mjs` (`<skill-dir>` being the
 directory you read this file from), as `node "$TRACKER" <op> …`; nothing else reads or writes the tracker. Before the
 first op run `node "$TRACKER" config` (prints `tracker=<kind>` and `configured=yes|no`). On `configured=no` on an
 interactive run, invoke the `configure-tracker` skill, then continue; on a non-interactive run (a headless/`-p`
 invocation or a subagent) never ask: proceed as `local`. The tracker's refs, statuses and labels are in
-`<skill-dir>/scripts/tracker/docs/<kind>.md`.
+`<skill-dir>/../coding-crew-lib/scripts/tracker/docs/<kind>.md`.
 
 Exit codes, every op: 0 ok; 3 not found; on 1 (the op failed) or 2 (a usage error or an invalid ref), report the
 stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, never performing it with the tracker's
@@ -86,7 +94,7 @@ bash "<skill-dir>/scripts/preflight.sh" --project-root "$PROJECT_ROOT" \
 A `BLOCKED:` line (exit 1) ends the run: report it verbatim and do not proceed. It is
 `BLOCKED: on default branch` (`DEFAULT_BRANCH`: `origin/HEAD`, else `main`), `BLOCKED: depends on
 <file>` for a `## Blocked by` file not yet in the sibling `done/`, or `BLOCKED: checks library missing
-from scripts/checks — re-install coding-crew`.
+from the coding-crew-lib skill`.
 Otherwise it prints `OK` and two values; carry them as literals for the rest of the run:
 
 - `ISSUE_SLUG` — the commit prefix (Steps 4 and 6). For an issue handed over inline it is empty:
@@ -94,7 +102,7 @@ Otherwise it prints `OK` and two values; carry them as literals for the rest of 
 - `PRD` — a file PRD's path, or empty (Step 1.5)
 
 The checks library — `run.sh`, `run-checks.sh` and the discovery scripts of Steps 2, 4 and 5 — is
-`<skill-dir>/scripts/checks`.
+`<skill-dir>/../coding-crew-lib/scripts/checks`.
 
 ### 1. Understand the issue
 
@@ -118,7 +126,7 @@ the architecture decisions and constraints the issue assumes. No PRD is normal.
 First settle where commands run — before Step 4's first one:
 
 ```bash
-bash "<skill-dir>/scripts/checks/discover-mode.sh" --project-root "$PROJECT_ROOT"
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/discover-mode.sh" --project-root "$PROJECT_ROOT"
 ```
 
 `skipped` means it is settled. Otherwise it prints a prompt: answer it yourself, by reading the files
@@ -177,7 +185,7 @@ inside docker (with this checkout's compose override) or on the host. Never hand
 compose` command.
 
 ```bash
-bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"
 ```
 
 Run commands in the foreground and wait for them — never in the background. Between edits run only
@@ -204,7 +212,7 @@ branch with a commit on it is resumable; uncommitted work looks like a run that 
 Message quality doesn't matter — checkpoints are squashed before merge:
 
 ```bash
-PROJECT_ROOT="$PROJECT_ROOT" bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
+PROJECT_ROOT="$PROJECT_ROOT" bash "<skill-dir>/../coding-crew-lib/scripts/git-workflow/commit-changes.sh" \
   --prefix "[$ISSUE_SLUG][WIP]" \
   --message "<behavior just made green>" \
   --files "<files touched this cycle>"
@@ -223,10 +231,10 @@ or touch unrelated doc sections.
 This is the one full-suite run:
 
 ```bash
-bash "<skill-dir>/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT"
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT"
 ```
 
-It runs every check in the dev commands file (`scripts/checks/commands-file.sh` names it) — `typecheck`, `lint`, `test`, then
+It runs every check in the dev commands file (`coding-crew-lib/scripts/checks/commands-file.sh` names it) — `typecheck`, `lint`, `test`, then
 `coverage` and `integration` when the file has them — each through `run.sh`, and reports each. `NOT RUN: no
 command found` means no local command exists: report it, do not re-check CLAUDE.md/Makefile.
 
@@ -237,7 +245,7 @@ command found` means no local command exists: report it, do not re-check CLAUDE.
   human commits — and a failure naming what no repo file can provide (§ Outcome): report
   `blocked` with that output. The modified-files line's "run it, commit the result, and re-run" is
   for that person, not for you.
-- `DISCOVER` — no dev commands file yet. Run `(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")`,
+- `DISCOVER` — no dev commands file yet. Run `(cd "$PROJECT_ROOT" && bash "<skill-dir>/../coding-crew-lib/scripts/checks/discover-commands.sh")`,
   follow its prompt, then re-run `run-checks.sh`.
 
 A check that still fails, or an acceptance criterion from Step 1 that is unmet, makes the run
@@ -255,7 +263,7 @@ implemented and committed; if so, go to Step 7.
 ```bash
 DETAILS="- <key decision or tradeoff line 1>
 - <key decision or tradeoff line 2>"
-PROJECT_ROOT="$PROJECT_ROOT" bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
+PROJECT_ROOT="$PROJECT_ROOT" bash "<skill-dir>/../coding-crew-lib/scripts/git-workflow/commit-changes.sh" \
   --prefix "[$ISSUE_SLUG]" \
   --message "<issue title>${DETAILS:+
 
@@ -267,7 +275,7 @@ Example: `[01-auth-logout] Add user logout endpoint`. Do not push.
 
 ### 6.5. The dev commands file
 
-The dev commands file (`bash "<skill-dir>/scripts/checks/commands-file.sh" --project-root
+The dev commands file (`bash "<skill-dir>/../coding-crew-lib/scripts/checks/commands-file.sh" --project-root
 "$PROJECT_ROOT"` prints its path) is this tree's `.coding-crew/dev-commands.json` when this branch tracks
 it, else the main checkout's, committed or not. Step 5's `DISCOVER` may write it. When it has
 uncommitted changes, a copy this branch tracks is this branch's: commit it as Step 6 does, with its prefix and the

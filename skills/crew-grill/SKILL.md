@@ -13,10 +13,18 @@ Run the full design pipeline in two phases. Pause for user feedback within each 
 
 Interview the user relentlessly until you reach shared understanding. Map the plan as a **design tree**: every decision branches into the decisions that hang off it.
 
+<!-- fragment:missing-library -->
+**Shared scripts.** The scripts this skill runs live in the `coding-crew-lib` skill, installed beside it at
+`<skill-dir>/../coding-crew-lib` (`<skill-dir>` being the directory you read this file from). Before the first
+command that runs one, check that directory exists. If it does not, stop and tell the user to install it at this
+skill's scope, `npx skills add ypxing/coding-crew -s coding-crew-lib` (adding `-g` when this skill is installed at
+user level), or to re-run coding-crew's `install.sh`.
+<!-- /fragment:missing-library -->
+
 <!-- fragment:light-path -->
 ### Light path: is the source already one complete change?
 
-Before any question, judge the source — the issue (`node "<skill-dir>/scripts/tracker/cli.mjs" fetch <ref> --comments`, `<skill-dir>` being the directory you read this skill from; if it fails, show its stderr and judge the user's message) or the user's message. Four checks; answer each with evidence, a quote from the source or a `file:line`:
+Before any question, judge the source — the issue (`node "<skill-dir>/../coding-crew-lib/scripts/tracker/cli.mjs" fetch <ref> --comments`, `<skill-dir>` being the directory you read this skill from; if it fails, show its stderr and judge the user's message) or the user's message. Four checks; answer each with evidence, a quote from the source or a `file:line`:
 
 1. **Problem** — the source states the problem with its cost or evidence.
 2. **One slice** — one vertical slice looks likely.

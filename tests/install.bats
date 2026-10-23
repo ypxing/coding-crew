@@ -76,9 +76,10 @@ teardown() {
   [ ! -e "$dir/references/github-publish.md" ]
   [ -f "$dir/SKILL.md" ]
   [ -f "$dir/references/expand-contract.md" ]
-  [ -f "$dir/scripts/tracker/cli.mjs" ]
+  [ -f "$TEMP_DIR/.claude/skills/coding-crew-lib/scripts/tracker/cli.mjs" ]
+  [ ! -e "$dir/scripts" ]
   [ ! -e "$TEMP_DIR/.claude/skills/gone-skill" ]
-  [ "$(jq -c '.skills' "$m")" = '["configure-tracker","to-issues","to-prd"]' ]
+  [ "$(jq -c '.skills' "$m")" = '["coding-crew-lib","configure-tracker","to-issues","to-prd"]' ]
   [ "$(jq 'has("libs")' "$m")" = false ]
 }
 
@@ -94,8 +95,8 @@ teardown() {
 }
 
 # What an older install.sh left behind: a manifest with one `platform` and skills keyed by name with a
-# version each (today's lists `platforms` and skill names only), scripts copied into each skill, and a
-# skill (crew-address-findings) the registry no longer has.
+# version each (today's lists `platforms` and skill names only), scripts copied into each skill, a skill's own
+# scripts/<lib> library copies (before coding-crew-lib held them), and a skill (crew-address-findings) the registry no longer has.
 _old_main_install() {
   local root="$1"
   mkdir -p "$root/.claude/skills/tdd" "$root/.claude/skills/crew-address-findings/scripts" "$root/.claude/skills/solve-issue/scripts" "$root/.coding-crew"
@@ -104,6 +105,9 @@ _old_main_install() {
   echo old > "$root/.claude/skills/crew-address-findings/scripts/triage.sh"
   echo old > "$root/.claude/skills/solve-issue/SKILL.md"
   echo old > "$root/.claude/skills/solve-issue/scripts/run-checks.sh"
+  mkdir -p "$root/.claude/skills/solve-issue/scripts/tracker" "$root/.claude/skills/solve-issue/scripts/checks"
+  echo old > "$root/.claude/skills/solve-issue/scripts/tracker/cli.mjs"
+  echo old > "$root/.claude/skills/solve-issue/scripts/checks/run.sh"
   cat > "$root/.coding-crew/manifest.json" <<'JSON'
 {
   "source": "git@github.com:ypxing/coding-crew.git",
@@ -127,12 +131,14 @@ JSON
   [ ! -e "$TEMP_DIR/.claude/skills/crew-address-findings" ]
   [[ "$output" == *"crew-address-findings: removed from the registry — uninstalled"* ]]
   [ ! -e "$TEMP_DIR/.claude/skills/solve-issue/scripts/run-checks.sh" ]
-  [ -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/checks/run-checks.sh" ]
+  [ ! -e "$TEMP_DIR/.claude/skills/solve-issue/scripts/tracker" ]
+  [ ! -e "$TEMP_DIR/.claude/skills/solve-issue/scripts/checks" ]
+  [ -f "$TEMP_DIR/.claude/skills/coding-crew-lib/scripts/checks/run-checks.sh" ]
   [ -f "$TEMP_DIR/.claude/skills/tdd/SKILL.md" ]
   [ "$(cat "$TEMP_DIR/.claude/skills/tdd/SKILL.md")" != old ]
   cd "$TEMP_DIR"
   git init -q .
-  run node .claude/skills/solve-issue/scripts/tracker/cli.mjs config
+  run node .claude/skills/coding-crew-lib/scripts/tracker/cli.mjs config
   [ "$status" -eq 0 ]
   [[ "$output" == *"tracker="* ]]
   local m="$TEMP_DIR/.coding-crew/manifest.json"
@@ -158,16 +164,19 @@ JSON
   [[ "$output" == *".claude/skills/tdd/old/deeper/gone.md (removed)"* ]]
 }
 
-@test "the prune keeps every library copy a skill ships, and drops a planted file or link" {
+@test "the prune keeps every library copy coding-crew-lib ships, and drops a planted file, link or per-skill library" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue >/dev/null
   local dir="$TEMP_DIR/.claude/skills/solve-issue"
   echo stale > "$dir/scripts/retired.sh"
   ln -s ../../../../elsewhere/nope "$dir/scripts/nope"
+  mkdir -p "$dir/scripts/checks" && echo old > "$dir/scripts/checks/run.sh"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue >/dev/null
   [ ! -e "$dir/scripts/retired.sh" ]
   [ ! -L "$dir/scripts/nope" ]
+  [ ! -e "$dir/scripts/checks" ]
   diff -r "$SCRIPT_DIR/skills/solve-issue" "$dir"
+  diff -r "$SCRIPT_DIR/skills/coding-crew-lib" "$TEMP_DIR/.claude/skills/coding-crew-lib"
   [ -x "$dir/scripts/preflight.sh" ]
 }
 
@@ -197,17 +206,26 @@ _skills_copied() {
   [ -z "$(find "$dir" -type l)" ] || { find "$dir" -type l >&2; return 1; }
 }
 
-@test "every installed skill is a copy of skills/<name>/, its scripts/<lib> a real directory equal to lib/<lib>" {
+@test "every installed skill is a copy of skills/<name>/, coding-crew-lib's scripts/<lib> a real directory equal to lib/<lib>" {
   _skills_copied "$ALL/.claude/skills"
-  [ -d "$ALL/.claude/skills/solve-issue/scripts/checks" ] && [ ! -L "$ALL/.claude/skills/solve-issue/scripts/checks" ]
-  [ -f "$ALL/.claude/skills/solve-issue/scripts/checks/write-commands-cache.sh" ]
-  [ -f "$ALL/.claude/skills/add-tests/scripts/checks/discover-commands.sh" ]
-  # One source per library, under lib/: a skill's committed scripts/<lib> is a link to it
-  # (tests/rendered-tree.bats checks each one), and the install copies through the link.
-  [ -L "$SCRIPT_DIR/skills/dep-install/scripts/checks" ]
-  diff -r "$SCRIPT_DIR/lib/checks" "$ALL/.claude/skills/dep-install/scripts/checks"
-  [ ! -e "$SCRIPT_DIR/skills/solve-issue/scripts/run-checks.sh" ]
-  [ -z "$(find "$SCRIPT_DIR/skills" \( -name write-commands-cache.sh -o -name cli.mjs \) | grep -vE '^'"$SCRIPT_DIR"'/skills/[^/]+/scripts/(checks|tracker)/')" ]
+  local lib
+  for lib in tracker checks git-workflow; do
+    # One source per library, under lib/: coding-crew-lib's committed scripts/<lib> is a link to it
+    # (tests/rendered-tree.bats checks each one), and the install copies through the link.
+    [ -L "$SCRIPT_DIR/skills/coding-crew-lib/scripts/$lib" ]
+    [ -d "$ALL/.claude/skills/coding-crew-lib/scripts/$lib" ] && [ ! -L "$ALL/.claude/skills/coding-crew-lib/scripts/$lib" ]
+    diff -r "$SCRIPT_DIR/lib/$lib" "$ALL/.claude/skills/coding-crew-lib/scripts/$lib"
+  done
+  [ -z "$(find "$ALL/.claude/skills" -path '*/scripts/*' \( -name write-commands-cache.sh -o -name cli.mjs \) | grep -v '/coding-crew-lib/scripts/')" ]
+}
+
+@test "the Actions workflow's skill subset installs coding-crew-lib with it, on every platform" {
+  cd "$SCRIPT_DIR"
+  local p
+  for p in "${PLATFORMS[@]}"; do
+    mkdir -p "$TEMP_DIR/$p" && TARGET_REPO="$TEMP_DIR/$p" ./install.sh "$p" --skills solve-feature,crew-review,address-pr-comments >/dev/null
+    [ -f "$TEMP_DIR/$p/$(platform_field "$p" projectSkills)/coding-crew-lib/scripts/tracker/cli.mjs" ] || { echo "$p: no coding-crew-lib"; return 1; }
+  done
 }
 
 @test "HOME=<tmp> ./install.sh claude installs at user level: each skill a copy of skills/<name>/, no .coding-crew/lib" {
@@ -222,13 +240,15 @@ _skills_copied() {
   [ ! -e "$home/.coding-crew/lib" ]
   [ "$(jq 'has("libs")' "$home/.coding-crew/manifest.json")" = false ]
 
-  # From inside a repo, the installed CLI runs from the skill's own copy.
-  mkdir -p "$TEMP_DIR/repo" && git -C "$TEMP_DIR/repo" init -q
+  # From inside a repo, the installed CLI runs from coding-crew-lib, and preflight finds the checks library there.
+  mkdir -p "$TEMP_DIR/repo" && git -C "$TEMP_DIR/repo" init -q -b feat
   cd "$TEMP_DIR/repo"
-  run env HOME="$home" node "$skills/solve-feature/scripts/tracker/cli.mjs" config
+  run env HOME="$home" node "$skills/coding-crew-lib/scripts/tracker/cli.mjs" config
   [ "$status" -eq 0 ]
   [[ "$output" == *"tracker="* ]]
   [[ "$output" == *"configured="* ]]
+  run bash "$skills/solve-issue/scripts/preflight.sh" --project-root "$TEMP_DIR/repo"
+  [ "$status" -eq 0 ] && [ "${lines[0]}" = OK ] || { echo "$output"; return 1; }
 
   cd "$SCRIPT_DIR"
   run env -u TARGET_REPO -u CLAUDE_CONFIG_DIR HOME="$home" ./uninstall.sh
@@ -245,13 +265,15 @@ _skills_copied() {
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
   [ -z "$(ls -A "$home")" ]
   _skills_copied "$repo/.claude/skills"
+  # The libraries once, in coding-crew-lib, not a copy per skill.
+  [ "$(find "$repo/.claude/skills" -type f | wc -l | tr -d ' ')" -eq 63 ] || { find "$repo/.claude/skills" -type f | wc -l; return 1; }
   [ ! -e "$repo/.coding-crew/lib" ]
   [ "$(jq 'has("libs")' "$repo/.coding-crew/manifest.json")" = false ]
 
   cp -a "$repo" "$TEMP_DIR/moved"
   rm -rf "$repo"
   cd "$TEMP_DIR/moved"
-  run node .claude/skills/to-issues/scripts/tracker/cli.mjs config
+  run node .claude/skills/coding-crew-lib/scripts/tracker/cli.mjs config
   [ "$status" -eq 0 ]
   [[ "$output" == *"tracker="* ]]
 
@@ -278,11 +300,26 @@ _skills_copied() {
   run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill crew-review
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
   [ ! -e "$TEMP_DIR/.claude/skills/crew-review" ]
-  [ -f "$TEMP_DIR/.claude/skills/configure-tracker/scripts/tracker/cli.mjs" ]
-  [ "$(jq -c '.skills' "$m")" = '["configure-tracker","tdd"]' ]
+  [ -f "$TEMP_DIR/.claude/skills/coding-crew-lib/scripts/tracker/cli.mjs" ]
+  [ "$(jq -c '.skills' "$m")" = '["coding-crew-lib","configure-tracker","tdd"]' ]
   run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
   [ "$(jq 'has("libs")' "$m")" = false ]
+}
+
+@test "uninstall --skill coding-crew-lib keeps it while an installed skill needs it, and removes it with them" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skills tdd,crew-review >/dev/null
+  local m="$TEMP_DIR/.coding-crew/manifest.json"
+  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill coding-crew-lib
+  [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
+  [[ "$output" == *"coding-crew-lib: kept, still needed by crew-review"* ]] || { echo "$output" >&2; return 1; }
+  [ -f "$TEMP_DIR/.claude/skills/coding-crew-lib/scripts/tracker/cli.mjs" ]
+  [ "$(jq -c '.skills' "$m")" = '["coding-crew-lib","crew-review","tdd"]' ]
+  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skills crew-review,coding-crew-lib
+  [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
+  [ ! -e "$TEMP_DIR/.claude/skills/coding-crew-lib" ] && [ ! -e "$TEMP_DIR/.claude/skills/crew-review" ]
+  [ "$(jq -c '.skills' "$m")" = '["tdd"]' ]
 }
 
 @test "direct install is idempotent (produces identical output on repeat runs)" {

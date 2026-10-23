@@ -9,7 +9,7 @@
 # nothing needs a person and writes .coding-crew/solve-feature/outcome.
 #
 # A temp clone with a bare `origin`, and the skill's scripts/ as install.sh lays it out: its own
-# script beside the tracker and checks library copies. `gh`, `node` (only for the tracker CLI's path; everything else reaches the
+# script, with the tracker and checks library copies in the coding-crew-lib skill beside it. `gh`, `node` (only for the tracker CLI's path; everything else reaches the
 # real node) and solve-issue's run-checks.sh are stubs that log their argv; the node stub answers
 # `next` from $STATE/issues.json by the tracker's dispatch rule. `coder <ref>` stands in for the
 # subagent: it commits a file and swaps the issue's ready-for-agent label for awaiting-merge, as
@@ -25,12 +25,12 @@ setup() {
   mkdir -p "$STATE" "$HOME"
   unset PR_EXISTS PR_DRAFT PR_HEAD_OID PR_STATE PR_HEAD_REF GH_READY_FAIL GH_UNDO_FAIL GH_THREADS_FAIL TRACKER_KIND SOLVE_FEATURE_HOST CREW_CODER_MODEL CREW_REVIEWER_MODEL
 
-  INSTALL="$HOME/skill/scripts"
-  mkdir -p "$HOME/skill"
+  INSTALL="$HOME/skills/solve-feature/scripts" LIB="$HOME/skills/coding-crew-lib/scripts"
+  mkdir -p "$HOME/skills/solve-feature"
   cp -RL "$REPO_ROOT/skills/solve-feature/scripts" "$INSTALL"
-  mkdir -p "$INSTALL/tracker" "$INSTALL/checks"
-  cp "$REPO_ROOT/lib/checks/commands-file.sh" "$INSTALL/checks/"
-  : > "$INSTALL/tracker/cli.mjs"
+  mkdir -p "$LIB/tracker" "$LIB/checks"
+  cp "$REPO_ROOT/lib/checks/commands-file.sh" "$LIB/checks/"
+  : > "$LIB/tracker/cli.mjs"
   SCRIPT="$INSTALL/solve-feature.sh"
 
   WORK="$TEMP_DIR/work"
@@ -148,7 +148,7 @@ case "$1 $2" in
 esac
 EOF
 
-  cat > "$INSTALL/checks/run-checks.sh" <<'EOF'
+  cat > "$LIB/checks/run-checks.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$STATE/checks.log"
 git status --porcelain > "$STATE/checks.status"
@@ -160,7 +160,7 @@ echo "test: ${CHECK_RESULT:-pass}"
 [ "${CHECKS_RC:-0}" = 0 ] && echo "CHECKS: pass" || echo "CHECKS: fail"
 exit "${CHECKS_RC:-0}"
 EOF
-  chmod +x "$STUB"/* "$INSTALL"/checks/*.sh
+  chmod +x "$STUB"/* "$LIB"/checks/*.sh
 }
 
 # coder <ref> — what the subagent's solve-issue leaves: a commit, and the issue out of `next`.

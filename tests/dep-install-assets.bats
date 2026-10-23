@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 
 # dep-install's scripts are the checks library (lib/checks): committed as a link to ../../../lib/checks at
-# skills/<skill>/scripts/checks in each skill whose registry `libs` names it, and copied through it at
-# install, so the skill text's "<skill-dir>/scripts/checks/<script>" runs the skill's own copy.
+# skills/coding-crew-lib/scripts/checks, copied through it at install into the coding-crew-lib skill every skill
+# that runs it depends on, so the skill text's "<skill-dir>/../coding-crew-lib/scripts/checks/<script>" runs.
 
 setup_file() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -16,13 +16,13 @@ fresh_target() {
   printf '%s\n' "$target"
 }
 
-LIB=".pi/skills/dep-install/scripts/checks"
+LIB=".pi/skills/coding-crew-lib/scripts/checks"
 
-@test "registry links the checks library into dep-install, solve-issue, solve-feature and address-pr-comments" {
+@test "dep-install, solve-issue, solve-feature and address-pr-comments depend on coding-crew-lib" {
   local s
   for s in dep-install solve-issue solve-feature address-pr-comments; do
-    run jq -r --arg s "$s" '.skills[$s].libs | index("checks") != null' "$REPO_ROOT/registry.json"
-    [ "$output" = "true" ] || { echo "$s: no checks lib" >&2; return 1; }
+    run jq -r --arg s "$s" '.skills[$s].deps | index("coding-crew-lib") != null' "$REPO_ROOT/registry.json"
+    [ "$output" = "true" ] || { echo "$s: no coding-crew-lib dep" >&2; return 1; }
   done
 }
 
@@ -35,18 +35,19 @@ LIB=".pi/skills/dep-install/scripts/checks"
   done
 }
 
-@test "every platform's dep-install carries its own copy of the library, and no .coding-crew/lib is written" {
+@test "every platform's dep-install gets coding-crew-lib beside it with a copy of the library, and no .coding-crew/lib is written" {
   local target d; target=$(fresh_target target-all)
   run bash "$REPO_ROOT/install.sh" all --skill dep-install --project "$target"
   [ "$status" -eq 0 ]
   [ ! -e "$target/.coding-crew/lib" ]
-  for d in .claude/skills/dep-install .pi/skills/dep-install .agents/skills/dep-install .github/skills/dep-install; do
-    [ -f "$target/$d/SKILL.md" ] || { echo "missing $d/SKILL.md" >&2; return 1; }
+  for d in .claude/skills .pi/skills .agents/skills .github/skills; do
+    [ -f "$target/$d/dep-install/SKILL.md" ] || { echo "missing $d/dep-install/SKILL.md" >&2; return 1; }
+    d="$d/coding-crew-lib"
     [ -d "$target/$d/scripts/checks" ] && [ ! -L "$target/$d/scripts/checks" ] || { echo "$d/scripts/checks is not a directory" >&2; return 1; }
     diff -r "$REPO_ROOT/lib/checks" "$target/$d/scripts/checks" || { echo "$d: not a copy of lib/checks" >&2; return 1; }
   done
   # The path the skill text names is a runnable program, not a stub.
-  run bash "$target/.pi/skills/dep-install/scripts/checks/discover-mode.sh" --project-root "$target"
+  run bash "$target/.pi/skills/coding-crew-lib/scripts/checks/discover-mode.sh" --project-root "$target"
   [ "$status" -eq 0 ]
   [[ "$output" == "Mode discovery: skipped (no compose file: host)" ]]
 }
@@ -60,11 +61,11 @@ LIB=".pi/skills/dep-install/scripts/checks"
   ! grep -q '^stale$' "$target/$LIB/discover-mode.sh"
 }
 
-@test "uninstall --skill dep-install removes the skill with its library copy" {
+@test "uninstall --skill coding-crew-lib removes the library copy, and --skill dep-install the skill" {
   local target; target=$(fresh_target target-uninstall)
   bash "$REPO_ROOT/install.sh" pi --skill dep-install --project "$target" >/dev/null
   [ -f "$target/$LIB/discover-mode.sh" ]
-  run bash "$REPO_ROOT/uninstall.sh" --skill dep-install --project "$target"
+  run bash "$REPO_ROOT/uninstall.sh" --skills dep-install,coding-crew-lib --project "$target"
   [ "$status" -eq 0 ]
   [ ! -d "$target/$LIB" ]
   [ ! -d "$target/.pi/skills/dep-install" ]
@@ -74,7 +75,7 @@ LIB=".pi/skills/dep-install/scripts/checks"
   local target; target=$(fresh_target target-shim)
   run bash "$REPO_ROOT/install.sh" claude --skill dep-install --project "$target"
   [ "$status" -eq 0 ]
-  [ -x "$target/.claude/skills/dep-install/scripts/checks/shim/docker" ]
+  [ -x "$target/.claude/skills/coding-crew-lib/scripts/checks/shim/docker" ]
 }
 
 @test "a re-install keeps the shim executable even when the previous copy was not" {

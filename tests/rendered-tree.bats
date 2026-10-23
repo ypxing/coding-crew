@@ -44,71 +44,65 @@ planted line' "$T/skills/to-prd/SKILL.md" && rm "$T/skills/to-prd/SKILL.md.bak"
   [ "$status" -eq 1 ]
   [[ "$output" == *"skills/to-prd/SKILL.md"* ]] || { echo "$output"; return 1; }
   # The renderer leaves the links alone.
-  [ "$(readlink "$T/skills/solve-issue/scripts/tracker")" = "../../../lib/tracker" ]
+  [ "$(readlink "$T/skills/coding-crew-lib/scripts/tracker")" = "../../../lib/tracker" ]
 }
 
-# lib_link_problems <root> — prints each skill whose scripts/<lib> is not a link to ../../../lib/<lib>
-# resolving to a directory, for every `libs` entry in <root>/registry.json, and each skill with a
-# scripts/<lib> its `libs` does not name; exits 1 when any does.
+# lib_link_problems <root> — prints each problem with coding-crew-lib/scripts/<lib>, for every library under
+# <root>/lib, that is not a link to ../../../lib/<lib> resolving to a directory, and each other skill that has a
+# scripts/<lib> of its own; exits 1 when any does.
 lib_link_problems() {
-  local root="$1" skill dir libs lib p link out=""
-  while IFS=' ' read -r skill dir; do
-    libs=$(jq -r --arg s "$skill" '.skills[$s].libs // [] | .[]' "$root/registry.json")
-    while IFS= read -r lib; do
-      [ -n "$lib" ] || continue
-      link="$root/skills/$dir/scripts/$lib"
-      if [ ! -L "$link" ]; then out+="$skill: scripts/$lib is not a symlink"$'\n'
-      elif [ "$(readlink "$link")" != "../../../lib/$lib" ]; then
-        out+="$skill: scripts/$lib links to $(readlink "$link"), not ../../../lib/$lib"$'\n'
-      elif [ ! -d "$link" ]; then out+="$skill: scripts/$lib does not resolve to a directory"$'\n'
-      fi
-    done <<< "$libs"
-    for p in "$root/lib"/*/; do
-      lib=$(basename "$p")
-      link="$root/skills/$dir/scripts/$lib"
-      if { [ -e "$link" ] || [ -L "$link" ]; } && ! grep -qxF "$lib" <<< "$libs"; then
-        out+="$skill: scripts/$lib exists, but its libs does not name $lib"$'\n'
+  local root="$1" dir lib p link out=""
+  for p in "$root/lib"/*/; do
+    lib=$(basename "$p")
+    link="$root/skills/coding-crew-lib/scripts/$lib"
+    if [ ! -L "$link" ]; then out+="coding-crew-lib: scripts/$lib is not a symlink"$'\n'
+    elif [ "$(readlink "$link")" != "../../../lib/$lib" ]; then
+      out+="coding-crew-lib: scripts/$lib links to $(readlink "$link"), not ../../../lib/$lib"$'\n'
+    elif [ ! -d "$link" ]; then out+="coding-crew-lib: scripts/$lib does not resolve to a directory"$'\n'
+    fi
+  done
+  for p in "$root/skills"/*/; do
+    dir=$(basename "$p")
+    [ "$dir" != coding-crew-lib ] || continue
+    for link in "$p"scripts/*; do
+      lib=$(basename "$link")
+      if [ -d "$root/lib/$lib" ] || { [ -L "$link" ] && [[ "$(readlink "$link")" == *lib/* ]]; }; then
+        out+="$dir: scripts/$lib exists, but libraries live only in coding-crew-lib"$'\n'
       fi
     done
-  done < <(jq -r '.skills | to_entries[] | "\(.key) \(.value["source-dir"] // .key)"' "$root/registry.json")
+  done
   [ -z "$out" ] || { printf '%s' "$out"; return 1; }
 }
 
-@test "each libs entry's scripts/<lib> is a link to ../../../lib/<lib>, and no skill has one its libs does not name" {
+@test "coding-crew-lib's scripts/<lib> is a link to ../../../lib/<lib> for every library, and no other skill has one" {
   run lib_link_problems "$REPO_ROOT"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
-@test "the link-shape check fails, naming the skill, on a missing, real, retargeted, dangling or unlisted scripts/<lib>" {
+@test "the link-shape check fails, naming the skill, on a missing, real or retargeted library link, or a per-skill one" {
   local T="$BATS_TEST_TMPDIR/links" link
   mkdir -p "$T"
-  cp "$REPO_ROOT/registry.json" "$T/"
   cp -Rp "$REPO_ROOT/skills" "$REPO_ROOT/lib" "$T/"
-  link="$T/skills/to-prd/scripts/tracker"
+  link="$T/skills/coding-crew-lib/scripts/tracker"
 
   rm "$link"
   run lib_link_problems "$T"
-  [ "$status" -eq 1 ] && [[ "$output" == *"to-prd: scripts/tracker is not a symlink"* ]] || { echo "$output"; return 1; }
+  [ "$status" -eq 1 ] && [[ "$output" == *"coding-crew-lib: scripts/tracker is not a symlink"* ]] || { echo "$output"; return 1; }
 
   cp -R "$T/lib/tracker" "$link"
   run lib_link_problems "$T"
-  [ "$status" -eq 1 ] && [[ "$output" == *"to-prd: scripts/tracker is not a symlink"* ]] || { echo "$output"; return 1; }
+  [ "$status" -eq 1 ] && [[ "$output" == *"coding-crew-lib: scripts/tracker is not a symlink"* ]] || { echo "$output"; return 1; }
 
   rm -r "$link" && ln -s ../../../lib/checks "$link"
   run lib_link_problems "$T"
-  [ "$status" -eq 1 ] && [[ "$output" == *"to-prd: scripts/tracker links to ../../../lib/checks"* ]] || { echo "$output"; return 1; }
+  [ "$status" -eq 1 ] && [[ "$output" == *"coding-crew-lib: scripts/tracker links to ../../../lib/checks"* ]] || { echo "$output"; return 1; }
 
-  # A registry typo with a matching link: the link dangles, and find -L would skip it at install.
-  rm "$link" && ln -s ../../../lib/trackr "$T/skills/to-prd/scripts/trackr"
-  jq '.skills["to-prd"].libs = ["trackr"]' "$REPO_ROOT/registry.json" > "$T/registry.json"
+  rm "$link" && ln -s ../../../lib/tracker "$link"
   run lib_link_problems "$T"
-  [ "$status" -eq 1 ] && [[ "$output" == *"to-prd: scripts/trackr does not resolve to a directory"* ]] || { echo "$output"; return 1; }
-
-  rm "$T/skills/to-prd/scripts/trackr" && ln -s ../../../lib/tracker "$link"
-  cp "$REPO_ROOT/registry.json" "$T/"
-  ln -s ../../../lib/checks "$T/skills/to-prd/scripts/checks"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  mkdir -p "$T/skills/to-prd/scripts" && ln -s ../../../lib/checks "$T/skills/to-prd/scripts/checks"
   run lib_link_problems "$T"
-  [ "$status" -eq 1 ] && [[ "$output" == *"to-prd: scripts/checks exists, but its libs does not name checks"* ]] || { echo "$output"; return 1; }
+  [ "$status" -eq 1 ] && [[ "$output" == *"to-prd: scripts/checks exists, but libraries live only in coding-crew-lib"* ]] || { echo "$output"; return 1; }
 }
 
 @test "npx skills add <checkout> --all -g installs every skill working, into a temp HOME" {
@@ -122,14 +116,21 @@ lib_link_problems() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   n=$(find "$home/.agents/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
   [ "$n" -eq "$(jq '.skills | length' "$REPO_ROOT/registry.json")" ] || { ls "$home/.agents/skills"; return 1; }
-  [ "$n" -eq 17 ]
+  [ "$n" -eq 18 ]
   ! grep -l '{{' "$home"/.agents/skills/*/SKILL.md || false
   git init -q "$BATS_TEST_TMPDIR/project"
-  run env HOME="$home" bash -c "cd '$BATS_TEST_TMPDIR/project' && node '$home/.agents/skills/solve-issue/scripts/tracker/cli.mjs' config"
+  run env HOME="$home" bash -c "cd '$BATS_TEST_TMPDIR/project' && node '$home/.agents/skills/coding-crew-lib/scripts/tracker/cli.mjs' config"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"tracker=local"* ]]
   # The committed scripts/tracker is a link; the installed one is the directory it points to.
-  [ -d "$home/.agents/skills/solve-issue/scripts/tracker" ] && [ ! -L "$home/.agents/skills/solve-issue/scripts/tracker" ]
+  [ -d "$home/.agents/skills/coding-crew-lib/scripts/tracker" ] && [ ! -L "$home/.agents/skills/coding-crew-lib/scripts/tracker" ]
+  # The installed scripts find the library beside them.
+  git -C "$BATS_TEST_TMPDIR/project" checkout -q -b feat
+  run bash "$home/.agents/skills/solve-issue/scripts/preflight.sh" --project-root "$BATS_TEST_TMPDIR/project"
+  [ "$status" -eq 0 ] && [ "${lines[0]}" = OK ] || { echo "$output"; return 1; }
+  git -C "$BATS_TEST_TMPDIR/project" -c user.email=t@example.com -c user.name=test commit -q --allow-empty -m init
+  run env HOME="$home" bash -c "cd '$BATS_TEST_TMPDIR/project' && bash '$home/.agents/skills/solve-feature/scripts/solve-feature.sh' next feat"
+  [ "$status" -eq 3 ] || { echo "exit $status: $output"; return 1; }
 }
 
 @test "the ready-for-human block is written out only in to-issues" {

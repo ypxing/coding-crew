@@ -20,6 +20,14 @@ The tracker reads the project's `tracker` section first (or a legacy `.coding-cr
 the user file's, then defaults to `local`. Every other section of the file written (`solveFeature`) is kept. This
 is an explicit (re)configuration: an existing `tracker` section in the chosen file is replaced.
 
+<!-- fragment:missing-library -->
+**Shared scripts.** The scripts this skill runs live in the `coding-crew-lib` skill, installed beside it at
+`<skill-dir>/../coding-crew-lib` (`<skill-dir>` being the directory you read this file from). Before the first
+command that runs one, check that directory exists. If it does not, stop and tell the user to install it at this
+skill's scope, `npx skills add ypxing/coding-crew -s coding-crew-lib` (adding `-g` when this skill is installed at
+user level), or to re-run coding-crew's `install.sh`.
+<!-- /fragment:missing-library -->
+
 ## Step 1 — Offer the trackers
 
 Show the current choice in each file, `none` where it sets none:
@@ -94,5 +102,5 @@ replace a file you could not parse.
 Print a confirmation message, naming the kind chosen and the file written (`$CONFIG`):
 
 ```
-Tracker configured: <kind> (<file written>). How it works: <skill-dir>/scripts/tracker/docs/<kind>.md
+Tracker configured: <kind> (<file written>). How it works: <skill-dir>/../coding-crew-lib/scripts/tracker/docs/<kind>.md
 ```

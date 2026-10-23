@@ -1,6 +1,6 @@
 ### Light path: is the source already one complete change?
 
-Before any question, judge the source — the issue (`node "<skill-dir>/scripts/tracker/cli.mjs" fetch <ref> --comments`, `<skill-dir>` being the directory you read this skill from; if it fails, show its stderr and judge the user's message) or the user's message. Four checks; answer each with evidence, a quote from the source or a `file:line`:
+Before any question, judge the source — the issue (`node "<skill-dir>/../coding-crew-lib/scripts/tracker/cli.mjs" fetch <ref> --comments`, `<skill-dir>` being the directory you read this skill from; if it fails, show its stderr and judge the user's message) or the user's message. Four checks; answer each with evidence, a quote from the source or a `file:line`:
 
 1. **Problem** — the source states the problem with its cost or evidence.
 2. **One slice** — one vertical slice looks likely.

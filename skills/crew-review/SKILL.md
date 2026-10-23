@@ -14,6 +14,14 @@ allowed-tools: Bash shell
 You review one change against its spec and write one report. You post nothing, comment on nothing and mark
 nothing ready: your caller decides what to do with the report.
 
+<!-- fragment:missing-library -->
+**Shared scripts.** The scripts this skill runs live in the `coding-crew-lib` skill, installed beside it at
+`<skill-dir>/../coding-crew-lib` (`<skill-dir>` being the directory you read this file from). Before the first
+command that runs one, check that directory exists. If it does not, stop and tell the user to install it at this
+skill's scope, `npx skills add ypxing/coding-crew -s coding-crew-lib` (adding `-g` when this skill is installed at
+user level), or to re-run coding-crew's `install.sh`.
+<!-- /fragment:missing-library -->
+
 ## Inputs
 
 Your caller names them; a bare number is a PR, nothing at all is the current branch.
@@ -26,7 +34,7 @@ Your caller names them; a bare number is a PR, nothing at all is the current bra
     `gh pr checkout <n>` and stop. The change is `gh pr diff <n>`.
 - **The spec.**
   - A file.
-  - An issue ref, read with the tracker CLI's `fetch` (`node "<skill-dir>/scripts/tracker/cli.mjs" fetch <ref>`,
+  - An issue ref, read with the tracker CLI's `fetch` (`node "<skill-dir>/../coding-crew-lib/scripts/tracker/cli.mjs" fetch <ref>`,
     `<skill-dir>` being the directory you read this file from).
   - Given a PR and no spec, the PR body's `<details><summary>Spec</summary>` block when it has one, else the whole
     body. A branch with no spec named has none.

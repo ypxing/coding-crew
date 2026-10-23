@@ -12,7 +12,7 @@
 # Or one line and exit 1 — stop, report it verbatim:
 #   BLOCKED: on default branch (<name>) — create or switch to a feature branch first
 #   BLOCKED: depends on <file> which is not yet done
-#   BLOCKED: checks library missing from scripts/checks — re-install coding-crew
+#   BLOCKED: checks library missing from the coding-crew-lib skill (<path>) — install the coding-crew-lib skill … or re-run install.sh
 # --issue is optional: an issue handed over inline has no Blocked by or PRD to resolve, and no slug. A PRD path is
 # resolved against the checkout that holds the issue's .coding-crew/scratch/, then against --project-root.
 
@@ -94,9 +94,10 @@ if [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
   fi
 fi
 
-# The checks library, this skill's scripts/checks (a link into lib/ here, a real directory once installed): Steps 2, 4 and 5 run through it.
-if [ ! -f "$SELF_DIR/checks/run-checks.sh" ] || [ ! -f "$SELF_DIR/checks/run.sh" ]; then
-  echo "BLOCKED: checks library missing from scripts/checks — re-install coding-crew"
+# The checks library, in the coding-crew-lib skill installed beside this one: Steps 2, 4 and 5 run through it.
+CHECKS_DIR="$SELF_DIR/../../coding-crew-lib/scripts/checks"
+if [ ! -f "$CHECKS_DIR/run-checks.sh" ] || [ ! -f "$CHECKS_DIR/run.sh" ]; then
+  echo "BLOCKED: checks library missing from the coding-crew-lib skill ($CHECKS_DIR) — install the coding-crew-lib skill beside solve-issue (npx skills add ypxing/coding-crew -s coding-crew-lib, adding -g at user level) or re-run install.sh"
   exit 1
 fi
 

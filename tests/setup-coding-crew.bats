@@ -20,13 +20,14 @@ teardown() { rm -rf "$TEMP_DIR"; }
   skill="$target/.claude/skills/setup-coding-crew"
   [ -f "$skill/SKILL.md" ]
   [ -f "$skill/hosts/github-actions.yml" ]
-  [ -f "$skill/scripts/checks/discover-commands.sh" ]
-  [ -f "$skill/scripts/checks/write-commands-cache.sh" ]
-  [ -f "$skill/scripts/checks/run-checks.sh" ]
+  local lib="$target/.claude/skills/coding-crew-lib/scripts"
+  [ -f "$lib/checks/discover-commands.sh" ]
+  [ -f "$lib/checks/write-commands-cache.sh" ]
+  [ -f "$lib/checks/run-checks.sh" ]
   [ -f "$target/.claude/skills/dep-install/SKILL.md" ]
-  [ -f "$skill/scripts/tracker/cli.mjs" ]
+  [ -f "$lib/tracker/cli.mjs" ]
   [ -f "$target/.claude/skills/configure-tracker/SKILL.md" ]
-  [ "$(jq -c '.skills["setup-coding-crew"].deps' "$REPO_ROOT/registry.json")" = '["configure-tracker","dep-install"]' ]
+  [ "$(jq -c '.skills["setup-coding-crew"].deps' "$REPO_ROOT/registry.json")" = '["configure-tracker","dep-install","coding-crew-lib"]' ]
 }
 
 # block <n> — the first bash block under SKILL.md's "## Step <n>" heading, <skill-dir> pointing at the source skill.

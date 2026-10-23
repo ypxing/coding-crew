@@ -16,7 +16,7 @@
 # --project-directory (or cwd, searched upward as compose does) and the first of its override files
 # (compose.override.{yaml,yml}, docker-compose.override.{yaml,yml}) beside it.
 #
-# Put this directory first on PATH: `export PATH="<skill-dir>/scripts/checks/shim:$PATH"`.
+# Put this directory first on PATH: `export PATH="<skill-dir>/../coding-crew-lib/scripts/checks/shim:$PATH"`.
 
 NAME=docker
 # Pure bash, no dirname: this runs with whatever PATH the caller has, and a wrong SELF_DIR would

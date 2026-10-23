@@ -70,7 +70,7 @@ handed_back() {
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
   [ ! -f "$STATE/pr-created" ]
   [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: 2 checks failed: $1; 2 is ready again"* ]]
-  [ "$(node "$INSTALL/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
+  [ "$(node "$LIB/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
 }
 
 @test "land runs run-checks.sh once; exit 1 or 3 reopens the issue and pushes its work before stopping at checks, 3 sending the user to /setup-coding-crew" {
@@ -209,7 +209,7 @@ EOF
   stops_at push "git push failed: pre-receive hook declined; 2 is ready again: re-run where git can push (a re-run in this checkout starts from its unpushed commits)"
   [[ "$output" != *"run land"* ]]
   ! grep -q 'run land' .coding-crew/solve-feature/outcome || false
-  [ "$(node "$INSTALL/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
+  [ "$(node "$LIB/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
   # git's own stderr still reaches the terminal.
   [[ "$output" == *"! [remote rejected] feature/feat -> feature/feat (pre-receive hook declined)"* ]]
 }
@@ -269,7 +269,7 @@ EOF
   [ -z "$(git status --porcelain)" ]
   [ "$(git log -1 --format=%s)" = "Reopen 2: its merge failed" ]
   [ "$(git rev-parse HEAD~1)" = "$coded" ]
-  [ "$(node "$INSTALL/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
+  [ "$(node "$LIB/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
 }
 
 @test "land's merge conflict with no file move leaves HEAD at the coder's commit; a failed reopen names both failures" {
@@ -291,12 +291,12 @@ EOF
   [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
   [[ "$output" == *"solve-feature: 2 push failed: git push failed: fatal: Could not read from remote repository.; 2 is ready again"* ]] || { echo "$output"; return 1; }
   [ -f "$STATE/checks.log" ]
-  [ "$(node "$INSTALL/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
+  [ "$(node "$LIB/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
 }
 
 @test "land with the checks library missing exits 1 naming it, before the checks" {
   land_ready
-  rm -rf "$INSTALL/checks"
+  rm -rf "$LIB/checks"
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
   [[ "$output" == *"checks library not found"* ]]

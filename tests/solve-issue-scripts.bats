@@ -8,11 +8,11 @@ RUN_CHECKS="$REPO_ROOT/lib/checks/run-checks.sh"
 
 setup() {
   TEMP_DIR=$(mktemp -d)
-  # solve-issue's scripts/ as installed: its own scripts, and the checks library its committed link points to.
-  mkdir -p "$TEMP_DIR/skill/scripts"
-  cp "$REPO_ROOT"/skills/solve-issue/scripts/*.sh "$TEMP_DIR/skill/scripts/"
-  cp -RL "$REPO_ROOT/skills/solve-issue/scripts/checks" "$TEMP_DIR/skill/scripts/checks"
-  PREFLIGHT="$TEMP_DIR/skill/scripts/preflight.sh"
+  # solve-issue's scripts/ as installed: its own scripts, and the checks library in the coding-crew-lib skill beside it.
+  mkdir -p "$TEMP_DIR/skills/solve-issue/scripts" "$TEMP_DIR/skills/coding-crew-lib/scripts"
+  cp "$REPO_ROOT"/skills/solve-issue/scripts/*.sh "$TEMP_DIR/skills/solve-issue/scripts/"
+  cp -RL "$REPO_ROOT/skills/coding-crew-lib/scripts/checks" "$TEMP_DIR/skills/coding-crew-lib/scripts/checks"
+  PREFLIGHT="$TEMP_DIR/skills/solve-issue/scripts/preflight.sh"
   WORK="$TEMP_DIR/work"
   mkdir -p "$WORK/.coding-crew/scratch/feat/issues/open" "$WORK/.coding-crew/scratch/feat/issues/done"
   git -C "$WORK" init -q -b main
@@ -109,15 +109,16 @@ _preflight() {
   [ "$output" = "$(printf 'OK\nISSUE_SLUG=02-second\nPRD=')" ]
 }
 
-@test "preflight: reports the slug and PRD only, and stops when the checks library is missing from scripts/checks" {
+@test "preflight: reports the slug and PRD only, and stops naming the coding-crew-lib skill and its install when the checks library is missing" {
   _issue "" "None"
   _preflight
   [ "$status" -eq 0 ]
   [ "$output" = "$(printf 'OK\nISSUE_SLUG=02-second\nPRD=')" ]
-  rm -r "$TEMP_DIR/skill/scripts/checks"
+  rm -r "$TEMP_DIR/skills/coding-crew-lib"
   _preflight
   [ "$status" -eq 1 ]
-  [ "$output" = "BLOCKED: checks library missing from scripts/checks — re-install coding-crew" ]
+  [[ "$output" == "BLOCKED: checks library missing from the coding-crew-lib skill"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"npx skills add ypxing/coding-crew -s coding-crew-lib"* ]] || { echo "$output"; return 1; }
 }
 
 # ─── run-checks.sh ───────────────────────────────────────────────────────────

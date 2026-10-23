@@ -13,8 +13,8 @@ The tracker this repo uses is the `tracker` section of `.coding-crew/config.json
 `kind` is `local` or `github`; other sections of the file (`solveFeature`) are kept beside it. No
 `tracker` section means `local`, so this tracker needs no config at all. `configure-tracker`
 writes the section, and `node "$TRACKER" config` prints what is in effect (`tracker=<kind>`,
-`configured=yes|no`). This doc ships beside the tracker CLI in every coding-crew skill that uses it
-(`<skill-dir>/scripts/tracker/docs/`, copied through the skill's link into `lib/`) and is refreshed by every install — edit `config.json`, not this file.
+`configured=yes|no`). This doc ships beside the tracker CLI in the `coding-crew-lib` skill
+(`coding-crew-lib/scripts/tracker/docs/`, copied through its link into `lib/`) and is refreshed by every install — edit `config.json`, not this file.
 
 ## Tracker CLI
 
@@ -22,7 +22,7 @@ Skills read and write this tracker only through the tracker CLI. To run an op by
 hand, from the repo root (needs Node):
 
 ```bash
-TRACKER="<skills-dir>/solve-issue/scripts/tracker/cli.mjs"   # e.g. ~/.claude/skills/…, or .agents/skills/… in the repo
+TRACKER="<skills-dir>/coding-crew-lib/scripts/tracker/cli.mjs"   # e.g. ~/.claude/skills/…, or .agents/skills/… in the repo
 ```
 
 ```bash

@@ -43,16 +43,16 @@ There are no installable agents: `./install.sh <platform> <name>` with anything 
 ### Key Components
 
 - **`skills/`** — Reusable skill files (tdd, solve-issue, domain-modeling, crew-grill, etc.); `skills/_shared/fragments/` holds shared fragments
-- **`registry.json`** — Source of truth for the skills, their dependencies and the libraries each uses (`libs`)
+- **`registry.json`** — Source of truth for the skills and their dependencies (`deps`; `coding-crew-lib` for any skill that runs a library)
 - **`install.sh`** — Single installer that reads `registry.json` and copies files into target repos
 - **`platforms.json`** — Every platform's skill dirs and config-dir override, read by `install.sh` and `uninstall.sh`
-- **`lib/`** — Libraries the skills share: `tracker/` (the tracker CLI, backends and `docs/{local,github}.md`), `checks/` (run-checks.sh and dep-install's scripts), `git-workflow/`; each skill whose `libs` names one commits `skills/<skill>/scripts/<name>` as a link to `../../../lib/<name>`, and every install copies through it. The tracker choice is `.coding-crew/config.json`'s `tracker` section
+- **`lib/`** — Libraries the skills share: `tracker/` (the tracker CLI, backends and `docs/{local,github}.md`), `checks/` (run-checks.sh and dep-install's scripts), `git-workflow/`; the `coding-crew-lib` skill commits `skills/coding-crew-lib/scripts/<name>` as a link to `../../../lib/<name>`, every install copies through it, and the other skills run it as `<skill-dir>/../coding-crew-lib/scripts/<name>/`. The tracker choice is `.coding-crew/config.json`'s `tracker` section
 
 ### How Install Works
 
 1. Reads `registry.json` to determine what to install
 2. Resolves skill `deps` recursively
-3. Copies each skill as committed — rendered (`scripts/render-skill.sh`), through its `scripts/<lib>` links into `lib/` — to its platform dir (e.g. `.claude/skills/<name>/`, `.agents/skills/<name>/` for Codex), with real directories and no links
+3. Copies each skill as committed — rendered (`scripts/render-skill.sh`), coding-crew-lib through its `scripts/<lib>` links into `lib/` — to its platform dir (e.g. `.claude/skills/<name>/`, `.agents/skills/<name>/` for Codex), with real directories and no links
 4. Removes the shared library directory an older install linked every skill to (`remove_legacy_lib`)
 5. Writes `.coding-crew/manifest.json`: the platforms and skills, no versions
 
@@ -70,8 +70,7 @@ No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`,
   "source-dir": "<skill-name>",        // skills/<source-dir>/ holds SKILL.md and its files
   "description": "...",
   // installs to <projectSkills|userSkills>/<name> from platforms.json
-  "deps": ["tdd", "dep-install"],      // other skills, installed recursively
-  "libs": ["tracker", "checks"],       // lib/<name>, linked from skills/<skill>/scripts/<name> (optional)
+  "deps": ["tdd", "dep-install", "coding-crew-lib"], // other skills, installed recursively; coding-crew-lib if it runs a library
   "source": "mattpocock/skills"                  // attribution (optional)
 }
 ```
@@ -92,7 +91,7 @@ The tracker is `.coding-crew/config.json`'s `tracker` section (`github` today); 
 ### Adding a New Skill
 
 1. Create `skills/<name>/SKILL.md`
-2. Add skill entry to `registry.json` with its description, and `libs` for any library it runs
+2. Add skill entry to `registry.json` with its description, and `coding-crew-lib` in its `deps` if it runs a library
 3. If the skill needs other skills, list them in `deps`
 4. Test: `./install.sh claude --skill <name>`
 
@@ -152,4 +151,4 @@ When modifying `install.sh` or registry handling:
 - Always validate paths before writing files
 - Use `set -euo pipefail` in all shell scripts
 - Sanitize user input from command-line arguments
-- Follow only the committed `skills/<skill>/scripts/<lib>` links into `lib/` (`find -L` on the source), never a link in the destination; install writes no link
+- Follow only the committed `skills/coding-crew-lib/scripts/<lib>` links into `lib/` (`find -L` on the source), never a link in the destination; install writes no link
