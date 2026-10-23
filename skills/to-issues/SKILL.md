@@ -10,6 +10,14 @@ description: >
 
 Break a plan into independently-grabbable issues using vertical slices (tracer bullets). An issue is read cold by an implementer who cannot talk to whoever wrote it: everything they would have to guess at is written down, and nothing they can decide themselves is.
 
+<!-- fragment:missing-library -->
+**Shared scripts.** The scripts this skill runs live in the `coding-crew-lib` skill, installed beside it at
+`<skill-dir>/../coding-crew-lib` (`<skill-dir>` being the directory you read this file from). Before the first
+command that runs one, check that directory exists. If it does not, stop and tell the user to install it at this
+skill's scope, `npx skills add ypxing/coding-crew -s coding-crew-lib` (adding `-g` when this skill is installed at
+user level), or to re-run coding-crew's `install.sh`.
+<!-- /fragment:missing-library -->
+
 <!-- fragment:tracker-configuration -->
 ## Tracker Configuration
 
@@ -170,7 +178,7 @@ Write acceptance criteria unticked (`- [ ]`): the person ticks each one as they 
 **Kind A — the whole task is a person's.**
 
 - Drop `## Implements`, `## Interfaces` and the "Read this document before implementing" line; no agent will read this issue.
-- End `### Steps` with a fixed last step, "Mark it done", that reads: "Tell your coding agent: run the coding-crew tracker CLI (`scripts/tracker/cli.mjs` inside any coding-crew skill, for example `solve-issue`) with `mark-done <n>`". On the local tracker, write the issue file path instead of `<n>`. Never write an absolute path: it does not exist on the reader's machine.
+- End `### Steps` with a fixed last step, "Mark it done", that reads: "Tell your coding agent: run the coding-crew tracker CLI (`coding-crew-lib/scripts/tracker/cli.mjs` in the folder the coding-crew skills are installed in) with `mark-done <n>`". On the local tracker, write the issue file path instead of `<n>`. Never write an absolute path: it does not exist on the reader's machine.
 - That step's `Check:` is that the command exits 0 and prints no `REFUSED` line.
 - Its `Undo:` is the same request with "Reopen an issue" from the tracker doc `docs/<kind>.md` beside that `cli.mjs`, `<kind>` being the `tracker=` value the same CLI's `config` prints.
 - Name neither the tracker nor its labels or files in the step.
@@ -210,7 +218,7 @@ Today the ruleset has no `required_status_checks` rule, so a PR can merge while 
    gh api -X PUT repos/OWNER/REPO/rulesets/ID --input ruleset.json
    ```
 
-3. Mark it done, once every acceptance criterion below is ticked. Tell your coding agent: run the coding-crew tracker CLI (`scripts/tracker/cli.mjs` inside any coding-crew skill, for example `solve-issue`) with `mark-done 42`. Check: the command exits 0 and prints no `REFUSED` line. Undo: tell your coding agent to follow "Reopen an issue" in the tracker doc `docs/<kind>.md` beside that `cli.mjs`, `<kind>` being the `tracker=` value the CLI's `config` prints.
+3. Mark it done, once every acceptance criterion below is ticked. Tell your coding agent: run the coding-crew tracker CLI (`coding-crew-lib/scripts/tracker/cli.mjs` in the folder the coding-crew skills are installed in) with `mark-done 42`. Check: the command exits 0 and prints no `REFUSED` line. Undo: tell your coding agent to follow "Reopen an issue" in the tracker doc `docs/<kind>.md` beside that `cli.mjs`, `<kind>` being the `tracker=` value the CLI's `config` prints.
 
 ### If skipped or done wrong
 

@@ -99,8 +99,27 @@ setup() {
   grep -qiF 'interactive run' "$f"
   grep -qF -- '-p' "$f"
   grep -qF 'proceed as `local`' "$f"
-  grep -qF '<skill-dir>/scripts/tracker/cli.mjs' "$f"
-  grep -qF '<skill-dir>/scripts/tracker/docs/<kind>.md' "$f"
+  grep -qF '<skill-dir>/../coding-crew-lib/scripts/tracker/cli.mjs' "$f"
+  grep -qF '<skill-dir>/../coding-crew-lib/scripts/tracker/docs/<kind>.md' "$f"
   ! grep -qF '.coding-crew/' "$f"
   ! grep -q 'issue-tracker.md' "$f"
+}
+
+@test "every skill that depends on coding-crew-lib, but solve-feature, carries the missing-library fragment, and no other skill does" {
+  local skill body want got
+  want=$(jq -r '.skills | to_entries[] | select((.value.deps // []) | index("coding-crew-lib")) | .key | select(. != "solve-feature")' \
+    "$REPO_ROOT/registry.json" | LC_ALL=C sort)
+  [ "$(wc -l <<< "$want" | tr -d ' ')" -eq 13 ] || { echo "$want"; return 1; }
+  got=$(cd "$REPO_ROOT/skills" && grep -lxF '<!-- fragment:missing-library -->' */SKILL.md | sed 's#/SKILL.md##' | LC_ALL=C sort)
+  [ "$got" = "$want" ] || { diff <(echo "$want") <(echo "$got"); return 1; }
+}
+
+@test "the missing-library fragment stops when coding-crew-lib is absent and names its install at the same scope, or install.sh" {
+  local f="$REPO_ROOT/skills/_shared/fragments/missing-library.md"
+  grep -qF '<skill-dir>/../coding-crew-lib' "$f"
+  grep -qF '`coding-crew-lib`' "$f"
+  grep -qF 'npx skills add ypxing/coding-crew -s coding-crew-lib' "$f"
+  grep -qF -- '`-g`' "$f"
+  grep -qF 'install.sh' "$f"
+  grep -qi 'stop' "$f"
 }

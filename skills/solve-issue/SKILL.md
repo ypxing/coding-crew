@@ -54,6 +54,14 @@ inline.
 when it set one; otherwise it is `git rev-parse --show-toplevel`, run in your working directory. Resolve it once and carry
 it as a literal: each bash call is a fresh shell.
 
+<!-- fragment:missing-library -->
+**Shared scripts.** The scripts this skill runs live in the `coding-crew-lib` skill, installed beside it at
+`<skill-dir>/../coding-crew-lib` (`<skill-dir>` being the directory you read this file from). Before the first
+command that runs one, check that directory exists. If it does not, stop and tell the user to install it at this
+skill's scope, `npx skills add ypxing/coding-crew -s coding-crew-lib` (adding `-g` when this skill is installed at
+user level), or to re-run coding-crew's `install.sh`.
+<!-- /fragment:missing-library -->
+
 <!-- fragment:tracker-configuration -->
 ## Tracker Configuration
 
@@ -86,7 +94,7 @@ bash "<skill-dir>/scripts/preflight.sh" --project-root "$PROJECT_ROOT" \
 A `BLOCKED:` line (exit 1) ends the run: report it verbatim and do not proceed. It is
 `BLOCKED: on default branch` (`DEFAULT_BRANCH`: `origin/HEAD`, else `main`), `BLOCKED: depends on
 <file>` for a `## Blocked by` file not yet in the sibling `done/`, or `BLOCKED: checks library missing
-from scripts/checks — re-install coding-crew`.
+from the coding-crew-lib skill`.
 Otherwise it prints `OK` and two values; carry them as literals for the rest of the run:
 
 - `ISSUE_SLUG` — the commit prefix (Steps 4 and 6). For an issue handed over inline it is empty:
@@ -226,7 +234,7 @@ This is the one full-suite run:
 bash "<skill-dir>/../coding-crew-lib/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT"
 ```
 
-It runs every check in the dev commands file (`scripts/checks/commands-file.sh` names it) — `typecheck`, `lint`, `test`, then
+It runs every check in the dev commands file (`coding-crew-lib/scripts/checks/commands-file.sh` names it) — `typecheck`, `lint`, `test`, then
 `coverage` and `integration` when the file has them — each through `run.sh`, and reports each. `NOT RUN: no
 command found` means no local command exists: report it, do not re-check CLAUDE.md/Makefile.
 

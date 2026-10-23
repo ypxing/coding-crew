@@ -106,7 +106,7 @@ remove_skill() {
 }
 
 # .coding-crew/lib held the libraries an older install.sh linked every skill to; only install.sh ever
-# wrote it, and each skill now carries its own copy, so it is removed wherever it is found.
+# wrote it, and the coding-crew-lib skill now carries them, so it is removed wherever it is found.
 remove_legacy_lib() {
   [[ -e "$REPO_ROOT/.coding-crew/lib" || -L "$REPO_ROOT/.coding-crew/lib" ]] || return 0
   rm -rf "${REPO_ROOT:?}/.coding-crew/lib"

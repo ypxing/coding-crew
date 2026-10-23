@@ -48,8 +48,7 @@ git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 |
 [ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head \
   "$LOGS"/pr-*.discarded.md "$LOGS/review.base"
 # The tracker and checks libraries, in the coding-crew-lib skill installed beside this one.
-LIB="$SELF/../../coding-crew-lib/scripts"
-CLI="$LIB/tracker/cli.mjs" CHECKS="$LIB/checks"
+CLI="$SELF/../../coding-crew-lib/scripts/tracker/cli.mjs" CHECKS="$SELF/../../coding-crew-lib/scripts/checks"
 [ -f "$CLI" ] || die "tracker CLI not found ($CLI): install the coding-crew-lib skill beside solve-feature (npx skills add ypxing/coding-crew -s coding-crew-lib, adding -g at user level) or re-run install.sh"
 
 # push <git push args> — `git push -q`; on failure sets PUSH_WHY to git's reason and returns 1. git's stderr still

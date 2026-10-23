@@ -116,14 +116,21 @@ lib_link_problems() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   n=$(find "$home/.agents/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
   [ "$n" -eq "$(jq '.skills | length' "$REPO_ROOT/registry.json")" ] || { ls "$home/.agents/skills"; return 1; }
-  [ "$n" -eq 17 ]
+  [ "$n" -eq 18 ]
   ! grep -l '{{' "$home"/.agents/skills/*/SKILL.md || false
   git init -q "$BATS_TEST_TMPDIR/project"
-  run env HOME="$home" bash -c "cd '$BATS_TEST_TMPDIR/project' && node '$home/.agents/skills/solve-issue/scripts/tracker/cli.mjs' config"
+  run env HOME="$home" bash -c "cd '$BATS_TEST_TMPDIR/project' && node '$home/.agents/skills/coding-crew-lib/scripts/tracker/cli.mjs' config"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"tracker=local"* ]]
   # The committed scripts/tracker is a link; the installed one is the directory it points to.
-  [ -d "$home/.agents/skills/solve-issue/scripts/tracker" ] && [ ! -L "$home/.agents/skills/solve-issue/scripts/tracker" ]
+  [ -d "$home/.agents/skills/coding-crew-lib/scripts/tracker" ] && [ ! -L "$home/.agents/skills/coding-crew-lib/scripts/tracker" ]
+  # The installed scripts find the library beside them.
+  git -C "$BATS_TEST_TMPDIR/project" checkout -q -b feat
+  run bash "$home/.agents/skills/solve-issue/scripts/preflight.sh" --project-root "$BATS_TEST_TMPDIR/project"
+  [ "$status" -eq 0 ] && [ "${lines[0]}" = OK ] || { echo "$output"; return 1; }
+  git -C "$BATS_TEST_TMPDIR/project" -c user.email=t@example.com -c user.name=test commit -q --allow-empty -m init
+  run env HOME="$home" bash -c "cd '$BATS_TEST_TMPDIR/project' && bash '$home/.agents/skills/solve-feature/scripts/solve-feature.sh' next feat"
+  [ "$status" -eq 3 ] || { echo "exit $status: $output"; return 1; }
 }
 
 @test "the ready-for-human block is written out only in to-issues" {

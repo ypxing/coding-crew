@@ -9,6 +9,14 @@ Synthesize the current conversation context into a PRD. Do not ask discovery que
 something is unclear, state your assumption. Do confirm technical choices (seams, contracts) with
 the user before writing the final document, except those already settled (step 4).
 
+<!-- fragment:missing-library -->
+**Shared scripts.** The scripts this skill runs live in the `coding-crew-lib` skill, installed beside it at
+`<skill-dir>/../coding-crew-lib` (`<skill-dir>` being the directory you read this file from). Before the first
+command that runs one, check that directory exists. If it does not, stop and tell the user to install it at this
+skill's scope, `npx skills add ypxing/coding-crew -s coding-crew-lib` (adding `-g` when this skill is installed at
+user level), or to re-run coding-crew's `install.sh`.
+<!-- /fragment:missing-library -->
+
 <!-- fragment:tracker-configuration -->
 ## Tracker Configuration
 
