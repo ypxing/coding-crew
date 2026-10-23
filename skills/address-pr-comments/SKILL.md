@@ -29,19 +29,19 @@ or article a comment links, library docs) are fine, and help judge whether a rev
 This skill works on an existing PR branch, never the default branch: this exits non-zero there, which ends the run.
 
 ```bash
-bash "<skill-dir>/scripts/git-workflow/branch-safety-check.sh"
+bash "<skill-dir>/../coding-crew-lib/scripts/git-workflow/branch-safety-check.sh"
 ```
 
 ## Step 0.1 — Check prerequisites
 
 `PROJECT_ROOT` is this checkout, `git rev-parse --show-toplevel`; carry it as a literal, since each
 bash call is a fresh shell. Do not install dependencies up front. Run project commands through
-`bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"`; only when
+`bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"`; only when
 one fails for a missing dependency (module-not-found, import error, test runner not found) invoke the
 `dep-install` skill, with `PROJECT_ROOT` set, then retry the command once.
 
 `gh` must be installed and authenticated (`gh auth status`); if not, stop with what is missing. The tracker
-CLI is `TRACKER=<skill-dir>/scripts/tracker/cli.mjs`, run as `node "$TRACKER" <op> …`.
+CLI is `TRACKER=<skill-dir>/../coding-crew-lib/scripts/tracker/cli.mjs`, run as `node "$TRACKER" <op> …`.
 
 **Non-interactive run.** A run whose prompt says it is non-interactive (`Use the address-pr-comments skill on
 PR #<n>; this run is non-interactive`) asks nothing: Step 3 decides without confirmation, as it says.
@@ -172,7 +172,7 @@ COMMIT_BODY="address PR review comments
 - <what changed for comment N and why>"
 
 # Commit with you, the agent running this skill, as co-author: your own name and commit email
-bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" \
+bash "<skill-dir>/../coding-crew-lib/scripts/git-workflow/commit-changes.sh" \
   --message "$COMMIT_BODY" \
   --files "<space-separated file list>" \
   --coauthor "<your agent name> <your agent's commit email>"

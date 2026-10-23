@@ -19,9 +19,9 @@ Turn a coverage gap into `ready-for-agent` issues.
 `PROJECT_ROOT` is the repo root, `git rev-parse --show-toplevel`; carry it as a literal, since each
 bash call is a fresh shell. The commands come from the dev commands file
 (`.coding-crew/dev-commands.json`). Run
-`(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")` and follow its prompt, if it prints one.
+`(cd "$PROJECT_ROOT" && bash "<skill-dir>/../coding-crew-lib/scripts/checks/discover-commands.sh")` and follow its prompt, if it prints one.
 
-Then read its `coverage` and `integration` fields (`bash "<skill-dir>/scripts/checks/commands-file.sh"
+Then read its `coverage` and `integration` fields (`bash "<skill-dir>/../coding-crew-lib/scripts/checks/commands-file.sh"
 --project-root "$PROJECT_ROOT"` prints its path).
 
 **If `coverage` resolves to `null`** (a model already looked and confirmed no coverage command
@@ -50,7 +50,7 @@ skill, with `PROJECT_ROOT` set as in step 1, then retry coverage once.
 Run the discovered `coverage` command through the checks library:
 
 ```bash
-bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<coverage command>"
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<coverage command>"
 ```
 
 Take per-file statement and branch coverage from the raw report yourself, whatever its format (lcov,

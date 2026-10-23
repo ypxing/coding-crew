@@ -24,12 +24,12 @@ stop and ask the user before proceeding.
 <!-- fragment:tracker-configuration -->
 ## Tracker Configuration
 
-Every tracker op runs through the tracker CLI, `TRACKER=<skill-dir>/scripts/tracker/cli.mjs` (`<skill-dir>` being the
+Every tracker op runs through the tracker CLI, `TRACKER=<skill-dir>/../coding-crew-lib/scripts/tracker/cli.mjs` (`<skill-dir>` being the
 directory you read this file from), as `node "$TRACKER" <op> …`; nothing else reads or writes the tracker. Before the
 first op run `node "$TRACKER" config` (prints `tracker=<kind>` and `configured=yes|no`). On `configured=no` on an
 interactive run, invoke the `configure-tracker` skill, then continue; on a non-interactive run (a headless/`-p`
 invocation or a subagent) never ask: proceed as `local`. The tracker's refs, statuses and labels are in
-`<skill-dir>/scripts/tracker/docs/<kind>.md`.
+`<skill-dir>/../coding-crew-lib/scripts/tracker/docs/<kind>.md`.
 
 Exit codes, every op: 0 ok; 3 not found; on 1 (the op failed) or 2 (a usage error or an invalid ref), report the
 stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, never performing it with the tracker's
@@ -45,15 +45,15 @@ through the checks library, which runs it where the dev commands file's install 
 mode the host may have no `node_modules` at all):
 
 ```bash
-bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"
 ```
 
 Do not install up front. Only when a command fails for a missing dependency invoke the `dep-install`
 skill, with `PROJECT_ROOT` set, then retry that command once.
 
-The checks come from the dev commands file (`bash "<skill-dir>/scripts/checks/commands-file.sh"
+The checks come from the dev commands file (`bash "<skill-dir>/../coding-crew-lib/scripts/checks/commands-file.sh"
 --project-root "$PROJECT_ROOT"` prints its path): run `(cd "$PROJECT_ROOT" && bash
-"<skill-dir>/scripts/checks/discover-commands.sh")` first and follow its prompt, if it prints one.
+"<skill-dir>/../coding-crew-lib/scripts/checks/discover-commands.sh")` first and follow its prompt, if it prints one.
 With `typecheck` null, major bumps lose their mechanical breaking-change signal: say so in each issue
 it affects.
 

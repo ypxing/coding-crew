@@ -16,12 +16,12 @@ lockfiles, and crew's `docker` shim adds this checkout's generated override as t
 - After setting or unsetting a proxy, CA or token variable (`HTTPS_PROXY`, `NPM_TOKEN`, …), re-run
   `docker-install.sh` (no `--force`) so the override passes it.
 - **In your own terminal** (a human, outside an agent session), a bare `docker compose` loads the override once
-  the shim is first on `PATH`: `export PATH="<skill-dir>/scripts/checks/shim:$PATH"`.
+  the shim is first on `PATH`: `export PATH="<skill-dir>/../coding-crew-lib/scripts/checks/shim:$PATH"`.
 
 ## 1. Install
 
 ```bash
-bash "<skill-dir>/scripts/checks/docker-install.sh" --project-root "$PROJECT_ROOT" --timeout 1800
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/docker-install.sh" --project-root "$PROJECT_ROOT" --timeout 1800
 ```
 
 It reads `docker_service`, `install` and `registry_auth` from the dev commands file (dep-install's Step 1 has
@@ -39,7 +39,7 @@ the lockfile, and `--force` reinstalls.
 ## 2. Every later command through `run.sh`
 
 ```bash
-bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"
 ```
 
 Every test, lint, type-check and other ad-hoc command, a one-off `docker compose` one included. Never

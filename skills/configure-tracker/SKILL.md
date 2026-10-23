@@ -94,5 +94,5 @@ replace a file you could not parse.
 Print a confirmation message, naming the kind chosen and the file written (`$CONFIG`):
 
 ```
-Tracker configured: <kind> (<file written>). How it works: <skill-dir>/scripts/tracker/docs/<kind>.md
+Tracker configured: <kind> (<file written>). How it works: <skill-dir>/../coding-crew-lib/scripts/tracker/docs/<kind>.md
 ```

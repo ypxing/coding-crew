@@ -7,26 +7,21 @@
         "crew-review",
         "tdd",
         "write-pr",
-        "setup-coding-crew"
-      ],
-      "libs": [
-        "checks",
-        "tracker"
+        "setup-coding-crew",
+        "coding-crew-lib"
       ]
     },
     "crew-afk": {
       "source-dir": "crew-afk",
       "deps": [
-        "solve-feature"
-      ],
-      "libs": [
-        "tracker"
+        "solve-feature",
+        "coding-crew-lib"
       ]
     },
     "crew-review": {
       "source-dir": "crew-review",
-      "libs": [
-        "tracker"
+      "deps": [
+        "coding-crew-lib"
       ]
     },
     "tdd": {
@@ -35,8 +30,8 @@
     },
     "dep-install": {
       "source-dir": "dep-install",
-      "libs": [
-        "checks"
+      "deps": [
+        "coding-crew-lib"
       ]
     },
     "solve-issue": {
@@ -44,12 +39,8 @@
       "deps": [
         "dep-install",
         "tdd",
-        "configure-tracker"
-      ],
-      "libs": [
-        "checks",
-        "git-workflow",
-        "tracker"
+        "configure-tracker",
+        "coding-crew-lib"
       ]
     },
     "address-pr-comments": {
@@ -57,12 +48,8 @@
       "deps": [
         "dep-install",
         "tdd",
-        "solve-feature"
-      ],
-      "libs": [
-        "checks",
-        "git-workflow",
-        "tracker"
+        "solve-feature",
+        "coding-crew-lib"
       ]
     },
     "to-issues": {
@@ -70,77 +57,61 @@
       "source": "mattpocock/skills",
       "deps": [
         "to-prd",
-        "configure-tracker"
-      ],
-      "libs": [
-        "tracker"
+        "configure-tracker",
+        "coding-crew-lib"
       ]
     },
     "to-prd": {
       "source-dir": "to-prd",
       "source": "mattpocock/skills",
       "deps": [
-        "configure-tracker"
-      ],
-      "libs": [
-        "tracker"
+        "configure-tracker",
+        "coding-crew-lib"
       ]
     },
     "crew-brainstorm": {
       "source-dir": "crew-brainstorm",
       "deps": [
-        "to-issues"
-      ],
-      "libs": [
-        "tracker"
+        "to-issues",
+        "coding-crew-lib"
       ]
     },
     "crew-grill": {
       "source-dir": "crew-grill",
       "deps": [
         "domain-modeling",
-        "to-issues"
-      ],
-      "libs": [
-        "tracker"
+        "to-issues",
+        "coding-crew-lib"
       ]
     },
     "add-tests": {
       "source-dir": "add-tests",
       "deps": [
         "to-issues",
-        "dep-install"
-      ],
-      "libs": [
-        "checks"
+        "dep-install",
+        "coding-crew-lib"
       ]
     },
     "upgrade-deps": {
       "source-dir": "upgrade-deps",
       "deps": [
         "dep-install",
-        "to-issues"
-      ],
-      "libs": [
-        "checks",
-        "tracker"
+        "to-issues",
+        "coding-crew-lib"
       ]
     },
     "configure-tracker": {
       "source-dir": "configure-tracker",
-      "libs": [
-        "tracker"
+      "deps": [
+        "coding-crew-lib"
       ]
     },
     "setup-coding-crew": {
       "source-dir": "setup-coding-crew",
       "deps": [
         "configure-tracker",
-        "dep-install"
-      ],
-      "libs": [
-        "checks",
-        "tracker"
+        "dep-install",
+        "coding-crew-lib"
       ]
     },
     "domain-modeling": {
@@ -149,6 +120,9 @@
     "write-pr": {
       "source-dir": "write-pr",
       "source": "mattpocock/skills"
+    },
+    "coding-crew-lib": {
+      "source-dir": "coding-crew-lib"
     }
   }
 }

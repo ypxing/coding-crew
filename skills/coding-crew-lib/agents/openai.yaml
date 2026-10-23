@@ -1,0 +1,5 @@
+interface:
+  display_name: "coding-crew lib"
+  short_description: "Shared scripts the coding-crew skills run"
+policy:
+  allow_implicit_invocation: false

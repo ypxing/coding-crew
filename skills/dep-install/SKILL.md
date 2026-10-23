@@ -13,7 +13,7 @@ failed for a missing dependency — not as a routine step. Do not re-litigate wh
 needed: read the mode, then install.
 
 Every project command — an ad-hoc one, and a one-off `docker compose` call, included — runs through
-`bash "<skill-dir>/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"`. It reads the
+`bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"`. It reads the
 mode from the clone's dev commands file (`commands-file.sh` names it) and runs the command on the host, or inside
 docker in this checkout's own compose project, with its override added by the `docker` shim. In
 docker mode, with no override yet, it installs first, and a failed install stops it with the service,
@@ -36,7 +36,7 @@ the step and its log: docker mode never runs a command on the host, except one t
 ## Step 1 — Read the mode, or set it up
 
 ```bash
-bash "<skill-dir>/scripts/checks/resolve-mode.sh" --project-root "$PROJECT_ROOT"
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/resolve-mode.sh" --project-root "$PROJECT_ROOT"
 ```
 
 It prints `INSTALL_MODE=docker` or `INSTALL_MODE=host`, and `DOCKER_SERVICE`: the dev commands file's
@@ -47,7 +47,7 @@ Do not re-derive the mode yourself.
 Decide it:
 
 ```bash
-bash "<skill-dir>/scripts/checks/discover-mode.sh" --project-root "$PROJECT_ROOT"
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/discover-mode.sh" --project-root "$PROJECT_ROOT"
 ```
 
 It prints `skipped` (nothing to decide) or a prompt: answer it by reading the files it lists, then
@@ -56,7 +56,7 @@ and continue with what it prints.
 
 **The install command.** The dev commands file's `install` field holds the project's documented
 install command, or `null` when someone looked and found none. Make sure it has been asked: run
-`(cd "$PROJECT_ROOT" && bash "<skill-dir>/scripts/checks/discover-commands.sh")` and follow its prompt, if it prints one.
+`(cd "$PROJECT_ROOT" && bash "<skill-dir>/../coding-crew-lib/scripts/checks/discover-commands.sh")` and follow its prompt, if it prints one.
 
 The install guides below only read `install`; they never look for one themselves.
 

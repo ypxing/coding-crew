@@ -26,7 +26,7 @@ Your caller names them; a bare number is a PR, nothing at all is the current bra
     `gh pr checkout <n>` and stop. The change is `gh pr diff <n>`.
 - **The spec.**
   - A file.
-  - An issue ref, read with the tracker CLI's `fetch` (`node "<skill-dir>/scripts/tracker/cli.mjs" fetch <ref>`,
+  - An issue ref, read with the tracker CLI's `fetch` (`node "<skill-dir>/../coding-crew-lib/scripts/tracker/cli.mjs" fetch <ref>`,
     `<skill-dir>` being the directory you read this file from).
   - Given a PR and no spec, the PR body's `<details><summary>Spec</summary>` block when it has one, else the whole
     body. A branch with no spec named has none.
