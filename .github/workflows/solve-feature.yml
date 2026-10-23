@@ -135,7 +135,7 @@ jobs:
 
       # User-level ($HOME), never into $GITHUB_WORKSPACE: a project-level install leaves the skill
       # directory, .coding-crew/manifest.json and the asset trees untracked, and solve-feature
-      # refuses a dirty tree. The agent reads its user skills, each with its own scripts/ (the tracker
+      # refuses a dirty tree. The agent reads its user skills, coding-crew-lib among them (the tracker
       # CLI included), from $HOME (~/.copilot/skills, ~/.claude/skills).
       - name: Install coding-crew (user-level)
         run: |
