@@ -2,17 +2,18 @@
 
 ## How It Works
 
-Every skill whose `libs` in `registry.json` names it commits `skills/<skill>/scripts/git-workflow` as a link to
-`../../../lib/git-workflow`, and an install copies the skill through it, this directory included:
+The `coding-crew-lib` skill commits `skills/coding-crew-lib/scripts/git-workflow` as a link to
+`../../../lib/git-workflow`, and an install copies it through the link, this directory included. A skill that runs
+these scripts lists `coding-crew-lib` in its `deps` in `registry.json`:
 
 ```json
 "solve-issue": {
-  "libs": ["checks", "git-workflow", "tracker"],
+  "deps": ["dep-install", "tdd", "configure-tracker", "coding-crew-lib"],
   ...
 }
 ```
 
-Skills run them from their own copy:
+Skills run them from the `coding-crew-lib` skill installed beside them:
 ```bash
-bash "<skill-dir>/scripts/git-workflow/commit-changes.sh" --message "..." --files "..."
+bash "<skill-dir>/../coding-crew-lib/scripts/git-workflow/commit-changes.sh" --message "..." --files "..."
 ```

@@ -264,7 +264,7 @@ install_single_skill() {
   find "$skill_root" -mindepth 1 -type l -delete
   _WRITTEN=()
 
-  # The committed tree is the installed tree: every file is copied as is, its libraries included.
+  # The committed tree is the installed tree: every file is copied as is, coding-crew-lib's libraries through their links.
   while IFS= read -r -d '' src_file; do
     local rel_path="${src_file#$SCRIPT_DIR/skills/$source_dir/}"
     local dest_file="$skill_root/$rel_path"
@@ -341,12 +341,12 @@ migrate_legacy_tracker_doc() {
   rmdir "$REPO_ROOT/.coding-crew/docs/templates" "$REPO_ROOT/.coding-crew/docs" 2>/dev/null || true
 }
 
-# .coding-crew/lib held the libraries every skill linked to; only install.sh ever wrote it, and each
-# skill now carries its own copy, so it is removed wherever it is found.
+# .coding-crew/lib held the libraries every skill linked to; only install.sh ever wrote it, and the
+# coding-crew-lib skill now carries them, so it is removed wherever it is found.
 remove_legacy_lib() {
   [[ -e "$REPO_ROOT/.coding-crew/lib" || -L "$REPO_ROOT/.coding-crew/lib" ]] || return 0
   rm -rf "${REPO_ROOT:?}/.coding-crew/lib"
-  echo "  .coding-crew/lib/ (removed: each skill carries its own scripts/<lib>)"
+  echo "  .coding-crew/lib/ (removed: the coding-crew-lib skill carries the libraries)"
 }
 
 migrate_legacy_docs() {

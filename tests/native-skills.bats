@@ -111,3 +111,8 @@ frontmatter() {
   done
   [ -z "$fails" ] || { printf '%s' "$fails"; return 1; }
 }
+
+# The npx skills picker shows only a description's first 57 characters: they must say to install it.
+@test "coding-crew-lib's description starts with the always-install hint" {
+  frontmatter "$REPO_ROOT/skills/coding-crew-lib/SKILL.md" | grep -q $'^description\tRequired by every coding-crew skill: always install'
+}

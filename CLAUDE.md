@@ -15,7 +15,7 @@ For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → solve-fea
 ./install.sh claude --skill solve-feature --project /tmp/test-repo
 
 # After editing a fragment (skills/_shared/fragments/) or a marker pair: re-render the SKILL.md text between
-# <!-- fragment:<key> --> markers and commit the result. skills/<skill>/scripts/<lib> is a committed link into lib/,
+# <!-- fragment:<key> --> markers and commit the result. skills/coding-crew-lib/scripts/<lib> is a committed link into lib/,
 # copied through at install: edit lib/<lib>/ and the links follow
 bash scripts/render-skill.sh
 
@@ -74,8 +74,9 @@ Two levels: the first holds for every skill under `skills/` (`tests/native-skill
 second for `skills/solve-feature/` and `skills/crew-review/`:
 
 - **Between skills:** one skill does one job and is named for it. A skill uses another skill by name. Code shared
-  between skills is a library linked into the skill's own `scripts/` directory, called like a tool, never a path
-  into another skill's directory; where and how it runs (CI, hosts, config) belongs to setup.
+  between skills is a library in the `coding-crew-lib` skill, called like a tool — the one skill other skills reach
+  into by path (`<skill-dir>/../coding-crew-lib/scripts/<lib>/`); never a path into any other skill's directory.
+  Where and how it runs (CI, hosts, config) belongs to setup.
 - **Inside a skill:** a line earns its place as a step, or as a guard without which a person is **misled** (a PR
   marked ready or an issue counted landed when it isn't) or **stuck** (a stop that doesn't say what failed and how
   to recover). Cut: code that parses prose an LLM wrote, a second copy of status git/GitHub already shows, two

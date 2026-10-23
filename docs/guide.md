@@ -45,8 +45,8 @@ install.sh
     │
     ├── read registry.json
     ├── for each requested skill (every skill when none is named):
-    │     ├── install_single_skill() — copy skills/<name>/ as committed, through its scripts/<lib>
-    │     │                              links into lib/ → <skills dir>/<name>/, real directories only
+    │     ├── install_single_skill() — copy skills/<name>/ as committed (coding-crew-lib through its
+    │     │                              scripts/<lib> links into lib/) → <skills dir>/<name>/, real directories only
     │     └── install_single_skill(dep) — recurse for each dep
     │
     └── write_manifest() — <root>/.coding-crew/manifest.json: the platforms and skills
@@ -72,8 +72,7 @@ There are no agents. No per-platform agent file is written under `.claude/agents
     "<name>": {
       "source": "...", // optional attribution for a skill adapted from elsewhere
       // installs to <projectSkills|userSkills>/<name> from platforms.json
-      "deps": ["tdd", "dep-install"], // other skills, installed recursively
-      "libs": ["tracker", "checks"], // lib/<lib>, committed as the link skills/<name>/scripts/<lib> -> ../../../lib/<lib>
+      "deps": ["tdd", "dep-install", "coding-crew-lib"], // other skills, installed recursively; coding-crew-lib for any skill that runs a library
     },
   },
 }
@@ -82,10 +81,10 @@ There are no agents. No per-platform agent file is written under `.claude/agents
 **Rules:**
 
 - No versions: only the release (CHANGELOG / tag) has one, and `--update` reinstalls everything.
-- A skill reaches shared code only through a library its `libs` names, run as
-  `<skill-dir>/scripts/<lib>/<file>`; its own `scripts/` holds no file named like a library. Adding a lib to a
-  skill is a `libs` entry plus `ln -s ../../../lib/<lib> skills/<name>/scripts/<lib>`; `tests/rendered-tree.bats`
-  names the skill when the two disagree.
+- A skill reaches shared code only through the `coding-crew-lib` skill, installed beside it, run as
+  `<skill-dir>/../coding-crew-lib/scripts/<lib>/<file>` (a script: `$SELF/../../coding-crew-lib/scripts/<lib>/`), with
+  `coding-crew-lib` in its `deps`; no other skill has a `scripts/<lib>`. Adding a library is
+  `ln -s ../../../lib/<lib> skills/coding-crew-lib/scripts/<lib>`; `tests/rendered-tree.bats` checks the links.
 - Skill and library names must match `[a-zA-Z0-9_.-]+` — used as filesystem path components.
 - Skills listed under another skill's `deps` are installed with it. A skill no installed skill depends on is only installed by name or by a full install (`./install.sh [platform]`).
 - `deps` match what the skill's text invokes: every skill its rendered SKILL.md or `references/` names is reachable through its `deps`, and every direct dep is named in its SKILL.md, `references/` or `scripts/`. `tests/skill-deps.bats` checks both; a mention that only points a person at another skill goes on its allowlist with a reason.
@@ -131,7 +130,7 @@ the last round did not fix is listed under `Needs attention` in the PR body, whi
 ### Security Rules for Contributors
 
 - **Never name a path in `registry.json`.** Skills and libraries are names (`[a-zA-Z0-9_.-]+`); `install.sh` rejects anything else.
-- **Never edit between fragment markers** — edit `skills/_shared/fragments/<key>.md`, then run `bash scripts/render-skill.sh` and commit what it rewrites; a hand edit there drifts from the source, and `tests/rendered-tree.bats` fails on it. Edit a library under `lib/<lib>/` and the links follow: a skill's `scripts/<lib>` is a committed link to it.
+- **Never edit between fragment markers** — edit `skills/_shared/fragments/<key>.md`, then run `bash scripts/render-skill.sh` and commit what it rewrites; a hand edit there drifts from the source, and `tests/rendered-tree.bats` fails on it. Edit a library under `lib/<lib>/` and the links follow: `coding-crew-lib`'s `scripts/<lib>` is a committed link to it.
 
 ---
 
@@ -196,7 +195,7 @@ Runtime requirements:
 
 - **Node.js on `PATH`** for the skills that touch the issue tracker — `/to-issues`, `/to-prd`, `/solve-issue`,
   `/solve-feature` and `/upgrade-deps`. They reach the tracker (local or GitHub) through the tracker CLI,
-  `<skill-dir>/scripts/tracker/cli.mjs`, inside the `scripts/tracker/` directory each of those skills ships (a link into `lib/` in this repo, a real directory once installed).
+  `<skill-dir>/../coding-crew-lib/scripts/tracker/cli.mjs`, in the `coding-crew-lib` skill installed beside them (a link into `lib/` in this repo, a real directory once installed).
 
 #### Prerequisites
 
@@ -251,8 +250,8 @@ from this checkout, for every platform the manifest names. An install made befor
 `rm -rf <root>/.coding-crew/{agents,code-review,crew-afk,dep-install,scripts,skills,solve-issue,to-issues,tracker,write-pr}`.
 
 An install whose skills link into `.coding-crew/lib` updates with `--update` first: a partial run (`--skill`, one
-platform of several, `uninstall.sh --skill`) removes that directory too, and the skills it left alone stop with
-"re-install coding-crew" until `--update` copies their libraries in.
+platform of several, `uninstall.sh --skill`) removes that directory too, and the skills it left alone stop, naming the
+`coding-crew-lib` skill, until `--update` installs it.
 
 #### What lands where
 
@@ -288,8 +287,9 @@ YOUR_PROJECT/
 A user-level install never writes `~/.coding-crew/config.json`; you write it (or configure-tracker does, at user
 level) to hold defaults for every project, which a project's own `.coding-crew/config.json` overrides value by value.
 
-Each installed skill's `scripts/<lib>/` is its own copy of the library (`tracker/` with its docs, `checks/`,
-`git-workflow/`), copied through the committed link into `lib/`. A gitignored project install reaches a worktree only through `.worktreeinclude`.
+The `coding-crew-lib` skill's `scripts/<lib>/` is the one installed copy of each library (`tracker/` with its docs,
+`checks/`, `git-workflow/`), copied through the committed link into `lib/`; every other skill runs it from there. A
+reinstall removes the per-skill `scripts/<lib>` copies an older install wrote. A gitignored project install reaches a worktree only through `.worktreeinclude`.
 
 Other platforms get the same skills under their own skill dir (see the README's install table); no agent files are written for any platform.
 
@@ -400,8 +400,8 @@ one slice, or splits it into child issues with `## Parent`. An issue carrying a 
 line skips the check.
 
 The mechanics — how `next` resolves blockers, what `mark-done` swaps, how to reopen an issue — are in
-the tracker doc every install ships beside the tracker CLI: `<skill-dir>/scripts/tracker/docs/<kind>.md`
-in any coding-crew skill that uses the tracker (e.g. `solve-issue`).
+the tracker doc every install ships beside the tracker CLI: `coding-crew-lib/scripts/tracker/docs/<kind>.md`
+in the directory the coding-crew skills are installed in.
 
 ---
 

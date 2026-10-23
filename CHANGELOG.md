@@ -8,6 +8,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Upgrading
 
+- install, all skills: the tracker, checks and git-workflow libraries are installed once, in a new `coding-crew-lib`
+  skill, instead of a copy inside every skill: a `claude` project install writes 63 files, not 248. `install.sh`
+  installs it with any skill and removes the old per-skill copies on reinstall; an `npx skills add -s <name>` install
+  needs `-s coding-crew-lib` too, and a skill stops naming that command when it is missing (#611).
 - tracker, solve-feature, crew-afk: the working directories moved under `.coding-crew/`: `.scratch/` is now
   `.coding-crew/scratch/` and `.solve-feature/` is now `.coding-crew/solve-feature/`, each still self-ignored. With
   the local tracker, move your issues and repoint their PRD lines once, from the main checkout:
