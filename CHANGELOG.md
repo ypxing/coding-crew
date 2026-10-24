@@ -10,6 +10,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   second herdr or orca dispatch no longer starts a concurrent run in the same worktree. `status` and `wait` report an
   orca/herdr run whose terminal closed without an outcome as ended instead of waiting for good, and a herdr run
   starts in its new workspace's idle startup pane instead of a second tab (#617).
+- docs: the Actions section says the runner has only `ubuntu-latest`'s tools and Node, so a repo's `install` command
+  installs any other toolchain it needs, and that a repo admin allows GitHub Actions to create pull requests (#624).
 
 ## [2.3.0]
 
