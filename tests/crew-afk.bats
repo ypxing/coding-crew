@@ -307,8 +307,10 @@ case "$1 $2" in
   "worktree create") git -C "$MAIN" worktree add -q --detach "$T/orca-wt/app-report-cli" >&2
     echo "{\"ok\":true,\"result\":{\"worktree\":{\"path\":\"$T/orca-wt/app-report-cli\"}}}" ;;
   "terminal create") echo '{"ok":true,"result":{"terminal":{"handle":"h1"}}}' ;;
-  # $T/orca-show holds what terminal show prints (default: connected); $T/orca-show-fail makes it fail.
-  "terminal show") [ ! -f "$T/orca-show-fail" ] || { echo "orca: server unreachable" >&2; exit 1; }
+  # $T/orca-show holds what terminal show prints (default: connected); $T/orca-show-fail makes it fail as orca
+  # 1.4.230 does under --json: exit 1, the error as indented JSON on stdout, nothing on stderr.
+  "terminal show") [ ! -f "$T/orca-show-fail" ] ||
+    { printf '{\n  "ok": false,\n  "error": {\n    "code": "terminal_handle_stale",\n    "message": "terminal_handle_stale"\n  }\n}\n'; exit 1; }
     cat "$T/orca-show" 2>/dev/null || echo '{"ok":true,"result":{"terminal":{"handle":"h1","connected":true,"orphaned":false}}}' ;;
 esac
 SH
@@ -490,7 +492,7 @@ OWT_LOGS() { echo "$T/orca-wt/app-report-cli/.coding-crew/solve-feature"; }
   [ "$(grep -c '^worktree create' "$T/orca-calls")" -eq 1 ]
 }
 
-@test "a live query that fails other than with gone stops the dispatch with the CLI's stderr" {
+@test "a live query that fails other than with gone stops the dispatch with the CLI's error" {
   stub_herdr
   bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
   touch "$T/herdr-pane-fail"
@@ -504,7 +506,7 @@ OWT_LOGS() { echo "$T/orca-wt/app-report-cli/.coding-crew/solve-feature"; }
   touch "$T/orca-show-fail"
   run bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"orca: server unreachable"* ]]
+  [[ "$output" == *'could not tell whether report-cli'"'"'s orca run is still going: {"code":"terminal_handle_stale"'* ]]
   [[ "$output" == *"if the terminal is gone, delete $(OWT_LOGS)/run.pane and re-run"* ]]
 }
 
@@ -528,6 +530,9 @@ OWT_LOGS() { echo "$T/orca-wt/app-report-cli/.coding-crew/solve-feature"; }
   echo '{"ok":true,"result":{"terminal":{"handle":"h1","connected":false,"orphaned":false}}}' > "$T/orca-show"
   run bash "$SCRIPT" wait report-cli
   [ "$output" = "report-cli: ended without an outcome — its orca terminal is gone; re-run /crew-afk report-cli --to orca to continue" ]
+  touch "$T/orca-show-fail"
+  run bash "$SCRIPT" status report-cli
+  [[ "$output" == 'report-cli: run state unknown — orca query failed: {"code":"terminal_handle_stale"'* ]]
 }
 
 @test "a re-dispatch whose launch fails leaves no earlier run.pane, so the next dispatch is not blocked" {

@@ -28,7 +28,9 @@ live() { # <logs-dir> — see crew-afk.sh
   # No --environment: launch asked the same orca server from this machine, and a handle is that server's.
   out=$(orca terminal show --terminal "$handle" --json 2>"$err") || rc=$?
   if [ "$rc" -ne 0 ]; then
-    # What orca prints for an unknown handle is unverified, so a failure never counts the run as gone.
+    # A failure never counts the run as gone: an unknown handle's terminal_handle_stale may follow an orca restart.
+    # Under --json orca prints its error on stdout, indented, so it goes on one line ahead of any stderr.
+    jq -ce '.error | {code, message}' <<<"$out" 2>/dev/null || printf '%s\n' "$out"
     cat "$err"; rm -f "$err"
     echo "if the terminal is gone, delete $1/run.pane and re-run"
     return 2
