@@ -28,7 +28,11 @@ SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
   grep -qF '"spec": "met|unmet|none"' "$SKILL"
   grep -qF '"gaps"' "$SKILL"
   grep -qF '"findings"' "$SKILL"
-  grep -qF '<details><summary>Spec</summary>' "$SKILL"
+  grep -qF '<!-- solve-feature:slug <s> -->' "$SKILL"
+  grep -qF 'prd --feature-slug <s>' "$SKILL"
+  grep -qF 'known --feature-slug <s> --out <dir>' "$SKILL"
+  grep -qF 'else the whole body' "$SKILL"
+  ! grep -qF '<details><summary>Spec</summary>' "$SKILL" || false
 }
 
 @test "crew-review reports only: no review, comment or ready call, and reviews itself when started to review, else in one fresh subagent that can run any shell command" {
