@@ -30,6 +30,8 @@ From inside your repo:
 npx skills add ypxing/coding-crew --all      # this project (commit skills-lock.json); add -g for every repo
 ```
 
+Needs git, jq and Node; `gh` too for GitHub Issues or Actions.
+
 Installing only some skills (`-s <name>`)? Add `-s coding-crew-lib` too: every skill runs its scripts from it.
 To update, re-run the same command. The [install guide](docs/guide.md#install) covers `bootstrap.sh`, a pinned
 install from a clone, and what lands where.
@@ -38,13 +40,13 @@ Then, inside your coding agent:
 
 ```bash
 /setup-coding-crew                                # once per repo: tracker + your dev commands
-/crew-grill add rate limiting to the public API   # 👤 plan it together → PRD + issues
+/crew-grill add rate limiting to the public API   # 👤 plan it together → issues
 /crew-afk rate-limit                              # 🤖 the crew builds it in its own worktree while you're away
 /crew-afk status                                  # which PRs are ready for you
 ```
 
-That's the whole workflow. Where `/name` is not your agent's form, ask for the skill by name: Codex
-`$crew-grill`, pi `/skill:crew-grill`; Amp has no slash form. [Which agents run the skills](docs/guide.md#which-agents).
+That's the whole workflow. On Codex the form is `$crew-grill`, on pi `/skill:crew-grill`.
+[Which agents run the skills](docs/guide.md#which-agents).
 
 ## How it works
 
@@ -69,27 +71,27 @@ flowchart LR
 
 ## What people use it for
 
-| You want to…                              | Run                                                          |
-| ----------------------------------------- | ------------------------------------------------------------ |
-| 🚀 **Ship a feature overnight**           | `/crew-grill <idea>` → `/crew-afk <slug>`                    |
-| 🌫️ **Start from a fuzzy idea**            | `/crew-brainstorm <idea>` → `/crew-afk <slug>`               |
-| 🐛 **Burn down a bug backlog**            | `/to-issues <the bugs>` → `/crew-afk <slug>`                 |
-| 🧪 **Cover risky untested code**          | `/add-tests` → `/crew-afk <slug>`                            |
-| 📦 **Upgrade dependencies safely**        | `/upgrade-deps` → `/crew-afk <slug>`                         |
-| 🔀 **Build several features in parallel** | one `/crew-afk <slug>` per feature, then `/crew-afk status`  |
-| ☁️ **Build on GitHub Actions**            | `/setup-coding-crew`, then label the feature's root issue `run-agent` ([setup](docs/guide.md#solve-feature-on-github-actions-optional)) |
-| 💬 **Clear a PR's review comments**       | `/address-pr-comments`                                       |
-| 🎯 **Pair on a single issue yourself**    | `/solve-issue <issue>`                                       |
+| You want to…                               | Run                                                                                                                                      |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 🚀 **Ship a feature while you're away**     | `/crew-grill <idea>` → `/crew-afk <slug>`                                                                                                |
+| 🌫️ **Start from a fuzzy idea**              | `/crew-brainstorm <idea>` → `/crew-afk <slug>`                                                                                           |
+| 🐛 **Burn down a bug backlog**              | `/to-issues <the bugs>` → `/crew-afk <slug>`                                                                                             |
+| 🔀 **Build several features in parallel**   | one `/crew-afk <slug>` per feature, then `/crew-afk status`                                                                              |
+| ☁️ **Let the crew build on GitHub Actions** | `/setup-coding-crew` (yes to Actions), then label an issue `run-agent` ([setup](docs/guide.md#solve-feature-on-github-actions-optional)) |
+| 💬 **Clear a PR's review comments**         | `/address-pr-comments`                                                                                                                   |
+| 🎯 **Pair on a single issue yourself**      | `/solve-issue <issue>`                                                                                                                   |
+| ✏️ **Make one small change**                | ask your agent directly; for a crew-built, reviewed PR: `/to-issues <change>` → `/crew-afk <slug>`                                       |
 
-Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to the issue writer.
+When a plan is already one complete, testable change, `/crew-grill` skips its questions and writes the issue.
 
 ## Why teams use it
 
-- ✅ **Test-first, always.** Every coder works red, green, refactor.
-- 🚦 **Nothing red merges.** Your own checks are the gate, not the model's opinion of its own work.
+- ✅ **Test-first.** Every coder works red, green, refactor.
+- 🚦 **Nothing red lands.** Your own checks are the gate, not the model's opinion of its own work.
 - 🔍 **A reviewer that sees the whole feature.** It reviews against the plan, not one diff at a time.
 - 🔁 **Fixes itself, within bounds.** It fixes what the review found, each fix gated by your checks, then stops.
 - 🙋 **Only what needs you.** A PR it could not finish lists what needs a person; one it could is marked ready.
+- ☁️ **Runs where you want.** In its own worktree on your machine, or on GitHub Actions from an issue label.
 - 🧩 **Agent-agnostic.** Plain [Agent Skills](https://agentskills.io) that any agent loading `SKILL.md` can run. Issues stay as local markdown or in GitHub Issues.
 
 ## The toolkit
@@ -102,13 +104,11 @@ Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to t
 | `/crew-grill`            | Stress-test a plan and turn it into issues                 |
 | `/crew-brainstorm`       | Shape a fuzzy idea into a design, then issues              |
 | `/to-issues`             | Split a plan into issues, or sharpen an existing one       |
-| `/crew-afk`              | Start a feature's run in its own worktree; see how it ended |
+| `/crew-afk`              | Run a feature in its own worktree; see how it ended        |
 | `/solve-feature`         | Run one feature's issues on one branch, each one verified  |
 | `/crew-review`           | Review a branch or PR against its spec; report only        |
 | `/address-pr-comments`   | Fix PR review comments                                     |
 | `/solve-issue`           | Build one issue end to end, yourself                       |
-| `/add-tests`             | Find risky untested code and plan tests for it             |
-| `/upgrade-deps`          | Audit outdated packages and plan safe upgrades             |
 | `/write-pr`              | Write a PR description a reviewer can act on               |
 | `/setup-coding-crew`     | Set up tracker, checks and the optional Actions workflow   |
 | `/configure-tracker`     | Choose local markdown or GitHub Issues                     |

@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- docs: README's use-case table has a "Make one small change" row: ask your agent directly, or, for a PR the crew
+  builds and reviews, `/to-issues <change>` → `/crew-afk <slug>` (#487). The add-tests and upgrade-deps rows are gone
+  until those skills mature; both stay in the command list. The Actions row now reads "Let the crew build on GitHub
+  Actions": answer yes to `/setup-coding-crew`'s Actions question, then label any issue of the feature `run-agent`. The README also states its prerequisites, names where the crew
+  runs, and drops claims it overstated (an overnight run, test-first "always", a PRD from every grill).
 - crew-afk: a dispatch on a feature whose run is still going is refused on every destination, not only local: a
   second herdr or orca dispatch no longer starts a concurrent run in the same worktree. `status` and `wait` report an
   orca/herdr run whose terminal closed without an outcome as ended instead of waiting for good, and a herdr run
