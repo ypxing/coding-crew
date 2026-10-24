@@ -55,6 +55,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- solve-feature, crew-review, to-issues: a solve-feature PR body names its spec in one line (`Spec: PRD #<n>,
+  feature `<slug>``) instead of copying it into a `<details>` block, and lists "the reviewer found the spec unmet"
+  only when no gap says what; crew-review, given such a PR and no spec, reads the feature's PRD and issues from its
+  `solve-feature:slug` marker. to-issues places each human slice first (an agent cannot write or test the code
+  without it) or last (a validation or values the code reads), and never blocks an agent slice on a last one, so
+  one solve-feature run builds every agent issue (#545).
 - setup-coding-crew: the Actions workflow re-runs a feature labelled `run-agent` when one of its `ready-for-human`
   issues is finished (the label removed, as `mark-done` does, or the issue closed), so a run that stopped for a
   person no longer waits for a re-label; a feature run only locally, or whose root is closed, or an issue finished by

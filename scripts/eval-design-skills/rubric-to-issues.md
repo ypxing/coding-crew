@@ -1,7 +1,7 @@
 # Judge rubric: to-issues slicing
 
 You are scoring outputs of `to-issues` at its slicing step: each output is the breakdown it would
-show the user — numbered slices with a title, an acceptance-criteria count, `Blocked by`, and the
+show the user — numbered slices with a title, a type (AFK, HITL first or HITL last), an acceptance-criteria count, `Blocked by`, and the
 reason for each split. The skill treats an issue as one piece of work one implementer takes,
 finishes and gets verified as a unit: it drafts slices as the work divides, splits one that is more
 than the reference size, and merges one that exists only to be smaller. A split is right only for
@@ -29,5 +29,9 @@ random. Judge each output on its own against the case's reference judgement. Sco
 - **oversplit** — 1 (bad) if it has at least one split no valid reason supports, measured against
   the reference judgement — a fragment whose overhead outweighs its work, or a `Blocked by` chain
   that one slice would avoid.
+- **hitl_placed** — 1 when every HITL slice is placed by what it is for: each last HITL slice (a
+  person validating or configuring what was built) comes after the AFK slices and no AFK slice is
+  `Blocked by` it, and each first HITL slice (something an agent cannot write or test the code
+  without) comes before the slices that need it; 0 otherwise. null when the output has no HITL slice.
 
 Keep each note to one sentence naming the decisive evidence.
