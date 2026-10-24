@@ -263,6 +263,7 @@ SH
   stub_orca
   bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
   touch -t 202001010000 "$T/orca-wt/app-report-cli/.coding-crew/solve-feature/run.slug"
+  echo '{"ok":true,"result":{"terminal":{"handle":"h1","connected":false,"orphaned":true}}}' > "$T/orca-show"
   bash "$SCRIPT" dispatch report-cli "${LAUNCH[@]}" >/dev/null
   bash "$SCRIPT" wait report-cli >"$T/wait-out" &
   waiter=$!
@@ -305,6 +306,9 @@ case "$1 $2" in
   "worktree create") git -C "$MAIN" worktree add -q --detach "$T/orca-wt/app-report-cli" >&2
     echo "{\"ok\":true,\"result\":{\"worktree\":{\"path\":\"$T/orca-wt/app-report-cli\"}}}" ;;
   "terminal create") echo '{"ok":true,"result":{"terminal":{"handle":"h1"}}}' ;;
+  # $T/orca-show holds what terminal show prints (default: connected); $T/orca-show-fail makes it fail.
+  "terminal show") [ ! -f "$T/orca-show-fail" ] || { echo "orca: server unreachable" >&2; exit 1; }
+    cat "$T/orca-show" 2>/dev/null || echo '{"ok":true,"result":{"terminal":{"handle":"h1","connected":true,"orphaned":false}}}' ;;
 esac
 SH
   chmod +x "$T/stub/orca"
@@ -317,8 +321,13 @@ echo "$*" >> "$T/herdr-calls"
 case "$1 $2" in
   "worktree create") while [ $# -gt 0 ]; do [ "$1" = --path ] && p="$2"; shift; done
     git worktree add -q --detach "$p" >&2 ;;
-  "worktree open") echo '{"result":{"workspace":{"workspace_id":"w1"}}}' ;;
-  "tab create") echo '{"result":{"tab":{"tab_id":"t1"},"root_pane":{"pane_id":"p1"}}}' ;;
+  # $T/herdr-root-agent names the agent in the workspace's root pane (default: none, the startup shell).
+  "worktree open") echo "{\"result\":{\"workspace\":{\"workspace_id\":\"w1\"},\"root_pane\":{\"pane_id\":\"w1:p1\",\"agent\":\"$(cat "$T/herdr-root-agent" 2>/dev/null)\"}}}" ;;
+  "tab create") echo '{"result":{"tab":{"tab_id":"t1"},"root_pane":{"pane_id":"w1:p2"}}}' ;;
+  # $T/herdr-pane-gone: the pane is gone; $T/herdr-pane-fail: herdr cannot tell.
+  "pane get") [ ! -f "$T/herdr-pane-gone" ] || { echo '{"error":{"code":"pane_not_found","message":"no pane"}}' >&2; exit 1; }
+    [ ! -f "$T/herdr-pane-fail" ] || { echo '{"error":{"code":"server_down","message":"no server"}}' >&2; exit 1; }
+    echo "{\"result\":{\"pane\":{\"pane_id\":\"$3\"}}}" ;;
 esac
 SH
   chmod +x "$T/stub/herdr"
@@ -341,7 +350,7 @@ SH
   [ "$output" = "report-cli: no outcome yet — orca run, see its terminal" ]
 }
 
-@test "--to herdr creates the worktree through herdr and types the launch argv, quoted and uncapped, into a new pane" {
+@test "--to herdr creates the worktree through herdr and types the launch argv, quoted and uncapped, into its idle startup pane" {
   stub_herdr
   run bash "$SCRIPT" dispatch report-cli --to herdr -- claude --dangerously-skip-permissions "/solve-feature report-cli"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
@@ -349,8 +358,10 @@ SH
   [ -z "$(field pid)" ] && [ -z "$(field session)" ]
   grep -qxF "worktree create --cwd $MAIN --branch crew-afk/report-cli --base main --path $WT --label report-cli --no-focus" "$T/herdr-calls"
   # Typed into the pane's shell: `agent start` waits for an idle agent, which one given a prompt never is.
-  grep -qxF 'pane run p1 claude --dangerously-skip-permissions /solve-feature\ report-cli ' "$T/herdr-calls"
+  grep -qxF 'pane run w1:p1 claude --dangerously-skip-permissions /solve-feature\ report-cli ' "$T/herdr-calls"
+  ! grep -q '^tab create' "$T/herdr-calls"
   ! grep -q '^agent start' "$T/herdr-calls"
+  [ "$(cat "$WT/.coding-crew/solve-feature/run.pane")" = w1:p1 ]
   [ ! -f "$T/timeout-argv" ]
   run bash "$SCRIPT" status report-cli
   [ "$output" = "report-cli: no outcome yet — herdr run, see its terminal" ]
@@ -368,10 +379,35 @@ SH
   [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 1 ]
 }
 
-@test "each destination defines only prepare and launch" {
+@test "each destination defines only prepare, launch and live" {
   local f
   for f in "$REPO_ROOT"/skills/crew-afk/scripts/destinations/*.sh; do
-    [ "$(env -i PATH="$PATH" bash --norc -c 'source "$1"; declare -F' _ "$f" | awk '{print $3}' | sort | paste -sd' ' -)" = "launch prepare" ] || { echo "$f"; return 1; }
+    [ "$(env -i PATH="$PATH" bash --norc -c 'source "$1"; declare -F' _ "$f" | awk '{print $3}' | sort | paste -sd' ' -)" = "launch live prepare" ] || { echo "$f"; return 1; }
   done
 }
 
+
+@test "dispatch --to herdr while the slug's herdr run has no outcome and its pane exists exits 1 naming the pane and creates none" {
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  logs="$WT/.coding-crew/solve-feature"
+  echo kept > "$logs/run.log"
+  before=$(cat "$logs/run.dest" "$logs/run.slug" "$logs/run.pane" "$logs/run.log")
+  : > "$T/herdr-calls"
+  run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"a run for report-cli is still going (herdr pane w1:p1)"* ]]
+  [[ "$output" == *"wait for it to end, or close that pane, then re-run"* ]]
+  [ "$(grep -v '^pane get' "$T/herdr-calls")" = "" ]
+  [ "$(cat "$logs/run.dest" "$logs/run.slug" "$logs/run.pane" "$logs/run.log")" = "$before" ]
+}
+
+@test "--to herdr on a workspace whose root pane runs an agent types the argv into a new tab's pane" {
+  stub_herdr
+  echo claude > "$T/herdr-root-agent"
+  run bash "$SCRIPT" dispatch report-cli --to herdr -- claude "/solve-feature report-cli"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -q '^tab create --workspace w1 ' "$T/herdr-calls"
+  grep -qxF 'pane run w1:p2 claude /solve-feature\ report-cli ' "$T/herdr-calls"
+  [ "$(cat "$WT/.coding-crew/solve-feature/run.pane")" = w1:p2 ]
+}

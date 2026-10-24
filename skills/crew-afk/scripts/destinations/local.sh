@@ -19,3 +19,8 @@ launch() { # <slug> <worktree> <argv…>
     nohup "$timeout" 1h "$@" >"$wt/.coding-crew/solve-feature/run.log" 2>&1 </dev/null &
     echo $! >"$wt/.coding-crew/solve-feature/run.pid")
 }
+
+live() { # <logs-dir> — see crew-afk.sh
+  local pid
+  pid=$(live_pid "$1") && echo "pid $pid"
+}
