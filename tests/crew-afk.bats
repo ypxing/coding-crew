@@ -307,6 +307,13 @@ case "$1 $2" in
   "worktree create") git -C "$MAIN" worktree add -q --detach "$T/orca-wt/app-report-cli" >&2
     echo "{\"ok\":true,\"result\":{\"worktree\":{\"path\":\"$T/orca-wt/app-report-cli\"}}}" ;;
   "terminal create") echo '{"ok":true,"result":{"terminal":{"handle":"h1"}}}' ;;
+  # $T/orca-terminals holds what terminal list prints (default: no terminals); $T/orca-list-fail makes it fail.
+  "terminal list") [ ! -f "$T/orca-list-fail" ] || exit 1
+    cat "$T/orca-terminals" 2>/dev/null || echo '{"ok":true,"result":{"terminals":[]}}' ;;
+  # $T/orca-send-fail: orca reports a failed send as exit 1 with the error on stdout.
+  "terminal send") [ ! -f "$T/orca-send-fail" ] ||
+    { echo '{"ok":false,"error":{"code":"terminal_handle_stale","message":"terminal_handle_stale"}}'; exit 1; }
+    echo '{"ok":true,"result":{"send":{"accepted":true}}}' ;;
   # $T/orca-show holds what terminal show prints (default: connected); $T/orca-show-fail makes it fail as orca
   # 1.4.230 does under --json: exit 1, the error as indented JSON on stdout, nothing on stderr.
   "terminal show") [ ! -f "$T/orca-show-fail" ] ||
@@ -353,6 +360,51 @@ SH
   # orca names the worktree after the repo too; status names the run by its slug and finds it by it.
   run bash "$SCRIPT" status report-cli
   [ "$output" = "report-cli: no outcome yet — orca run, see its terminal" ]
+}
+
+orca_terminals() { # <terminal JSON objects…> — what the stub's terminal list prints
+  local IFS=,
+  echo "{\"ok\":true,\"result\":{\"terminals\":[$*]}}" > "$T/orca-terminals"
+}
+
+@test "--to orca types the launch argv, quoted, into the worktree's idle startup terminal and creates none" {
+  stub_orca
+  orca_terminals '{"handle":"h0","agentIdentity":null,"connected":true}'
+  run bash "$SCRIPT" dispatch report-cli --to orca -- claude --dangerously-skip-permissions "/solve-feature report-cli"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -qxF "terminal list --worktree path:$T/orca-wt/app-report-cli --json" "$T/orca-calls"
+  grep -qxF 'terminal send --terminal h0 --text claude --dangerously-skip-permissions /solve-feature\ report-cli  --enter --json' "$T/orca-calls"
+  ! grep -q '^terminal create' "$T/orca-calls"
+  [ "$(cat "$T/orca-wt/app-report-cli/.coding-crew/solve-feature/run.pane")" = h0 ]
+}
+
+@test "--to orca creates a terminal when the worktree's terminal runs an agent, has company, or cannot be listed" {
+  stub_orca
+  local idle='{"handle":"h0","agentIdentity":null}' case
+  for case in agent two fail; do
+    rm -rf "$T/orca-wt" "$T/orca-calls" "$T/orca-list-fail"; git -C "$MAIN" worktree prune
+    case $case in
+      agent) orca_terminals '{"handle":"h0","agentIdentity":"claude"}' ;;
+      two) orca_terminals "$idle" '{"handle":"h2"}' ;;
+      fail) orca_terminals "$idle"; touch "$T/orca-list-fail" ;;
+    esac
+    run bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}"
+    [ "$status" -eq 0 ] || { echo "$case: $output"; return 1; }
+    ! grep -q '^terminal send' "$T/orca-calls" || { echo "$case"; return 1; }
+    grep -q '^terminal create' "$T/orca-calls" || { echo "$case"; return 1; }
+    [ "$(cat "$T/orca-wt/app-report-cli/.coding-crew/solve-feature/run.pane")" = h1 ] || { echo "$case"; return 1; }
+  done
+}
+
+@test "--to orca stops naming orca terminal send failed when typing into the startup terminal fails, writing no run.pane" {
+  stub_orca
+  orca_terminals '{"handle":"h0"}'
+  touch "$T/orca-send-fail"
+  run bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}"
+  [ "$status" -ne 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"orca terminal send failed"* ]]
+  [ ! -e "$T/orca-wt/app-report-cli/.coding-crew/solve-feature/run.pane" ]
+  ! grep -q '^terminal create' "$T/orca-calls"
 }
 
 @test "--to herdr creates the worktree through herdr and types the launch argv, quoted and uncapped, into its idle startup pane" {
