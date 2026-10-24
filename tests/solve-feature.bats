@@ -1105,11 +1105,47 @@ solve_step() {
   [ "$status" -eq 7 ]
 }
 
-@test "the reusable workflow: a review round checks out the default branch, so the NPM_TOKEN install never runs the PR's agent-written tree" {
+@test "the reusable workflow: a review round installs on the default branch, then hands the agent the PR's branch, past address-pr-comments' branch check" {
   wf_json
-  # pull_request_review's github.ref is refs/pull/<n>/merge: the feature branch the agent wrote, merged in.
+  # pull_request_review's github.ref is refs/pull/<n>/merge: the feature branch the agent wrote, merged in, which the
+  # NPM_TOKEN install must not run.
   [ "$(jq -r '.jobs.solve.steps[] | select(.uses // "" | startswith("actions/checkout@")) | .with.ref' "$JSON")" = \
     "\${{ github.event_name == 'pull_request_review' && github.event.repository.default_branch || '' }}" ]
+  local names; names=$(jq -r '.jobs.solve.steps[].name // empty' "$JSON")
+  local install switch run
+  install=$(grep -nxF "Install the project's dependencies" <<<"$names" | cut -d: -f1)
+  switch=$(grep -nxF "Check out the review round's PR branch" <<<"$names" | cut -d: -f1)
+  run=$(grep -nxF "Run solve-feature" <<<"$names" | cut -d: -f1)
+  [ -n "$switch" ]
+  [ "$install" -lt "$switch" ]
+  [ "$switch" -lt "$run" ]
+  local step; step=$(jq -c '.jobs.solve.steps[] | select(.name == "Check out the review round'"'"'s PR branch")' "$JSON")
+  [ "$(jq -r '.if' <<<"$step")" = "github.event_name == 'pull_request_review'" ]
+  [ "$(jq -r '.env.HEAD_REF' <<<"$step")" = '${{ github.event.pull_request.head.ref }}' ]
+  jq -r '.run' <<<"$step" > "$TEMP_DIR/switch.sh"
+
+  # What actions/checkout leaves for ref: main (git checkout -B main refs/remotes/origin/main), after the install.
+  local GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
+  export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+  git init -q -b main "$TEMP_DIR/origin" && echo '{}' > "$TEMP_DIR/origin/package-lock.json"
+  git -C "$TEMP_DIR/origin" add . && git -C "$TEMP_DIR/origin" commit -q -m init
+  git -C "$TEMP_DIR/origin" checkout -q -b feature/x && echo pr > "$TEMP_DIR/origin/pr.txt"
+  git -C "$TEMP_DIR/origin" add pr.txt && git -C "$TEMP_DIR/origin" commit -q -m pr && git -C "$TEMP_DIR/origin" checkout -q main
+  git clone -q "$TEMP_DIR/origin" "$TEMP_DIR/ws" && cd "$TEMP_DIR/ws"
+  git remote set-head origin -d
+  mkdir node_modules && touch node_modules/dep && echo '{"rewritten":1}' > package-lock.json
+  local check="$REPO_ROOT/lib/git-workflow/branch-safety-check.sh"
+  run bash "$check"
+  [ "$status" -eq 1 ]
+  run env HEAD_REF=feature/x bash -e "$TEMP_DIR/switch.sh"
+  [ "$status" -eq 0 ]
+  [ "$(git rev-parse --abbrev-ref HEAD)" = feature/x ]
+  [ -f pr.txt ]
+  [ -f node_modules/dep ]
+  [ -z "$(git status --porcelain --untracked-files=no)" ]
+  [ "$(git rev-parse --abbrev-ref '@{upstream}')" = origin/feature/x ]
+  run bash "$check"
+  [ "$status" -eq 0 ]
 }
 
 @test "the reusable workflow's run step hides the OIDC request variables from either agent; no step after it in solve references a secret, COPILOT_GITHUB_TOKEN only in request-copilot-review" {

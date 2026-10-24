@@ -270,7 +270,8 @@ jobs:
           echo "duration=$((TIMEOUT_MINUTES * 60))" >> "$GITHUB_OUTPUT"
 
       # A review round's own ref is refs/pull/<n>/merge, the agent-written branch, whose dev-commands.json and package
-      # scripts the install step below would run with NPM_TOKEN; the round's solve-feature checks out that branch itself.
+      # scripts the install step below would run with NPM_TOKEN: the round installs on the default branch and only
+      # then checks out the PR's branch.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
@@ -297,6 +298,14 @@ jobs:
           [ -n "$NPM_TOKEN" ] || unset NPM_TOKEN
           echo "Running: $cmd"
           bash -c "$cmd"
+
+      # address-pr-comments refuses to run on the default branch, the local branch actions/checkout left for `ref:`.
+      # -f drops what the install changed in tracked files (a lockfile); node_modules, ignored, stays.
+      - name: Check out the review round's PR branch
+        if: github.event_name == 'pull_request_review'
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: git checkout -q -f -B "$HEAD_REF" --track "origin/$HEAD_REF"
 
       - name: Install the agent CLI
         run: |
