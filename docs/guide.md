@@ -501,6 +501,10 @@ updates:
       interval: weekly
 ```
 
+The job runs on `ubuntu-latest` with Node set up, and has no step of the repo's own: a toolchain the image lacks is
+installed by `.coding-crew/dev-commands.json`'s `install` command, before the agent starts (a `uv` project:
+`pipx install uv && uv sync`).
+
 The runner installs the skills of that same release (the composite action `ypxing/coding-crew/actions/install`, at
 the tag the reusable workflow names), never `main`: the repo variable `CODING_CREW_REF` is no longer read. `with:
 timeout-minutes: <n>` on the `run` job changes the solve job's timeout (360 by default). The checks a run adds show

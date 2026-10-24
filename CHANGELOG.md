@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- docs: the Actions section says the runner has only `ubuntu-latest`'s tools and Node, so a repo's `install` command
+  installs any other toolchain it needs (#624).
+
 ## [2.3.0]
 
 ### Highlights
