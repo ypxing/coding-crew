@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: what a coder or the fixer says a person must do or decide (`coder.notes.md`, `pr-<n>.notes.md`)
+  is posted on the PR as one comment each once its work is pushed, so it survives a stop, a re-run and a fresh
+  Actions runner; before, it stayed in the coder's report and nobody saw it unless relayed by hand (#622).
 - tracker (github): `next` dispatches, and `features` counts, a ready issue whose `## Blocked by` names an issue of
   another feature once that issue is closed or `awaiting-merge`; an open, missing or deleted one still holds it back.
   Before, a blocker outside the feature blocked for ever (#621).
