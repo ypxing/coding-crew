@@ -1,8 +1,9 @@
 #!/usr/bin/env bats
 
 # The setup-coding-crew skill: what install.sh ships for it, and the pieces of its SKILL.md that are code rather
-# than prose: Step 2's start of the dev commands file and Step 4's commit hint; the review-round parts of
-# hosts/github-actions.yml (the rest of that file is in solve-feature.bats).
+# than prose: Step 2's start of the dev commands file, Step 3's tag check and Step 4's commit hint; the review-round
+# parts of the reusable workflow .github/workflows/crew-solve-feature.yml and the caller template
+# hosts/github-actions.yml (the rest of both is in solve-feature.bats).
 
 load helpers/yaml
 
@@ -173,14 +174,17 @@ actions_tracker() {
   [ -z "$(git status --porcelain)" ]
 }
 
-# --- hosts/github-actions.yml: review rounds ---------------------------------------------
+# --- the reusable workflow and its caller: review rounds -----------------------------------
 
-# host_json — the host file as $JSON, or skips the test when the machine has no YAML parser; $STUB first on PATH and
-# the test in $TEMP_DIR/work, where a step's run script is run as Actions would.
+# host_json — the reusable workflow as $JSON and the caller template as $CALLER_JSON, or skips the test when the
+# machine has no YAML parser; $STUB first on PATH and the test in $TEMP_DIR/work, where a step's run script is run
+# as Actions would.
 host_json() {
-  JSON="$TEMP_DIR/wf.json"
-  run yaml_to_json "$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" "$JSON"
+  JSON="$TEMP_DIR/wf.json" CALLER_JSON="$TEMP_DIR/caller.json"
+  run yaml_to_json "$REPO_ROOT/.github/workflows/crew-solve-feature.yml" "$JSON"
   [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
+  [ "$status" -eq 0 ]
+  run yaml_to_json "$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" "$CALLER_JSON"
   [ "$status" -eq 0 ]
   STUB="$TEMP_DIR/stub" && mkdir -p "$STUB" "$TEMP_DIR/work" && cd "$TEMP_DIR/work"
   export PATH="$STUB:$PATH"
@@ -194,10 +198,10 @@ step_run() {
 @test "host file: a submitted review other than an approval starts a round (a review comment or a resolved thread alone does not), the solve job runs only on a slug, and no run line interpolates an expression" {
   host_json
   local on='(.on // .["true"])'
-  [ "$(jq -c "$on.pull_request_review.types" "$JSON")" = '["submitted"]' ]
-  [ "$(jq -r "$on | has(\"pull_request_review_thread\")" "$JSON")" = false ]
-  [ "$(jq -r "$on | has(\"pull_request_review_comment\")" "$JSON")" = false ]
-  [ "$(jq -c "$on.issues.types" "$JSON")" = '["labeled","unlabeled","closed"]' ]
+  [ "$(jq -c "$on.pull_request_review.types" "$CALLER_JSON")" = '["submitted"]' ]
+  [ "$(jq -r "$on | has(\"pull_request_review_thread\")" "$CALLER_JSON")" = false ]
+  [ "$(jq -r "$on | has(\"pull_request_review_comment\")" "$CALLER_JSON")" = false ]
+  [ "$(jq -c "$on.issues.types" "$CALLER_JSON")" = '["labeled","unlabeled","closed"]' ]
   jq -e '.jobs.slug.if | test("workflow_dispatch") and test("run-agent") and test("pull_request_review") and test("github.event.review.state != .approved.")' "$JSON" >/dev/null
   jq -e '.jobs.slug.steps[0].env.REVIEW_AUTHOR == "${{ github.event.review.user.login }}"' "$JSON" >/dev/null
   jq -e '.jobs.solve.if | test("needs.slug.outputs.slug != ..")' "$JSON" >/dev/null
@@ -406,8 +410,7 @@ SH
   run env CREW_AGENT=copilot CREW_MODEL= SLUG=feat REVIEW_PR= ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/solve-step.sh"
   [[ "$(head -n 1 .coding-crew/solve-feature/session.jsonl)" == "copilot -p Use the solve-feature skill on feat --allow-all "* ]]
   jq -e '.jobs.solve.steps[] | select(.name == "Run solve-feature") | .env.REVIEW_PR == "${{ needs.slug.outputs.pr }}"' "$JSON" >/dev/null
-  step_run solve "Install coding-crew (user-level)"
-  grep -qE -- '--skills [a-z,-]*address-pr-comments' "$TEMP_DIR/solve-step.sh"
+  grep -qE -- '--skills [a-z,-]*address-pr-comments' "$REPO_ROOT/actions/install/action.yml"
 }
 
 @test "host file: after a ready run, Copilot is asked to review with the PAT only when it has not reviewed; unset or refused, the step warns and passes" {
