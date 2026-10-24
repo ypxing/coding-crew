@@ -534,6 +534,17 @@ test("next (github) prints the lowest ready, unblocked issue: not labelled block
   assert.equal(then.stdout, "3\n");
 });
 
+test("next (github) exits 1 with gh's stderr when reading an out-of-feature blocker fails other than 404/410", async () => {
+  const dir = root({ github: true });
+  const exec = fakeGithub([...ghFeature("feat", ghIssue(1), ghIssue(2, { labels: ["ready-for-agent"], body: blockedBy(40) })), ghIssue(40, { state: "CLOSED" })], {
+    fail: { "api repos/{owner}/{repo}/issues/40": { stderr: "gh: Resource not accessible by integration (HTTP 403)\n" } },
+  });
+  const r = await cli(dir, ["next", "--feature-slug", "feat"], exec);
+  assert.equal(r.code, 1);
+  assert.equal(r.stdout, "");
+  assert.ok(r.stderr.includes("gh: Resource not accessible by integration (HTTP 403)"), r.stderr);
+});
+
 test("next (local) prints the first ready file whose blockers are all in done/, as a path fetch accepts; issues-deps.json wins over prose", async () => {
   const dir = root();
   const write = (state, name, status, blockedBy = "None") =>
@@ -678,7 +689,7 @@ test("features (github) lists one line per marked root: slug, open|closed, and t
   for (const call of exec.calls) assert.ok(!call.some((a) => /milestone/i.test(a)), call.join(" "));
 });
 
-test("features (github) counts only the ready issues dispatch would start: no `blocked` label, every blocker in the feature and done", async () => {
+test("features (github) counts only the ready issues dispatch would start: no `blocked` label, every blocker done, in the feature or not", async () => {
   const dir = root({ github: true });
   writeFileSync(join(dir, ".coding-crew/config.json"), JSON.stringify({ tracker: { kind: "github" } }));
   const ready = ["ready-for-agent"];
@@ -695,15 +706,17 @@ test("features (github) counts only the ready issues dispatch would start: no `b
       ghIssue(7, { state: "CLOSED" }),
       ghIssue(8, { labels: ready, body: after(9) }),
       ghIssue(9, { labels: ["awaiting-merge"] }),
+      ghIssue(13, { labels: ready, body: after(31) }),
     ),
     ...ghFeature("waiting", ghIssue(10), ghIssue(11, { labels: ready, body: after(10) }), ghIssue(12, { labels: [...ready, "blocked"] })),
     ghIssue(30, { state: "CLOSED" }),
+    ghIssue(31, { labels: ready }),
   ]);
   const r = await cli(dir, ["features"], exec);
   assert.equal(r.code, 0, r.stderr);
-  assert.equal(r.stdout, "mixed\topen\t3\nwaiting\topen\t0\n");
+  assert.equal(r.stdout, "mixed\topen\t4\nwaiting\topen\t0\n");
   const reads = exec.calls.filter((c) => !/issues\?state=all/.test(c.join(" ")));
-  assert.deepEqual(reads.map((c) => /issues\/(\d+)\/sub_issues/.exec(c.join(" "))?.[1]), ["1", "10"]);
+  assert.deepEqual(reads.map((c) => /issues\/(\d+)(\/sub_issues)?\b/.exec(c.join(" "))?.slice(1, 3).join("")), ["1/sub_issues", "30", "31", "10/sub_issues"]);
 });
 
 test("features (github) reads no sub-issues of a closed root whose sub-issues have all closed", async () => {

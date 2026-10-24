@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { closingRefs, createIssue, featureMarker, linkBlockers, listFeatureIssues, parseIssue, retryTransient, selectDispatchable, writeSection } from "../../lib/tracker/github.mjs";
+import { closingRefs, createIssue, featureMarker, linkBlockers, listFeatureIssues, listFeatures, parseIssue, retryTransient, selectDispatchable, writeSection } from "../../lib/tracker/github.mjs";
 import { fakeGithub, ghFeature, ghIssue } from "../helpers/fake-github.mjs";
 
 // github.mjs's read path: listFeatureIssues/parseIssue/selectDispatchable, all `gh` calls stubbed
@@ -270,6 +270,39 @@ test("selectDispatchable makes the same two gh calls regardless of issue or bloc
   const exec = fakeExec(issues);
   selectDispatchable(root, { featureSlug: "feat", exec });
   assert.equal(exec.calls.length, 2);
+});
+
+/** Feature `feat` (root #1) with ready #2 blocked by #40, an issue outside the feature; `outside` is #40's JSON, or absent. */
+function outsideBlocker(outside, opts) {
+  const two = ghIssue(2, { labels: ["ready-for-agent"], body: "## Blocked by\n\n- #40\n" });
+  return fakeGithub([...ghFeature("feat", ghIssue(1), two), ...(outside ? [outside] : [])], opts);
+}
+
+test("selectDispatchable includes a ready issue whose only blocker is a closed issue outside the feature", () => {
+  const exec = outsideBlocker(ghIssue(40, { state: "CLOSED" }));
+  assert.deepEqual(selectDispatchable(repo(), { featureSlug: "feat", exec }).map((i) => i.number), [2]);
+  assert.ok(argv(exec).includes("api repos/{owner}/{repo}/issues/40"), argv(exec).join("\n"));
+});
+
+test("selectDispatchable includes a ready issue whose blocker is outside the feature, open and awaiting-merge", () => {
+  const exec = outsideBlocker(ghIssue(40, { labels: ["awaiting-merge"] }));
+  assert.deepEqual(selectDispatchable(repo(), { featureSlug: "feat", exec }).map((i) => i.number), [2]);
+});
+
+test("selectDispatchable excludes a ready issue whose blocker is outside the feature and open", () => {
+  const exec = outsideBlocker(ghIssue(40, { labels: ["ready-for-agent"] }));
+  assert.deepEqual(selectDispatchable(repo(), { featureSlug: "feat", exec }), []);
+});
+
+test("selectDispatchable excludes a ready issue whose out-of-feature blocker answers 404 or 410", () => {
+  assert.deepEqual(selectDispatchable(repo(), { featureSlug: "feat", exec: outsideBlocker(null) }), []);
+  const gone = outsideBlocker(null, { fail: { "api repos/{owner}/{repo}/issues/40": { stderr: "gh: This issue was deleted (HTTP 410)" } } });
+  assert.deepEqual(selectDispatchable(repo(), { featureSlug: "feat", exec: gone }), []);
+});
+
+test("listFeatures counts a ready issue whose blocker is a closed issue outside the feature", () => {
+  const exec = outsideBlocker(ghIssue(40, { state: "CLOSED" }));
+  assert.deepEqual(listFeatures(repo(), { exec, warn: () => {} }), [{ slug: "feat", state: "open", ready: 1 }]);
 });
 
 test("selectDispatchable finds nothing for a slug with no root", () => {
