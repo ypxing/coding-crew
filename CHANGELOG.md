@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- docs: README's use-case table has a "Make one small change" row: ask your agent directly, or, for a PR the crew
+  builds and reviews, `/to-issues <change>` → `/crew-afk <slug>` (#487).
 - docs: the Actions section says the runner has only `ubuntu-latest`'s tools and Node, so a repo's `install` command
   installs any other toolchain it needs, and that a repo admin allows GitHub Actions to create pull requests (#624).
 
