@@ -80,7 +80,7 @@ flowchart LR
 | ☁️ **Build on GitHub Actions**            | `/setup-coding-crew`, then label the feature's root issue `run-agent` ([setup](docs/guide.md#solve-feature-on-github-actions-optional)) |
 | 💬 **Clear a PR's review comments**       | `/address-pr-comments`                                                                                                                  |
 | 🎯 **Pair on a single issue yourself**    | `/solve-issue <issue>`                                                                                                                  |
-| ✏️ **Make one small change**               | ask your agent directly; for a crew-built, reviewed PR: `/to-issues <change>` → `/crew-afk <slug>`                                      |
+| ✏️ **Make one small change**              | ask your agent directly; for a crew-built, reviewed PR: `/to-issues <change>` → `/crew-afk <slug>`                                      |
 
 Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to the issue writer.
 
