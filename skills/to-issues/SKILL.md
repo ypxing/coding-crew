@@ -105,12 +105,21 @@ Each issue is a **tracer bullet**: a vertical slice that cuts through every inte
 
 Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an architectural decision or a design review. AFK slices can be implemented and landed without human interaction. Prefer AFK over HITL where possible.
 
+**Placement.** Every HITL slice is placed **first** or **last**, by what it is for; Kind A/B (step 6) says who does the work, placement says when:
+
+- **first** — only when an agent cannot write or test the code without it: a credential the tests call with, a service the code talks to, a decision that changes the code's shape. The slices that need it are `Blocked by` it.
+- **last** — everything a person does to what was built: a validation (a paid run, a measurement) or setting the values the code reads. No AFK slice is `Blocked by` a last slice; a last slice may itself be `Blocked by` the AFK slices it acts on (edge rule row 1). Its gate is the merge: the PR stays a draft while it is open, because the spec its reviewer reads holds every issue of the feature, open ones included. A value set only after the merge (a repo variable, deploy config) is no slice at all: the AFK slice's `## Decisions` name it and its default.
+- **Values the code reads are not a prerequisite.** The AFK slice builds the code reading the value from a named place (a config key, an env var, a repo variable), and its `## Decisions` name that place and the default, or the error, when it is unset; the person's slice that sets the values is last.
+- A PRD's "prove X before Y is advertised" (or shipped, or documented) means before the PR merges, never a `Blocked by` edge from Y to X: X is a last slice.
+
+Number the drafts first HITL, then AFK, then last HITL, so a last slice's number comes after every AFK slice's.
+
 **Edge rule.** Between slices that remain split, add `Blocked by` only when one of these rows matches:
 
 1. One slice consumes what the other produces (a signature, shape or output) → `Blocked by`.
 2. The two change the same meaning (the same behaviour, function or rule) → `Blocked by`.
 
-Otherwise add no edge: edits to separate parts of a file do not interact, and a needless edge only constrains the order for nothing. Same-meaning edits are ordered so the later slice builds on what the earlier one settled instead of guessing at it. An edge can follow any of the three split reasons; only these rows decide it.
+Otherwise add no edge: edits to separate parts of a file do not interact, and a needless edge only constrains the order for nothing. Same-meaning edits are ordered so the later slice builds on what the earlier one settled instead of guessing at it. An edge can follow any of the three split reasons; only these rows decide it. One exception overrides them: an AFK slice is never `Blocked by` a last HITL slice (**Placement** above).
 
 <vertical-slice-rules>
 - Each behaviour a slice delivers is externally observable, verified at the highest existing seam (the outermost place a test can already exercise it: a CLI invocation, an HTTP call, a script's exit code and output). "Schema / API / UI" is only an example of the layers such a behaviour may cut through, not a required shape — a slice touches whichever layers its behaviours need
@@ -137,7 +146,7 @@ Before the quiz, build a coverage table: one row per `D<n>` / `B<n>` ID in the P
 Present the proposed breakdown as a numbered list. For each slice, show:
 
 - **Title**: short descriptive name
-- **Type**: HITL / AFK
+- **Type**: AFK, HITL (first) or HITL (last)
 - **Blocked by**: which other slices (if any) must complete first
 - **What it delivers**: the end-to-end behaviour this slice makes work, from the user's perspective
 - **Size**: the files it reads or edits and the lines you expect to write (deletions apart)
@@ -151,7 +160,7 @@ Show the coverage table from step 4.5 (when there is one), then ask only what ne
 4. **PRD IDs no slice covers** — the empty rows of the coverage table: add a slice, fold the ID into one, or confirm it is out of scope.
 5. **Large slices** — each slice near the largest finished as one issue, or that carries more than 10 acceptance criteria, with its files and written lines, for the user to confirm it stays one issue. Neither is a reason to split.
 6. **Splits and edges** — one line per pair kept apart, naming both slices and the reason from step 4's pass 3 (size — with the merged pair's files and written lines against the reference size; human boundary; expand–contract order), and one line per `Blocked by` edge naming the edge-rule row that produced it and its slices, for the user to override. A pair with no reason is not listed: go back to pass 3 and merge it. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
-7. **HITL choices** — each slice marked HITL, and why a human is needed (that reason becomes the block's `### Why a person`); the rest are AFK.
+7. **HITL choices** — each slice marked HITL, why a human is needed (that reason becomes the block's `### Why a person`) and its placement, first or last, with the reason **Placement** gives; the rest are AFK.
 
 Then one approve/adjust prompt: approve the breakdown as shown, or say what to adjust. Iterate until the user approves. Do not ask generic questions about granularity, blocking edges, combining slices or HITL/AFK — a breakdown with nothing to list above needs only the approve/adjust prompt.
 
