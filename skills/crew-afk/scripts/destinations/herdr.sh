@@ -37,5 +37,6 @@ live() { # <logs-dir> — see crew-afk.sh
   if err=$(herdr pane get "$pane" 2>&1 >/dev/null); then echo "herdr pane $pane"; return 0; fi
   ! grep -q pane_not_found <<<"$err" || return 1
   echo "$err"
+  echo "if the pane is gone, delete $1/run.pane and re-run"
   return 2
 }

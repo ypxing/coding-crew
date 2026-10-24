@@ -497,6 +497,7 @@ OWT_LOGS() { echo "$T/orca-wt/app-report-cli/.coding-crew/solve-feature"; }
   run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
   [ "$status" -eq 1 ]
   [[ "$output" == *'server_down'* ]]
+  [[ "$output" == *"if the pane is gone, delete $WT/.coding-crew/solve-feature/run.pane and re-run"* ]]
   git -C "$MAIN" worktree remove --force "$WT"
   stub_orca
   bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
