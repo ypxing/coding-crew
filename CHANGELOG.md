@@ -9,6 +9,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - tracker (github): `next` dispatches, and `features` counts, a ready issue whose `## Blocked by` names an issue of
   another feature once that issue is closed or `awaiting-merge`; an open, missing or deleted one still holds it back.
   Before, a blocker outside the feature blocked for ever (#621).
+- crew-afk: an orca run starts in its worktree's idle startup terminal instead of a second terminal beside it;
+  when that terminal runs an agent or a person opened another, a new terminal is created as before (#623).
 - docs: README's use-case table has a "Make one small change" row: ask your agent directly, or, for a PR the crew
   builds and reviews, `/to-issues <change>` → `/crew-afk <slug>` (#487). The add-tests and upgrade-deps rows are gone
   until those skills mature; both stay in the command list. The Actions row now reads "Let the crew build on GitHub
