@@ -5,6 +5,7 @@
 
 load helpers/solve-feature
 load helpers/yaml
+bats_require_minimum_version 1.5.0
 
 # --- usage and preconditions ---------------------------------------------------------
 
@@ -484,13 +485,15 @@ synced_branch() {
   echo mine > shared.txt && git add shared.txt && git commit -q -m "branch's shared" && git push -q origin feature/feat
   TIP=$(git rev-parse HEAD)
   main_moves shared.txt "main's version" && git checkout -q feature/feat
-  # stdout is that one line; git's own conflict report goes to stderr.
-  run bash -c 'bash "$1" sync feat feature/feat 2>/dev/null' _ "$SCRIPT"
+  # stdout is that one line; git's own conflict report and the stop's reason go to stderr.
+  run --separate-stderr bash "$SCRIPT" sync feat feature/feat
   [ "$status" -eq 4 ]
   [ "$output" = "conflicts=shared.txt" ]
   git rev-parse -q --verify MERGE_HEAD >/dev/null
   [ "$(git diff --name-only --diff-filter=U)" = shared.txt ]
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: merging origin/main into feature/feat conflicts in shared.txt: the resolver did not finish it; finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run" ]
+  # A second exit 4 is relayed as printed, so stderr carries the same recovery as the outcome.
+  [[ "$stderr" == *"solve-feature: merging origin/main into feature/feat conflicts in shared.txt: the resolver did not finish it; finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run"* ]]
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$TIP" ]
   [ ! -e .coding-crew/solve-feature/review.base ]
   # What the resolver subagent does.

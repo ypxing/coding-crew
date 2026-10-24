@@ -316,7 +316,9 @@ sync() {
     [ -n "$MERGE_CONFLICTS" ] || die_setup_clash "$default"
     [ -n "$MERGE_CONFLICTS" ] || die "merging origin/$default into $BRANCH failed (see above)"
     # Provisional: the re-call after the resolver overwrites it, so a host whose agent ended here reads a stop.
-    outcome "stopped: sync failed: merging origin/$default into $BRANCH conflicts in $MERGE_CONFLICTS: the resolver did not finish it; finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run"
+    local why="merging origin/$default into $BRANCH conflicts in $MERGE_CONFLICTS: the resolver did not finish it; finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run"
+    echo "solve-feature: $why" >&2
+    outcome "stopped: sync failed: $why"
     echo "conflicts=$MERGE_CONFLICTS"
     exit 4
   fi
