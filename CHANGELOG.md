@@ -110,6 +110,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   (#553, #581).
 - Prompts state what each step must produce and leave how to the agent (upgrade-deps 358 → 206 lines); shared
   instructions are stated once (#557, #598, #599).
+- README: shorter. The install details and the list of agents that read `.agents/skills` move to `docs/guide.md`
+  (new "Which agents" section), the review rounds are described once, and the GitHub Actions row links its setup
+  (#625).
 
 ### Fixed
 
