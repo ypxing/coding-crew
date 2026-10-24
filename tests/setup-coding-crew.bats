@@ -281,11 +281,14 @@ case "$1 $2" in
     [ -z "$PARENT_FAIL" ] || { echo 'gh: No parent issue found (HTTP 404)' >&2; exit 1; }
     printf '%s\n' "$PARENT_JSON" ;;
   "issue edit") [ -z "$EDIT_FAIL" ] || { echo "HTTP 403" >&2; exit 1; } ;;
+  "api repos/o/r/collaborators/"*/permission)
+    [ -z "$PERM_FAIL" ] || { echo 'HTTP 404' >&2; exit 1; }
+    printf '%s\n' $PERM ;;
 esac
 SH
   chmod +x "$STUB/gh"
   export TEMP_DIR RUNNER_TEMP="$TEMP_DIR" GITHUB_OUTPUT="$TEMP_DIR/out" GITHUB_REPOSITORY=o/r GITHUB_EVENT_NAME=issues \
-    INPUT_SLUG= PR_BODY= ISSUE_NUMBER=545 ISSUE_STATE=open ISSUE_LABELS='[]'
+    INPUT_SLUG= PR_BODY= ISSUE_NUMBER=545 ISSUE_STATE=open ISSUE_LABELS='[]' ISSUE_SENDER=alice PERM=$'write\nwrite'
   local open_root='{"number":544,"state":"open","labels":[{"name":"run-agent"}],"body":"Feature: feat\n\nRoot."}'
   # ev <action> <label> <issue body> — runs the step for an issues event; $output and $GITHUB_OUTPUT hold the result.
   ev() { : > "$GITHUB_OUTPUT"; rm -f "$TEMP_DIR/gh.log"; ISSUE_ACTION="$1" ISSUE_LABEL="$2" ISSUE_BODY="$3" run bash -e "$TEMP_DIR/slug-step.sh"; }
@@ -322,6 +325,28 @@ SH
     [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ] || { echo "$a: $output"; return 1; }
     ! grep -q 'issue edit' "$TEMP_DIR/gh.log" || false
   done
+  # A sender below triage starts nothing: a notice naming them, before any root lookup; triage and up go on.
+  local perm
+  for perm in $'read\nread' $'none\nnone'; do
+    PERM="$perm" PARENT_JSON="$open_root" ev closed ready-for-human 'A human issue.'
+    [ "$status" -eq 0 ]
+    [ ! -s "$GITHUB_OUTPUT" ] || { echo "$perm: $(cat "$GITHUB_OUTPUT")"; return 1; }
+    [[ "$output" == *"::notice::"*"alice"* ]]
+    [ "$(cat "$TEMP_DIR/gh.log")" = 'gh api repos/o/r/collaborators/alice/permission --jq .permission, .role_name' ]
+  done
+  PERM_FAIL=1 PARENT_JSON="$open_root" ev unlabeled ready-for-human 'A human issue.'
+  [ "$status" -eq 0 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::notice::"*"alice"* ]]
+  ! grep -q '/parent' "$TEMP_DIR/gh.log" || false
+  for perm in $'read\ntriage' $'write\nmaintain' $'admin\nadmin'; do
+    PERM="$perm" PARENT_JSON="$open_root" ev unlabeled ready-for-human 'A human issue.'
+    [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ] || { echo "$perm: $output"; return 1; }
+  done
+  # A run-agent label is not this check's: no permission call.
+  PARENT_JSON="$open_root" ev labeled run-agent 'A sub-issue.'
+  ! grep -q 'permission' "$TEMP_DIR/gh.log" || false
+
   # Otherwise a notice saying why, an empty slug and exit 0, so the solve job is skipped.
   PARENT_JSON='{"number":544,"state":"open","labels":[{"name":"enhancement"}],"body":"Feature: feat"}' ev unlabeled ready-for-human 'x'
   [ "$status" -eq 0 ]
@@ -338,7 +363,7 @@ SH
   # The human issue is itself a root: its own state and labels from the event, never the parent's.
   ISSUE_LABELS='[{"name":"run-agent"},{"name":"ready-for-human"}]' ev closed ready-for-human 'Feature: feat'
   [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
-  [ ! -e "$TEMP_DIR/gh.log" ]
+  ! grep -q '/parent' "$TEMP_DIR/gh.log" || false
   ISSUE_LABELS='[{"name":"ready-for-human"}]' ev unlabeled ready-for-human 'Feature: feat'
   [ ! -s "$GITHUB_OUTPUT" ]
   [[ "$output" == *"::notice::"*"not labelled run-agent"* ]]
@@ -352,7 +377,8 @@ SH
   [ ! -e pwned ]
   jq -e '.jobs.slug.steps[0].env | .ISSUE_ACTION == "${{ github.event.action }}" and .ISSUE_LABEL == "${{ github.event.label.name }}"
     and .ISSUE_NUMBER == "${{ github.event.issue.number }}" and .ISSUE_STATE == "${{ github.event.issue.state }}"
-    and .ISSUE_LABELS == "${{ toJSON(github.event.issue.labels) }}" and .ISSUE_BODY == "${{ github.event.issue.body }}"' "$JSON" >/dev/null
+    and .ISSUE_LABELS == "${{ toJSON(github.event.issue.labels) }}" and .ISSUE_BODY == "${{ github.event.issue.body }}"
+    and .ISSUE_SENDER == "${{ github.event.sender.login }}"' "$JSON" >/dev/null
 }
 
 @test "host file: a review round's session runs address-pr-comments on the PR, saying it is non-interactive, for both agents; the install includes the skill" {

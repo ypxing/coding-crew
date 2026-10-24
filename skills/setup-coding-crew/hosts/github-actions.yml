@@ -15,7 +15,8 @@ name: solve-feature
 # The label is not removed afterwards: the concurrency group makes a re-label wait for the run in
 # flight rather than start a second one on the same branch. It so marks the features that run here: a finished
 # `ready-for-human` issue (its label removed, as mark-done does, or the issue closed with it on) re-runs its feature
-# when the root is open and labelled `run-agent`; otherwise the slug job ends with a notice and no run.
+# when the root is open and labelled `run-agent` and whoever finished it has triage, write, maintain or admin
+# permission; otherwise the slug job ends with a notice and no run.
 #
 # The agent runs the solve-feature skill, which runs each coder, the reviewer, the fixer and the
 # PR's writer as its own subagents. The review runs inside the same job, from the skill. The PR is the
@@ -118,6 +119,7 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_STATE: ${{ github.event.issue.state }}
           ISSUE_LABELS: ${{ toJSON(github.event.issue.labels) }}
+          ISSUE_SENDER: ${{ github.event.sender.login }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REVIEW_AUTHOR: ${{ github.event.review.user.login }}
@@ -142,6 +144,14 @@ jobs:
           if [ -n "$INPUT_SLUG" ]; then
             slug="$INPUT_SLUG"
           else
+            # An issue's author may close it without triage access: only triage and up re-run a feature.
+            case "$ISSUE_ACTION" in
+              unlabeled|closed)
+                perm=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$ISSUE_SENDER/permission" --jq '.permission, .role_name' || true)
+                grep -qxE 'triage|write|maintain|admin' <<<"$perm" ||
+                  { echo "::notice::$ISSUE_SENDER has no triage access to this repo: issue #$ISSUE_NUMBER ($ISSUE_ACTION) starts no run"; exit 0; }
+                ;;
+            esac
             printf '%s\n' "$ISSUE_BODY" > "$RUNNER_TEMP/issue-body.md"
             slug="$(grep -m1 '^Feature:' "$RUNNER_TEMP/issue-body.md" | awk '{print $2}')"
             root="$ISSUE_NUMBER" root_state="$ISSUE_STATE" root_labels="$ISSUE_LABELS" sub=

@@ -57,9 +57,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 - setup-coding-crew: the Actions workflow re-runs a feature labelled `run-agent` when one of its `ready-for-human`
   issues is finished (the label removed, as `mark-done` does, or the issue closed), so a run that stopped for a
-  person no longer waits for a re-label; a feature run only locally, or whose root is closed, gets no run. `run-agent`
-  on any issue of the feature now starts it (and labels the root) instead of failing the slug step. Run
-  `/setup-coding-crew redo actions` to take it (#547).
+  person no longer waits for a re-label; a feature run only locally, or whose root is closed, or an issue finished by
+  someone without triage access, gets no run. `run-agent` on any issue of the feature now starts it (and labels the
+  root) instead of failing the slug step. Run `/setup-coding-crew redo actions` to take it (#547).
 - setup-coding-crew: the Actions workflow lets a Copilot session wait up to an hour for a background subagent
   (`COPILOT_TASK_WAIT_TIMEOUT_SECONDS`; by default Copilot gave up after 600s and ended the run mid-issue), and the
   repo variable `CODING_CREW_REF` picks the coding-crew branch or tag the runner installs. Run
