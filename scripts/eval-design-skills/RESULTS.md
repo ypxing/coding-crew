@@ -31,6 +31,8 @@ Total cost: $4.10 (judge included)
 
 **Where head fell below base:** count_ok 1/2 vs 2/2 and oversplit 1/2 vs 0/2 on slice-agent-agnostic-install (head #1 gave the smoke `--via npx` switch its own slice; base's 2/2 count came with 2/2 overmerged); oversplit 2/2 vs 1/2 on slice-promote-after-merge and slice-review-catches, and count_ok 0/2 vs 1/2 and splits_justified 0/2 vs 1/2 on slice-review-catches. Not plausibly caused by #545: every oversplit head run on those two cases is all-AFK, where the placement rule does not apply, and base oversplits there too (1/2 each, 0/2 in #412), so sonnet splits more than in #412 on both refs; at 2 runs a one-run gap is within noise.
 
+**Verdict (#546): accepted as noise by the maintainer.**
+
 ## to-issues — #412
 
 `node scripts/eval-design-skills.mjs --skill to-issues --runs 2`, base `main`, head `feature/lean-dev-loop` (the lean coder-path and planning instructions, #406).
