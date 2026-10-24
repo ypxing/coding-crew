@@ -154,7 +154,8 @@ npx skills add ypxing/coding-crew --all -g   # user level
 The project install also writes `.agents/skills/`, `.claude/skills/` and `agent/skills/` (link dirs for agents
 that create their own project dir). The tool sends telemetry to
 skills.sh unless `DISABLE_TELEMETRY` is set. To update, re-run the same command; `npx skills update` misses
-changes inside the skills' library directories.
+changes inside the skills' library directories. An install of only some skills (`-s <name>`) needs
+`-s coding-crew-lib` too: every skill runs its scripts from it.
 
 #### `bootstrap.sh`
 
@@ -188,8 +189,14 @@ Where files land:
 | pi          | `.pi/`            | `~/.pi/agent/` (`PI_CODING_AGENT_DIR`) |
 | Codex       | `.agents/skills/` | `~/.agents/skills/` (`CODEX_HOME`)     |
 
-The `codex` target is the shared `.agents/skills` location that most Agent-Skills agents read (Copilot, pi,
-Cursor, Gemini CLI, OpenCode and more; the README lists them), not Codex alone.
+#### Which agents
+
+The skills are plain [Agent Skills](https://agentskills.io): any agent that loads `SKILL.md` runs them. The
+`codex` target is the shared `.agents/skills` / `~/.agents/skills` location, not Codex alone: Codex, Copilot,
+pi, Cursor, Gemini CLI, OpenCode, Amp, Devin, Cline, Goose, Factory, Junie, Zed, Augment, Warp, Qwen Code, Kimi,
+Mistral Vibe, Crush, Kilo, Hermes, Codebuff, Rovo Dev and Zencoder read it. Claude Code, Kiro and Continue read
+only their own directories, which `npx skills` targets. The release smoke runs on Claude Code; Copilot CLI,
+Codex CLI and pi are supported too.
 
 Runtime requirements:
 

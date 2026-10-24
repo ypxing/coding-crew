@@ -27,26 +27,12 @@ get one PR at the end.
 From inside your repo:
 
 ```bash
-npx skills add ypxing/coding-crew --all      # this project
-npx skills add ypxing/coding-crew --all -g   # user level, every repo
+npx skills add ypxing/coding-crew --all      # this project (commit skills-lock.json); add -g for every repo
 ```
 
-- A project install writes `.agents/skills/`, `.claude/skills/` and `agent/skills/` (link dirs for agents that
-  create their own project dir) along with `skills-lock.json`: commit `skills-lock.json`.
-- Installing only some skills (`-s <name>`) needs `-s coding-crew-lib` too: every skill runs its scripts from it.
-- The `skills` tool sends telemetry to skills.sh unless `DISABLE_TELEMETRY` is set.
-- To update, re-run the same `npx skills add` command. Not `npx skills update`: its hash skips the skills' library directories, so it misses library changes.
-
-Or use `bootstrap.sh`, a curl-pipe install without a clone: it downloads `main`'s archive and runs its
-`install.sh`, which adds the per-platform config-dir relocation (`CLAUDE_CONFIG_DIR`, `COPILOT_HOME`,
-`PI_CODING_AGENT_DIR`, `CODEX_HOME`) and a warning when user-level copies would shadow a project install. For a
-pinned or offline install, run `./install.sh` from a clone instead:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash   # add `-s -- --project` for one repo
-```
-
-To update a `bootstrap.sh` install, run it again with `| bash -s -- --update`.
+Installing only some skills (`-s <name>`)? Add `-s coding-crew-lib` too: every skill runs its scripts from it.
+To update, re-run the same command. The [install guide](docs/guide.md#install) covers `bootstrap.sh`, a pinned
+install from a clone, and what lands where.
 
 Then, inside your coding agent:
 
@@ -57,19 +43,8 @@ Then, inside your coding agent:
 /crew-afk status                                  # which PRs are ready for you
 ```
 
-Where `/name` is not your agent's form, ask your agent for the skill by name: Codex `$crew-grill`,
-pi `/skill:crew-grill`, Amp has no slash form.
-
-That's the whole workflow.
-
-### Which agents
-
-The skills are plain [Agent Skills](https://agentskills.io): any agent that loads `SKILL.md` runs them.
-`install.sh`'s `codex` target is the shared `.agents/skills` / `~/.agents/skills` location, which Codex, Copilot,
-pi, Cursor, Gemini CLI, OpenCode, Amp, Devin, Cline, Goose, Factory, Junie, Zed, Augment, Warp, Qwen Code, Kimi,
-Mistral Vibe, Crush, Kilo, Hermes, Codebuff, Rovo Dev and Zencoder read. Claude Code, Kiro and Continue read only
-their own directories, which `npx skills` targets. The release smoke runs on Claude Code; Copilot CLI, Codex CLI
-and pi are supported too.
+That's the whole workflow. Where `/name` is not your agent's form, ask for the skill by name: Codex
+`$crew-grill`, pi `/skill:crew-grill`; Amp has no slash form. [Which agents run the skills](docs/guide.md#which-agents).
 
 ## How it works
 
@@ -85,17 +60,12 @@ flowchart LR
     review -- "something does" --> needs(["🙋 <b>PR lists what needs you</b>"])
 ```
 
-1. **Plan.** `/crew-grill` questions your idea until the edge cases are decided, then splits the work
-   into small issues with testable acceptance criteria. If you're starting from a fuzzy idea,
-   `/crew-brainstorm` shapes it first.
-2. **Build.** `/crew-afk` starts the build in the feature's own worktree and returns at once.
-   It hands each issue, in order, to a fresh coder on one branch. Each one has to pass
-   your own checks and meet its acceptance criteria before it lands in the feature's draft PR.
-3. **Review.** A reviewer reads the whole feature against the plan and catches what no single issue
-   shows. The crew fixes the findings, gated by your checks, and reviews once more only when it fixed a
-   critical, high or medium one; after that second round the run stops.
-4. **Ship.** The PR is marked ready when nothing needs a person; otherwise it lists what does. You
-   review one PR.
+1. **Plan.** `/crew-grill` (or `/crew-brainstorm` for a fuzzy idea) settles the edge cases and splits the work
+   into small issues with testable acceptance criteria.
+2. **Build.** `/crew-afk` hands each issue to a fresh coder in the feature's own worktree; an issue lands only
+   when it passes your checks.
+3. **Review.** A reviewer reads the whole feature against the plan; the crew fixes what it found, then stops.
+4. **Ship.** You get one PR: marked ready, or listing what needs you.
 
 ## What people use it for
 
@@ -107,7 +77,7 @@ flowchart LR
 | 🧪 **Cover risky untested code**          | `/add-tests` → `/crew-afk <slug>`                            |
 | 📦 **Upgrade dependencies safely**        | `/upgrade-deps` → `/crew-afk <slug>`                         |
 | 🔀 **Build several features in parallel** | one `/crew-afk <slug>` per feature, then `/crew-afk status`  |
-| ☁️ **Build on GitHub Actions**            | `/setup-coding-crew`, then label the feature's root issue `run-agent` |
+| ☁️ **Build on GitHub Actions**            | `/setup-coding-crew`, then label the feature's root issue `run-agent` ([setup](docs/guide.md#solve-feature-on-github-actions-optional)) |
 | 💬 **Clear a PR's review comments**       | `/address-pr-comments`                                       |
 | 🎯 **Pair on a single issue yourself**    | `/solve-issue <issue>`                                       |
 
@@ -118,9 +88,9 @@ Small, well-defined changes skip the Q&A. `/crew-grill` hands them straight to t
 - ✅ **Test-first, always.** Every coder works red, green, refactor.
 - 🚦 **Nothing red merges.** Your own checks are the gate, not the model's opinion of its own work.
 - 🔍 **A reviewer that sees the whole feature.** It reviews against the plan, not one diff at a time.
-- 🔁 **Fixes itself, within bounds.** At most two review rounds, the second only after it fixed a critical, high or medium finding, each fix gated by your checks; then it stops.
+- 🔁 **Fixes itself, within bounds.** It fixes what the review found, each fix gated by your checks, then stops.
 - 🙋 **Only what needs you.** A PR it could not finish lists what needs a person; one it could is marked ready.
-- 🧩 **Agent-agnostic.** Plain Agent Skills that any agent loading `SKILL.md` can run; the release smoke runs on Claude Code, and Copilot CLI, Codex CLI and [pi](https://github.com/badlogic/pi-mono) are supported too. Issues stay as local markdown or in GitHub Issues.
+- 🧩 **Agent-agnostic.** Plain [Agent Skills](https://agentskills.io) that any agent loading `SKILL.md` can run. Issues stay as local markdown or in GitHub Issues.
 
 ## The toolkit
 

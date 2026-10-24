@@ -72,6 +72,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- README: shorter. The install details and the list of agents that read `.agents/skills` move to `docs/guide.md`
+  (new "Which agents" section), the review rounds are described once, and the GitHub Actions row links its setup.
 - address-pr-comments, tracker: only comments by Copilot's reviewer, the identity the agent posts as, or a user with
   write, maintain or admin permission reach the agent: a round reads the PR through the new
   `coding-crew-lib/scripts/tracker/pr-comments.mjs`, and `fetch --comments` on the github tracker drops the rest,
