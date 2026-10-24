@@ -501,6 +501,7 @@ jobs:
               "stopped: "*" checks failed: "*)
                 ref=${ref%% checks failed: *}; files="$logs/coder.report.md $logs/${ref//\//_}.checks.log" ;;
               "stopped: "*" fix failed: "*) files=$(ls -t "$logs"/pr-*.checks.log 2>/dev/null | head -n 1) ;;
+              "stopped: sync failed: run-checks.sh"*) files="$logs/sync.checks.log" ;;
               needs-attention*) files="$logs/pr-$pr.attention.md" ;;
               *) files="" ;;
             esac

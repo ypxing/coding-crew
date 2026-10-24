@@ -490,7 +490,7 @@ synced_branch() {
   [ "$output" = "conflicts=shared.txt" ]
   git rev-parse -q --verify MERGE_HEAD >/dev/null
   [ "$(git diff --name-only --diff-filter=U)" = shared.txt ]
-  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: merging origin/main into feature/feat conflicts in shared.txt: the resolver did not finish it" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: merging origin/main into feature/feat conflicts in shared.txt: the resolver did not finish it; finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run" ]
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$TIP" ]
   [ ! -e .coding-crew/solve-feature/review.base ]
   # What the resolver subagent does.
@@ -501,6 +501,19 @@ synced_branch() {
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
   [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
   [ ! -e .coding-crew/solve-feature/outcome ]
+}
+
+@test "sync merges a commit someone else pushed to origin's branch with the default branch's, gating and pushing both" {
+  synced_branch
+  local bot; bot=$(branch_moves bot.txt "a bot's commit")
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  git merge-base --is-ancestor "$bot" HEAD
+  git merge-base --is-ancestor origin/main HEAD
+  [ "$(cat "$STATE/checks.head")" = "$(git rev-parse HEAD)" ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
 }
 
 @test "sync re-run with the merge still in progress exits 1 naming the files and the recovery, not a dirty tree" {
@@ -989,6 +1002,12 @@ J
   : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"
   grep -qxF 'FAIL: test_after_fix' "$GITHUB_STEP_SUMMARY"
+  ! grep -q 'report of the last coder' "$GITHUB_STEP_SUMMARY" || false
+  echo 'stopped: sync failed: run-checks.sh exit 1 on feature/feat merged with origin/main — log: x' > .coding-crew/solve-feature/outcome
+  echo 'FAIL: test_after_sync' > .coding-crew/solve-feature/sync.checks.log
+  : > "$GITHUB_STEP_SUMMARY"
+  run bash -e "$TEMP_DIR/last-step.sh"
+  grep -qxF 'FAIL: test_after_sync' "$GITHUB_STEP_SUMMARY"
   ! grep -q 'report of the last coder' "$GITHUB_STEP_SUMMARY" || false
   # git's reason for a refused workflow-file push quotes names in backticks: the heading stays one code span.
   line='stopped: 3 land push refused: refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission'

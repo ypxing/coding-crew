@@ -296,7 +296,7 @@ land() {
   echo "pr=$PR_N"
 }
 
-# sync — before the first review: merge origin's default branch into <branch>, gate a merge with the checks, push it,
+# sync — before the first review: merge origin's default branch (then origin's <branch>) into <branch>, gate a merge with the checks, push it,
 # and save HEAD as the head the reviewer starts from. A conflict exits 4 with the merge left in progress, printing
 # conflicts=<files>; once someone finishes it, a re-run gates and pushes it. Success is judged here, never from
 # whoever resolved it: no merge in progress, a clean tree, the default branch in HEAD.
@@ -316,11 +316,16 @@ sync() {
     [ -n "$MERGE_CONFLICTS" ] || die_setup_clash "$default"
     [ -n "$MERGE_CONFLICTS" ] || die "merging origin/$default into $BRANCH failed (see above)"
     # Provisional: the re-call after the resolver overwrites it, so a host whose agent ended here reads a stop.
-    outcome "stopped: sync failed: merging origin/$default into $BRANCH conflicts in $MERGE_CONFLICTS: the resolver did not finish it"
+    outcome "stopped: sync failed: merging origin/$default into $BRANCH conflicts in $MERGE_CONFLICTS: the resolver did not finish it; finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run"
     echo "conflicts=$MERGE_CONFLICTS"
     exit 4
   fi
   rm -f "$LOGS/outcome"
+  # As in land: a commit someone else pushed to the branch would refuse the push, on every re-run.
+  if ! merge_in "origin/$BRANCH"; then
+    [ -n "$MERGE_CONFLICTS" ] || die "merging origin/$BRANCH into $BRANCH failed (see above)"
+    die "merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS: merge it by hand, commit, then re-run"
+  fi
   if ! git merge-base --is-ancestor HEAD "origin/$BRANCH" 2>/dev/null; then
     checks_lib
     bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
