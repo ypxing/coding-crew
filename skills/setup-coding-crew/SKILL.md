@@ -105,6 +105,11 @@ Only with `tracker=github`. With `local`, say "The solve-feature Actions workflo
 label trigger reads a root issue's `Feature:` line, and `.coding-crew/scratch/` issues are not in the runner's checkout",
 and go to Step 4.
 
+The workflow a repo gets is a short caller, `<skill-dir>/hosts/github-actions.yml`: its triggers, permissions and
+the secrets it passes, and one job that runs coding-crew's reusable workflow
+`ypxing/coding-crew/.github/workflows/crew-solve-feature.yml` at the release tag on its `uses:` line. The runner
+installs that release's skills, so the repo variable `CODING_CREW_REF` is no longer read.
+
 ```bash
 WF=.github/workflows/solve-feature.yml
 if [ ! -f "$WF" ]; then echo absent
@@ -125,12 +130,24 @@ On yes, ask which agent CLI the runner uses, and keep the answer as `<agent>`:
 - `claude`: Claude Code, billed through a repo secret the user adds: `ANTHROPIC_API_KEY` (an Anthropic Console
   key) or `CLAUDE_CODE_OAUTH_TOKEN` (what `claude setup-token` prints, billed to their Claude subscription).
 
+The caller's tag must be released (coding-crew installs from `main`, which can be ahead of its last release), so
+the block checks it before writing anything:
+
 ```bash
-mkdir -p .github/workflows
-cp "<skill-dir>/hosts/github-actions.yml" .github/workflows/solve-feature.yml
-gh label create run-agent --force
-gh variable set CREW_AGENT --body <agent>
+TAG=$(sed -nE 's#^ *uses: ypxing/coding-crew/\.github/workflows/crew-solve-feature\.yml@([^ ]+)$#\1#p' "<skill-dir>/hosts/github-actions.yml")
+if ! ERR=$(gh api "repos/ypxing/coding-crew/git/ref/tags/$TAG" 2>&1 >/dev/null); then
+  if grep -q 'HTTP 404' <<<"$ERR"; then
+    echo "coding-crew's workflow tag $TAG is not released yet: re-run after the release, or install from a release tag"
+  else echo "$ERR"; fi
+else
+  mkdir -p .github/workflows
+  cp "<skill-dir>/hosts/github-actions.yml" .github/workflows/solve-feature.yml
+  gh label create run-agent --force
+  gh variable set CREW_AGENT --body <agent>
+fi
 ```
+
+When it prints the not-released line or the tag check's error, nothing was written: say so and go to Step 4.
 
 The runner's fresh checkout has no `~/.coding-crew/`, so a tracker set only at user level reads as `local`
 there. When the project's `config.json` has no `tracker` section, write it, keeping its other sections:
@@ -155,12 +172,14 @@ workflow `identical` and runs neither. With `claude`, tell the user to add the s
 `! gh secret set ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`), which prompts for the value; never ask for
 it in the conversation. For Copilot's review of a PR a run marks ready, the user may add a fine-grained PAT with
 Pull requests: write the same way, `! gh secret set COPILOT_GITHUB_TOKEN`; without it the job warns and they
-request Copilot by hand. Then point the user to the workflow's header comment (`# Billing`) for who pays for the
-runs, and say how a run starts: label any issue of a feature `run-agent`, or run the workflow by hand with
+request Copilot by hand. Then point the user to the reusable workflow's header comment (`# Billing`) for who pays
+for the runs, and say how a run starts: label any issue of a feature `run-agent`, or run the workflow by hand with
 the slug; and that a finished `ready-for-human` issue of a `run-agent` feature re-runs it. Tell them too that an issue whose change touches `.github/workflows/` cannot land from a runner — the
 workflow's `GITHUB_TOKEN` never gets the `workflows` scope — so such an issue is run locally, for example with
 `/solve-feature`; a run that hits one keeps its unpushed commits in the artifact's `unpushed.bundle`, and its
-summary page prints the commands that fetch them.
+summary page prints the commands that fetch them. Last, tell them the file names a coding-crew release: to update, they bump the
+tag on its `uses:` line (Dependabot's `github-actions` ecosystem opens those PRs), and its checks show on a PR as
+`run / <job>`, so a branch rule that requires the old `solve` check needs the new name.
 
 ## Step 4 — Commit hint
 
