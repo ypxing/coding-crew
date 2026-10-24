@@ -428,9 +428,11 @@ when nothing needs a person. The body opens with a line saying solve-feature (na
 the PR with agents, so nobody reads it as a person's words. Run it where an unattended agent may change the
 checkout — a worktree or a container, not the one you work in. A stop names the step and how to
 recover; a re-run skips the issues already done and reuses the branch and the PR, merging the default
-branch into it first (a conflict stops the run for you to merge by hand). Every run ends with one line in
+branch into it first (a conflict there stops the run for you to merge by hand). Before the review it merges the
+default branch in again, so the PR it marks ready does not conflict with it: a conflict there goes to a resolver
+subagent, and the run stops on it only when the resolver leaves it unresolved; the merge is gated by the checks, so a check failing on the merged tree, or a refused push, stops the run too. Every run ends with one line in
 `.coding-crew/solve-feature/outcome` for a host to read: `ready pr=<n>`, `needs-attention pr=<n>` or
-`stopped: <what> failed: <reason>`, `<what>` the subcommand that stopped (`start`, `next`) or the issue ref or
+`stopped: <what> failed: <reason>`, `<what>` the subcommand that stopped (`start`, `next`, `sync`) or the issue ref or
 `review` and its step (`2 checks`, `review fix`); no file means the run never finished.
 
 | Setting | Effect |

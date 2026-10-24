@@ -355,7 +355,7 @@ push_says() {
 
 # --- reviewed: between the reviewer and the fixer ----------------------------------------
 
-# reviewed_ready [<report json>] — both issues landed in PR #10 and next's exit 3 saved the reviewer's starting head;
+# reviewed_ready [<report json>] — both issues landed in PR #10 and sync saved the reviewer's starting head;
 # the reviewer's report is there (default: met, two findings).
 reviewed_ready() {
   loop
@@ -420,7 +420,7 @@ reviewed_stops() {
 @test "reviewed keeps config.json and an untracked dev commands file" {
   loop
   git rm -q --cached .coding-crew/config.json .coding-crew/dev-commands.json && git commit -q -m "setup untracked"
-  run bash "$SCRIPT" next feat; [ "$status" -eq 3 ]
+  run bash "$SCRIPT" sync feat feature/feat; [ "$status" -eq 0 ]
   report '{"spec":"met","gaps":[],"findings":[]}'
   local base; base=$(git rev-parse HEAD)
   echo '{"test":"make check"}' > .coding-crew/dev-commands.json
@@ -491,7 +491,7 @@ reviewed_stops() {
 @test "the field case: a zero-finding review whose reviewer rewrote yarn.lock and left package-lock.json gets no commit and pushes neither" {
   loop
   echo v1 > yarn.lock && git add yarn.lock && git commit -q -m "yarn.lock" && git push -q origin feature/feat
-  run bash "$SCRIPT" next feat; [ "$status" -eq 3 ]
+  run bash "$SCRIPT" sync feat feature/feat; [ "$status" -eq 0 ]
   report '{"spec":"met","gaps":[],"findings":[]}'
   local tip; tip=$(git rev-parse HEAD)
   echo v2 > yarn.lock && echo '{}' > package-lock.json
@@ -516,7 +516,7 @@ reviewed_stops() {
   git checkout -q feature/feat
   rm .coding-crew/solve-feature/review.base
   run bash "$SCRIPT" reviewed feat 10 feature/feat
-  reviewed_stops "no saved head at $WORK/.coding-crew/solve-feature/review.base: run next feat first"
+  reviewed_stops "no saved head at $WORK/.coding-crew/solve-feature/review.base: run sync feat feature/feat first"
   [ -f new.txt ]
   [ ! -e .coding-crew/solve-feature/pr-10.discarded.md ]
 }
@@ -571,6 +571,7 @@ git_fails() {
   local tip; tip=$(git rev-parse HEAD)
   run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
   run bash "$SCRIPT" next feat; [ "$status" -eq 3 ]
+  run bash "$SCRIPT" sync feat feature/feat; [ "$status" -eq 0 ]
   report '{"spec":"met","gaps":[],"findings":[]}'
   run bash "$SCRIPT" reviewed feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }

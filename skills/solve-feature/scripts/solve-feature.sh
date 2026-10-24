@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# solve-feature.sh start|next|land|reviewed|fix|describe — the guards of solve-feature's loop. SKILL.md drives the
-# loop and runs each issue's coder (between `next` and `land`), the review's reviewer (before `reviewed`) and fixer
+# solve-feature.sh start|next|land|sync|reviewed|fix|describe — the guards of solve-feature's loop. SKILL.md drives the
+# loop and runs each issue's coder (between `next` and `land`), a conflicting merge's resolver (between `sync`'s exit 4
+# and its re-run), the review's reviewer (before `reviewed`) and fixer
 # (before `fix`) and the PR's writer (before `describe`) as subagents of the host agent; every guard is an exit code here.
-#   start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | reviewed <slug> <pr> <branch>
-#   | fix <slug> <pr> <branch> | describe <slug> <pr> — each function's comment states its contract.
+#   start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch>
+#   | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr> — each function's comment states its contract.
 # Exit: 0 ok; 1 a stop (its one-line result in .coding-crew/solve-feature/outcome); 2 a usage error; 3 from next
-# when no ready issue is left.
+# when no ready issue is left; 4 from sync when its merge of the default branch conflicts, left in progress.
 set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGS=""
@@ -14,7 +15,7 @@ outcome() { [ -z "$LOGS" ] || printf '%s\n' "$1" >"$LOGS/outcome"; }
 die() { echo "solve-feature: $*" >&2; outcome "stopped: $CMD failed: $*"; exit 1; }
 usage() {
   [ -z "${1:-}" ] || echo "solve-feature: $1" >&2
-  echo "usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>" >&2; exit 2
+  echo "usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>" >&2; exit 2
 }
 
 CMD="${1:-}"; [ $# -eq 0 ] || shift
@@ -27,6 +28,7 @@ case "$CMD" in
     esac; done ;;
   next) [ $# -eq 1 ] || usage; SLUG="$1" ;;
   land) [ $# -eq 3 ] || usage; SLUG="$1" REF="$2" BRANCH="$3" ;;
+  sync) [ $# -eq 2 ] || usage; SLUG="$1" BRANCH="$2" ;;
   reviewed) [ $# -eq 3 ] && [[ "$2" =~ ^[0-9]+$ ]] || usage; SLUG="$1" PR="$2" BRANCH="$3" REF=review ;;
   fix) [ $# -eq 3 ] && [[ "$2" =~ ^[0-9]+$ ]] || usage; SLUG="$1" PR="$2" BRANCH="$3" REF=review ;;
   describe) [ $# -eq 2 ] && [[ "$2" =~ ^[0-9]+$ ]] || usage; SLUG="$1" PR="$2" ;;
@@ -66,17 +68,25 @@ push() {
   return 1
 }
 
-# merge_in <ref> — merge <ref> into HEAD unless it is already there, always as a merge commit, so the branch's own
-# commits stay its first-parent line. On failure the merge is aborted, MERGE_CONFLICTS holds the conflicting files
-# (empty when git refused for another reason) and it returns 1: the caller decides.
+# merge_in [--keep] <ref> — merge <ref> into HEAD unless it is already there, always as a merge commit, so the
+# branch's own commits stay its first-parent line. On failure MERGE_CONFLICTS holds the conflicting files (empty when
+# git refused for another reason) and it returns 1: the caller decides. The merge is aborted, unless --keep leaves a
+# conflicting one in progress for someone to finish.
 MERGE_CONFLICTS=""
 merge_in() {
+  local keep=""; [ "$1" != --keep ] || { keep=1; shift; }
   MERGE_CONFLICTS=""
   ! git merge-base --is-ancestor "$1" HEAD || return 0
   git merge -q --no-ff --no-edit "$1" >&2 && return 0
   MERGE_CONFLICTS=$(git diff --name-only --diff-filter=U | paste -sd' ' -)
-  git merge --abort 2>/dev/null || true
+  [ -n "$keep" ] && [ -n "$MERGE_CONFLICTS" ] || git merge --abort 2>/dev/null || true
   return 1
+}
+
+# default_branch — origin's default branch, as origin/HEAD names it, else main.
+default_branch() {
+  local d; d=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
+  echo "${d:-main}"
 }
 
 PR_N="" PR_IS_DRAFT=""
@@ -136,9 +146,7 @@ start() {
   # an existing one: a re-run lands on it as the last run left it, with the default branch merged in (and land and
   # fix merge in origin's copy of the branch, so a commit someone else pushed there never refuses their push).
   git fetch -q origin || die "git fetch origin failed (see above)"
-  local default
-  default=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
-  default=${default:-main}
+  local default; default=$(default_branch)
   [ "$BRANCH" != "$default" ] || die "--branch '$BRANCH': '$default' is the default branch; name a feature branch"
   BRANCH=${BRANCH:-feature/$SLUG}
   if git show-ref --verify -q "refs/heads/$BRANCH"; then git checkout -q "$BRANCH"
@@ -167,7 +175,6 @@ start() {
 }
 
 nothing_left() { # exit 3; with no open PR on the branch, the run has nothing to review and stops here
-  git rev-parse HEAD >"$LOGS/review.base"
   BRANCH=$(git branch --show-current); pr_view
   if [ -z "$PR_N" ]; then
     echo "solve-feature: nothing landed: no ready issue for $SLUG and no open PR" >&2
@@ -289,12 +296,54 @@ land() {
   echo "pr=$PR_N"
 }
 
+# sync — before the first review: merge origin's default branch (then origin's <branch>) into <branch>, gate a merge with the checks, push it,
+# and save HEAD as the head the reviewer starts from. A conflict exits 4 with the merge left in progress, printing
+# conflicts=<files>; once someone finishes it, a re-run gates and pushes it. Success is judged here, never from
+# whoever resolved it: no merge in progress, a clean tree, the default branch in HEAD.
+sync() {
+  local default clog="$LOGS/sync.checks.log" rc=0 files
+  [ "$(git branch --show-current)" = "$BRANCH" ] || die "branch changed to '$(git branch --show-current)'"
+  # Ahead of the clean-tree check, which would otherwise read an unfinished merge as a dirty tree.
+  files=$(git diff --name-only --diff-filter=U | paste -sd' ' -)
+  if [ -n "$files" ] || git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+    [ -n "$files" ] || files=$(git diff --cached --name-only | paste -sd' ' -)
+    die "a merge into $BRANCH is still in progress (${files:-no files changed}): finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run"
+  fi
+  [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || die "working tree is not clean: commit or stash first"
+  git fetch -q origin || die "git fetch origin failed (see above)"
+  default=$(default_branch)
+  if ! merge_in --keep "origin/$default"; then
+    [ -n "$MERGE_CONFLICTS" ] || die_setup_clash "$default"
+    [ -n "$MERGE_CONFLICTS" ] || die "merging origin/$default into $BRANCH failed (see above)"
+    # Provisional: the re-call after the resolver overwrites it, so a host whose agent ended here reads a stop.
+    local why="merging origin/$default into $BRANCH conflicts in $MERGE_CONFLICTS: the resolver did not finish it; finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run"
+    echo "solve-feature: $why" >&2
+    outcome "stopped: sync failed: $why"
+    echo "conflicts=$MERGE_CONFLICTS"
+    exit 4
+  fi
+  rm -f "$LOGS/outcome"
+  # As in land: a commit someone else pushed to the branch would refuse the push, on every re-run.
+  if ! merge_in "origin/$BRANCH"; then
+    [ -n "$MERGE_CONFLICTS" ] || die "merging origin/$BRANCH into $BRANCH failed (see above)"
+    die "merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS: merge it by hand, commit, then re-run"
+  fi
+  if ! git merge-base --is-ancestor HEAD "origin/$BRANCH" 2>/dev/null; then
+    checks_lib
+    bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
+    [ "$rc" != 3 ] || die "no check commands known (DISCOVER): run /setup-coding-crew, then re-run"
+    [ "$rc" = 0 ] || die "run-checks.sh exit $rc on $BRANCH merged with origin/$default — log: $clog; once fixed and committed, re-run"
+    push -u origin "$BRANCH" || die "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, re-run"
+  fi
+  git rev-parse HEAD >"$LOGS/review.base"
+}
+
 # The reviewer may run the tests and its own experiments but leaves the tree as it found it; what it left anyway
 # (installed dependencies, a commit) is discarded before the fixer runs, so fix never commits it as the fixer's.
 reviewed() {
   local base="$LOGS/review.base" report="$LOGS/pr-$PR.review.json" list="$LOGS/pr-$PR.discarded.md" saved paths redo
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop reviewer "branch changed to '$(git branch --show-current)'"
-  [ -s "$base" ] || stop reviewer "no saved head at $base: run next $SLUG first"
+  [ -s "$base" ] || stop reviewer "no saved head at $base: run sync $SLUG $BRANCH first"
   saved=$(cat "$base")
   if [ "$(git rev-parse HEAD)" != "$saved" ] || [ -n "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ]; then
     paths=$({ git diff --name-only "$saved" HEAD; git status --porcelain -uall -- "${BRANCH_WORK[@]}" | cut -c4-; } | sort -u)

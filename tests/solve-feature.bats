@@ -5,15 +5,16 @@
 
 load helpers/solve-feature
 load helpers/yaml
+bats_require_minimum_version 1.5.0
 
 # --- usage and preconditions ---------------------------------------------------------
 
 @test "no subcommand, an unknown one or a wrong argument count exits 2 with the usage line" {
   local args
-  for args in "" "feat" "run feat" "next" "land feat 2" "fix feat 10" "fix feat 10 feature/feat x" "fix feat ten feature/feat" "reviewed feat 10" "reviewed feat ten feature/feat" "describe feat" "describe feat ten" "start feat other"; do
+  for args in "" "feat" "run feat" "next" "land feat 2" "sync feat" "sync feat b x" "fix feat 10" "fix feat 10 feature/feat x" "fix feat ten feature/feat" "reviewed feat 10" "reviewed feat ten feature/feat" "describe feat" "describe feat ten" "start feat other"; do
     run bash "$SCRIPT" $args
     [ "$status" -eq 2 ] || { echo "'$args': status $status"; return 1; }
-    [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
+    [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
   done
   [ ! -f "$STATE/gh.log" ]
   [ ! -e "$WORK/.coding-crew/solve-feature/outcome" ]
@@ -418,8 +419,8 @@ EOF
   PR_EXISTS=1 CREW_REVIEWER_MODEL=opus run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
   [ "$output" = "reviewer-model=opus" ]
-  # The reviewer runs next, from this head.
-  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+  # sync saves the reviewer's starting head, not next.
+  [ ! -e .coding-crew/solve-feature/review.base ]
   [ ! -e .coding-crew/solve-feature/outcome ]
   NEXT_PRINTS='2; rm -rf /' run bash "$SCRIPT" next feat
   [ "$status" -eq 1 ]
@@ -433,6 +434,124 @@ EOF
   [ "$status" -eq 3 ]
   [[ "$output" == *"nothing landed: no ready issue for feat and no open PR"* ]]
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: next failed: nothing landed: no ready issue for feat and no open PR" ]
+}
+
+# --- sync: the default branch merged in before the review ------------------------------
+
+# synced_branch — both issues landed on feature/feat in PR #10: sync's input as the loop leaves it; TIP is its head.
+synced_branch() {
+  loop
+  [ "$LAST_PR" = 10 ]
+  TIP=$(git rev-parse HEAD)
+  rm -f "$STATE/checks.log" .coding-crew/solve-feature/review.base
+}
+
+@test "sync with origin's default branch already in the branch exits 0, runs no checks, pushes nothing and saves HEAD as review.base" {
+  synced_branch
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git rev-parse HEAD)" = "$TIP" ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$TIP" ]
+  [ ! -e "$STATE/checks.log" ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$TIP" ]
+  [ ! -e .coding-crew/solve-feature/outcome ]
+}
+
+@test "sync whose merge is clean merges origin's default branch, gates it with the checks, pushes it and saves the merged HEAD" {
+  synced_branch
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  git merge-base --is-ancestor origin/main HEAD
+  git merge-base --is-ancestor "$TIP" HEAD
+  [ "$(cat "$STATE/checks.head")" = "$(git rev-parse HEAD)" ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+}
+
+@test "sync whose checks fail on the merged tree exits 1 with an outcome naming their log, pushing nothing" {
+  synced_branch
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  CHECKS_RC=1 run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: run-checks.sh exit 1 on feature/feat merged with origin/main — log: $WORK/.coding-crew/solve-feature/sync.checks.log; once fixed and committed, re-run" ]
+  [ -s .coding-crew/solve-feature/sync.checks.log ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$TIP" ]
+  [ ! -e .coding-crew/solve-feature/review.base ]
+}
+
+@test "sync whose merge conflicts exits 4 printing conflicts= with the merge in progress; resolved and committed, sync again pushes it" {
+  synced_branch
+  echo mine > shared.txt && git add shared.txt && git commit -q -m "branch's shared" && git push -q origin feature/feat
+  TIP=$(git rev-parse HEAD)
+  main_moves shared.txt "main's version" && git checkout -q feature/feat
+  # stdout is that one line; git's own conflict report and the stop's reason go to stderr.
+  run --separate-stderr bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 4 ]
+  [ "$output" = "conflicts=shared.txt" ]
+  git rev-parse -q --verify MERGE_HEAD >/dev/null
+  [ "$(git diff --name-only --diff-filter=U)" = shared.txt ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: merging origin/main into feature/feat conflicts in shared.txt: the resolver did not finish it; finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run" ]
+  # A second exit 4 is relayed as printed, so stderr carries the same recovery as the outcome.
+  [[ "$stderr" == *"solve-feature: merging origin/main into feature/feat conflicts in shared.txt: the resolver did not finish it; finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run"* ]]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$TIP" ]
+  [ ! -e .coding-crew/solve-feature/review.base ]
+  # What the resolver subagent does.
+  echo both > shared.txt && git add shared.txt && git commit -q --no-edit
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  git merge-base --is-ancestor origin/main HEAD
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+  [ ! -e .coding-crew/solve-feature/outcome ]
+}
+
+@test "sync merges a commit someone else pushed to origin's branch with the default branch's, gating and pushing both" {
+  synced_branch
+  local bot; bot=$(branch_moves bot.txt "a bot's commit")
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  git merge-base --is-ancestor "$bot" HEAD
+  git merge-base --is-ancestor origin/main HEAD
+  [ "$(cat "$STATE/checks.head")" = "$(git rev-parse HEAD)" ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+}
+
+@test "sync re-run with the merge still in progress exits 1 naming the files and the recovery, not a dirty tree" {
+  synced_branch
+  echo mine > shared.txt && git add shared.txt && git commit -q -m "branch's shared" && git push -q origin feature/feat
+  main_moves shared.txt "main's version" && git checkout -q feature/feat
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 4 ]
+  local why="a merge into feature/feat is still in progress (shared.txt): finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run"
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: $why" ]
+  # Resolved and staged, but not committed: MERGE_HEAD alone.
+  echo both > shared.txt && git add shared.txt
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: $why" ]
+  [[ "$output" != *"not clean"* ]]
+}
+
+@test "sync on another branch, a dirty tree or a refused push exits 1 naming it" {
+  synced_branch
+  run bash "$SCRIPT" sync feat other
+  [ "$status" -eq 1 ]
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: sync failed: branch changed to 'feature/feat'" ]]
+  echo dirt > dirt.txt
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"working tree is not clean"* ]]
+  rm dirt.txt
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  refuse_pushes
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: git push failed: pre-receive hook declined; once it can push, or once you have pushed it, re-run" ]
 }
 
 @test "issues run lowest number first, skipping closed and blocked-labelled issues and any whose blocker is neither CLOSED nor awaiting-merge" {
@@ -617,6 +736,15 @@ EOF
   local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
   grep -qF 'FIX: findings=<k> needs-attention=<a> review-again=yes|no' "$skill"
   grep -qF '`review-again=yes` means run 3.1–3.3 once more; after the second review, go on to 3.4 whatever it prints' "$skill"
+}
+
+@test "SKILL.md syncs once before the first review, resolving an exit 4 with one subagent on coder-model= before one re-run" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
+  grep -qF 'Before 3.1, once (a second review round does not sync): `bash "<skill-dir>/scripts/solve-feature.sh" sync <slug> <branch>`' "$skill"
+  grep -qF 'the repo'"'"'s working directory, on `coder-model=` as for each issue'"'"'s coder — with exactly this prompt: `Finish the' "$skill"
+  local prompt; prompt=$(awk '/with exactly this prompt: `Finish the/{f=1} f; f && /ask no questions`/{exit}' "$skill" | tr '\n' ' ' | sed 's/^.*prompt: `//; s/`.*//; s/  */ /g')
+  [ "$prompt" = "Finish the merge in progress in <repo>, resolving the conflicts in <files> so that both sides' intent is kept, reading <repo>/.coding-crew/solve-feature/spec.md and the commits being merged in (git log HEAD..MERGE_HEAD); commit with git commit --no-edit. This run is non-interactive; ask no questions" ] || { echo "$prompt"; return 1; }
+  grep -qF 'again, once: any non-zero exit of that run, 4 included, stops the run like any other' "$skill"
 }
 
 @test "SKILL.md starts the fixer on reviewed's findings=, and a stop's recovery is for a person, never the agent" {
@@ -877,6 +1005,12 @@ J
   : > "$GITHUB_STEP_SUMMARY"
   run bash -e "$TEMP_DIR/last-step.sh"
   grep -qxF 'FAIL: test_after_fix' "$GITHUB_STEP_SUMMARY"
+  ! grep -q 'report of the last coder' "$GITHUB_STEP_SUMMARY" || false
+  echo 'stopped: sync failed: run-checks.sh exit 1 on feature/feat merged with origin/main — log: x' > .coding-crew/solve-feature/outcome
+  echo 'FAIL: test_after_sync' > .coding-crew/solve-feature/sync.checks.log
+  : > "$GITHUB_STEP_SUMMARY"
+  run bash -e "$TEMP_DIR/last-step.sh"
+  grep -qxF 'FAIL: test_after_sync' "$GITHUB_STEP_SUMMARY"
   ! grep -q 'report of the last coder' "$GITHUB_STEP_SUMMARY" || false
   # git's reason for a refused workflow-file push quotes names in backticks: the heading stays one code span.
   line='stopped: 3 land push refused: refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission'

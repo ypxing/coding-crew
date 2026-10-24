@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: before the review, a new `sync` step merges the default branch into the feature branch, gates the
+  merge with the checks and pushes it, so a PR the run marks ready no longer conflicts with a main that moved during
+  the run. A conflict goes to one fresh resolver subagent; the run stops only when it is left unresolved, or when the
+  checks fail on the merged tree (#633).
 - solve-feature: what a coder or the fixer says a person must do or decide (`coder.notes.md`, `pr-<n>.notes.md`)
   is posted on the PR as one comment each once its work is pushed, so it survives a stop, a re-run and a fresh
   Actions runner; before, it stayed in the coder's report and nobody saw it unless relayed by hand (#622).
