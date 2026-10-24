@@ -191,7 +191,7 @@ host_json() {
 }
 # step_run <job> <step name> — that step's run script, into $TEMP_DIR/<job>-step.sh.
 step_run() {
-  jq -r --arg n "$2" ".jobs.$1.steps[] | select(.name == \$n) | .run" "$JSON" > "$TEMP_DIR/$1-step.sh"
+  jq -r --arg j "$1" --arg n "$2" '.jobs[$j].steps[] | select(.name == $n) | .run' "$JSON" > "$TEMP_DIR/$1-step.sh"
   [ -s "$TEMP_DIR/$1-step.sh" ]
 }
 
@@ -210,7 +210,7 @@ step_run() {
   jq -e '.jobs.slug.steps[0].env.PR_BODY == "${{ github.event.pull_request.body }}"' "$JSON" >/dev/null
 }
 
-@test "host file: a review round's slug comes from the PR body's block, only for Copilot's reviewer or a user with write, maintain or admin; a label run's from the root issue, the same slug" {
+@test "host file: a review round's slug comes from the PR body's block, only on the repo's own PR and for Copilot's reviewer or a user with write, maintain or admin; a label run's from the root issue, the same slug" {
   host_json
   step_run slug "Read the slug"
   cat > "$STUB/gh" <<'SH'
@@ -220,7 +220,7 @@ echo "gh $*" >> "$TEMP_DIR/gh.log"
 printf '%s\n' $GH_PERM
 SH
   chmod +x "$STUB/gh"
-  export TEMP_DIR RUNNER_TEMP="$TEMP_DIR" GITHUB_OUTPUT="$TEMP_DIR/out" GITHUB_REPOSITORY=o/r INPUT_SLUG= ISSUE_BODY= PR_NUMBER=12
+  export TEMP_DIR RUNNER_TEMP="$TEMP_DIR" GITHUB_OUTPUT="$TEMP_DIR/out" GITHUB_REPOSITORY=o/r INPUT_SLUG= ISSUE_BODY= PR_NUMBER=12 HEAD_REPO=o/r
   local body=$'Why.\n\n<!-- solve-feature:begin -->\nImplemented by solve-feature (`feat`).\n<!-- solve-feature:slug feat -->\n<!-- solve-feature:end -->'
   # round <author> [gh perm lines] — runs the step for a review event; $output and $GITHUB_OUTPUT hold the result.
   round() { : > "$GITHUB_OUTPUT"; rm -f "$TEMP_DIR/gh.log"; GITHUB_EVENT_NAME=pull_request_review PR_BODY="$PR_BODY" REVIEW_AUTHOR="$1" GH_PERM="$2" run bash -e "$TEMP_DIR/slug-step.sh"; }
@@ -250,6 +250,15 @@ SH
   [[ "$output" == *"::notice::"* ]]
   round 'github-actions[bot]' $'read\nread'
   [ ! -s "$GITHUB_OUTPUT" ]
+  # A fork's PR may carry a copied block: no round, and no permission call, whoever reviewed it.
+  HEAD_REPO=evil/r round alice $'write\nwrite'
+  [ "$status" -eq 0 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::notice::PR #12 comes from evil/r"* ]]
+  [ ! -e "$TEMP_DIR/gh.log" ]
+  HEAD_REPO=evil/r round 'copilot-pull-request-reviewer[bot]'
+  [ ! -s "$GITHUB_OUTPUT" ]
+  jq -e '.jobs.slug.steps[0].env.HEAD_REPO == "${{ github.event.pull_request.head.repo.full_name }}"' "$JSON" >/dev/null
   # A PR without the block is not solve-feature's, whoever reviewed it.
   PR_BODY=$'Why.\n<!-- solve-feature:slug feat -->' round 'copilot-pull-request-reviewer[bot]'
   [ "$status" -eq 0 ]
@@ -273,7 +282,7 @@ SH
   [ "$(jq -r '.jobs.solve.concurrency.group' "$JSON")" = 'solve-feature-${{ needs.slug.outputs.slug }}' ]
 }
 
-@test "host file: an issue event's slug is its own Feature: line, else its parent's; a finished human issue runs only an open run-agent root; run-agent on a sub-issue labels the root" {
+@test "host file: an issue event's slug is its own Feature: line, else its parent's; run-agent starts a run only from write access; a finished human issue runs only an open run-agent root; run-agent on a sub-issue labels the root" {
   host_json
   step_run slug "Read the slug"
   # The stub answers the parent call with $PARENT_JSON (or fails with a 404 under PARENT_FAIL) and logs every call.
@@ -297,16 +306,17 @@ SH
   # ev <action> <label> <issue body> — runs the step for an issues event; $output and $GITHUB_OUTPUT hold the result.
   ev() { : > "$GITHUB_OUTPUT"; rm -f "$TEMP_DIR/gh.log"; ISSUE_ACTION="$1" ISSUE_LABEL="$2" ISSUE_BODY="$3" run bash -e "$TEMP_DIR/slug-step.sh"; }
 
-  # Its own line makes it the root: no parent call, and run-agent on it adds no label.
+  local perm_call='gh api repos/o/r/collaborators/alice/permission --jq .permission, .role_name'
+  # Its own line makes it the root: only the labeller's permission call, no parent call, and run-agent on it adds no label.
   ev labeled run-agent $'Feature: feat\n\nRoot.'
   [ "$status" -eq 0 ]
   [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
-  [ ! -e "$TEMP_DIR/gh.log" ]
+  [ "$(cat "$TEMP_DIR/gh.log")" = "$perm_call" ]
   # A sub-issue: its parent's line, and run-agent on it labels the root.
   PARENT_JSON="$open_root" ev labeled run-agent 'A sub-issue.'
   [ "$status" -eq 0 ]
   [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
-  [ "$(cat "$TEMP_DIR/gh.log")" = "$(printf '%s\n' 'gh api repos/o/r/issues/545/parent' 'gh issue edit 544 --repo o/r --add-label run-agent')" ]
+  [ "$(cat "$TEMP_DIR/gh.log")" = "$(printf '%s\n' "$perm_call" 'gh api repos/o/r/issues/545/parent' 'gh issue edit 544 --repo o/r --add-label run-agent')" ]
   # The label refused: a warning naming the root, and the run still goes.
   EDIT_FAIL=1 PARENT_JSON="$open_root" ev labeled run-agent 'A sub-issue.'
   [ "$status" -eq 0 ]
@@ -347,9 +357,26 @@ SH
     PERM="$perm" PARENT_JSON="$open_root" ev unlabeled ready-for-human 'A human issue.'
     [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ] || { echo "$perm: $output"; return 1; }
   done
-  # A run-agent label is not this check's: no permission call.
-  PARENT_JSON="$open_root" ev labeled run-agent 'A sub-issue.'
-  ! grep -q 'permission' "$TEMP_DIR/gh.log" || false
+  # A run-agent label needs write: triage and below, or a failed call, start nothing, with no root lookup or label.
+  for perm in $'read\nread' $'read\ntriage' $'none\nnone'; do
+    PERM="$perm" PARENT_JSON="$open_root" ev labeled run-agent 'A sub-issue.'
+    [ "$status" -eq 0 ]
+    [ ! -s "$GITHUB_OUTPUT" ] || { echo "$perm: $(cat "$GITHUB_OUTPUT")"; return 1; }
+    [[ "$output" == *"::notice::alice has no write access to this repo: their label starts no run"* ]]
+    [ "$(cat "$TEMP_DIR/gh.log")" = "$perm_call" ]
+  done
+  PERM_FAIL=1 PARENT_JSON="$open_root" ev labeled run-agent 'Feature: feat'
+  [ "$status" -eq 0 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
+  for perm in $'write\nwrite' $'write\nmaintain' $'admin\nadmin'; do
+    PERM="$perm" PARENT_JSON="$open_root" ev labeled run-agent 'A sub-issue.'
+    [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ] || { echo "$perm: $output"; return 1; }
+  done
+  # A dispatch is not checked: dispatching already needs write.
+  : > "$GITHUB_OUTPUT"; rm -f "$TEMP_DIR/gh.log"
+  GITHUB_EVENT_NAME=workflow_dispatch INPUT_SLUG=feat ISSUE_ACTION= PERM=$'read\nread' run bash -e "$TEMP_DIR/slug-step.sh"
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
+  [ ! -e "$TEMP_DIR/gh.log" ]
 
   # Otherwise a notice saying why, an empty slug and exit 0, so the solve job is skipped.
   PARENT_JSON='{"number":544,"state":"open","labels":[{"name":"enhancement"}],"body":"Feature: feat"}' ev unlabeled ready-for-human 'x'
@@ -416,11 +443,11 @@ SH
 @test "host file: after a ready run, Copilot is asked to review with the PAT only when it has not reviewed; unset or refused, the step warns and passes" {
   host_json
   local name="Ask Copilot for its review"
-  step_run solve "$name"
-  # The PAT is that step's GH_TOKEN, and no other step's; it always runs after the session, before the bundle.
+  step_run request-copilot-review "$name"
+  # The PAT is that step's GH_TOKEN, and no other step's; its job runs after solve whatever solve's result.
   [ "$(jq -c '[.jobs[].steps[] | select((.env // {}) | tostring | test("COPILOT_GITHUB_TOKEN")) | .name]' "$JSON")" = "[\"$name\"]" ]
-  jq -e --arg n "$name" '.jobs.solve.steps[] | select(.name == $n) | .env.GH_TOKEN == "${{ secrets.COPILOT_GITHUB_TOKEN }}" and .if == "always()"' "$JSON" >/dev/null
-  [ "$(jq -r '.jobs.solve.steps | map(.name) | (index("Run solve-feature") < index("Ask Copilot for its review")) and (index("Ask Copilot for its review") < index("Bundle the unpushed commits"))' "$JSON")" = true ]
+  jq -e --arg n "$name" '.jobs["request-copilot-review"] | (.if | startswith("always()")) and .needs == "solve"
+    and (.steps[] | select(.name == $n) | .env.GH_TOKEN == "${{ secrets.COPILOT_GITHUB_TOKEN }}")' "$JSON" >/dev/null
   cat > "$STUB/gh" <<'SH'
 #!/usr/bin/env bash
 echo "GH_TOKEN=$GH_TOKEN gh $*" >> "$TEMP_DIR/gh.log"
@@ -430,36 +457,36 @@ case "$1 $2" in
 esac
 SH
   chmod +x "$STUB/gh"
-  export TEMP_DIR GITHUB_REPOSITORY=o/r READ_TOKEN=gha GH_REVIEWERS=alice
-  mkdir -p .coding-crew/solve-feature && echo 'ready pr=12' > .coding-crew/solve-feature/outcome
+  export TEMP_DIR GITHUB_REPOSITORY=o/r READ_TOKEN=gha GH_REVIEWERS=alice PR=12 READY=true
 
-  GH_TOKEN=pat run bash -e "$TEMP_DIR/solve-step.sh"
+  GH_TOKEN=pat run bash -e "$TEMP_DIR/request-copilot-review-step.sh"
   [ "$status" -eq 0 ]
   [ "$(cat "$TEMP_DIR/gh.log")" = "$(printf '%s\n' 'GH_TOKEN=gha gh api repos/o/r/pulls/12/reviews --paginate --jq .[].user.login' \
     'GH_TOKEN=pat gh pr edit 12 --add-reviewer @copilot')" ]
   # Copilot reviewed already: a second request would re-review, every ready round.
   rm -f "$TEMP_DIR/gh.log"
-  GH_TOKEN=pat GH_REVIEWERS='alice copilot-pull-request-reviewer[bot]' run bash -e "$TEMP_DIR/solve-step.sh"
+  GH_TOKEN=pat GH_REVIEWERS='alice copilot-pull-request-reviewer[bot]' run bash -e "$TEMP_DIR/request-copilot-review-step.sh"
   [ "$status" -eq 0 ]
   ! grep -q 'pr edit' "$TEMP_DIR/gh.log" || false
   rm -f "$TEMP_DIR/gh.log"
-  GH_TOKEN= run bash -e "$TEMP_DIR/solve-step.sh"
+  GH_TOKEN= run bash -e "$TEMP_DIR/request-copilot-review-step.sh"
   [ "$status" -eq 0 ]
   [[ "$output" == *"::warning::"*"COPILOT_GITHUB_TOKEN"*"by hand"* ]]
   ! grep -q 'pr edit' "$TEMP_DIR/gh.log" || false
-  GH_TOKEN=pat GH_EDIT_FAIL=1 run bash -e "$TEMP_DIR/solve-step.sh"
+  GH_TOKEN=pat GH_EDIT_FAIL=1 run bash -e "$TEMP_DIR/request-copilot-review-step.sh"
   [ "$status" -eq 0 ]
   [[ "$output" == *"::warning::"* ]]
   rm -f "$TEMP_DIR/gh.log"
-  GH_TOKEN=pat GH_LIST_FAIL=1 run bash -e "$TEMP_DIR/solve-step.sh"
+  GH_TOKEN=pat GH_LIST_FAIL=1 run bash -e "$TEMP_DIR/request-copilot-review-step.sh"
   [ "$status" -eq 0 ]
   [[ "$output" == *"::warning::"* ]]
   ! grep -q 'pr edit' "$TEMP_DIR/gh.log" || false
-  for line in 'needs-attention pr=12' 'stopped: 2 checks failed: x' ''; do
-    rm -f "$TEMP_DIR/gh.log" .coding-crew/solve-feature/outcome
-    [ -z "$line" ] || echo "$line" > .coding-crew/solve-feature/outcome
-    GH_TOKEN=pat run bash -e "$TEMP_DIR/solve-step.sh"
-    [ "$status" -eq 0 ]
+  # Not ready (needs-attention pr=12), or no PR at all: nothing to request.
+  local v
+  for v in 'PR=12 READY=false' 'PR= READY=false'; do
+    rm -f "$TEMP_DIR/gh.log"
+    run env $v GH_TOKEN=pat bash -e "$TEMP_DIR/request-copilot-review-step.sh"
+    [ "$status" -eq 0 ] && [[ "$output" == *"not ready"* ]]
     [ ! -e "$TEMP_DIR/gh.log" ]
   done
 }
