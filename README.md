@@ -74,8 +74,6 @@ flowchart LR
 | 🚀 **Ship a feature overnight**           | `/crew-grill <idea>` → `/crew-afk <slug>`                                                                                               |
 | 🌫️ **Start from a fuzzy idea**            | `/crew-brainstorm <idea>` → `/crew-afk <slug>`                                                                                          |
 | 🐛 **Burn down a bug backlog**            | `/to-issues <the bugs>` → `/crew-afk <slug>`                                                                                            |
-| 🧪 **Cover risky untested code**          | `/add-tests` → `/crew-afk <slug>`                                                                                                       |
-| 📦 **Upgrade dependencies safely**        | `/upgrade-deps` → `/crew-afk <slug>`                                                                                                    |
 | 🔀 **Build several features in parallel** | one `/crew-afk <slug>` per feature, then `/crew-afk status`                                                                             |
 | ☁️ **Build on GitHub Actions**            | `/setup-coding-crew`, then label the feature's root issue `run-agent` ([setup](docs/guide.md#solve-feature-on-github-actions-optional)) |
 | 💬 **Clear a PR's review comments**       | `/address-pr-comments`                                                                                                                  |
