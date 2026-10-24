@@ -11,13 +11,25 @@ prepare() { # <slug> <base-branch>
 }
 
 launch() { # <slug> <worktree> <argv…>
-  local slug="$1" wt="$2" out handle
+  local slug="$1" wt="$2" out handle=""
   shift 2
-  # --command is typed into the terminal's shell, so the argv goes in quoted.
-  out=$(orca terminal create --worktree "path:$wt" --title "$slug" --command "$(printf '%q ' "$@")" --json) ||
-    die "orca terminal create failed"
-  handle=$(jq -r '.result.terminal.handle // empty' <<<"$out")
-  [ -n "$handle" ] || die "orca terminal create named no terminal handle: $out"
+  # The worktree's startup shell takes the run when it is the only terminal: orca cannot tell an idle shell from
+  # one busy with a non-agent command, so a terminal a person opened beside it is never typed into.
+  out=$(orca terminal list --worktree "path:$wt" --json 2>/dev/null) &&
+    handle=$(jq -r '.result.terminals | select(length == 1) | .[0] | select(.agentIdentity == null) | .handle // empty' \
+      <<<"$out" 2>/dev/null) || handle=""
+  if [ -n "$handle" ]; then
+    # A re-run lists the same lone terminal again, so the stop names the one way out: closing it.
+    out=$(orca terminal send --terminal "$handle" --text "$(printf '%q ' "$@")" --enter --json) ||
+      die "orca terminal send failed: $(jq -ce '.error | {code, message}' <<<"$out" 2>/dev/null || echo "$out");" \
+        "close terminal $handle in orca and re-run"
+  else
+    # --command is typed into the terminal's shell, so the argv goes in quoted.
+    out=$(orca terminal create --worktree "path:$wt" --title "$slug" --command "$(printf '%q ' "$@")" --json) ||
+      die "orca terminal create failed"
+    handle=$(jq -r '.result.terminal.handle // empty' <<<"$out")
+    [ -n "$handle" ] || die "orca terminal create named no terminal handle: $out"
+  fi
   echo "$handle" >"$wt/.coding-crew/solve-feature/run.pane"
 }
 
