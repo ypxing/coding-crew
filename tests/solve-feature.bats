@@ -666,7 +666,8 @@ EOF
   grep -q '^ *# *schedule:' "$caller"
   [ "$(jq -r '.permissions | "\(.contents) \(.issues) \(.["pull-requests"]) \(.["copilot-requests"]) \(.actions) \(.["id-token"])"' "$cjson")" = "write write write write write write" ]
   [ "$(jq '.jobs | length' "$cjson")" -eq 1 ]
-  jq -e '.jobs[] | .uses == "ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@v2.3.0"
+  # The tag is whatever release the template names: each release commit bumps it.
+  jq -e '.jobs[] | (.uses | test("^ypxing/coding-crew/\\.github/workflows/crew-solve-feature\\.yml@v[0-9]+\\.[0-9]+\\.[0-9]+$"))
     and .with.slug == "${{ inputs.slug }}" and (has("steps") | not)' "$cjson" >/dev/null
   # The secrets by name, not `inherit`: the caller decides what the reusable workflow gets.
   [ "$(jq -c '.jobs[].secrets' "$cjson")" = '{"ANTHROPIC_API_KEY":"${{ secrets.ANTHROPIC_API_KEY }}","CLAUDE_CODE_OAUTH_TOKEN":"${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}","COPILOT_GITHUB_TOKEN":"${{ secrets.COPILOT_GITHUB_TOKEN }}","NPM_TOKEN":"${{ secrets.NPM_TOKEN }}"}' ]
@@ -708,10 +709,12 @@ EOF
   [ "$(jq -r '.jobs.solve.env.CREW_REVIEWER_MODEL' "$json")" = '${{ vars.CREW_REVIEWER_MODEL }}' ]
   grep -qxF '      CREW_CODER_MODEL: ${{ vars.CREW_CODER_MODEL }}' "$wf"
   grep -qxF '      CREW_REVIEWER_MODEL: ${{ vars.CREW_REVIEWER_MODEL }}' "$wf"
-  # The skills come from the install action at the release tag, never a clone of a branch.
+  # The skills come from the install action at the caller template's release tag, never a clone of a branch.
   ! grep -q 'git clone\|CODING_CREW_REF' "$wf" || false
-  jq -e '.jobs.solve.steps[] | select(.name == "Install coding-crew (user-level)")
-    | .uses == "ypxing/coding-crew/actions/install@v2.3.0" and .with.agent == "${{ env.CREW_AGENT }}"' "$json" >/dev/null
+  local tag; tag=$(sed -nE 's#^ *uses: ypxing/coding-crew/\.github/workflows/crew-solve-feature\.yml@(v[0-9]+\.[0-9]+\.[0-9]+)$#\1#p' "$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml")
+  [ -n "$tag" ]
+  jq -e --arg tag "$tag" '.jobs.solve.steps[] | select(.name == "Install coding-crew (user-level)")
+    | .uses == "ypxing/coding-crew/actions/install@\($tag)" and .with.agent == "${{ env.CREW_AGENT }}"' "$json" >/dev/null
   # The logs step runs whatever the run step did, and keeps .coding-crew/solve-feature/, hidden files included.
   jq -e '.jobs.solve.steps[-2] | .if == "always()" and (.uses | startswith("actions/upload-artifact@"))
     and .with.path == ".coding-crew/solve-feature/" and .with["include-hidden-files"] == true' "$json" >/dev/null
