@@ -197,7 +197,7 @@ step_run() {
   [ "$(jq -c "$on.pull_request_review.types" "$JSON")" = '["submitted"]' ]
   [ "$(jq -r "$on | has(\"pull_request_review_thread\")" "$JSON")" = false ]
   [ "$(jq -r "$on | has(\"pull_request_review_comment\")" "$JSON")" = false ]
-  [ "$(jq -c "$on.issues.types" "$JSON")" = '["labeled"]' ]
+  [ "$(jq -c "$on.issues.types" "$JSON")" = '["labeled","unlabeled","closed"]' ]
   jq -e '.jobs.slug.if | test("workflow_dispatch") and test("run-agent") and test("pull_request_review") and test("github.event.review.state != .approved.")' "$JSON" >/dev/null
   jq -e '.jobs.slug.steps[0].env.REVIEW_AUTHOR == "${{ github.event.review.user.login }}"' "$JSON" >/dev/null
   jq -e '.jobs.solve.if | test("needs.slug.outputs.slug != ..")' "$JSON" >/dev/null
@@ -267,6 +267,126 @@ SH
   GITHUB_EVENT_NAME=workflow_dispatch INPUT_SLUG=feat PR_BODY= run bash -e "$TEMP_DIR/slug-step.sh"
   [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
   [ "$(jq -r '.jobs.solve.concurrency.group' "$JSON")" = 'solve-feature-${{ needs.slug.outputs.slug }}' ]
+}
+
+@test "host file: an issue event's slug is its own Feature: line, else its parent's; a finished human issue runs only an open run-agent root; run-agent on a sub-issue labels the root" {
+  host_json
+  step_run slug "Read the slug"
+  # The stub answers the parent call with $PARENT_JSON (or fails with a 404 under PARENT_FAIL) and logs every call.
+  cat > "$STUB/gh" <<'SH'
+#!/usr/bin/env bash
+echo "gh $*" >> "$TEMP_DIR/gh.log"
+case "$1 $2" in
+  "api repos/o/r/issues/"*/parent)
+    [ -z "$PARENT_FAIL" ] || { echo 'gh: No parent issue found (HTTP 404)' >&2; exit 1; }
+    printf '%s\n' "$PARENT_JSON" ;;
+  "issue edit") [ -z "$EDIT_FAIL" ] || { echo "HTTP 403" >&2; exit 1; } ;;
+  "api repos/o/r/collaborators/"*/permission)
+    [ -z "$PERM_FAIL" ] || { echo 'HTTP 404' >&2; exit 1; }
+    printf '%s\n' $PERM ;;
+esac
+SH
+  chmod +x "$STUB/gh"
+  export TEMP_DIR RUNNER_TEMP="$TEMP_DIR" GITHUB_OUTPUT="$TEMP_DIR/out" GITHUB_REPOSITORY=o/r GITHUB_EVENT_NAME=issues \
+    INPUT_SLUG= PR_BODY= ISSUE_NUMBER=545 ISSUE_STATE=open ISSUE_LABELS='[]' ISSUE_SENDER=alice PERM=$'write\nwrite'
+  local open_root='{"number":544,"state":"open","labels":[{"name":"run-agent"}],"body":"Feature: feat\n\nRoot."}'
+  # ev <action> <label> <issue body> — runs the step for an issues event; $output and $GITHUB_OUTPUT hold the result.
+  ev() { : > "$GITHUB_OUTPUT"; rm -f "$TEMP_DIR/gh.log"; ISSUE_ACTION="$1" ISSUE_LABEL="$2" ISSUE_BODY="$3" run bash -e "$TEMP_DIR/slug-step.sh"; }
+
+  # Its own line makes it the root: no parent call, and run-agent on it adds no label.
+  ev labeled run-agent $'Feature: feat\n\nRoot.'
+  [ "$status" -eq 0 ]
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
+  [ ! -e "$TEMP_DIR/gh.log" ]
+  # A sub-issue: its parent's line, and run-agent on it labels the root.
+  PARENT_JSON="$open_root" ev labeled run-agent 'A sub-issue.'
+  [ "$status" -eq 0 ]
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
+  [ "$(cat "$TEMP_DIR/gh.log")" = "$(printf '%s\n' 'gh api repos/o/r/issues/545/parent' 'gh issue edit 544 --repo o/r --add-label run-agent')" ]
+  # The label refused: a warning naming the root, and the run still goes.
+  EDIT_FAIL=1 PARENT_JSON="$open_root" ev labeled run-agent 'A sub-issue.'
+  [ "$status" -eq 0 ]
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
+  [[ "$output" == *"::warning::"*"#544"* ]]
+  # No parent, or a parent without the line: today's error.
+  PARENT_FAIL=1 ev labeled run-agent 'A sub-issue.'
+  [ "$status" -eq 1 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::error::"*"label the feature's root issue"* ]]
+  PARENT_JSON='{"number":9,"state":"open","labels":[],"body":"An epic."}' ev labeled run-agent 'A sub-issue.'
+  [ "$status" -eq 1 ]
+  ! grep -q 'issue edit' "$TEMP_DIR/gh.log" || false
+
+  # A finished human issue under an open run-agent root re-runs the feature, for both signals; no label is added.
+  local a
+  for a in unlabeled closed; do
+    PARENT_JSON="$open_root" ev "$a" ready-for-human 'A human issue.'
+    [ "$status" -eq 0 ]
+    [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ] || { echo "$a: $output"; return 1; }
+    ! grep -q 'issue edit' "$TEMP_DIR/gh.log" || false
+  done
+  # A sender below triage starts nothing: a notice naming them, before any root lookup; triage and up go on.
+  local perm
+  for perm in $'read\nread' $'none\nnone'; do
+    PERM="$perm" PARENT_JSON="$open_root" ev closed ready-for-human 'A human issue.'
+    [ "$status" -eq 0 ]
+    [ ! -s "$GITHUB_OUTPUT" ] || { echo "$perm: $(cat "$GITHUB_OUTPUT")"; return 1; }
+    [[ "$output" == *"::notice::"*"alice"* ]]
+    [ "$(cat "$TEMP_DIR/gh.log")" = 'gh api repos/o/r/collaborators/alice/permission --jq .permission, .role_name' ]
+  done
+  PERM_FAIL=1 PARENT_JSON="$open_root" ev unlabeled ready-for-human 'A human issue.'
+  [ "$status" -eq 0 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::notice::"*"alice"* ]]
+  ! grep -q '/parent' "$TEMP_DIR/gh.log" || false
+  for perm in $'read\ntriage' $'write\nmaintain' $'admin\nadmin'; do
+    PERM="$perm" PARENT_JSON="$open_root" ev unlabeled ready-for-human 'A human issue.'
+    [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ] || { echo "$perm: $output"; return 1; }
+  done
+  # A run-agent label is not this check's: no permission call.
+  PARENT_JSON="$open_root" ev labeled run-agent 'A sub-issue.'
+  ! grep -q 'permission' "$TEMP_DIR/gh.log" || false
+
+  # Otherwise a notice saying why, an empty slug and exit 0, so the solve job is skipped.
+  PARENT_JSON='{"number":544,"state":"open","labels":[{"name":"enhancement"}],"body":"Feature: feat"}' ev unlabeled ready-for-human 'x'
+  [ "$status" -eq 0 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::notice::"*"#544 is not labelled run-agent"* ]]
+  PARENT_JSON='{"number":544,"state":"closed","labels":[{"name":"run-agent"}],"body":"Feature: feat"}' ev closed ready-for-human 'x'
+  [ "$status" -eq 0 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::notice::"*"#544 is closed"* ]]
+  PARENT_FAIL=1 ev closed ready-for-human 'x'
+  [ "$status" -eq 0 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::notice::"*"no 'Feature: <slug>' line"* ]]
+  # The human issue is itself a root: its own state and labels from the event, never the parent's.
+  ISSUE_LABELS='[{"name":"run-agent"},{"name":"ready-for-human"}]' ev closed ready-for-human 'Feature: feat'
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
+  ! grep -q '/parent' "$TEMP_DIR/gh.log" || false
+  ISSUE_LABELS='[{"name":"ready-for-human"}]' ev unlabeled ready-for-human 'Feature: feat'
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::notice::"*"not labelled run-agent"* ]]
+  ISSUE_STATE=closed ISSUE_LABELS='[{"name":"run-agent"}]' ev closed ready-for-human 'Feature: feat'
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::notice::"*"closed"* ]]
+
+  # Only a marker-shaped line names a slug, as the tracker writes it (a CRLF body too): a prose `Feature:` line on a sub-issue does not make it a root.
+  local crlf_root='{"number":544,"state":"open","labels":[{"name":"run-agent"}],"body":"Feature: feat\r\n\r\nRoot."}'
+  PARENT_JSON="$crlf_root" ev unlabeled ready-for-human $'Feature: Login flow is blocked until this lands.\r\nMore.'
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ] || { echo "$output"; return 1; }
+  PARENT_JSON="$open_root" ev labeled run-agent 'Feature: Login flow is blocked until this lands.'
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
+  grep -q 'gh issue edit 544 --repo o/r --add-label run-agent' "$TEMP_DIR/gh.log"
+
+  # A parent body that is code in a shell line stays text; every event field reaches the step through env.
+  PARENT_JSON='{"number":544,"state":"open","labels":[{"name":"run-agent"}],"body":"$(touch pwned)\nFeature: feat"}' ev labeled run-agent '$(touch pwned)'
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
+  [ ! -e pwned ]
+  jq -e '.jobs.slug.steps[0].env | .ISSUE_ACTION == "${{ github.event.action }}" and .ISSUE_LABEL == "${{ github.event.label.name }}"
+    and .ISSUE_NUMBER == "${{ github.event.issue.number }}" and .ISSUE_STATE == "${{ github.event.issue.state }}"
+    and .ISSUE_LABELS == "${{ toJSON(github.event.issue.labels) }}" and .ISSUE_BODY == "${{ github.event.issue.body }}"
+    and .ISSUE_SENDER == "${{ github.event.sender.login }}"' "$JSON" >/dev/null
 }
 
 @test "host file: a review round's session runs address-pr-comments on the PR, saying it is non-interactive, for both agents; the install includes the skill" {

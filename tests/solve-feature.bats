@@ -648,7 +648,11 @@ EOF
   [ "$status" -eq 0 ]
   # A YAML 1.1 parser (PyYAML) reads the `on` key as the boolean true.
   local on='(.on // .["true"])'
-  [ "$(jq -c "$on.issues.types" "$json")" = '["labeled"]' ]
+  [ "$(jq -c "$on.issues.types" "$json")" = '["labeled","unlabeled","closed"]' ]
+  # The slug job admits exactly: a dispatch, run-agent labelled, ready-for-human removed, an issue closed with
+  # ready-for-human on, and a review other than an approval; the label clauses only on issue events.
+  local cond; cond="$(jq -r '.jobs.slug.if | gsub("\\s+"; " ")' "$json")"
+  [ "$cond" = "github.event_name == 'workflow_dispatch' || (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'run-agent') || (github.event_name == 'issues' && github.event.action == 'unlabeled' && github.event.label.name == 'ready-for-human') || (github.event_name == 'issues' && github.event.action == 'closed' && contains(github.event.issue.labels.*.name, 'ready-for-human')) || (github.event_name == 'pull_request_review' && github.event.review.state != 'approved')" ] || { echo "$cond"; return 1; }
   [ "$(jq -r "$on.workflow_dispatch.inputs.slug.required" "$json")" = true ]
   grep -q '^ *# *schedule:' "$wf"
   [ "$(jq -r '.permissions | "\(.contents) \(.issues) \(.["pull-requests"]) \(.["copilot-requests"]) \(.actions)"' "$json")" = "write write write write write" ]

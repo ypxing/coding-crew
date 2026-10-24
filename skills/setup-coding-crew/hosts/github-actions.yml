@@ -9,10 +9,14 @@ name: solve-feature
 # the workflow by hand with the slug. A run whose fresh clone has no committed dev-commands.json discovers the
 # checks itself.
 #
-# The slug for the label trigger is the root issue's `Feature: <slug>` line, which the GitHub
-# tracker writes on every root issue; labelling any other issue fails the slug step.
+# The slug for an issue trigger is the root issue's `Feature: <slug>` line, which the GitHub tracker writes on
+# every root issue and only there: an issue without one is a sub-issue, and its parent is the root. `run-agent` on
+# any issue of the feature starts it; on a sub-issue the slug step also adds the label to the root.
 # The label is not removed afterwards: the concurrency group makes a re-label wait for the run in
-# flight rather than start a second one on the same branch.
+# flight rather than start a second one on the same branch. It so marks the features that run here: a finished
+# `ready-for-human` issue (its label removed, as mark-done does, or the issue closed with it on) re-runs its feature
+# when the root is open and labelled `run-agent` and whoever finished it has triage, write, maintain or admin
+# permission; otherwise the slug job ends with a notice and no run.
 #
 # The agent runs the solve-feature skill, which runs each coder, the reviewer, the fixer and the
 # PR's writer as its own subagents. The review runs inside the same job, from the skill. The PR is the
@@ -62,7 +66,7 @@ name: solve-feature
 # CLAUDE_CODE_OAUTH_TOKEN (printed by `claude setup-token`) bills the Claude subscription of whoever made it.
 on:
   issues:
-    types: [labeled]
+    types: [labeled, unlabeled, closed]
   # Not pull_request_review_comment: a reply on a thread is a submitted review too, so it would start a second round.
   pull_request_review:
     types: [submitted]
@@ -91,11 +95,16 @@ permissions:
 
 jobs:
   # The slug is a job of its own because a concurrency group can only read a job's outputs, never
-  # a step's: the group below needs the slug, and the label trigger has it only in the issue body, a review round
+  # a step's: the group below needs the slug, and an issue trigger has it only in the root issue's body, a review round
   # in the PR body. No slug output skips the solve job.
   slug:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'run-agent' || (github.event_name == 'pull_request_review' && github.event.review.state != 'approved')
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'run-agent')
+      || (github.event_name == 'issues' && github.event.action == 'unlabeled' && github.event.label.name == 'ready-for-human')
+      || (github.event_name == 'issues' && github.event.action == 'closed' && contains(github.event.issue.labels.*.name, 'ready-for-human'))
+      || (github.event_name == 'pull_request_review' && github.event.review.state != 'approved')
     outputs:
       slug: ${{ steps.slug.outputs.slug }}
       pr: ${{ steps.slug.outputs.pr }}
@@ -105,6 +114,12 @@ jobs:
         env:
           INPUT_SLUG: ${{ inputs.slug }}
           ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_ACTION: ${{ github.event.action }}
+          ISSUE_LABEL: ${{ github.event.label.name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_STATE: ${{ github.event.issue.state }}
+          ISSUE_LABELS: ${{ toJSON(github.event.issue.labels) }}
+          ISSUE_SENDER: ${{ github.event.sender.login }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REVIEW_AUTHOR: ${{ github.event.review.user.login }}
@@ -129,8 +144,50 @@ jobs:
           if [ -n "$INPUT_SLUG" ]; then
             slug="$INPUT_SLUG"
           else
+            # An issue's author may close it without triage access: only triage and up re-run a feature.
+            case "$ISSUE_ACTION" in
+              unlabeled|closed)
+                perm=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$ISSUE_SENDER/permission" --jq '.permission, .role_name' || true)
+                grep -qxE 'triage|write|maintain|admin' <<<"$perm" ||
+                  { echo "::notice::$ISSUE_SENDER has no triage access to this repo: issue #$ISSUE_NUMBER ($ISSUE_ACTION) starts no run"; exit 0; }
+                ;;
+            esac
+            # The tracker's marker shape only (a prose `Feature:` line is no marker), CRs dropped from web-edited bodies.
+            marker() { tr -d '\r' < "$1" | sed -nE 's/^Feature:[[:blank:]]*([A-Za-z0-9][A-Za-z0-9._-]*)[[:blank:]]*$/\1/p' | head -n 1; }
             printf '%s\n' "$ISSUE_BODY" > "$RUNNER_TEMP/issue-body.md"
-            slug="$(grep -m1 '^Feature:' "$RUNNER_TEMP/issue-body.md" | awk '{print $2}')"
+            slug="$(marker "$RUNNER_TEMP/issue-body.md")"
+            root="$ISSUE_NUMBER" root_state="$ISSUE_STATE" root_labels="$ISSUE_LABELS" sub=
+            # Only a root has the line, and a root may sit under an epic that has none: its own body wins.
+            if [ -z "$slug" ] && gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/parent" > "$RUNNER_TEMP/parent.json"; then
+              jq -r '.body // ""' "$RUNNER_TEMP/parent.json" > "$RUNNER_TEMP/root-body.md" 2>/dev/null || true
+              slug="$(marker "$RUNNER_TEMP/root-body.md")"
+              root="$(jq -r '.number // empty' "$RUNNER_TEMP/parent.json" 2>/dev/null || true)"
+              root_state="$(jq -r '.state // empty' "$RUNNER_TEMP/parent.json" 2>/dev/null || true)"
+              root_labels="$(jq -c '.labels // []' "$RUNNER_TEMP/parent.json" 2>/dev/null || true)"
+              sub=1
+            fi
+            case "$ISSUE_ACTION" in
+              unlabeled|closed)
+                # A human issue is done: re-run only a feature that runs here and has something left to land.
+                why=
+                if [ -z "$slug" ]; then why="no 'Feature: <slug>' line on it or its parent"
+                elif [ "$root_state" != open ]; then why="its root #$root is closed"
+                elif ! jq -e 'any(.[]?; .name == "run-agent")' <<<"$root_labels" >/dev/null 2>&1; then
+                  why="its root #$root is not labelled run-agent"
+                fi
+                if [ -n "$why" ]; then
+                  echo "::notice::issue #$ISSUE_NUMBER ($ISSUE_ACTION $ISSUE_LABEL): $why: no run"
+                  exit 0
+                fi
+                ;;
+              *)
+                # The root carries the label a human-done event reads; added with github.token, it starts no run.
+                if [ -n "$slug" ] && [ -n "$sub" ]; then
+                  gh issue edit "$root" --repo "$GITHUB_REPOSITORY" --add-label run-agent ||
+                    echo "::warning::could not label root issue #$root run-agent: label it by hand, or a finished human issue will not re-run the feature"
+                fi
+                ;;
+            esac
           fi
           if [ -z "$slug" ]; then
             echo "::error::no 'Feature: <slug>' line in the issue body: label the feature's root issue"
