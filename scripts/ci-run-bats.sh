@@ -13,6 +13,8 @@ if [[ "${1:-}" == --log-dir ]]; then
   LOG_DIR="$2"; shift 2
 fi
 [[ $# -ge 1 ]] || usage
+# Run under xargs, bats can hang on a file that is not there (an unmatched glob arrives as its own pattern).
+for f in "$@"; do [[ -f "$f" ]] || { echo "ci-run-bats.sh: no such file: $f" >&2; exit 2; }; done
 if [[ -z "$LOG_DIR" ]]; then
   LOG_DIR="$(mktemp -d)"
   trap 'rm -rf "$LOG_DIR"' EXIT
