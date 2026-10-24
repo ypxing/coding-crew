@@ -55,6 +55,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- CI: `scripts/ci-run-bats.sh` stops with exit 2 and "no such file" when a path it is given does not exist, such
+  as an unmatched glob, instead of hanging (#619).
 - solve-feature, crew-review, to-issues: a solve-feature PR body names its spec in one line (`Spec: PRD #<n>,
   feature `<slug>``) instead of copying it into a `<details>` block, and lists "the reviewer found the spec unmet"
   only when no gap says what; crew-review, given such a PR and no spec, reads the feature's PRD and issues from its
