@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- crew-afk: a dispatch on a feature whose run is still going is refused on every destination, not only local: a
+  second herdr or orca dispatch no longer starts a concurrent run in the same worktree. `status` and `wait` report an
+  orca/herdr run whose terminal closed without an outcome as ended instead of waiting for good, and a herdr run
+  starts in its new workspace's idle startup pane instead of a second tab (#617).
+
 ## [2.3.0]
 
 ### Highlights

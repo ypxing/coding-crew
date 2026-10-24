@@ -459,8 +459,9 @@ or `stopped: …`), `running (pid <n>)`, or why there is none — for a local ru
 command printed a JSON result with a cost as its last line, the outcome line ends with what the run cost
 and how long it took: `ready pr=7 cost=$1.73 (23 min)` (`cost=$<n> (<m> min)`); a run whose CLI prints
 no such line, or that the 1h cap killed, has none. `/crew-afk wait <feature>` on a local run
-returns once its process is gone, not at the outcome, so its line carries the cost too. A second `/crew-afk` on a feature whose local run is still going is refused; one to orca or herdr
-while its agent still works starts a second agent beside it.
+returns once its process is gone, not at the outcome, so its line carries the cost too. A second `/crew-afk` on a feature whose run is still going is refused, on every destination: it
+names the run's pid, herdr pane or orca terminal, to wait for or close. An orca or herdr run whose terminal closed with
+no outcome reports as ended, with the re-run to continue.
 Nothing removes a worktree: `git worktree remove <path>` once you are done with it.
 
 ---

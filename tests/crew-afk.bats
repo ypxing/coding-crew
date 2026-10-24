@@ -302,7 +302,8 @@ stub_orca() {
 #!/usr/bin/env bash
 echo "$*" >> "$T/orca-calls"
 case "$1 $2" in
-  "worktree show") exit 1 ;;
+  "worktree show") [ -d "$T/orca-wt/app-report-cli" ] || exit 1
+    echo "{\"ok\":true,\"result\":{\"worktree\":{\"path\":\"$T/orca-wt/app-report-cli\"}}}" ;;
   "worktree create") git -C "$MAIN" worktree add -q --detach "$T/orca-wt/app-report-cli" >&2
     echo "{\"ok\":true,\"result\":{\"worktree\":{\"path\":\"$T/orca-wt/app-report-cli\"}}}" ;;
   "terminal create") echo '{"ok":true,"result":{"terminal":{"handle":"h1"}}}' ;;
@@ -410,4 +411,128 @@ SH
   grep -q '^tab create --workspace w1 ' "$T/herdr-calls"
   grep -qxF 'pane run w1:p2 claude /solve-feature\ report-cli ' "$T/herdr-calls"
   [ "$(cat "$WT/.coding-crew/solve-feature/run.pane")" = w1:p2 ]
+}
+
+OWT_LOGS() { echo "$T/orca-wt/app-report-cli/.coding-crew/solve-feature"; }
+
+@test "dispatch --to orca while the slug's orca run has no outcome and its terminal is connected exits 1, reading orca's worktree" {
+  stub_orca
+  bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
+  [ "$(cat "$(OWT_LOGS)/run.pane")" = h1 ]
+  [ ! -e "$WT" ]
+  : > "$T/orca-calls"
+  run bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"a run for report-cli is still going (orca terminal h1): wait for it to end, or close that terminal, then re-run"* ]]
+  [ "$(cat "$T/orca-calls")" = "terminal show --terminal h1 --json" ]
+}
+
+@test "a dispatch refuses across destinations and worktrees, and a refused one calls no prepare" {
+  stub_orca
+  stub_herdr
+  # A live herdr run: --to local and --to orca refuse.
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  : > "$T/herdr-calls"
+  for to in local orca; do
+    run bash "$SCRIPT" dispatch report-cli --to "$to" "${LAUNCH[@]}"
+    [ "$status" -eq 1 ] || { echo "$to: $output"; return 1; }
+    [[ "$output" == *"still going (herdr pane w1:p1)"* ]]
+  done
+  [ ! -e "$T/orca-calls" ] && [ ! -e "$T/claude-argv" ]
+  ! grep -q '^worktree' "$T/herdr-calls"
+  git -C "$MAIN" worktree remove --force "$WT"
+  # A live local run: --to herdr and --to orca refuse.
+  bash "$SCRIPT" dispatch report-cli "${LAUNCH[@]}" >/dev/null
+  pid=$(cat "$WT/.coding-crew/solve-feature/run.pid")
+  : > "$T/herdr-calls"
+  for to in herdr orca; do
+    run bash "$SCRIPT" dispatch report-cli --to "$to" "${LAUNCH[@]}"
+    [ "$status" -eq 1 ] || { echo "$to: $output"; return 1; }
+    [[ "$output" == *"still going (pid $pid): wait for it to end, then re-run"* ]]
+  done
+  [ ! -s "$T/herdr-calls" ] && [ ! -e "$T/orca-calls" ]
+  [ ! -e "$T/orca-wt" ]
+  [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 2 ]
+}
+
+@test "a live orca run, in orca's own worktree, refuses --to local and --to herdr" {
+  stub_orca
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
+  for to in local herdr; do
+    run bash "$SCRIPT" dispatch report-cli --to "$to" "${LAUNCH[@]}"
+    [ "$status" -eq 1 ] || { echo "$to: $output"; return 1; }
+    [[ "$output" == *"still going (orca terminal h1)"* ]]
+  done
+  [ ! -e "$WT" ] && [ ! -e "$T/herdr-calls" ]
+}
+
+@test "a re-dispatch reuses the worktree once the previous run wrote an outcome, or once its pane or terminal is gone" {
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  echo 'ready pr=7' > "$WT/.coding-crew/solve-feature/outcome"
+  run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(field worktree)" = "$WT" ]
+  touch "$T/herdr-pane-gone"
+  run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(grep -c '^worktree create' "$T/herdr-calls")" -eq 1 ]
+  stub_orca
+  git -C "$MAIN" worktree remove --force "$WT"
+  bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
+  echo '{"ok":true,"result":{"terminal":{"handle":"h1","connected":true,"orphaned":true}}}' > "$T/orca-show"
+  run bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(field worktree)" = "$T/orca-wt/app-report-cli" ]
+  [ "$(grep -c '^worktree create' "$T/orca-calls")" -eq 1 ]
+}
+
+@test "a live query that fails other than with gone stops the dispatch with the CLI's stderr" {
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  touch "$T/herdr-pane-fail"
+  run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'server_down'* ]]
+  git -C "$MAIN" worktree remove --force "$WT"
+  stub_orca
+  bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
+  touch "$T/orca-show-fail"
+  run bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"orca: server unreachable"* ]]
+  [[ "$output" == *"if the terminal is gone, delete $(OWT_LOGS)/run.pane and re-run"* ]]
+}
+
+@test "status and wait report an interactive run whose pane is gone as ended, and a failing query as unknown" {
+  export CREW_AFK_WAIT_INTERVAL=0.1
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  touch "$T/herdr-pane-gone"
+  run bash "$SCRIPT" status report-cli
+  [ "$output" = "report-cli: ended without an outcome — its herdr terminal is gone; re-run /crew-afk report-cli --to herdr to continue" ]
+  run bash "$SCRIPT" wait report-cli
+  [ "$status" -eq 0 ] && [ "$output" = "report-cli: ended without an outcome — its herdr terminal is gone; re-run /crew-afk report-cli --to herdr to continue" ]
+  rm "$T/herdr-pane-gone"; touch "$T/herdr-pane-fail"
+  run bash "$SCRIPT" status
+  [[ "$output" == 'report-cli: run state unknown — herdr query failed: {"error":{"code":"server_down"'* ]]
+  run bash "$SCRIPT" wait report-cli
+  [ "$status" -eq 0 ] && [[ "$output" == "report-cli: run state unknown — herdr query failed: "* ]]
+  git -C "$MAIN" worktree remove --force "$WT"
+  stub_orca
+  bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
+  echo '{"ok":true,"result":{"terminal":{"handle":"h1","connected":false,"orphaned":false}}}' > "$T/orca-show"
+  run bash "$SCRIPT" wait report-cli
+  [ "$output" = "report-cli: ended without an outcome — its orca terminal is gone; re-run /crew-afk report-cli --to orca to continue" ]
+}
+
+@test "an interactive run with no run.pane, dispatched before it was recorded, does not block a dispatch" {
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  rm "$WT/.coding-crew/solve-feature/run.pane"
+  run bash "$SCRIPT" status report-cli
+  [[ "$output" == "report-cli: ended without an outcome — "* ]]
+  run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
