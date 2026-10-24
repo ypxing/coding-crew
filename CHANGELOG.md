@@ -55,6 +55,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- address-pr-comments, tracker: only comments by Copilot's reviewer, the identity the agent posts as, or a user with
+  write, maintain or admin permission reach the agent: a round reads the PR through the new
+  `coding-crew-lib/scripts/tracker/pr-comments.mjs`, and `fetch --comments` on the github tracker drops the rest,
+  each naming the omitted authors in one `(omitted <N> comment(s) by @a: no write access to this repo)` line.
+  Issue and PR bodies are not filtered (#616).
 - CI: `scripts/ci-run-bats.sh` stops with exit 2 and "no such file" when a path it is given does not exist, such
   as an unmatched glob, instead of hanging (#619).
 - solve-feature, crew-review, to-issues: a solve-feature PR body names its spec in one line (`Spec: PRD #<n>,
