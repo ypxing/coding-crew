@@ -652,21 +652,50 @@ EOF
 
 # --- hosts -------------------------------------------------------------------------------
 
-@test "setup-coding-crew's hosts/github-actions.yml parses: labeled-issue and workflow_dispatch triggers, a label gate, five write permissions (actions: write so it can approve or dispatch PR CI), a slug concurrency group, the skill launched by the agent, the logs kept, then a step reading the outcome" {
-  local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json" line
-  run yaml_to_json "$wf" "$json"
+@test "the caller template (setup-coding-crew's hosts/github-actions.yml) parses: the issue, review and dispatch triggers, five write permissions (actions: write so it can approve or dispatch PR CI) and id-token: write, and one job calling the reusable workflow at the release tag with the four secrets by name" {
+  local caller="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" cjson="$TEMP_DIR/caller.json"
+  run yaml_to_json "$caller" "$cjson"
   [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
   [ "$status" -eq 0 ]
   # A YAML 1.1 parser (PyYAML) reads the `on` key as the boolean true.
   local on='(.on // .["true"])'
-  [ "$(jq -c "$on.issues.types" "$json")" = '["labeled","unlabeled","closed"]' ]
+  [ "$(jq -c "$on | keys" "$cjson")" = '["issues","pull_request_review","workflow_dispatch"]' ]
+  [ "$(jq -c "$on.issues.types" "$cjson")" = '["labeled","unlabeled","closed"]' ]
+  [ "$(jq -c "$on.pull_request_review.types" "$cjson")" = '["submitted"]' ]
+  [ "$(jq -r "$on.workflow_dispatch.inputs.slug.required" "$cjson")" = true ]
+  grep -q '^ *# *schedule:' "$caller"
+  [ "$(jq -r '.permissions | "\(.contents) \(.issues) \(.["pull-requests"]) \(.["copilot-requests"]) \(.actions) \(.["id-token"])"' "$cjson")" = "write write write write write write" ]
+  [ "$(jq '.jobs | length' "$cjson")" -eq 1 ]
+  # The tag is whatever release the template names: each release commit bumps it.
+  jq -e '.jobs[] | (.uses | test("^ypxing/coding-crew/\\.github/workflows/crew-solve-feature\\.yml@v[0-9]+\\.[0-9]+\\.[0-9]+$"))
+    and .with.slug == "${{ inputs.slug }}" and (has("steps") | not)' "$cjson" >/dev/null
+  # The secrets by name, not `inherit`: the caller decides what the reusable workflow gets.
+  [ "$(jq -c '.jobs[].secrets' "$cjson")" = '{"ANTHROPIC_API_KEY":"${{ secrets.ANTHROPIC_API_KEY }}","CLAUDE_CODE_OAUTH_TOKEN":"${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}","COPILOT_GITHUB_TOKEN":"${{ secrets.COPILOT_GITHUB_TOKEN }}","NPM_TOKEN":"${{ secrets.NPM_TOKEN }}"}' ]
+
+  # This repo's own caller is the template with a local uses: (the same commit), and no env of its own.
+  local own="$REPO_ROOT/.github/workflows/solve-feature.yml" ojson="$TEMP_DIR/own.json"
+  yaml_to_json "$own" "$ojson"
+  [ "$(jq -c "del(.jobs[].uses)" "$ojson")" = "$(jq -c "del(.jobs[].uses)" "$cjson")" ]
+  [ "$(jq -r '.jobs[].uses' "$ojson")" = ./.github/workflows/crew-solve-feature.yml ]
+  ! grep -q 'ANTHROPIC_DEFAULT_\|CODING_CREW_REF\|^env:' "$own" || false
+}
+
+@test "the reusable workflow (.github/workflows/crew-solve-feature.yml) parses: workflow_call inputs and optional secrets, a label gate, a slug concurrency group, the skill launched by the agent, the logs kept, then a step reading the outcome" {
+  local wf="$REPO_ROOT/.github/workflows/crew-solve-feature.yml" json="$TEMP_DIR/wf.json" line
+  run yaml_to_json "$wf" "$json"
+  [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
+  [ "$status" -eq 0 ]
+  local on='(.on // .["true"])'
+  [ "$(jq -c "$on | keys" "$json")" = '["workflow_call"]' ]
+  jq -e "$on.workflow_call.inputs | (.slug.type == \"string\") and (.slug.required == false)
+    and (.[\"timeout-minutes\"].type == \"number\") and (.[\"timeout-minutes\"].default == 360)" "$json" >/dev/null
+  [ "$(jq -c "$on.workflow_call.secrets | to_entries | map(\"\\(.key)=\\(.value.required)\")" "$json")" = \
+    '["ANTHROPIC_API_KEY=false","CLAUDE_CODE_OAUTH_TOKEN=false","COPILOT_GITHUB_TOKEN=false","NPM_TOKEN=false"]' ]
+  [ "$(jq -r '.jobs.solve["timeout-minutes"]' "$json")" = '${{ inputs.timeout-minutes }}' ]
   # The slug job admits exactly: a dispatch, run-agent labelled, ready-for-human removed, an issue closed with
   # ready-for-human on, and a review other than an approval; the label clauses only on issue events.
   local cond; cond="$(jq -r '.jobs.slug.if | gsub("\\s+"; " ")' "$json")"
   [ "$cond" = "github.event_name == 'workflow_dispatch' || (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'run-agent') || (github.event_name == 'issues' && github.event.action == 'unlabeled' && github.event.label.name == 'ready-for-human') || (github.event_name == 'issues' && github.event.action == 'closed' && contains(github.event.issue.labels.*.name, 'ready-for-human')) || (github.event_name == 'pull_request_review' && github.event.review.state != 'approved')" ] || { echo "$cond"; return 1; }
-  [ "$(jq -r "$on.workflow_dispatch.inputs.slug.required" "$json")" = true ]
-  grep -q '^ *# *schedule:' "$wf"
-  [ "$(jq -r '.permissions | "\(.contents) \(.issues) \(.["pull-requests"]) \(.["copilot-requests"]) \(.actions)"' "$json")" = "write write write write write" ]
   # The trigger label is `run-agent`, not the skill's name: a label named after the skill reads as a topic tag.
   jq -e '[.jobs[].if // empty] | any(test("github.event.label.name == .run-agent."))' "$json" >/dev/null
   ! jq -e '[.jobs[].if // empty] | any(test("solve-feature"))' "$json" >/dev/null || false
@@ -678,8 +707,14 @@ EOF
   [ "$(jq -r '.jobs.solve.env.CREW_MODEL' "$json")" = '${{ vars.CREW_MODEL }}' ]
   [ "$(jq -r '.jobs.solve.env.CREW_CODER_MODEL' "$json")" = '${{ vars.CREW_CODER_MODEL }}' ]
   [ "$(jq -r '.jobs.solve.env.CREW_REVIEWER_MODEL' "$json")" = '${{ vars.CREW_REVIEWER_MODEL }}' ]
-  grep -qxF '      CREW_CODER_MODEL: ${{ vars.CREW_CODER_MODEL }}' "$REPO_ROOT/.github/workflows/solve-feature.yml"
-  grep -qxF '      CREW_REVIEWER_MODEL: ${{ vars.CREW_REVIEWER_MODEL }}' "$REPO_ROOT/.github/workflows/solve-feature.yml"
+  grep -qxF '      CREW_CODER_MODEL: ${{ vars.CREW_CODER_MODEL }}' "$wf"
+  grep -qxF '      CREW_REVIEWER_MODEL: ${{ vars.CREW_REVIEWER_MODEL }}' "$wf"
+  # The skills come from the install action at the caller template's release tag, never a clone of a branch.
+  ! grep -q 'git clone\|CODING_CREW_REF' "$wf" || false
+  local tag; tag=$(sed -nE 's#^ *uses: ypxing/coding-crew/\.github/workflows/crew-solve-feature\.yml@(v[0-9]+\.[0-9]+\.[0-9]+)$#\1#p' "$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml")
+  [ -n "$tag" ]
+  jq -e --arg tag "$tag" '.jobs.solve.steps[] | select(.name == "Install coding-crew (user-level)")
+    | .uses == "ypxing/coding-crew/actions/install@\($tag)" and .with.agent == "${{ env.CREW_AGENT }}"' "$json" >/dev/null
   # The logs step runs whatever the run step did, and keeps .coding-crew/solve-feature/, hidden files included.
   jq -e '.jobs.solve.steps[-2] | .if == "always()" and (.uses | startswith("actions/upload-artifact@"))
     and .with.path == ".coding-crew/solve-feature/" and .with["include-hidden-files"] == true' "$json" >/dev/null
@@ -855,8 +890,8 @@ J
   ! grep -q 'FAIL: test_x' "$GITHUB_STEP_SUMMARY" || false
 }
 
-@test "setup-coding-crew's hosts/github-actions.yml: commits no push reached go into the artifact's unpushed.bundle, which the summary says how to fetch; a pushed run writes none" {
-  local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
+@test "the reusable workflow: commits no push reached go into the artifact's unpushed.bundle, which the summary says how to fetch; a pushed run writes none" {
+  local wf="$REPO_ROOT/.github/workflows/crew-solve-feature.yml" json="$TEMP_DIR/wf.json"
   run yaml_to_json "$wf" "$json"
   [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
   [ "$status" -eq 0 ]
@@ -888,20 +923,23 @@ J
   [ "$(git -C "$TEMP_DIR/clone" rev-parse feature/feat)" = "$(git rev-parse HEAD)" ]
 }
 
-@test "setup-coding-crew's hosts/github-actions.yml: after the run, the runs held on the PR's head are approved, a refused one's workflow dispatched on the PR's branch instead, warning when both fail" {
-  local wf="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" json="$TEMP_DIR/wf.json"
+@test "the reusable workflow: after the run, the runs held on the PR's head are approved, a refused one's workflow dispatched on the PR's branch instead, warning when both fail" {
+  local wf="$REPO_ROOT/.github/workflows/crew-solve-feature.yml" json="$TEMP_DIR/wf.json"
   run yaml_to_json "$wf" "$json"
   [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
   [ "$status" -eq 0 ]
-  local i; i="$(jq '.jobs.solve.steps | map(.name) | index("Run solve-feature")' "$json")"
-  [ "$(jq -r ".jobs.solve.steps[$i + 1].if" "$json")" = "always()" ]
-  jq -r ".jobs.solve.steps[$i + 1].run" "$json" > "$TEMP_DIR/ci-step.sh"
+  # Its own job, after solve whatever solve's result, on the PR solve's outcome named.
+  jq -e '.jobs["approve-ci"] | .needs == "solve" and (.if | startswith("always()"))
+    and (.steps | length) == 1 and .steps[0].name == "Start the PR'"'"'s CI"
+    and .steps[0].env.PR == "${{ needs.solve.outputs.pr }}"' "$json" >/dev/null
+  [ "$(jq -r '.jobs.solve.outputs.pr' "$json")" = '${{ steps.outcome.outputs.pr }}' ]
+  jq -r '.jobs["approve-ci"].steps[0].run' "$json" > "$TEMP_DIR/ci-step.sh"
 
   cat > "$STUB/gh" <<'SH'
 #!/usr/bin/env bash
 echo "gh $*" >> "$STATE/gh.log"
 case "$1 $2" in
-  "pr view") echo "feature/$3 sha$3" ;;
+  "pr view") echo "feature/$3 sha$3 ${GH_CROSS:-false} ${GH_BLOCK:-true}" ;;
   "api -X") [ -z "$GH_APPROVE_FAIL" ] || { echo "HTTP 403" >&2; exit 1; } ;;
   "api "*) [ -z "$GH_HELD" ] || printf '%s\n' "$GH_HELD" ;;
   "workflow run") [ -z "$GH_WF_FAIL" ] || { echo "HTTP 403" >&2; exit 1; } ;;
@@ -911,8 +949,8 @@ SH
   mkdir -p .coding-crew/solve-feature
   export GITHUB_REPOSITORY=o/r GH_HELD=$'7 .github/workflows/ci.yml\n8 .github/workflows/lint.yml'
 
+  export PR=12
   for line in 'ready pr=12' 'needs-attention pr=12'; do
-    echo "$line" > .coding-crew/solve-feature/outcome
     rm -f "$STATE/gh.log"
     run bash -e "$TEMP_DIR/ci-step.sh"
     [ "$status" -eq 0 ]
@@ -938,11 +976,252 @@ SH
   [ "$status" -eq 0 ]
   ! grep -q 'api -X POST\|workflow run' "$STATE/gh.log" || false
 
-  for line in 'stopped: 2 checks failed: x' ''; do
-    rm -f "$STATE/gh.log" .coding-crew/solve-feature/outcome
-    [ -z "$line" ] || echo "$line" > .coding-crew/solve-feature/outcome
-    run bash -e "$TEMP_DIR/ci-step.sh"
-    [ "$status" -eq 0 ]
-    [ ! -e "$STATE/gh.log" ]
+  # The agent wrote the outcome: a fork's PR, or one with no solve-feature block, gets no approval or dispatch.
+  local v
+  for v in GH_CROSS=true GH_BLOCK=false; do
+    rm -f "$STATE/gh.log"
+    run env $v bash -e "$TEMP_DIR/ci-step.sh"
+    [ "$status" -eq 0 ] && [[ "$output" == *"::warning::PR #12 is not a solve-feature PR from this repo"* ]]
+    ! grep -q 'actions/runs\|workflow run' "$STATE/gh.log" || false
   done
+}
+
+@test "the reusable workflow: the outcome step gives solve's outputs, the PR of any outcome naming one and ready only for ready pr=<n>" {
+  local wf="$REPO_ROOT/.github/workflows/crew-solve-feature.yml" json="$TEMP_DIR/wf.json"
+  run yaml_to_json "$wf" "$json"
+  [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
+  [ "$status" -eq 0 ]
+  jq -e '.jobs.solve.outputs.ready == "${{ steps.outcome.outputs.ready }}"
+    and (.jobs.solve.steps[] | select(.id == "outcome") | .if == "always()")' "$json" >/dev/null
+  jq -r '.jobs.solve.steps[] | select(.id == "outcome") | .run' "$json" > "$TEMP_DIR/outcome-step.sh"
+  export GITHUB_OUTPUT="$TEMP_DIR/out"
+  mkdir -p .coding-crew/solve-feature
+  local line want
+  for line in 'ready pr=12|pr=12 ready=true' 'needs-attention pr=12|pr=12 ready=false' \
+    'stopped: 2 checks failed: x|pr= ready=false' '|pr= ready=false'; do
+    want=${line#*|} line=${line%%|*}
+    rm -f .coding-crew/solve-feature/outcome; : > "$GITHUB_OUTPUT"
+    [ -z "$line" ] || echo "$line" > .coding-crew/solve-feature/outcome
+    run bash -e "$TEMP_DIR/outcome-step.sh"
+    [ "$status" -eq 0 ]
+    [ "$(tr '\n' ' ' < "$GITHUB_OUTPUT")" = "$want " ] || { echo "$line: $(cat "$GITHUB_OUTPUT")"; return 1; }
+  done
+}
+
+@test "the reusable workflow's run step passes Claude Code each ANTHROPIC_DEFAULT_*_MODEL repo variable only when it is set" {
+  local wf="$REPO_ROOT/.github/workflows/crew-solve-feature.yml" json="$TEMP_DIR/wf.json" v
+  run yaml_to_json "$wf" "$json"
+  [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
+  [ "$status" -eq 0 ]
+  for v in HAIKU SONNET OPUS; do
+    jq -e --arg v "ANTHROPIC_DEFAULT_${v}_MODEL" '.jobs.solve.steps[] | select(.name == "Run solve-feature")
+      | .env[$v] == "${{ vars.\($v) }}"' "$json" >/dev/null || { echo "$v"; return 1; }
+  done
+  jq -r '.jobs.solve.steps[] | select(.name == "Run solve-feature") | .run' "$json" > "$TEMP_DIR/run-step.sh"
+  printf '#!/usr/bin/env bash\nenv | grep -E "^ANTHROPIC_DEFAULT_" | sort\n' > "$STUB/claude"
+  chmod +x "$STUB/claude"
+  run env CREW_AGENT=claude CREW_MODEL= SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN=tok \
+    ANTHROPIC_DEFAULT_HAIKU_MODEL= ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-5-5 ANTHROPIC_DEFAULT_OPUS_MODEL='claude-opus-5-5[1m]' \
+    bash -e "$TEMP_DIR/run-step.sh"
+  [ "$status" -eq 0 ]
+  [ "$(cat .coding-crew/solve-feature/session.jsonl)" = "$(printf '%s\n' 'ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-5-5[1m]' 'ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-5-5')" ]
+}
+
+@test "the install action is a composite whose one step installs solve-feature, crew-review and address-pr-comments into \$HOME from the action's own repo" {
+  local action="$REPO_ROOT/actions/install/action.yml" json="$TEMP_DIR/action.json" a
+  run yaml_to_json "$action" "$json"
+  [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
+  [ "$status" -eq 0 ]
+  jq -e '.runs.using == "composite" and (.runs.steps | length) == 1 and .runs.steps[0].shell == "bash"
+    and .inputs.agent.required == true and .runs.steps[0].env.CREW_AGENT == "${{ inputs.agent }}"' "$json" >/dev/null
+  jq -r '.runs.steps[0].run' "$json" > "$TEMP_DIR/install-action.sh"
+  grep -qF '"$GITHUB_ACTION_PATH/../../install.sh"' "$TEMP_DIR/install-action.sh"
+  for a in claude copilot; do
+    local home="$TEMP_DIR/home-$a"
+    mkdir -p "$home"
+    run env -u TARGET_REPO HOME="$home" GITHUB_ACTION_PATH="$REPO_ROOT/actions/install" CREW_AGENT="$a" bash -e "$TEMP_DIR/install-action.sh"
+    [ "$status" -eq 0 ] || { echo "$a: $output"; return 1; }
+    local s
+    for s in solve-feature crew-review address-pr-comments coding-crew-lib; do
+      [ -n "$(find "$home" -path "*/skills/$s/SKILL.md" | head -n 1)" ] || { echo "$a: no $s under $home"; find "$home" -maxdepth 3; return 1; }
+    done
+  done
+}
+
+# wf_json — the reusable workflow as $JSON, or skips the test when the machine has no YAML parser.
+wf_json() {
+  WF="$REPO_ROOT/.github/workflows/crew-solve-feature.yml" JSON="$TEMP_DIR/wf.json"
+  run yaml_to_json "$WF" "$JSON"
+  [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
+  [ "$status" -eq 0 ]
+}
+# solve_step <name> — the solve job's step of that name's run script, into $TEMP_DIR/step.sh.
+solve_step() {
+  jq -r --arg n "$1" '.jobs.solve.steps[] | select(.name == $n) | .run' "$JSON" > "$TEMP_DIR/step.sh"
+  [ -s "$TEMP_DIR/step.sh" ]
+}
+
+@test "the reusable workflow: per-job permissions, actions: write only on approve-ci, id-token: write only on solve; every outside action pinned by SHA" {
+  wf_json
+  [ "$(jq 'has("permissions")' "$JSON")" = false ]
+  [ "$(jq -c '[.jobs | to_entries[] | select(.value.permissions.actions == "write") | .key]' "$JSON")" = '["approve-ci"]' ]
+  [ "$(jq -c '[.jobs | to_entries[] | select(.value.permissions["id-token"] == "write") | .key]' "$JSON")" = '["solve"]' ]
+  [ "$(jq -c '[.jobs | to_entries[] | select(.value.permissions == null) | .key]' "$JSON")" = '[]' ]
+  [ "$(jq -c '.jobs.solve.permissions' "$JSON")" = '{"contents":"write","issues":"write","pull-requests":"write","copilot-requests":"write","id-token":"write"}' ]
+  [ "$(jq -c '.jobs.slug.permissions' "$JSON")" = '{"issues":"write"}' ]
+  [ "$(jq -r '.jobs["request-copilot-review"].permissions | to_entries | map("\(.key)=\(.value)") | join(",")' "$JSON")" = 'pull-requests=read' ]
+  # A tag can move; a commit cannot. The tag stays readable in the comment.
+  local n=0 line
+  while read -r line; do
+    n=$((n + 1))
+    [[ "$line" =~ uses:\ [a-z-]+/[a-z-]+@[0-9a-f]{40}\ \#\ v[0-9] ]] || { echo "unpinned: $line"; return 1; }
+  done < <(grep -E '^ *(- )?uses:' "$WF" | grep -v 'ypxing/coding-crew/')
+  [ "$n" -eq 4 ]
+  for a in actions/checkout actions/setup-node actions/upload-artifact aws-actions/configure-aws-credentials; do
+    grep -qE "uses: $a@[0-9a-f]{40} # v" "$WF" || { echo "$a"; return 1; }
+  done
+}
+
+@test "the reusable workflow: NPM_TOKEN only in the install step before the agent, which runs dev-commands.json's install in host mode and skips saying why otherwise" {
+  wf_json
+  local name="Install the project's dependencies"
+  [ "$(jq -c '[.jobs[].steps[] | select(tostring | test("secrets.NPM_TOKEN")) | .name]' "$JSON")" = "[\"$name\"]" ]
+  jq -e --arg n "$name" '.jobs.solve.steps[] | select(.name == $n) | .env == {"NPM_TOKEN": "${{ secrets.NPM_TOKEN }}"}' "$JSON" >/dev/null
+  [ "$(jq -r --arg n "$name" '.jobs.solve.steps | map(.name) | (index($n) != null) and (index($n) < index("Run solve-feature"))' "$JSON")" = true ]
+  solve_step "$name"
+  ! grep -q 'registry_auth\|\.env\b' "$TEMP_DIR/step.sh" || false
+
+  rm -f .coding-crew/dev-commands.json
+  run env NPM_TOKEN=t bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 0 ] && [[ "$output" == *"No .coding-crew/dev-commands.json: skipped"* ]]
+  mkdir -p .coding-crew
+  echo '{"test":"x","install":null,"registry_auth":"touch registry-auth-ran"}' > .coding-crew/dev-commands.json
+  run env NPM_TOKEN=t bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 0 ] && [[ "$output" == *"no install command: skipped"* ]]
+  [ ! -e registry-auth-ran ]
+  echo '{"install":"echo \"token=$NPM_TOKEN\" > \"$STATE/installed\"","install_mode":"docker"}' > .coding-crew/dev-commands.json
+  run env NPM_TOKEN=t bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 0 ] && [[ "$output" == *"::notice::"*"install_mode docker: skipped"* ]]
+  [ ! -e "$STATE/installed" ]
+  # Host mode runs the raw install with the token, never registry_auth; a failed install fails the job before the agent.
+  echo '{"install":"echo \"token=$NPM_TOKEN\" > \"$STATE/installed\"","install_mode":"host","registry_auth":"touch \"$STATE/registry-auth-ran\""}' > .coding-crew/dev-commands.json
+  run env NPM_TOKEN=t bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STATE/installed")" = token=t ]
+  [ ! -e "$STATE/registry-auth-ran" ]
+  # solve-feature refuses a dirty tree: a rewritten lockfile and an untracked output are dropped, ignored files kept.
+  echo node_modules/ > .gitignore && echo '{}' > package-lock.json
+  echo '{"install":"echo rewritten > package-lock.json && mkdir -p node_modules && touch node_modules/dep stray"}' > .coding-crew/dev-commands.json
+  git add -f .gitignore package-lock.json .coding-crew/dev-commands.json && git commit -q -m deps
+  run env NPM_TOKEN= bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 0 ]
+  [ -z "$(git status --porcelain)" ]
+  [ "$(cat package-lock.json)" = '{}' ] && [ -f node_modules/dep ] && [ ! -e stray ]
+  echo '{"install":"exit 7"}' > .coding-crew/dev-commands.json
+  run env NPM_TOKEN= bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 7 ]
+}
+
+@test "the reusable workflow: a review round installs on the default branch, then hands the agent the PR's branch, past address-pr-comments' branch check" {
+  wf_json
+  # pull_request_review's github.ref is refs/pull/<n>/merge: the feature branch the agent wrote, merged in, which the
+  # NPM_TOKEN install must not run.
+  [ "$(jq -r '.jobs.solve.steps[] | select(.uses // "" | startswith("actions/checkout@")) | .with.ref' "$JSON")" = \
+    "\${{ github.event_name == 'pull_request_review' && github.event.repository.default_branch || '' }}" ]
+  local names; names=$(jq -r '.jobs.solve.steps[].name // empty' "$JSON")
+  local install switch run
+  install=$(grep -nxF "Install the project's dependencies" <<<"$names" | cut -d: -f1)
+  switch=$(grep -nxF "Check out the review round's PR branch" <<<"$names" | cut -d: -f1)
+  run=$(grep -nxF "Run solve-feature" <<<"$names" | cut -d: -f1)
+  [ -n "$switch" ]
+  [ "$install" -lt "$switch" ]
+  [ "$switch" -lt "$run" ]
+  local step; step=$(jq -c '.jobs.solve.steps[] | select(.name == "Check out the review round'"'"'s PR branch")' "$JSON")
+  [ "$(jq -r '.if' <<<"$step")" = "github.event_name == 'pull_request_review'" ]
+  [ "$(jq -r '.env.HEAD_REF' <<<"$step")" = '${{ github.event.pull_request.head.ref }}' ]
+  jq -r '.run' <<<"$step" > "$TEMP_DIR/switch.sh"
+
+  # What actions/checkout leaves for ref: main (git checkout -B main refs/remotes/origin/main), after the install.
+  local GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
+  export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+  git init -q -b main "$TEMP_DIR/origin" && echo '{}' > "$TEMP_DIR/origin/package-lock.json"
+  git -C "$TEMP_DIR/origin" add . && git -C "$TEMP_DIR/origin" commit -q -m init
+  git -C "$TEMP_DIR/origin" checkout -q -b feature/x && echo pr > "$TEMP_DIR/origin/pr.txt"
+  git -C "$TEMP_DIR/origin" add pr.txt && git -C "$TEMP_DIR/origin" commit -q -m pr && git -C "$TEMP_DIR/origin" checkout -q main
+  git clone -q "$TEMP_DIR/origin" "$TEMP_DIR/ws" && cd "$TEMP_DIR/ws"
+  git remote set-head origin -d
+  mkdir node_modules && touch node_modules/dep && echo '{"rewritten":1}' > package-lock.json
+  local check="$REPO_ROOT/lib/git-workflow/branch-safety-check.sh"
+  run bash "$check"
+  [ "$status" -eq 1 ]
+  run env HEAD_REF=feature/x bash -e "$TEMP_DIR/switch.sh"
+  [ "$status" -eq 0 ]
+  [ "$(git rev-parse --abbrev-ref HEAD)" = feature/x ]
+  [ -f pr.txt ]
+  [ -f node_modules/dep ]
+  [ -z "$(git status --porcelain --untracked-files=no)" ]
+  [ "$(git rev-parse --abbrev-ref '@{upstream}')" = origin/feature/x ]
+  run bash "$check"
+  [ "$status" -eq 0 ]
+}
+
+@test "the reusable workflow's run step hides the OIDC request variables from either agent; no step after it in solve references a secret, COPILOT_GITHUB_TOKEN only in request-copilot-review" {
+  wf_json
+  solve_step "Run solve-feature"
+  local a
+  for a in copilot claude; do
+    # Its parent's /proc environ too: an `unset` leaves the variables there, readable by any child (Linux only).
+    printf '#!/usr/bin/env bash\n{ env; [ ! -r /proc/$PPID/environ ] || tr "\\\\0" "\\\\n" < /proc/$PPID/environ; } | grep -E "^ACTIONS_ID_TOKEN_REQUEST_" | sort; echo end\n' > "$STUB/$a" && chmod +x "$STUB/$a"
+  done
+  run env ACTIONS_ID_TOKEN_REQUEST_TOKEN=tok ACTIONS_ID_TOKEN_REQUEST_URL=https://x CREW_AGENT=copilot CREW_MODEL= SLUG=feat bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 0 ]
+  [ "$(cat .coding-crew/solve-feature/session.jsonl)" = end ]
+  run env ACTIONS_ID_TOKEN_REQUEST_TOKEN=tok ACTIONS_ID_TOKEN_REQUEST_URL=https://x CREW_AGENT=claude CREW_MODEL= SLUG=feat CLAUDE_CODE_OAUTH_TOKEN=t bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 0 ]
+  [ "$(cat .coding-crew/solve-feature/session.jsonl)" = end ]
+
+  local i; i="$(jq '.jobs.solve.steps | map(.name) | index("Run solve-feature")' "$JSON")"
+  [ "$(jq -c ".jobs.solve.steps[$i + 1:] | map(select(tostring | test(\"secrets[.]\"))) | map(.name)" "$JSON")" = '[]' ]
+  [ "$(jq -c '[.jobs | to_entries[] | select(.value | tostring | test("secrets.COPILOT_GITHUB_TOKEN")) | .key]' "$JSON")" = '["request-copilot-review"]' ]
+  jq -e '.jobs["request-copilot-review"] | .needs == "solve" and (.if | startswith("always()"))
+    and .steps[0].env.PR == "${{ needs.solve.outputs.pr }}" and .steps[0].env.READY == "${{ needs.solve.outputs.ready }}"' "$JSON" >/dev/null
+}
+
+@test "the reusable workflow on Bedrock: the provider check, the role assumed for the job's timeout before the agent, and claude on Bedrock with no Anthropic secret" {
+  wf_json
+  jq -e '.jobs.solve.env | .CREW_CLAUDE_PROVIDER == "${{ vars.CREW_CLAUDE_PROVIDER }}"
+    and .CREW_AWS_ROLE_ARN == "${{ vars.CREW_AWS_ROLE_ARN }}" and .CREW_AWS_REGION == "${{ vars.CREW_AWS_REGION }}"' "$JSON" >/dev/null
+  local names; names="$(jq -c '.jobs.solve.steps | map(.name)' "$JSON")"
+  local aws; aws="$(jq -c '.jobs.solve.steps[] | select((.uses // "") | startswith("aws-actions/configure-aws-credentials@"))' "$JSON")"
+  jq -e '.if == "env.CREW_CLAUDE_PROVIDER == '"'bedrock'"' && env.CREW_AGENT == '"'claude'"'"
+    and .with["role-to-assume"] == "${{ vars.CREW_AWS_ROLE_ARN }}" and .with["aws-region"] == "${{ vars.CREW_AWS_REGION }}"
+    and .with["role-duration-seconds"] == "${{ steps.provider.outputs.duration }}"' <<<"$aws" >/dev/null
+  [ "$(jq -r '(index("Check the Claude provider") < index("AWS credentials for Bedrock")) and (index("AWS credentials for Bedrock") < index("Run solve-feature"))' <<<"$names")" = true ]
+  jq -e '.jobs.solve.steps[] | select(.id == "provider") | .env.TIMEOUT_MINUTES == "${{ inputs.timeout-minutes }}"' "$JSON" >/dev/null
+
+  jq -r '.jobs.solve.steps[] | select(.id == "provider") | .run' "$JSON" > "$TEMP_DIR/provider.sh"
+  export GITHUB_OUTPUT="$TEMP_DIR/out"
+  : > "$GITHUB_OUTPUT"
+  run env CREW_CLAUDE_PROVIDER=bedrock CREW_AGENT=claude CREW_AWS_ROLE_ARN=arn:aws:iam::1:role/r CREW_AWS_REGION=us-east-1 TIMEOUT_MINUTES=75 bash -e "$TEMP_DIR/provider.sh"
+  [ "$status" -eq 0 ] && [[ "$output" != *"::error::"* ]]
+  [ "$(cat "$GITHUB_OUTPUT")" = duration=4500 ]
+  run env CREW_CLAUDE_PROVIDER=bedrock CREW_AGENT=copilot CREW_AWS_ROLE_ARN=a CREW_AWS_REGION=r TIMEOUT_MINUTES=360 bash -e "$TEMP_DIR/provider.sh"
+  [ "$status" -ne 0 ] && [[ "$output" == *"::error::"*"CREW_AGENT is 'copilot'"* ]]
+  run env CREW_CLAUDE_PROVIDER=bedrock CREW_AGENT=claude CREW_AWS_ROLE_ARN= CREW_AWS_REGION=r TIMEOUT_MINUTES=360 bash -e "$TEMP_DIR/provider.sh"
+  [ "$status" -ne 0 ] && [[ "$output" == *"::error::"*"CREW_AWS_ROLE_ARN"* ]] && [[ "$output" != *"CREW_AWS_REGION"* ]]
+  run env CREW_CLAUDE_PROVIDER=bedrock CREW_AGENT=claude CREW_AWS_ROLE_ARN=a CREW_AWS_REGION= TIMEOUT_MINUTES=360 bash -e "$TEMP_DIR/provider.sh"
+  [ "$status" -ne 0 ] && [[ "$output" == *"::error::"*"CREW_AWS_REGION"* ]]
+  : > "$GITHUB_OUTPUT"
+  run env CREW_CLAUDE_PROVIDER= CREW_AGENT=copilot bash -e "$TEMP_DIR/provider.sh"
+  [ "$status" -eq 0 ] && [ ! -s "$GITHUB_OUTPUT" ]
+
+  solve_step "Run solve-feature"
+  printf '#!/usr/bin/env bash\nenv | grep -E "^(CLAUDE_CODE_USE_BEDROCK|AWS_REGION|ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN)=" | sort\n' > "$STUB/claude"
+  chmod +x "$STUB/claude"
+  run env CREW_CLAUDE_PROVIDER=bedrock CREW_AWS_REGION=eu-west-1 CREW_AGENT=claude CREW_MODEL= SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 0 ] && [[ "$output" != *"::error::"* ]]
+  [ "$(cat .coding-crew/solve-feature/session.jsonl)" = "$(printf '%s\n' AWS_REGION=eu-west-1 CLAUDE_CODE_USE_BEDROCK=1)" ]
+  # Unset, the Anthropic secret is still required.
+  run env CREW_CLAUDE_PROVIDER= CREW_AGENT=claude CREW_MODEL= SLUG=feat ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -ne 0 ] && [[ "$output" == *"needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"* ]]
 }

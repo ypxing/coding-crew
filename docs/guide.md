@@ -467,15 +467,47 @@ Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it files th
 ### solve-feature on GitHub Actions (optional)
 
 `/solve-feature` runs one feature from a terminal or a worktree pane. To run it on a GitHub runner
-instead, run `/setup-coding-crew` with the github tracker and answer yes to its Actions step: it copies
-[`hosts/github-actions.yml`](../skills/setup-coding-crew/hosts/github-actions.yml) to
-`.github/workflows/solve-feature.yml`, creates the `run-agent` label, sets the repo variable
+instead, run `/setup-coding-crew` with the github tracker and answer yes to its Actions step: it copies the caller
+file [`hosts/github-actions.yml`](../skills/setup-coding-crew/hosts/github-actions.yml) to
+`.github/workflows/solve-feature.yml` (once it has checked that the coding-crew release the file names is tagged), creates the `run-agent` label, sets the repo variable
 `CREW_AGENT` to the agent you pick and prints the commit line for it. `copilot` (the default) is billed
 to GitHub Copilot with no API key; `claude` runs Claude Code on an `ANTHROPIC_API_KEY` or
 `CLAUDE_CODE_OAUTH_TOKEN` repo secret. Commit, then label any issue of a feature `run-agent` (on a sub-issue the
 job also labels the root) or run the workflow by hand with the slug. A finished `ready-for-human` issue of a
 `run-agent` feature (its label removed, as `mark-done` does, or the issue closed) re-runs it while the root is open
-(when whoever finished it has triage access or more), so a run that stopped for a person resumes once they are done. The file's header explains billing.
+(when whoever finished it has triage access or more), so a run that stopped for a person resumes once they are done.
+
+The caller file is short: the triggers, the permissions (with `id-token: write`), and one job, `run`, that calls
+coding-crew's reusable workflow [`crew-solve-feature.yml`](../.github/workflows/crew-solve-feature.yml) at a release
+tag (`uses: ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@vX.Y.Z`), passing `ANTHROPIC_API_KEY`,
+`CLAUDE_CODE_OAUTH_TOKEN`, `COPILOT_GITHUB_TOKEN` and `NPM_TOKEN` by name. Everything the job does lives in the
+reusable workflow, whose header explains billing and the rest. To pick up a newer coding-crew, bump the tag on that
+`uses:` line; Dependabot's `github-actions` ecosystem opens those PRs:
+
+```yaml
+# .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+```
+
+The runner installs the skills of that same release (the composite action `ypxing/coding-crew/actions/install`, at
+the tag the reusable workflow names), never `main`: the repo variable `CODING_CREW_REF` is no longer read. `with:
+timeout-minutes: <n>` on the `run` job changes the solve job's timeout (360 by default). The checks a run adds show
+as `run / slug` and `run / solve`, not `slug` and `solve`, so a branch rule requiring the old names needs the new
+ones. An older full copy of the workflow keeps working until `/setup-coding-crew redo actions` replaces it.
+
+**An internal copy.** An organisation that allows only its own actions can run its own copy of coding-crew: push a
+mirror of `ypxing/coding-crew` to `<org>/coding-crew` (`git clone --mirror`, then `git push --mirror`); in the
+copy's Settings → Actions → General → Access, allow access from the organisation's repositories, so their runners
+download its workflow and action with no token; then create a `stable` branch from a release tag with one commit
+that changes the reusable workflow's install line to `uses: <org>/coding-crew/actions/install@stable`. Callers use
+`<org>/coding-crew/.github/workflows/crew-solve-feature.yml@stable`. To update, fetch the new release into the
+copy, rebase a branch of `stable` onto its tag (the one-line commit on top) and merge it into `stable` by PR: every
+repo picks it up on its next run.
 
 The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all
 --no-color --output-format json` or `claude -p "/solve-feature $SLUG" --dangerously-skip-permissions --output-format stream-json
@@ -483,7 +515,7 @@ The job launches the skill with `copilot -p "Use the solve-feature skill on $SLU
 variable `CREW_MODEL` names one (else the CLI's default for the account); the agent runs each coder, the
 reviewer, the fixer and the PR's writer as its own subagents, on that model unless `solveFeature.models` names
 theirs; the repo variables `CREW_CODER_MODEL` and `CREW_REVIEWER_MODEL` override `solveFeature.models` for the coder
-(and fixer) and the reviewer on the runner, and `CODING_CREW_REF` (a branch or tag) picks the coding-crew the runner installs, `main` when unset. Claude's job log shows the run as it goes, one line per step (the model, each command and subagent, a
+(and fixer) and the reviewer on the runner, and for Claude Code, `ANTHROPIC_DEFAULT_HAIKU_MODEL`, `_SONNET_MODEL` and `_OPUS_MODEL`, when set, pin the model each alias means. Claude's job log shows the run as it goes, one line per step (the model, each command and subagent, a
 failed tool), Copilot's too (each subagent's model as it ends). Both keep the whole stream as `.coding-crew/solve-feature/session.jsonl`
 (Copilot's own logs beside it, in `copilot-logs/`). Every run uploads `.coding-crew/solve-feature/` as an artifact, so the checks log a stop names
 outlives the runner; a stop at an issue's checks has already pushed its work and made the issue ready again,
@@ -514,6 +546,58 @@ fails. GitHub never starts Copilot's automatic review on a PR the bot marks read
 pr=<n>` on a PR Copilot has not reviewed, the job requests it with the repo secret `COPILOT_GITHUB_TOKEN` (a
 fine-grained PAT with Pull requests: write), used for that one call only; unset or refused, the job warns and you
 request Copilot by hand.
+
+Which comments reach the agent: only those by Copilot's reviewer, by the identity the agent posts as, or by a user
+with write, maintain or admin permission on the repo. A round reads the PR's reviews, comments and threads through
+coding-crew-lib's `pr-comments.mjs`, and `fetch --comments` reads an issue's, both dropping everyone else's comments
+(a failed permission check counts as no access) and naming the omitted authors in one line; an outsider's reply
+on a thread the agent answered does not reopen it, though its open thread still keeps the PR under Needs attention
+until a person resolves it. Issue and PR bodies are not filtered: labelling a feature `run-agent` trusts its
+issues' bodies, so read them first.
+
+**Who starts a run, and what the agent holds.** A `run-agent` label starts a run only when whoever added it has
+write, maintain or admin permission (anyone else's label ends with a notice), and a review round never runs on a PR
+from a fork. Each job declares its own permissions: only `approve-ci` has `actions: write`, only `solve` (the agent's
+job) `id-token: write`, and the run step drops `ACTIONS_ID_TOKEN_REQUEST_TOKEN`/`_URL` before the agent starts, so
+no process the agent can read without root holds them. The agent has sudo on a GitHub-hosted runner and could still
+read them from the runner's memory: let no AWS role other than the Bedrock one below trust this repo's tokens from any
+workflow (`repo:<org>/<repo>:*`). No step after the agent on its runner holds a secret: the CI approval and
+Copilot's review request run as their own jobs. Every outside action is pinned by commit SHA.
+
+- `NPM_TOKEN`: for private npm packages, store a **read-only** granular npm token as this repo secret. Only the
+  step before the agent that runs `.coding-crew/dev-commands.json`'s `install` command sees it, through the repo's
+  own `.npmrc` (`//registry.npmjs.org/:_authToken=${NPM_TOKEN}`). That step skips with no file, no `install`
+  field, or `install_mode: docker`, and never runs `registry_auth` or `env`, which could write the token into a
+  file the agent reads: a repo whose registry needs `registry_auth` is not served by this path. An install the
+  agent runs itself (docker mode, or a private package an issue adds) has no token, fails the issue's checks, and
+  the run stops for a person.
+- CI auto-approval: the job approves the PR's held CI runs, so agent-written code runs with whatever secrets the
+  repo's CI workflows hold. Keep deploy and publishing secrets out of workflows that run on `pull_request`, or
+  behind an environment with required reviewers.
+- Setup warns when nothing protects the default branch (no branch protection, no ruleset with a `pull_request` or
+  `update` rule): the workflow's token, with `contents: write`, could push straight to it.
+
+**Claude Code on AWS Bedrock.** With `CREW_AGENT=claude`, set the repo variables `CREW_CLAUDE_PROVIDER=bedrock`,
+`CREW_AWS_ROLE_ARN` (the IAM role to assume) and `CREW_AWS_REGION`. The `solve` job then assumes the role through
+GitHub OIDC (`aws-actions/configure-aws-credentials`, for `timeout-minutes` × 60 seconds, since the agent cannot
+refresh credentials mid-run) and runs Claude Code with `CLAUDE_CODE_USE_BEDROCK=1`; no Anthropic secret is needed.
+`CREW_MODEL` and `solveFeature.models` then name Bedrock model IDs or inference profiles. Bedrock with
+`CREW_AGENT=copilot`, or with either AWS variable empty, fails the job before the agent. Lock the role to this
+workflow:
+
+1. Make the repo's OIDC `sub` claim name the workflow that asks for the token:
+   `gh api -X PUT repos/<owner>/<repo>/actions/oidc/customization/sub -F use_default=false -f 'include_claim_keys[]=repo' -f 'include_claim_keys[]=job_workflow_ref'`.
+   **This breaks the repo's existing OIDC roles** (any whose trust policy matches the default `sub`) until their
+   trust policies are updated to the new shape.
+2. Trust policy: the GitHub OIDC provider as `Federated`, `token.actions.githubusercontent.com:aud` equal to
+   `sts.amazonaws.com`, and `token.actions.githubusercontent.com:sub` matching (`StringLike`)
+   `repo:<org>/*:job_workflow_ref:<owner>/coding-crew/.github/workflows/crew-solve-feature.yml@<ref>`, `<owner>`
+   being the coding-crew copy the callers name and `<ref>` its full ref: `refs/tags/vX.Y.Z` for the tag they pin
+   (not the bare `vX.Y.Z`), or `refs/heads/stable`.
+3. Permissions policy: only `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`, on the named
+   foundation-model and inference-profile ARNs the runs use.
+4. The role's maximum session duration at least the job's `timeout-minutes` (360 by default, so 6 hours).
+5. A budget alarm (AWS Budgets) on the account's Bedrock spend.
 
 ---
 

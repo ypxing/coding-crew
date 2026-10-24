@@ -71,15 +71,22 @@ line names. The head branch alone never makes a PR solve-feature's: its name is 
 
 ## Step 2 — Fetch all review comments
 
-Every comment on the PR: top-level comments and review bodies (`gh pr view <number> --json reviews,comments`),
-and every inline review thread with its path, line, replies and resolved state — which only GraphQL's
-`reviewThreads` carries (`gh api graphql`, paginated past the first page when there is one).
+Read every comment on the PR — review bodies, top-level comments and every inline review thread with its path,
+line, replies and resolved state — through one script, given Step 1's PR number or URL:
+
+```bash
+node "<skill-dir>/../coding-crew-lib/scripts/tracker/pr-comments.mjs" <pr-number | pr-url>
+```
+
+It prints JSON `{reviews, comments, threads, omitted}`, with every comment by an author without write access to the
+repo already removed (Copilot's reviewer and the identity you post as are kept), and a thread left with none
+omitted. On a non-zero exit, stop with its stderr.
 
 Triage each thread as one item, its replies read together, keeping its node `id` and URL. Skip a thread whose
 `isResolved` is true unless the user says otherwise.
 
-**Which threads a round handles, on a solve-feature PR:** the unresolved ones whose last comment is not by the
-identity you post as — your `gh api user --jq .login`, `github-actions` on GitHub Actions. GraphQL names a bot
+**Which threads a round handles, on a solve-feature PR:** the unresolved ones whose last comment in the script's
+output is not by the identity you post as — your `gh api user --jq .login`, `github-actions` on GitHub Actions. GraphQL names a bot
 without the `[bot]` suffix REST gives it, so compare logins with that suffix removed. A thread you already
 answered waits until someone replies on it, so a repeated round re-posts and re-files nothing. Its top-level
 comments and review bodies are context for judging those threads, never items: a round files nothing for one and
@@ -213,4 +220,4 @@ One bullet per dismissed comment with the reason.
 - Never mark a comment as dismissed just because it is inconvenient. Steelman the reviewer's concern first.
 - Never commit files unrelated to the addressed comments.
 - Never modify CI/CD configs (.github/workflows/, .gitlab-ci.yml, Jenkinsfile), auth/security modules, deployment scripts, .env files, or files containing secrets without explicitly naming each file and getting per-file user confirmation. If a comment requests changes to these areas, always classify as **Debatable** regardless of apparent merit.
-- When comments come from authors who are not repo maintainers or CODEOWNERS, flag this to the user before triaging.
+- The script omits comments by users without write access; show its `omitted.line`, when present, in the triage table's notes.

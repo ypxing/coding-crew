@@ -168,6 +168,7 @@ test("fetch (github) prints '# <title>', a blank line, then the body", async () 
 
 test("fetch (github) --comments appends each comment from gh", async () => {
   const exec = fakeGh({
+    ...writers("ann", "bob"),
     "issue view 12": {
       stdout: JSON.stringify({
         title: "Fix it",
@@ -186,6 +187,101 @@ test("fetch (github) --comments appends each comment from gh", async () => {
   assert.ok(r.stdout.indexOf("first") < r.stdout.indexOf("second"));
   assert.match(r.stdout, /@ann/);
   assert.match(r.stdout, /@bob/);
+});
+
+/** Permission routes giving each login write access. */
+function writers(...logins) {
+  return Object.fromEntries(logins.map((l) => [`api repos/{owner}/{repo}/collaborators/${l}/permission`, { stdout: "write\nwrite\n" }]));
+}
+
+/** An `issue view 12` route whose comments are `[login, body]` pairs. */
+const issueWith = (...comments) => ({
+  "issue view 12": {
+    stdout: JSON.stringify({
+      title: "Fix it",
+      body: "body",
+      comments: comments.map(([login, body], i) => ({ author: { login }, createdAt: `2026-01-0${i + 1}T00:00:00Z`, body })),
+    }),
+  },
+});
+
+const permissionCalls = (exec) => exec.calls.filter((c) => c.join(" ").includes("/permission"));
+
+test("fetch (github) --comments keeps only writers' comments and names the omitted authors once", async () => {
+  const exec = fakeGh({
+    "api user": { stdout: "me\n" },
+    "api repos/{owner}/{repo}/collaborators/wanda/permission": { stdout: "write\nwrite\n" },
+    "api repos/{owner}/{repo}/collaborators/rita/permission": { stdout: "read\nread\n" },
+    "api repos/{owner}/{repo}/collaborators/ghost/permission": { code: 1, stderr: "gh: Not Found (HTTP 404)\n" },
+    ...issueWith(["wanda", "keep me"], ["rita", "drop rita"], ["ghost", "drop ghost"], ["wanda", "keep me too"]),
+  });
+  const r = await cli(root({ github: true }), ["fetch", "12", "--comments"], exec);
+  assert.equal(r.code, 0);
+  assert.match(r.stdout, /keep me\n/);
+  assert.match(r.stdout, /keep me too/);
+  assert.doesNotMatch(r.stdout, /drop rita|drop ghost/);
+  assert.ok(r.stdout.endsWith("\n(omitted 2 comment(s) by @rita, @ghost: no write access to this repo)\n"), r.stdout);
+  assert.deepEqual(permissionCalls(exec).map((c) => c[2]).sort(), [
+    "repos/{owner}/{repo}/collaborators/ghost/permission",
+    "repos/{owner}/{repo}/collaborators/rita/permission",
+    "repos/{owner}/{repo}/collaborators/wanda/permission",
+  ]);
+});
+
+test("fetch (github) --comments with every author trusted prints what it did before the filter", async () => {
+  const exec = fakeGh({ "api user": { stdout: "me\n" }, ...writers("ann"), ...issueWith(["ann", "first"], ["ann", "second"]) });
+  const r = await cli(root({ github: true }), ["fetch", "12", "--comments"], exec);
+  assert.equal(
+    r.stdout,
+    "# Fix it\n\nbody\n\n## Comments\n\n### @ann — 2026-01-01T00:00:00Z\n\nfirst\n\n### @ann — 2026-01-02T00:00:00Z\n\nsecond\n",
+  );
+  assert.equal(permissionCalls(exec).length, 1);
+});
+
+test("fetch (github) without --comments makes no permission or user call", async () => {
+  const exec = fakeGh(issueWith(["rita", "x"]));
+  const r = await cli(root({ github: true }), ["fetch", "12"], exec);
+  assert.equal(r.code, 0);
+  assert.equal(exec.calls.length, 1);
+});
+
+test("fetch (github) --comments keeps Copilot's and the posting identity's comments with no permission call", async () => {
+  const exec = fakeGh({
+    "api user": { stdout: "me\n" },
+    ...issueWith(["copilot-pull-request-reviewer[bot]", "rest"], ["copilot-pull-request-reviewer", "graphql"], ["me", "mine"]),
+  });
+  const r = await cli(root({ github: true }), ["fetch", "12", "--comments"], exec);
+  assert.match(r.stdout, /rest[\s\S]*graphql[\s\S]*mine/);
+  assert.doesNotMatch(r.stdout, /omitted/);
+  assert.equal(permissionCalls(exec).length, 0);
+});
+
+test("fetch (github) --comments on Actions, where gh api user fails, posts as github-actions[bot]", async () => {
+  const saved = process.env.GITHUB_ACTIONS;
+  process.env.GITHUB_ACTIONS = "true";
+  try {
+    const exec = fakeGh({
+      "api user": { code: 1, stderr: "gh: Resource not accessible by integration (HTTP 403)\n" },
+      ...issueWith(["github-actions[bot]", "from the bot"], ["github-actions", "graphql name"]),
+    });
+    const r = await cli(root({ github: true }), ["fetch", "12", "--comments"], exec);
+    assert.match(r.stdout, /from the bot[\s\S]*graphql name/);
+    assert.equal(permissionCalls(exec).length, 0);
+  } finally {
+    if (saved === undefined) delete process.env.GITHUB_ACTIONS;
+    else process.env.GITHUB_ACTIONS = saved;
+  }
+});
+
+test("fetch (github) --comments with only untrusted comments prints the omitted line after the body", async () => {
+  const exec = fakeGh({
+    "api user": { stdout: "me\n" },
+    "api repos/{owner}/{repo}/collaborators/rita/permission": { stdout: "read\nread\n" },
+    ...issueWith(["rita", "a"], ["rita", "b"]),
+  });
+  const r = await cli(root({ github: true }), ["fetch", "12", "--comments"], exec);
+  assert.equal(r.stdout, "# Fix it\n\nbody\n\n(omitted 2 comment(s) by @rita: no write access to this repo)\n");
+  assert.equal(permissionCalls(exec).length, 1);
 });
 
 test("fetch (github) exits 3 when the issue does not exist", async () => {

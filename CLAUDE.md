@@ -38,8 +38,10 @@ scripts/smoke-crew-afk.sh claude > /tmp/smoke.log   # appends a row to scripts/s
 # Bring a PR branch up to date with origin/main (local only, never pushes): merge it, resolving CHANGELOG append conflicts
 scripts/sync-pr-with-main.sh <branch>
 
-# Cut a milestone release (not per merge) once CHANGELOG.md's top version entry is committed;
-# needs a passing demo smoke log (`SMOKE: PASS (<platform>, demo)` and the `crew-afk-commit:` it ran at), run on a clean checkout with nothing but CHANGELOG.md and RESULTS.md committed since, or an explicit opt-out; the tree must be clean, RESULTS.md row included
+# Cut a milestone release (not per merge) once CHANGELOG.md's top version entry is committed, with every
+# `uses: ypxing/coding-crew/…@` ref in .github/workflows/crew-solve-feature.yml and the caller template
+# (skills/setup-coding-crew/hosts/github-actions.yml) bumped to that version's tag in the same commit;
+# needs a passing demo smoke log (`SMOKE: PASS (<platform>, demo)` and the `crew-afk-commit:` it ran at), run on a clean checkout with nothing but CHANGELOG.md, RESULTS.md and those two files committed since, or an explicit opt-out; the tree must be clean, RESULTS.md row included
 scripts/cut-release.sh --dry-run --demo-smoke /tmp/smoke.log   # or --no-demo-smoke "<reason>"; verify, then re-run without --dry-run to tag and push
 ```
 

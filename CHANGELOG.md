@@ -8,8 +8,25 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Upgrading
 
+- solve-feature on Actions: the reusable workflow is hardened. A `run-agent` label starts a run only from a user
+  with write access or more, and a review round never runs on a fork's PR. Each job has its own permissions
+  (`actions: write` only on the new `approve-ci` job, `id-token: write` only on `solve`); the agent's step drops the
+  OIDC request variables, and the CI approval and Copilot's review request run as jobs of their own, off the
+  agent's runner. `NPM_TOKEN` (a read-only npm token) reaches only a new step before the agent that runs
+  dev-commands.json's `install` in host mode. Claude Code can run on AWS Bedrock through OIDC with the repo
+  variables `CREW_CLAUDE_PROVIDER=bedrock`, `CREW_AWS_ROLE_ARN` and `CREW_AWS_REGION` (IAM setup in
+  `docs/guide.md`). Outside actions are pinned by commit SHA, and setup warns when nothing protects the default
+  branch (#615).
+- setup-coding-crew, solve-feature on Actions: the workflow is now coding-crew's reusable workflow
+  `.github/workflows/crew-solve-feature.yml`, and `/setup-coding-crew` writes a short caller that names it at a
+  release tag (`@v2.3.0`) and passes the four secrets by name; bump that tag to update (Dependabot's
+  `github-actions` ecosystem can). The runner installs that release's skills through the composite action
+  `actions/install`, with no clone: the repo variable `CODING_CREW_REF` is no longer read. Checks show as
+  `run / slug` and `run / solve`; a branch rule naming `solve` needs the new name. An existing full copy keeps
+  working until `/setup-coding-crew redo actions` replaces it; setup refuses a caller whose tag is not released
+  yet. `scripts/cut-release.sh` refuses a release whose pinned `uses:` refs do not read its tag (#614).
 - install, all skills: the tracker, checks and git-workflow libraries are installed once, in a new `coding-crew-lib`
-  skill, instead of a copy inside every skill: a `claude` project install writes 63 files, not 248. `install.sh`
+  skill, instead of a copy inside every skill: a `claude` project install writes 65 files, not 248. `install.sh`
   installs it with any skill and removes the old per-skill copies on reinstall; an `npx skills add -s <name>` install
   needs `-s coding-crew-lib` too, and a skill stops naming that command when it is missing. `uninstall.sh --skill
   coding-crew-lib` keeps it while an installed skill still needs it (#611).
@@ -55,6 +72,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- address-pr-comments, tracker: only comments by Copilot's reviewer, the identity the agent posts as, or a user with
+  write, maintain or admin permission reach the agent: a round reads the PR through the new
+  `coding-crew-lib/scripts/tracker/pr-comments.mjs`, and `fetch --comments` on the github tracker drops the rest,
+  each naming the omitted authors in one `(omitted <N> comment(s) by @a: no write access to this repo)` line.
+  Issue and PR bodies are not filtered (#616).
 - CI: `scripts/ci-run-bats.sh` stops with exit 2 and "no such file" when a path it is given does not exist, such
   as an unmatched glob, instead of hanging (#619).
 - solve-feature, crew-review, to-issues: a solve-feature PR body names its spec in one line (`Spec: PRD #<n>,

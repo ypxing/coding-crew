@@ -1,0 +1,595 @@
+name: crew-solve-feature
+
+# Runs one feature's issues unattended with an agent CLI: the Copilot CLI by default, billed to GitHub Copilot with
+# no secret, or Claude Code when the repo variable CREW_AGENT is `claude` (see Billing).
+#
+# A reusable workflow: a repo runs it from a short caller file, .github/workflows/solve-feature.yml, which holds
+# the triggers, the permissions and the secrets it passes, and names this file at a coding-crew release tag
+# (`uses: ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@vX.Y.Z`). A called workflow sees the
+# caller's event, so everything below reads `github.event` as if it were the repo's own; `vars.*` are the
+# caller repo's variables. To update, bump the caller's tag (Dependabot's `github-actions` ecosystem opens that PR).
+#
+# Setup: run /setup-coding-crew, which copies the caller (setup-coding-crew's hosts/github-actions.yml) to
+# .github/workflows/solve-feature.yml (install.sh never writes there), creates the `run-agent` label, sets
+# CREW_AGENT and saves the check commands to .coding-crew/dev-commands.json; commit what it lists. Then label the
+# feature's root issue `run-agent`, or run the workflow by hand with the slug. A run whose fresh clone has no
+# committed dev-commands.json discovers the checks itself. The skills come from the composite action
+# ypxing/coding-crew/actions/install at this file's own release tag, never from `main`.
+#
+# The slug for an issue trigger is the root issue's `Feature: <slug>` line, which the GitHub tracker writes on
+# every root issue and only there: an issue without one is a sub-issue, and its parent is the root. `run-agent` on
+# any issue of the feature starts it; on a sub-issue the slug step also adds the label to the root.
+# The label is not removed afterwards: the concurrency group makes a re-label wait for the run in
+# flight rather than start a second one on the same branch. It so marks the features that run here: a finished
+# `ready-for-human` issue (its label removed, as mark-done does, or the issue closed with it on) re-runs its feature
+# when the root is open and labelled `run-agent` and whoever finished it has triage, write, maintain or admin
+# permission; otherwise the slug job ends with a notice and no run.
+#
+# The agent runs the solve-feature skill, which runs each coder, the reviewer, the fixer and the
+# PR's writer as its own subagents. The review runs inside the same job, from the skill. The PR is the
+# workflow's own GITHUB_TOKEN's, so its `pull_request` runs wait for someone to approve them, after every push;
+# after the session the approve-ci job (the only one with `actions: write`) approves the runs held on the PR's head.
+# Where GitHub refuses, it dispatches that workflow on the PR's branch instead, which needs `workflow_dispatch:` in it.
+# That approval runs agent-written code with whatever secrets the repo's CI workflows hold.
+# The session's exit code does not carry a stop, so the last step reads the run's one-line
+# .coding-crew/solve-feature/outcome and fails the job on anything but `ready pr=<n>`: `needs-attention pr=<n>`,
+# `stopped: <what> failed: <reason>`, or no file at all (the session ended before the run finished). The step before it
+# uploads .coding-crew/solve-feature/ (the checks logs a stop names, the coder's report) as the run's artifact. A stop at an
+# issue's checks has already pushed its work and made the issue ready again, so a re-run picks it up there.
+# An issue whose change touches .github/workflows/ cannot land from a runner: the job's GITHUB_TOKEN never gets the
+# `workflows` scope (no `permissions:` key grants it), so GitHub refuses the push. Run such an issue locally, with
+# /crew-afk or /solve-feature. A runner's checkout is thrown away with the job, so before the upload the job bundles
+# the commits no push reached into the artifact's unpushed.bundle, and the summary page says how to fetch them.
+# The last step also writes the run's summary page: the outcome, the PR, the model, and on a stop the coder's
+# report and the checks log's tail, so the run says why it stopped without the artifact.
+#
+# Model: the agent CLI's default for the account, unless the repo variable CREW_MODEL names one, passed as
+# `--model` (a Claude Code alias such as `opus`, or a Copilot model name). The subagents run on it too, unless
+# .coding-crew/config.json's solveFeature.models names theirs. The repo variables CREW_CODER_MODEL and
+# CREW_REVIEWER_MODEL override solveFeature.models for the coder (and fixer) and the reviewer on this runner only.
+# For Claude Code, the repo variables ANTHROPIC_DEFAULT_HAIKU_MODEL, _SONNET_MODEL and _OPUS_MODEL, when set, pin the
+# model each alias means. The solve job's timeout is the caller's `timeout-minutes` input, 360 when it passes none.
+#
+# Review rounds: a review submitted on a solve-feature PR (one whose body has the `<!-- solve-feature:begin -->`
+# block; a reply on a review thread is submitted as a review too), other than an approval, runs the
+# address-pr-comments skill on that PR, non-interactively, in the feature's concurrency group. That group holds one run in progress and one pending: a newer
+# run, label or round, cancels the pending one. A round still runs solve-feature when the feature has a ready issue,
+# so a label run it cancelled is not lost; a round a later run cancelled waits for the next review. Only
+# Copilot's reviewer (copilot-pull-request-reviewer[bot]) or a user with write, maintain or admin permission starts
+# one: anyone else's review, the agent's own replies included, ends the slug job with a notice and runs no session.
+# A round that started no solve-feature run, or ended needs-attention (the owner was @mentioned on the thread),
+# ends with a notice rather than a failed job; a stopped one still fails.
+#
+# Copilot's review: GitHub never starts it on a PR the bot marks ready, so after a run that ends `ready pr=<n>`
+# on a PR Copilot has not reviewed yet, the request-copilot-review job (off the agent's runner) requests it with the
+# repo secret COPILOT_GITHUB_TOKEN, a
+# fine-grained PAT of the owner's with "Pull requests: write" (and "Copilot Requests"). That one `gh pr edit` call
+# is all it is used for; unset or refused, the job warns and the owner requests Copilot by hand.
+#
+# Billing, Copilot: with `github.token`, a repo owned by an organisation bills the organisation (its budgets,
+# not any user's), which needs the organisation policy "Allow use of Copilot CLI billed to the
+# organization" (on by default where the Copilot CLI policy is on); a repo owned by a personal
+# account bills the owner's Copilot seat. See
+# https://docs.github.com/en/copilot/concepts/agents/copilot-cli/copilot-cli-in-github-actions. To
+# bill a person instead, or when the organisation policy is off, see the commented
+# COPILOT_GITHUB_TOKEN line on the run step.
+# Billing, Claude Code: the repo secret ANTHROPIC_API_KEY bills its Anthropic Console organisation;
+# CLAUDE_CODE_OAUTH_TOKEN (printed by `claude setup-token`) bills the Claude subscription of whoever made it.
+# Claude Code on AWS Bedrock instead, with no Anthropic secret: the repo variables CREW_CLAUDE_PROVIDER=bedrock,
+# CREW_AWS_ROLE_ARN and CREW_AWS_REGION (CREW_AGENT=claude). The solve job, the only one with `id-token: write`,
+# assumes the role through GitHub OIDC for `timeout-minutes` (the agent cannot refresh it), and CREW_MODEL and
+# solveFeature.models then name Bedrock model IDs or inference profiles. Lock the role to this workflow: docs/guide.md
+# (solve-feature on GitHub Actions) has the `sub` customisation, the trust and permissions policies and a budget
+# alarm; customising `sub` breaks the repo's existing OIDC roles until their trust policies are updated.
+#
+# Secrets and the agent: the run step drops the OIDC request variables before the agent starts (with the runner's
+# sudo it could still read them from the runner's memory), and no step after it on the agent's runner holds a secret. NPM_TOKEN, a read-only granular npm token, reaches only the step that runs
+# dev-commands.json's `install` (host mode) before the agent, through the repo's .npmrc `${NPM_TOKEN}`; a
+# registry_auth command is not run there, and an install the agent runs itself (docker mode, a new private
+# package) has no token and stops for a person.
+on:
+  workflow_call:
+    inputs:
+      # A workflow_dispatch caller passes its own input; empty on every other event.
+      slug:
+        description: The feature slug (the root issue's `Feature:` line)
+        required: false
+        type: string
+      timeout-minutes:
+        description: The solve job's timeout
+        required: false
+        type: number
+        default: 360
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: false
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: false
+      COPILOT_GITHUB_TOKEN:
+        required: false
+      NPM_TOKEN:
+        required: false
+
+# No workflow-level permissions: each job names its own, so `actions: write` is approve-ci's alone and
+# `id-token: write` solve's alone. The caller's permissions are the ceiling for all of them.
+jobs:
+  # The slug is a job of its own because a concurrency group can only read a job's outputs, never
+  # a step's: the group below needs the slug, and an issue trigger has it only in the root issue's body, a review round
+  # in the PR body. No slug output skips the solve job.
+  slug:
+    runs-on: ubuntu-latest
+    # The parent lookup and the root's run-agent label; the permission reads need only metadata.
+    permissions:
+      issues: write
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'run-agent')
+      || (github.event_name == 'issues' && github.event.action == 'unlabeled' && github.event.label.name == 'ready-for-human')
+      || (github.event_name == 'issues' && github.event.action == 'closed' && contains(github.event.issue.labels.*.name, 'ready-for-human'))
+      || (github.event_name == 'pull_request_review' && github.event.review.state != 'approved')
+    outputs:
+      slug: ${{ steps.slug.outputs.slug }}
+      pr: ${{ steps.slug.outputs.pr }}
+    steps:
+      - name: Read the slug
+        id: slug
+        env:
+          INPUT_SLUG: ${{ inputs.slug }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_ACTION: ${{ github.event.action }}
+          ISSUE_LABEL: ${{ github.event.label.name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_STATE: ${{ github.event.issue.state }}
+          ISSUE_LABELS: ${{ toJSON(github.event.issue.labels) }}
+          ISSUE_SENDER: ${{ github.event.sender.login }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REVIEW_AUTHOR: ${{ github.event.review.user.login }}
+          GH_TOKEN: ${{ github.token }}
+        # A body goes through a file: interpolated into the shell line it could run as code.
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request_review ]; then
+            # A fork's PR body can carry a copied solve-feature block: only the repo's own branches get rounds.
+            [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ] ||
+              { echo "::notice::PR #$PR_NUMBER comes from $HEAD_REPO: no round"; exit 0; }
+            printf '%s\n' "$PR_BODY" > "$RUNNER_TEMP/pr-body.md"
+            grep -qxF '<!-- solve-feature:begin -->' "$RUNNER_TEMP/pr-body.md" ||
+              { echo "::notice::PR #$PR_NUMBER has no solve-feature block: no round"; exit 0; }
+            if [ "$REVIEW_AUTHOR" != 'copilot-pull-request-reviewer[bot]' ]; then
+              # .permission is the legacy name (maintain reads as write), .role_name the role.
+              perm=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$REVIEW_AUTHOR/permission" --jq '.permission, .role_name' || true)
+              grep -qxE 'write|maintain|admin' <<<"$perm" ||
+                { echo "::notice::$REVIEW_AUTHOR has no write access to this repo: their review starts no round"; exit 0; }
+            fi
+            slug="$(sed -n 's/^<!-- solve-feature:slug \([^ ]*\) -->$/\1/p' "$RUNNER_TEMP/pr-body.md" | head -n 1)"
+            [ -n "$slug" ] || { echo "::notice::PR #$PR_NUMBER's solve-feature block has no slug line: no round"; exit 0; }
+            printf 'slug=%s\npr=%s\n' "$slug" "$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$INPUT_SLUG" ]; then
+            slug="$INPUT_SLUG"
+          else
+            # A label starts a run only from write and up; an issue's author may close it without triage access,
+            # so only triage and up re-run a feature.
+            case "$ISSUE_ACTION" in
+              labeled)
+                perm=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$ISSUE_SENDER/permission" --jq '.permission, .role_name' || true)
+                grep -qxE 'write|maintain|admin' <<<"$perm" ||
+                  { echo "::notice::$ISSUE_SENDER has no write access to this repo: their label starts no run"; exit 0; }
+                ;;
+              unlabeled|closed)
+                perm=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$ISSUE_SENDER/permission" --jq '.permission, .role_name' || true)
+                grep -qxE 'triage|write|maintain|admin' <<<"$perm" ||
+                  { echo "::notice::$ISSUE_SENDER has no triage access to this repo: issue #$ISSUE_NUMBER ($ISSUE_ACTION) starts no run"; exit 0; }
+                ;;
+            esac
+            # The tracker's marker shape only (a prose `Feature:` line is no marker), CRs dropped from web-edited bodies.
+            marker() { tr -d '\r' < "$1" | sed -nE 's/^Feature:[[:blank:]]*([A-Za-z0-9][A-Za-z0-9._-]*)[[:blank:]]*$/\1/p' | head -n 1; }
+            printf '%s\n' "$ISSUE_BODY" > "$RUNNER_TEMP/issue-body.md"
+            slug="$(marker "$RUNNER_TEMP/issue-body.md")"
+            root="$ISSUE_NUMBER" root_state="$ISSUE_STATE" root_labels="$ISSUE_LABELS" sub=
+            # Only a root has the line, and a root may sit under an epic that has none: its own body wins.
+            if [ -z "$slug" ] && gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/parent" > "$RUNNER_TEMP/parent.json"; then
+              jq -r '.body // ""' "$RUNNER_TEMP/parent.json" > "$RUNNER_TEMP/root-body.md" 2>/dev/null || true
+              slug="$(marker "$RUNNER_TEMP/root-body.md")"
+              root="$(jq -r '.number // empty' "$RUNNER_TEMP/parent.json" 2>/dev/null || true)"
+              root_state="$(jq -r '.state // empty' "$RUNNER_TEMP/parent.json" 2>/dev/null || true)"
+              root_labels="$(jq -c '.labels // []' "$RUNNER_TEMP/parent.json" 2>/dev/null || true)"
+              sub=1
+            fi
+            case "$ISSUE_ACTION" in
+              unlabeled|closed)
+                # A human issue is done: re-run only a feature that runs here and has something left to land.
+                why=
+                if [ -z "$slug" ]; then why="no 'Feature: <slug>' line on it or its parent"
+                elif [ "$root_state" != open ]; then why="its root #$root is closed"
+                elif ! jq -e 'any(.[]?; .name == "run-agent")' <<<"$root_labels" >/dev/null 2>&1; then
+                  why="its root #$root is not labelled run-agent"
+                fi
+                if [ -n "$why" ]; then
+                  echo "::notice::issue #$ISSUE_NUMBER ($ISSUE_ACTION $ISSUE_LABEL): $why: no run"
+                  exit 0
+                fi
+                ;;
+              *)
+                # The root carries the label a human-done event reads; added with github.token, it starts no run.
+                if [ -n "$slug" ] && [ -n "$sub" ]; then
+                  gh issue edit "$root" --repo "$GITHUB_REPOSITORY" --add-label run-agent ||
+                    echo "::warning::could not label root issue #$root run-agent: label it by hand, or a finished human issue will not re-run the feature"
+                fi
+                ;;
+            esac
+          fi
+          if [ -z "$slug" ]; then
+            echo "::error::no 'Feature: <slug>' line in the issue body: label the feature's root issue"
+            exit 1
+          fi
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+
+  solve:
+    needs: slug
+    if: needs.slug.outputs.slug != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    # id-token: write only for Bedrock's role; the run step hides it from the agent.
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      copilot-requests: write
+      id-token: write
+    outputs:
+      pr: ${{ steps.outcome.outputs.pr }}
+      ready: ${{ steps.outcome.outputs.ready }}
+    # One run per feature at a time (the loop takes no lock); a newer trigger replaces a pending one (see Review rounds above).
+    concurrency:
+      group: solve-feature-${{ needs.slug.outputs.slug }}
+      cancel-in-progress: false
+    env:
+      CREW_AGENT: ${{ vars.CREW_AGENT || 'copilot' }}
+      CREW_MODEL: ${{ vars.CREW_MODEL }}
+      CREW_CODER_MODEL: ${{ vars.CREW_CODER_MODEL }}
+      CREW_REVIEWER_MODEL: ${{ vars.CREW_REVIEWER_MODEL }}
+      CREW_CLAUDE_PROVIDER: ${{ vars.CREW_CLAUDE_PROVIDER }}
+      CREW_AWS_ROLE_ARN: ${{ vars.CREW_AWS_ROLE_ARN }}
+      CREW_AWS_REGION: ${{ vars.CREW_AWS_REGION }}
+    steps:
+      - name: Check the Claude provider
+        id: provider
+        env:
+          TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
+        run: |
+          [ "$CREW_CLAUDE_PROVIDER" = bedrock ] || exit 0
+          [ "$CREW_AGENT" = claude ] ||
+            { echo "::error::repo variable CREW_CLAUDE_PROVIDER is bedrock but CREW_AGENT is '$CREW_AGENT': Bedrock runs Claude Code only, so set CREW_AGENT to claude"; exit 1; }
+          missing=
+          for v in CREW_AWS_ROLE_ARN CREW_AWS_REGION; do [ -n "${!v}" ] || missing="$missing $v"; done
+          [ -z "$missing" ] || { echo "::error::CREW_CLAUDE_PROVIDER is bedrock but these repo variables are empty:$missing"; exit 1; }
+          # The agent cannot refresh the role's credentials (no OIDC token in its session): they last the whole job.
+          echo "duration=$((TIMEOUT_MINUTES * 60))" >> "$GITHUB_OUTPUT"
+
+      # A review round's own ref is refs/pull/<n>/merge, the agent-written branch, whose dev-commands.json and package
+      # scripts the install step below would run with NPM_TOKEN: the round installs on the default branch and only
+      # then checks out the PR's branch.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request_review' && github.event.repository.default_branch || '' }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      # NPM_TOKEN is this step's alone, read by the repo's .npmrc `${NPM_TOKEN}`. registry_auth and env are never run:
+      # either could write the token into a file the agent then reads.
+      - name: Install the project's dependencies
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          f=.coding-crew/dev-commands.json
+          [ -f "$f" ] || { echo "No $f: skipped the dependency install, the agent installs what it needs."; exit 0; }
+          if [ "$(jq -r '.install_mode // "host"' "$f")" = docker ]; then
+            echo "::notice::$f has install_mode docker: skipped, the agent installs in its containers without NPM_TOKEN"
+            exit 0
+          fi
+          cmd=$(jq -r '.install // empty' "$f")
+          [ -n "$cmd" ] || { echo "$f has no install command: skipped the dependency install."; exit 0; }
+          [ -n "$NPM_TOKEN" ] || unset NPM_TOKEN
+          echo "Running: $cmd"
+          bash -c "$cmd"
+          # solve-feature refuses a dirty tree: drop what the install rewrote (a lockfile) or left untracked;
+          # ignored files (node_modules) stay.
+          git checkout -q -- . && git clean -fdq
+
+      # address-pr-comments refuses to run on the default branch, the local branch actions/checkout left for `ref:`.
+      # -f drops what the install changed in tracked files (a lockfile); node_modules, ignored, stays.
+      - name: Check out the review round's PR branch
+        if: github.event_name == 'pull_request_review'
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: git checkout -q -f -B "$HEAD_REF" --track "origin/$HEAD_REF"
+
+      - name: Install the agent CLI
+        run: |
+          # --ignore-scripts: no dependency's lifecycle script runs with the runner's token. Claude Code's
+          # binary comes from its own postinstall, so that one script runs by name.
+          case "$CREW_AGENT" in
+            copilot) npm install -g --ignore-scripts @github/copilot ;;
+            claude)
+              npm install -g --ignore-scripts @anthropic-ai/claude-code
+              node "$(npm root -g)/@anthropic-ai/claude-code/install.cjs"
+              ;;
+            *) echo "::error::repo variable CREW_AGENT is '$CREW_AGENT': copilot or claude"; exit 1 ;;
+          esac
+
+      # User-level ($HOME), never into $GITHUB_WORKSPACE: a project-level install leaves the skill
+      # directory, .coding-crew/manifest.json and the asset trees untracked, and solve-feature
+      # refuses a dirty tree. The agent reads its user skills, coding-crew-lib among them (the tracker
+      # CLI included), from $HOME (~/.copilot/skills, ~/.claude/skills). `uses:` takes no expression and `./` is the
+      # caller's checkout, so the owner and tag are literal: this file's own release, bumped by each release commit.
+      - name: Install coding-crew (user-level)
+        uses: ypxing/coding-crew/actions/install@v2.3.0
+        with:
+          agent: ${{ env.CREW_AGENT }}
+
+      - name: Git identity for the runner
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # Bedrock through OIDC: the role's own trust policy decides which workflow may assume it (docs/guide.md).
+      - name: AWS credentials for Bedrock
+        if: env.CREW_CLAUDE_PROVIDER == 'bedrock' && env.CREW_AGENT == 'claude'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.CREW_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.CREW_AWS_REGION }}
+          role-duration-seconds: ${{ steps.provider.outputs.duration }}
+
+      - name: Run solve-feature
+        env:
+          # Copilot stops waiting for a background subagent after 600s by default and ends the session mid-issue.
+          COPILOT_TASK_WAIT_TIMEOUT_SECONDS: 3600
+          SLUG: ${{ needs.slug.outputs.slug }}
+          REVIEW_PR: ${{ needs.slug.outputs.pr }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          # To bill a person rather than the organisation, or when the organisation policy is off,
+          # store a fine-grained PAT with the "Copilot Requests" permission as a repo secret and pass
+          # it here: the run bills the Copilot seat of the PAT's owner.
+          # COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Claude Code's alias pins (which model `opus`, `sonnet`, `haiku` mean), from the caller repo's variables.
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.ANTHROPIC_DEFAULT_HAIKU_MODEL }}
+          ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.ANTHROPIC_DEFAULT_SONNET_MODEL }}
+          ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.ANTHROPIC_DEFAULT_OPUS_MODEL }}
+        # An unset secret or variable arrives as an empty variable, which Claude Code would read as a credential or
+        # as the model to use.
+        run: |
+          set -o pipefail
+          # id-token: write puts these in every step: with them the agent could mint a token for any role trusting the repo.
+          # Re-run this script without them, not `unset`: an unset leaves them in this shell's /proc/<pid>/environ,
+          # which the agent, a child of this shell, can read.
+          [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN+x}${ACTIONS_ID_TOKEN_REQUEST_URL+x}" ] ||
+            exec env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL bash -eo pipefail "$0"
+          for v in ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL; do
+            [ -n "${!v:-}" ] || unset "$v"
+          done
+          model=()
+          [ -z "$CREW_MODEL" ] || model=(--model "$CREW_MODEL")
+          # The whole event stream is kept for the artifact; tee -p keeps the session going should the filter die.
+          mkdir -p .coding-crew/solve-feature && echo '*' > .coding-crew/solve-feature/.gitignore
+          prompt="Use the solve-feature skill on $SLUG" claude_prompt="/solve-feature $SLUG"
+          if [ -n "$REVIEW_PR" ]; then
+            prompt="Use the address-pr-comments skill on PR #$REVIEW_PR; this run is non-interactive"
+            claude_prompt="/address-pr-comments $REVIEW_PR $prompt"
+          fi
+          case "$CREW_AGENT" in
+            copilot)
+              copilot -p "$prompt" --allow-all --no-color "${model[@]}" --output-format json \
+                --log-dir .coding-crew/solve-feature/copilot-logs |
+                tee -p .coding-crew/solve-feature/session.jsonl | jq --unbuffered -Rr '
+                  fromjson? | select(.ephemeral != true) | try (
+                    (if .data.parentToolCallId? then "    " else "" end) as $pad | .data as $d
+                    | if .type == "assistant.message" then $d.content | select(. != "") | $pad + .
+                      elif .type == "tool.execution_start" then $d.arguments as $a
+                        | if $d.toolName == "bash" then $pad + "$ " + ($a.command | tostring | split("\n")[0])
+                          elif $d.toolName == "task" then
+                            $pad + "> subagent: \($a.description // "")" + (if $a.model then " (\($a.model))" else "" end)
+                          else $pad + "\($d.toolName) \($a.path // $a.skill // "")" end
+                      elif .type == "tool.execution_complete" and ($d.success == false or ($d.shellExecution.exitCode // 0) != 0) then
+                        $pad + "  failed: " + ($d.error.message? // $d.error // $d.result.content? // "exit \($d.shellExecution.exitCode)"
+                          | tostring | split("\n")[0])
+                      elif .type == "subagent.completed" then "< subagent \($d.agentDisplayName) ran on \($d.model)"
+                      elif .type == "result" then
+                        "session: exit \(.exitCode), \(.usage.sessionDurationMs / 60000 | floor) min, \(.usage.premiumRequests) premium requests"
+                      else empty end
+                  ) catch empty' ;;
+            claude)
+              if [ "$CREW_CLAUDE_PROVIDER" = bedrock ]; then
+                export CLAUDE_CODE_USE_BEDROCK=1 AWS_REGION="$CREW_AWS_REGION"
+              else
+                [ -n "${ANTHROPIC_API_KEY:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ] ||
+                  { echo "::error::Claude Code needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"; exit 1; }
+              fi
+              # Plain -p prints only the session's last message, at its end.
+              claude -p "$claude_prompt" --dangerously-skip-permissions "${model[@]}" --output-format stream-json --verbose |
+                tee -p .coding-crew/solve-feature/session.jsonl | jq --unbuffered -Rr '
+                  fromjson? | try (
+                    (if .parent_tool_use_id then "    " else "" end) as $pad
+                    | if .type == "system" and .subtype == "init" then "model: \(.model)"
+                      elif .type == "assistant" then .message.content[]
+                        | if .type == "text" then $pad + .text
+                          elif .type != "tool_use" then empty
+                          elif .name == "Bash" then $pad + "$ " + (.input.command | tostring | split("\n")[0])
+                          elif .name == "Agent" or .name == "Task" then
+                            $pad + "> subagent: \(.input.description // "")" + (if .input.model then " (\(.input.model))" else "" end)
+                          else $pad + "\(.name) \(.input.file_path // .input.pattern // "")" end
+                      elif .type == "user" then .message.content[]
+                        | select(type == "object" and .type == "tool_result" and .is_error == true)
+                        | $pad + "  failed: " + (.content | if type == "array" then map(.text // "") | join(" ") else tostring end | split("\n")[0])
+                      elif .type == "result" then
+                        "session: \(.subtype), \(.num_turns) turns, \(.duration_ms / 60000 | floor) min, $\(.total_cost_usd)"
+                      else empty end
+                  ) catch empty' ;;
+          esac
+
+      # The PR the run ended on, for the jobs after this one; ready only on `ready pr=<n>`.
+      - name: Read the outcome's PR
+        id: outcome
+        if: always()
+        run: |
+          line=$(head -n 1 .coding-crew/solve-feature/outcome 2>/dev/null || true)
+          pr=$(sed -n 's/.*pr=\([0-9][0-9]*\).*/\1/p' <<<"$line")
+          ready=false
+          [ -z "$pr" ] || [ "$line" != "ready pr=$pr" ] || ready=true
+          printf 'pr=%s\nready=%s\n' "$pr" "$ready" >> "$GITHUB_OUTPUT"
+
+      # Empty when every commit was pushed: git then refuses the bundle and writes no file.
+      - name: Bundle the unpushed commits
+        if: always()
+        run: |
+          mkdir -p .coding-crew/solve-feature
+          git bundle create .coding-crew/solve-feature/unpushed.bundle --branches --not --remotes 2>/dev/null || true
+
+      - name: Keep the run's logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: solve-feature-${{ needs.slug.outputs.slug }}-${{ github.run_attempt }}
+          path: .coding-crew/solve-feature/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+      - name: Fail the job unless solve-feature marked the PR ready
+        if: always()
+        env:
+          SLUG: ${{ needs.slug.outputs.slug }}
+          REVIEW_PR: ${{ needs.slug.outputs.pr }}
+        run: |
+          logs=.coding-crew/solve-feature
+          # A review round writes no outcome when it started no solve-feature run (nothing to fix).
+          if line=$(cat "$logs/outcome" 2>/dev/null); then :
+          elif [ -n "$REVIEW_PR" ]; then line="no solve-feature run this round"
+          else line="never finished: the session ended early or never started (see the first failed step)"
+          fi
+          # Claude's session names its model in the init event, Copilot's on each top-level message.
+          model=$(jq -r '(select(.type == "system" and .subtype == "init") | .model),
+            (select(.type == "assistant.message" and .data.parentToolCallId == null) | .data.model)' \
+            "$logs/session.jsonl" 2>/dev/null | head -n 1)
+          # Claude Code writes "<synthetic>" as the model of messages it makes up itself (API errors, interruptions).
+          subagent_models=$(jq -Rrn '[inputs | fromjson? | objects
+            | (select(.type == "assistant" and .parent_tool_use_id != null) | .message.model?),
+              (select(.type == "subagent.completed") | .data.model?)
+            | strings | select(. != "<synthetic>")]
+            | reduce .[] as $m ([]; if index([$m]) then . else . + [$m] end) | join(", ")' "$logs/session.jsonl" 2>/dev/null || true)
+          pr=$(sed -n 's/.*pr=\([0-9][0-9]*\).*/\1/p' <<<"$line")
+          pr=${pr:-$REVIEW_PR}
+          {
+            # A double-backtick span: git's reason can quote names in single backticks.
+            echo "### solve-feature $SLUG: \`\` $line \`\`"
+            [ -z "$pr" ] || echo "- PR: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr"
+            echo "- Agent: $CREW_AGENT, model ${model:-${CREW_MODEL:-unpinned (the CLI default)}}"
+            [ -z "$subagent_models" ] || echo "- Subagent models: $subagent_models"
+            [ ! -s "$logs/unpushed.bundle" ] ||
+              echo "- Unpushed commits: in the artifact's unpushed.bundle. In a clone where git can push, fetch them with \`gh run download $GITHUB_RUN_ID -n solve-feature-$SLUG-$GITHUB_RUN_ATTEMPT -D /tmp/sf-$GITHUB_RUN_ID && git fetch /tmp/sf-$GITHUB_RUN_ID/unpushed.bundle 'refs/heads/*:refs/heads/*'\`, then run /solve-feature $SLUG there"
+            ref=${line#stopped: }
+            case "$line" in
+              "stopped: "*" solve failed: "*) files="$logs/coder.report.md" ;;
+              "stopped: "*" checks failed: "*)
+                ref=${ref%% checks failed: *}; files="$logs/coder.report.md $logs/${ref//\//_}.checks.log" ;;
+              "stopped: "*" fix failed: "*) files=$(ls -t "$logs"/pr-*.checks.log 2>/dev/null | head -n 1) ;;
+              needs-attention*) files="$logs/pr-$pr.attention.md" ;;
+              *) files="" ;;
+            esac
+            for f in $files; do
+              [ -s "$f" ] || continue
+              printf '\n<details open><summary>%s</summary>\n\n```text\n%s\n```\n\n</details>\n' "${f#"$logs"/}" "$(tail -n 60 "$f")"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          # A review round waiting on a person is not a failure: the PR's draft state and open threads show it.
+          case "$line" in
+            ready*) echo "solve-feature: $line" ;;
+            "no solve-feature run this round" | needs-attention*)
+              [ -n "$REVIEW_PR" ] || { echo "::error::solve-feature: $line"; exit 1; }
+              echo "::notice::address-pr-comments on PR #$REVIEW_PR: $line" ;;
+            *) echo "::error::solve-feature: $line"; exit 1 ;;
+          esac
+
+  # Its own job, the only one with `actions: write`, and off the agent's runner: the agent has sudo there and could
+  # replace any binary a later step calls. Once, after the session, so CI tests the PR's final head, the fixer's
+  # commits included.
+  approve-ci:
+    needs: solve
+    if: always() && needs.solve.outputs.pr != ''
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Start the PR's CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ needs.solve.outputs.pr }}
+        run: |
+          pr=$PR
+          read -r branch sha cross block < <(gh pr view "$pr" --json headRefName,headRefOid,isCrossRepository,body \
+            --jq '"\(.headRefName) \(.headRefOid) \(.isCrossRepository) \((.body // "") | gsub("\r"; "") | split("\n") | any(. == "<!-- solve-feature:begin -->"))"') ||
+            { echo "::warning::could not read PR #$pr's head: its CI waits for approval"; exit 0; }
+          # The agent wrote the outcome naming the PR: approve only a solve-feature PR of this repo's own.
+          [ "$cross" = false ] && [ "$block" = true ] ||
+            { echo "::warning::PR #$pr is not a solve-feature PR from this repo: its CI is left alone"; exit 0; }
+          # GitHub holds a bot-made PR's run as `action_required`, with no jobs run.
+          held=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&event=pull_request&status=action_required" \
+            --jq '.workflow_runs[] | "\(.id) \(.path)"') ||
+            { echo "::warning::could not list PR #$pr's runs: its CI waits for approval"; exit 0; }
+          [ -n "$held" ] || { echo "No run on PR #$pr's head waits for approval."; exit 0; }
+          while read -r id path; do
+            name=${path##*/}
+            if gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/approve" >/dev/null; then
+              echo "Approved $name's run $id on PR #$pr."
+            # A dispatched run tests the same commit, but the PR page does not list its checks.
+            elif gh workflow run "$name" --ref "$branch"; then
+              echo "::warning::could not approve $name's run $id on PR #$pr: dispatched $name on $branch instead"
+            else
+              echo "::warning::could not approve or dispatch $name on $branch: PR #$pr's run of it waits for approval"
+            fi
+          done <<<"$held"
+
+  # Its own job, so COPILOT_GITHUB_TOKEN never reaches the agent's runner; the reviews are listed with the workflow's token.
+  request-copilot-review:
+    needs: solve
+    if: always() && needs.solve.outputs.pr != ''
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Ask Copilot for its review
+        env:
+          GH_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          READ_TOKEN: ${{ github.token }}
+          PR: ${{ needs.solve.outputs.pr }}
+          READY: ${{ needs.solve.outputs.ready }}
+        run: |
+          pr=$PR
+          [ -n "$pr" ] && [ "$READY" = true ] || { echo "The PR is not ready: no Copilot review to request."; exit 0; }
+          # The agent wrote the outcome naming the PR: the PAT asks only for a solve-feature PR of this repo's own.
+          scope=$(GH_TOKEN="$READ_TOKEN" gh pr view "$pr" --json isCrossRepository,body \
+            --jq '"\(.isCrossRepository) \((.body // "") | gsub("\r"; "") | split("\n") | any(. == "<!-- solve-feature:begin -->"))"') ||
+            { echo "::warning::could not read PR #$pr: request Copilot's review by hand"; exit 0; }
+          [ "$scope" = "false true" ] ||
+            { echo "::warning::PR #$pr is not a solve-feature PR from this repo: no Copilot review requested"; exit 0; }
+          reviewers=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$GITHUB_REPOSITORY/pulls/$pr/reviews" --paginate --jq '.[].user.login') ||
+            { echo "::warning::could not list PR #$pr's reviews: request Copilot's review by hand"; exit 0; }
+          # Copilot reviews a PR once; a request after its review would start another, every ready round.
+          ! grep -qxF 'copilot-pull-request-reviewer[bot]' <<<"$reviewers" || { echo "Copilot has reviewed PR #$pr."; exit 0; }
+          [ -n "$GH_TOKEN" ] ||
+            { echo "::warning::the repo secret COPILOT_GITHUB_TOKEN is unset: request Copilot's review on PR #$pr by hand"; exit 0; }
+          if gh pr edit "$pr" --add-reviewer @copilot; then echo "Requested Copilot's review on PR #$pr."
+          else echo "::warning::GitHub refused COPILOT_GITHUB_TOKEN's request for Copilot's review on PR #$pr: request it by hand"
+          fi

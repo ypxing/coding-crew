@@ -42,7 +42,9 @@ HOME/.claude/skills/coding-crew-lib/scripts/tracker/docs/local.md exec=0
 HOME/.claude/skills/coding-crew-lib/scripts/tracker/github.mjs exec=0
 HOME/.claude/skills/coding-crew-lib/scripts/tracker/index.mjs exec=0
 HOME/.claude/skills/coding-crew-lib/scripts/tracker/local.mjs exec=0
+HOME/.claude/skills/coding-crew-lib/scripts/tracker/pr-comments.mjs exec=0
 HOME/.claude/skills/coding-crew-lib/scripts/tracker/tracker-config.mjs exec=0
+HOME/.claude/skills/coding-crew-lib/scripts/tracker/trust.mjs exec=0
 HOME/.claude/skills/configure-tracker/ /
 HOME/.claude/skills/configure-tracker/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/crew-afk/ /
