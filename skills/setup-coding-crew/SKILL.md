@@ -156,8 +156,8 @@ workflow `identical` and runs neither. With `claude`, tell the user to add the s
 it in the conversation. For Copilot's review of a PR a run marks ready, the user may add a fine-grained PAT with
 Pull requests: write the same way, `! gh secret set COPILOT_GITHUB_TOKEN`; without it the job warns and they
 request Copilot by hand. Then point the user to the workflow's header comment (`# Billing`) for who pays for the
-runs, and say how a run starts: label a feature's root issue `run-agent`, or run the workflow by hand with
-the slug. Tell them too that an issue whose change touches `.github/workflows/` cannot land from a runner — the
+runs, and say how a run starts: label any issue of a feature `run-agent`, or run the workflow by hand with
+the slug; and that a finished `ready-for-human` issue of a `run-agent` feature re-runs it. Tell them too that an issue whose change touches `.github/workflows/` cannot land from a runner — the
 workflow's `GITHUB_TOKEN` never gets the `workflows` scope — so such an issue is run locally, for example with
 `/solve-feature`; a run that hits one keeps its unpushed commits in the artifact's `unpushed.bundle`, and its
 summary page prints the commands that fetch them.

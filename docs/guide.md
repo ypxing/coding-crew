@@ -472,8 +472,10 @@ instead, run `/setup-coding-crew` with the github tracker and answer yes to its 
 `.github/workflows/solve-feature.yml`, creates the `run-agent` label, sets the repo variable
 `CREW_AGENT` to the agent you pick and prints the commit line for it. `copilot` (the default) is billed
 to GitHub Copilot with no API key; `claude` runs Claude Code on an `ANTHROPIC_API_KEY` or
-`CLAUDE_CODE_OAUTH_TOKEN` repo secret. Commit, then label a feature's root issue `run-agent` or run the
-workflow by hand with the slug. The file's header explains billing.
+`CLAUDE_CODE_OAUTH_TOKEN` repo secret. Commit, then label any issue of a feature `run-agent` (on a sub-issue the
+job also labels the root) or run the workflow by hand with the slug. A finished `ready-for-human` issue of a
+`run-agent` feature (its label removed, as `mark-done` does, or the issue closed) re-runs it while the root is open,
+so a run that stopped for a person resumes once they are done. The file's header explains billing.
 
 The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all
 --no-color --output-format json` or `claude -p "/solve-feature $SLUG" --dangerously-skip-permissions --output-format stream-json
