@@ -9,7 +9,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - docs: README's use-case table has a "Make one small change" row: ask your agent directly, or, for a PR the crew
   builds and reviews, `/to-issues <change>` → `/crew-afk <slug>` (#487). The add-tests and upgrade-deps rows are gone
   until those skills mature; both stay in the command list. The Actions row now reads "Let the crew build on GitHub
-  Actions": answer yes to `/setup-coding-crew`'s Actions question, then label any issue of the feature `run-agent`.
+  Actions": answer yes to `/setup-coding-crew`'s Actions question, then label any issue of the feature `run-agent`. The README also states its prerequisites, names where the crew
+  runs, and drops claims it overstated (an overnight run, test-first "always", a PRD from every grill).
 - docs: the Actions section says the runner has only `ubuntu-latest`'s tools and Node, so a repo's `install` command
   installs any other toolchain it needs, and that a repo admin allows GitHub Actions to create pull requests (#624).
 
