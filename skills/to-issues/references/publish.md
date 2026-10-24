@@ -6,7 +6,7 @@ Read this when step 5's quiz has approved the breakdown. Every command runs from
 
 Render every approved slice as a draft in `.coding-crew/scratch/<feature-slug>/.drafts/` — the same files whatever the tracker is: `NN-<slug>.md`, numbered from `01` in dependency order (blockers first), opening with a `# <title>` line and a `Status:` line (`Status: ready-for-agent` unless the user specifies otherwise), then the issue body template from SKILL.md. `## Blocked by` names another draft by its filename, or an issue that already exists by the filename `known` gives it (below). The CLI turns each draft filename into the ref its issue is created under.
 
-Number the drafts working the **frontier**: any issue whose blockers are all done. For a linear chain that means top-to-bottom; for a DAG with multiple independent roots, number all currently unblocked issues before their dependents.
+Number the drafts working the **frontier**: any issue whose blockers are all done. For a linear chain that means top-to-bottom; for a DAG with multiple independent roots, number all currently unblocked issues before their dependents. Last HITL slices take the highest numbers, even when unblocked from the start (SKILL.md **Placement**).
 
 ## Known issues
 
