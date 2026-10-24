@@ -48,7 +48,8 @@ usage error or a ref that is not an issue number, `3` not found.
 
 `next` prints the lowest-numbered open issue of the feature (the root included) labelled
 `ready-for-agent`, not labelled `blocked`, whose every `## Blocked by` issue is closed or
-`awaiting-merge`; it prints nothing and exits `3` when there is none.
+`awaiting-merge`; it prints nothing and exits `3` when there is none. A blocker outside the feature
+is read by number and resolves the same way; one open, missing or deleted holds the issue back.
 
 A `gh` call that fails on the network or GitHub's side — `EOF`, a connection reset or refused, a
 DNS failure, a timeout, an `HTTP 5xx`, a secondary rate limit — is retried up to 3 times, after
@@ -61,9 +62,8 @@ never files a duplicate.
 `features` prints one tab-separated line per root issue's slug, sorted: the slug, `open` while the
 root or any of its sub-issues is open (`closed` otherwise) and the count of issues among the root
 and its sub-issues that can start now: open, `ready-for-agent`, no `blocked` label, and every
-`## Blocked by` issue closed or `awaiting-merge` — a blocker outside the feature keeps the issue
-out, as `next` does. A slug on more than one root is listed once, with a warning on stderr, its
-roots' issues counted as one feature. A closed root whose sub-issues have all closed is listed from its
+`## Blocked by` issue closed or `awaiting-merge`, as `next` does. A slug on more than one root is
+listed once, with a warning on stderr, its roots' issues counted as one feature. A closed root whose sub-issues have all closed is listed from its
 `sub_issues_summary` without reading them. A failing `gh` exits `1` with `gh`'s stderr verbatim.
 
 `publish-issues`, `publish-prd` and `rewrite` file their issues in the feature: the first issue
@@ -209,8 +209,7 @@ to every skill (it reads as empty) until you move it by hand. For each feature s
    ```
 
 2. Make every issue of the milestone a sub-issue of the root — closed ones too, not just open
-   ones: a `## Blocked by` issue resolves only when it is in the feature and `done`, so an open
-   issue whose blocker closed but was left behind stays blocked forever:
+   ones, so the feature lists all its issues:
 
    ```bash
    gh issue list --milestone <slug> --state all --limit 1000 --json number -q '.[].number' |
