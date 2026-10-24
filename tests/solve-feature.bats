@@ -418,8 +418,8 @@ EOF
   PR_EXISTS=1 CREW_REVIEWER_MODEL=opus run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
   [ "$output" = "reviewer-model=opus" ]
-  # The reviewer runs next, from this head.
-  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+  # sync saves the reviewer's starting head, not next.
+  [ ! -e .coding-crew/solve-feature/review.base ]
   [ ! -e .coding-crew/solve-feature/outcome ]
   NEXT_PRINTS='2; rm -rf /' run bash "$SCRIPT" next feat
   [ "$status" -eq 1 ]
@@ -433,6 +433,27 @@ EOF
   [ "$status" -eq 3 ]
   [[ "$output" == *"nothing landed: no ready issue for feat and no open PR"* ]]
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: next failed: nothing landed: no ready issue for feat and no open PR" ]
+}
+
+# --- sync: the default branch merged in before the review ------------------------------
+
+# synced_branch — both issues landed on feature/feat in PR #10: sync's input as the loop leaves it; TIP is its head.
+synced_branch() {
+  loop
+  [ "$LAST_PR" = 10 ]
+  TIP=$(git rev-parse HEAD)
+  rm -f "$STATE/checks.log" .coding-crew/solve-feature/review.base
+}
+
+@test "sync with origin's default branch already in the branch exits 0, runs no checks, pushes nothing and saves HEAD as review.base" {
+  synced_branch
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git rev-parse HEAD)" = "$TIP" ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$TIP" ]
+  [ ! -e "$STATE/checks.log" ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$TIP" ]
+  [ ! -e .coding-crew/solve-feature/outcome ]
 }
 
 @test "issues run lowest number first, skipping closed and blocked-labelled issues and any whose blocker is neither CLOSED nor awaiting-merge" {
