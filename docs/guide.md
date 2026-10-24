@@ -479,7 +479,9 @@ file [`hosts/github-actions.yml`](../skills/setup-coding-crew/hosts/github-actio
 `.github/workflows/solve-feature.yml` (once it has checked that the coding-crew release the file names is tagged), creates the `run-agent` label, sets the repo variable
 `CREW_AGENT` to the agent you pick and prints the commit line for it. `copilot` (the default) is billed
 to GitHub Copilot with no API key; `claude` runs Claude Code on an `ANTHROPIC_API_KEY` or
-`CLAUDE_CODE_OAUTH_TOKEN` repo secret. Commit, then label any issue of a feature `run-agent` (on a sub-issue the
+`CLAUDE_CODE_OAUTH_TOKEN` repo secret. The run opens its PR with the workflow's token, so a repo admin enables
+"Allow GitHub Actions to create and approve pull requests" (Settings → Actions → General → Workflow permissions, and
+the organisation's same setting); a new repo has it off. Commit, then label any issue of a feature `run-agent` (on a sub-issue the
 job also labels the root) or run the workflow by hand with the slug. A finished `ready-for-human` issue of a
 `run-agent` feature (its label removed, as `mark-done` does, or the issue closed) re-runs it while the root is open
 (when whoever finished it has triage access or more), so a run that stopped for a person resumes once they are done.
