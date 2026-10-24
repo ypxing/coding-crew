@@ -135,6 +135,9 @@ case "$1 $2" in
   "pr create") k=$(( $(ls "$STATE" | grep -c '^pr-create\.[0-9]*$') + 1 )); printf '%s\n' "$@" > "$STATE/pr-create.$k"
     cp "$file" "$STATE/pr-body"; touch "$STATE/pr-created"; echo "https://github.com/o/r/pull/10" ;;
   "pr edit") k=$(( $(ls "$STATE" | grep -c '^pr-edit\.[0-9]*$') + 1 )); printf '%s\n' "$@" > "$STATE/pr-edit.$k"; cp "$file" "$STATE/pr-body" ;;
+  # Each comment's arguments in $STATE/pr-comment.<k> and its body in pr-comment.<k>.body; GH_COMMENT_FAIL refuses it.
+  "pr comment") k=$(( $(ls "$STATE" | grep -c '^pr-comment\.[0-9]*$') + 1 )); printf '%s\n' "$@" > "$STATE/pr-comment.$k"
+    [ -z "${GH_COMMENT_FAIL:-}" ] || exit 1; cp "$file" "$STATE/pr-comment.$k.body"; echo "https://github.com/o/r/pull/$3#issuecomment-1" ;;
   "pr ready") if [ "${4:-}" = --undo ]; then [ -z "${GH_UNDO_FAIL:-}" ] || exit 1; else [ -z "${GH_READY_FAIL:-}" ] || exit 1; fi ;;
   # The review threads, one JSON document per page as `--paginate` prints them: $STATE/threads.<k>, else one empty
   # page. Without --paginate only the first page.

@@ -102,6 +102,8 @@ finding with `tdd`; `solve-feature.sh fix` gates the fixes with the project's ch
 review had a CRITICAL, HIGH or MEDIUM finding and the fixer changed something, `fix` prints
 `review-again=yes` and the run reviews and fixes once more; the second fix is not reviewed again. What
 the last round did not fix is listed under `Needs attention` in the PR body, which keeps the PR a draft.
+Anything else a coder or the fixer says a person must do or decide is posted on the PR as one comment each, as soon as
+its work is pushed; such a note does not keep the PR a draft.
 
 ---
 

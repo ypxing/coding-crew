@@ -25,12 +25,13 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      left, go to step 3; it prints `reviewer-model=` again, for step 3.
    2. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Use the solve-issue skill on <ref>; write your outcome and
-     report to <repo>/.coding-crew/solve-feature/coder.report.md`. When `coder-model=`
+     report to <repo>/.coding-crew/solve-feature/coder.report.md, and anything a person must do or decide to
+     <repo>/.coding-crew/solve-feature/coder.notes.md, leaving that file absent when there is none`. When `coder-model=`
      is non-empty, run it on the model in your own list that matches that name (a family, with an optional
      version): a version you do not offer → the closest model of the same family; a family you do not offer → your
      own model. When it is empty, on your own. Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" land <slug> <ref> <branch>`, with `start`'s `branch=` — always,
-     whatever the subagent reported: `land` is what checks and records its result. It prints `pr=<n>`.
+     whatever the subagent reported: `land` is what checks and records its result. It prints `pr=<n>`, and posts the coder's notes on the PR as one comment.
 3. **Review, fix and describe**, on `<n>`, the last `pr=` printed (by `land`, else `start`). With none, `next`
    printed why nothing landed: report it and end.
    1. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working directory —
@@ -46,10 +47,12 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      the tdd skill to fix each real defect with the fix that adds no trigger, flag, permission, input or path the spec
      does not name. List each finding you did not fix, one per line with why — it is wrong, or only changing a spec
      decision fixes it (quote the decision) — in <repo>/.coding-crew/solve-feature/pr-<n>.unfixed.md, and leave that
-     file absent if you fixed them all. This run is non-interactive; ask no questions`. Run it on `coder-model=` as for each issue's coder.
+     file absent if you fixed them all. Anything else a person must do or decide goes in
+     <repo>/.coding-crew/solve-feature/pr-<n>.notes.md, left absent when there is none. This run is non-interactive; ask no questions`. Run it on `coder-model=` as for each issue's coder.
      Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" fix <slug> <n> <branch>` — always, whatever the subagents
-     reported. It gates the fixes with the checks, commits and pushes them, and records what needs a person.
+     reported. It gates the fixes with the checks, commits and pushes them, posts the fixer's notes on the PR as one comment,
+     and records what needs a person.
      Report its last line, `FIX: findings=<k> needs-attention=<a> review-again=yes|no`. After the first review,
      `review-again=yes` means run 3.1–3.3 once more; after the second review, go on to 3.4 whatever it prints.
      A non-zero exit of `fix` stops the run like any other: do not start a subagent or fix the checks yourself.

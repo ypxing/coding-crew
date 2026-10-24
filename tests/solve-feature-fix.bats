@@ -577,3 +577,58 @@ git_fails() {
   [ "$(git rev-parse HEAD)" = "$tip" ]
   [ ! -e .coding-crew/solve-feature/pr-10.discarded.md ]
 }
+
+# --- fix: the fixer's notes for a person -------------------------------------------------
+
+@test "fix posts a non-empty pr-<n>.notes.md after its push as one comment headed with the fixer and PR, deletes it, and a second round posts nothing" {
+  fix_ready
+  TIP=$(git rev-parse HEAD)
+  printf '%s\n' "- rotate the CI token after merge" > .coding-crew/solve-feature/pr-10.notes.md
+  : > "$STATE/gh.log"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
+  [ "$(grep -c '^pr comment' "$STATE/gh.log")" = 1 ]
+  [ "$(sed -n 3p "$STATE/pr-comment.1")" = 10 ]
+  [ "$(cat "$STATE/pr-comment.1.body")" = "$(printf '%s\n' "## Notes for a person from the fixer of PR #10's review" "" "- rotate the CI token after merge")" ]
+  [ ! -e .coding-crew/solve-feature/pr-10.notes.md ]
+  [ -z "$(attention)" ]
+  # A second review round with no new notes posts nothing again.
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^pr comment' "$STATE/gh.log")" = 1 ]
+}
+
+@test "fix whose checks or push stop posts no notes; a failed gh pr comment stops naming the file, its command and the artifact" {
+  fix_ready
+  TIP=$(git rev-parse HEAD)
+  local f="$WORK/.coding-crew/solve-feature/pr-10.notes.md"
+  echo '- a note' > "$f"
+  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 1 ]
+  ! grep -q '^pr comment' "$STATE/gh.log" || false
+  [ "$(cat "$f")" = '- a note' ]
+  refuse_pushes
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"git push failed"* ]] || { echo "$output"; return 1; }
+  ! grep -q '^pr comment' "$STATE/gh.log" || false
+  [ "$(cat "$f")" = '- a note' ]
+  rm "$TEMP_DIR/origin.git/hooks/pre-receive"
+  GH_COMMENT_FAIL=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"solve-feature: "*"$f"*"gh pr comment 10 --body-file $f && rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
+  [ "$(head -n1 "$f")" = "## Notes for a person from the fixer of PR #10's review" ]
+}
+
+@test "a notes comment leaves describe's outcome as the review alone decides it" {
+  fix_ready '{"spec":"met","gaps":[],"findings":[]}'
+  echo '- tag a release after merge' > .coding-crew/solve-feature/pr-10.notes.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ]
+  grep -q '^pr comment 10' "$STATE/gh.log"
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "ready pr=10" ]
+  ! grep -q 'tag a release' "$STATE/pr-body" || false
+}

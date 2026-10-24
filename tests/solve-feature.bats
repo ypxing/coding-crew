@@ -383,6 +383,7 @@ EOF
   echo old > .coding-crew/solve-feature/pr-7.unfixed.md && echo old > .coding-crew/solve-feature/pr-7.review.json && echo old > .coding-crew/solve-feature/pr-7.head
   echo old > .coding-crew/solve-feature/pr-7.summary.md && echo old > .coding-crew/solve-feature/pr-7.attention.md
   echo old > .coding-crew/solve-feature/pr-7.discarded.md && echo old > .coding-crew/solve-feature/review.base
+  echo old > .coding-crew/solve-feature/pr-7.notes.md
   rm "$STATE/prd.md"
   jq 'map(if .number == 2 then .state = "CLOSED" else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
   run bash "$SCRIPT" start feat
@@ -397,6 +398,7 @@ EOF
   [ ! -e .coding-crew/solve-feature/pr-7.attention.md ]
   [ ! -e .coding-crew/solve-feature/pr-7.head ]
   [ ! -e .coding-crew/solve-feature/pr-7.discarded.md ]
+  [ ! -e .coding-crew/solve-feature/pr-7.notes.md ]
   [ ! -e .coding-crew/solve-feature/review.base ]
 }
 
