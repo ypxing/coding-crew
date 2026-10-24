@@ -3,7 +3,9 @@
 # Usage: scripts/cut-release.sh [--dry-run] (--demo-smoke <log> | --no-demo-smoke "<reason>")
 # The version is read back from CHANGELOG.md's first "## [X.Y.Z]" heading, so it is decided in one
 # place. A demo smoke log must hold `SMOKE: PASS (<platform>, demo)` and the `crew-afk-commit:` it ran
-# at, from a clean checkout with nothing but CHANGELOG.md and RESULTS.md changed since.
+# at, from a clean checkout with nothing changed since but CHANGELOG.md, RESULTS.md and the two files that pin
+# coding-crew's tag: every `uses: ypxing/coding-crew/…@<ref>` in the reusable workflow and the caller template
+# must read the tag being cut.
 # --dry-run runs every check and prints what would be tagged/pushed, without doing either.
 set -euo pipefail
 
@@ -50,6 +52,20 @@ TAG="v$NEXT"
 
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && { echo "Error: $TAG already exists." >&2; exit 1; }
 
+# A repo's caller and the reusable workflow name coding-crew by a literal tag, so the release that ships them
+# must be the one they name; the release commit bumps them with the CHANGELOG heading.
+PINNED_FILES=(.github/workflows/crew-solve-feature.yml skills/setup-coding-crew/hosts/github-actions.yml)
+for f in "${PINNED_FILES[@]}"; do
+  refs=$(sed -nE 's/^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*ypxing\/coding-crew\/[^@[:space:]]+@([^[:space:]#]+).*/\2/p' "$f" 2>/dev/null || true)
+  [[ -n "$refs" ]] || { echo "Error: $f names no ypxing/coding-crew/…@<ref> on a uses: line." >&2; exit 1; }
+  for ref in $refs; do
+    [[ "$ref" == "$TAG" ]] || {
+      echo "Error: $f uses coding-crew @$ref, not @$TAG: bump it in the release commit, with the CHANGELOG heading." >&2
+      exit 1
+    }
+  done
+done
+
 PREV_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' HEAD 2>/dev/null || true)
 if [[ -n "$PREV_TAG" ]]; then
   IFS=. read -r pM pm pp <<<"${PREV_TAG#v}"
@@ -83,7 +99,8 @@ if [[ -n "$DEMO_LOG" ]]; then
     echo "Error: $DEMO_LOG ran at $LOG_COMMIT, which HEAD does not descend from — re-run the demo smoke." >&2
     exit 1
   }
-  SINCE=$(git diff --name-only "$LOG_COMMIT" HEAD -- . ':(exclude)CHANGELOG.md' ':(exclude)scripts/smoke-crew-afk/RESULTS.md')
+  SINCE=$(git diff --name-only "$LOG_COMMIT" HEAD -- . ':(exclude)CHANGELOG.md' ':(exclude)scripts/smoke-crew-afk/RESULTS.md' \
+    "${PINNED_FILES[@]/#/:(exclude)}")
   [[ -z "$SINCE" ]] || {
     echo "Error: $DEMO_LOG ran at ${LOG_COMMIT:0:12}; these files changed since — re-run the demo smoke:" >&2
     printf '  %s\n' $SINCE >&2
