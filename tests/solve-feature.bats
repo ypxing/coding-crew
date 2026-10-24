@@ -10,10 +10,10 @@ load helpers/yaml
 
 @test "no subcommand, an unknown one or a wrong argument count exits 2 with the usage line" {
   local args
-  for args in "" "feat" "run feat" "next" "land feat 2" "fix feat 10" "fix feat 10 feature/feat x" "fix feat ten feature/feat" "reviewed feat 10" "reviewed feat ten feature/feat" "describe feat" "describe feat ten" "start feat other"; do
+  for args in "" "feat" "run feat" "next" "land feat 2" "sync feat" "sync feat b x" "fix feat 10" "fix feat 10 feature/feat x" "fix feat ten feature/feat" "reviewed feat 10" "reviewed feat ten feature/feat" "describe feat" "describe feat ten" "start feat other"; do
     run bash "$SCRIPT" $args
     [ "$status" -eq 2 ] || { echo "'$args': status $status"; return 1; }
-    [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
+    [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
   done
   [ ! -f "$STATE/gh.log" ]
   [ ! -e "$WORK/.coding-crew/solve-feature/outcome" ]
@@ -454,6 +454,88 @@ synced_branch() {
   [ ! -e "$STATE/checks.log" ]
   [ "$(cat .coding-crew/solve-feature/review.base)" = "$TIP" ]
   [ ! -e .coding-crew/solve-feature/outcome ]
+}
+
+@test "sync whose merge is clean merges origin's default branch, gates it with the checks, pushes it and saves the merged HEAD" {
+  synced_branch
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  git merge-base --is-ancestor origin/main HEAD
+  git merge-base --is-ancestor "$TIP" HEAD
+  [ "$(cat "$STATE/checks.head")" = "$(git rev-parse HEAD)" ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+}
+
+@test "sync whose checks fail on the merged tree exits 1 with an outcome naming their log, pushing nothing" {
+  synced_branch
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  CHECKS_RC=1 run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: run-checks.sh exit 1 on feature/feat merged with origin/main — log: $WORK/.coding-crew/solve-feature/sync.checks.log; once fixed and committed, re-run" ]
+  [ -s .coding-crew/solve-feature/sync.checks.log ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$TIP" ]
+  [ ! -e .coding-crew/solve-feature/review.base ]
+}
+
+@test "sync whose merge conflicts exits 4 printing conflicts= with the merge in progress; resolved and committed, sync again pushes it" {
+  synced_branch
+  echo mine > shared.txt && git add shared.txt && git commit -q -m "branch's shared" && git push -q origin feature/feat
+  TIP=$(git rev-parse HEAD)
+  main_moves shared.txt "main's version" && git checkout -q feature/feat
+  # stdout is that one line; git's own conflict report goes to stderr.
+  run bash -c 'bash "$1" sync feat feature/feat 2>/dev/null' _ "$SCRIPT"
+  [ "$status" -eq 4 ]
+  [ "$output" = "conflicts=shared.txt" ]
+  git rev-parse -q --verify MERGE_HEAD >/dev/null
+  [ "$(git diff --name-only --diff-filter=U)" = shared.txt ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: merging origin/main into feature/feat conflicts in shared.txt: the resolver did not finish it" ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$TIP" ]
+  [ ! -e .coding-crew/solve-feature/review.base ]
+  # What the resolver subagent does.
+  echo both > shared.txt && git add shared.txt && git commit -q --no-edit
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  git merge-base --is-ancestor origin/main HEAD
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+  [ ! -e .coding-crew/solve-feature/outcome ]
+}
+
+@test "sync re-run with the merge still in progress exits 1 naming the files and the recovery, not a dirty tree" {
+  synced_branch
+  echo mine > shared.txt && git add shared.txt && git commit -q -m "branch's shared" && git push -q origin feature/feat
+  main_moves shared.txt "main's version" && git checkout -q feature/feat
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 4 ]
+  local why="a merge into feature/feat is still in progress (shared.txt): finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run"
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: $why" ]
+  # Resolved and staged, but not committed: MERGE_HEAD alone.
+  echo both > shared.txt && git add shared.txt
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: $why" ]
+  [[ "$output" != *"not clean"* ]]
+}
+
+@test "sync on another branch, a dirty tree or a refused push exits 1 naming it" {
+  synced_branch
+  run bash "$SCRIPT" sync feat other
+  [ "$status" -eq 1 ]
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: sync failed: branch changed to 'feature/feat'" ]]
+  echo dirt > dirt.txt
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"working tree is not clean"* ]]
+  rm dirt.txt
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  refuse_pushes
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: git push failed: pre-receive hook declined; once it can push, or once you have pushed it, re-run" ]
 }
 
 @test "issues run lowest number first, skipping closed and blocked-labelled issues and any whose blocker is neither CLOSED nor awaiting-merge" {

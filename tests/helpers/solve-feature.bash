@@ -1,9 +1,10 @@
 # Shared bats helper for the solve-feature.sh tests (solve-feature*.bats): setup, the stubs and the
 # helpers more than one of those files uses.
 #
-# solve-feature.sh start|next|land|reviewed|fix|describe — the guards of solve-feature's loop, which SKILL.md drives
+# solve-feature.sh start|next|land|sync|reviewed|fix|describe — the guards of solve-feature's loop, which SKILL.md drives
 # with host subagents: start checks the slug, picks the branch and writes the spec, next saves the next ready issue,
-# land asserts what the coder left (branch, clean tree, issue closed, checks) and pushes it into a draft PR, reviewed
+# land asserts what the coder left (branch, clean tree, issue closed, checks) and pushes it into a draft PR, sync
+# merges the default branch in before the review, reviewed
 # discards what the reviewer changed in the tree, fix
 # gates, commits and pushes what the review's fixer left, and describe writes the PR body, marks it ready when
 # nothing needs a person and writes .coding-crew/solve-feature/outcome.
@@ -175,15 +176,20 @@ coder() {
 }
 # out <key> — the value of start's or land's `<key>=` line in $output.
 out() { sed -n "s/^$1=//p" <<<"$output" | tail -1; }
-# loop — SKILL.md's loop: start, then next → coder → land until next exits 3. CODED collects the refs,
-# LAST_PR is the last `pr=` printed.
+# loop — SKILL.md's loop: start, then next → coder → land until next exits 3, then sync when a PR was opened. CODED
+# collects the refs, LAST_PR is the last `pr=` printed.
 loop() {
   run bash "$SCRIPT" start feat "$@"
   [ "$status" -eq 0 ] || { echo "start: $output"; return 1; }
   local branch ref; branch=$(out branch); CODED="" LAST_PR=$(out pr)
   while :; do
     run bash "$SCRIPT" next feat
-    [ "$status" -ne 3 ] || return 0
+    if [ "$status" -eq 3 ]; then
+      [ -n "$LAST_PR" ] || return 0
+      run bash "$SCRIPT" sync feat "$branch"
+      [ "$status" -eq 0 ] || { echo "sync: $output"; return 1; }
+      return 0
+    fi
     [ "$status" -eq 0 ] || { echo "next: $output"; return 1; }
     ref="$output"; CODED="${CODED:+$CODED }$ref"
     coder "$ref"
