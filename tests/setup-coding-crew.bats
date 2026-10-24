@@ -371,6 +371,14 @@ SH
   [ ! -s "$GITHUB_OUTPUT" ]
   [[ "$output" == *"::notice::"*"closed"* ]]
 
+  # Only a marker-shaped line names a slug, as the tracker writes it (a CRLF body too): a prose `Feature:` line on a sub-issue does not make it a root.
+  local crlf_root='{"number":544,"state":"open","labels":[{"name":"run-agent"}],"body":"Feature: feat\r\n\r\nRoot."}'
+  PARENT_JSON="$crlf_root" ev unlabeled ready-for-human $'Feature: Login flow is blocked until this lands.\r\nMore.'
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ] || { echo "$output"; return 1; }
+  PARENT_JSON="$open_root" ev labeled run-agent 'Feature: Login flow is blocked until this lands.'
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
+  grep -q 'gh issue edit 544 --repo o/r --add-label run-agent' "$TEMP_DIR/gh.log"
+
   # A parent body that is code in a shell line stays text; every event field reaches the step through env.
   PARENT_JSON='{"number":544,"state":"open","labels":[{"name":"run-agent"}],"body":"$(touch pwned)\nFeature: feat"}' ev labeled run-agent '$(touch pwned)'
   [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]

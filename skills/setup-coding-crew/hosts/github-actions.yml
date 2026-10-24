@@ -152,13 +152,15 @@ jobs:
                   { echo "::notice::$ISSUE_SENDER has no triage access to this repo: issue #$ISSUE_NUMBER ($ISSUE_ACTION) starts no run"; exit 0; }
                 ;;
             esac
+            # The tracker's marker shape only (a prose `Feature:` line is no marker), CRs dropped from web-edited bodies.
+            marker() { tr -d '\r' < "$1" | sed -nE 's/^Feature:[[:blank:]]*([A-Za-z0-9][A-Za-z0-9._-]*)[[:blank:]]*$/\1/p' | head -n 1; }
             printf '%s\n' "$ISSUE_BODY" > "$RUNNER_TEMP/issue-body.md"
-            slug="$(grep -m1 '^Feature:' "$RUNNER_TEMP/issue-body.md" | awk '{print $2}')"
+            slug="$(marker "$RUNNER_TEMP/issue-body.md")"
             root="$ISSUE_NUMBER" root_state="$ISSUE_STATE" root_labels="$ISSUE_LABELS" sub=
             # Only a root has the line, and a root may sit under an epic that has none: its own body wins.
             if [ -z "$slug" ] && gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/parent" > "$RUNNER_TEMP/parent.json"; then
               jq -r '.body // ""' "$RUNNER_TEMP/parent.json" > "$RUNNER_TEMP/root-body.md" 2>/dev/null || true
-              slug="$(grep -m1 '^Feature:' "$RUNNER_TEMP/root-body.md" | awk '{print $2}' || true)"
+              slug="$(marker "$RUNNER_TEMP/root-body.md")"
               root="$(jq -r '.number // empty' "$RUNNER_TEMP/parent.json" 2>/dev/null || true)"
               root_state="$(jq -r '.state // empty' "$RUNNER_TEMP/parent.json" 2>/dev/null || true)"
               root_labels="$(jq -c '.labels // []' "$RUNNER_TEMP/parent.json" 2>/dev/null || true)"
