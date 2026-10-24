@@ -722,6 +722,15 @@ EOF
   grep -qF '`review-again=yes` means run 3.1–3.3 once more; after the second review, go on to 3.4 whatever it prints' "$skill"
 }
 
+@test "SKILL.md syncs once before the first review, resolving an exit 4 with one subagent on coder-model= before one re-run" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
+  grep -qF 'Before 3.1, once (a second review round does not sync): `bash "<skill-dir>/scripts/solve-feature.sh" sync <slug> <branch>`' "$skill"
+  grep -qF 'the repo'"'"'s working directory, on `coder-model=` as for each issue'"'"'s coder — with exactly this prompt: `Finish the' "$skill"
+  local prompt; prompt=$(awk '/with exactly this prompt: `Finish the/{f=1} f; f && /ask no questions`/{exit}' "$skill" | tr '\n' ' ' | sed 's/^.*prompt: `//; s/`.*//; s/  */ /g')
+  [ "$prompt" = "Finish the merge in progress in <repo>, resolving the conflicts in <files> so that both sides' intent is kept, reading <repo>/.coding-crew/solve-feature/spec.md and the commits being merged in (git log HEAD..MERGE_HEAD); commit with git commit --no-edit. This run is non-interactive; ask no questions" ] || { echo "$prompt"; return 1; }
+  grep -qF 'again, once: any non-zero exit of that run, 4 included, stops the run like any other' "$skill"
+}
+
 @test "SKILL.md starts the fixer on reviewed's findings=, and a stop's recovery is for a person, never the agent" {
   local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
   grep -qF 'solve-feature.sh" reviewed <slug> <n> <branch>' "$skill"

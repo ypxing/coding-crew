@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # solve-feature.sh start|next|land|sync|reviewed|fix|describe — the guards of solve-feature's loop. SKILL.md drives the
-# loop and runs each issue's coder (between `next` and `land`), the review's reviewer (before `reviewed`) and fixer
+# loop and runs each issue's coder (between `next` and `land`), a conflicting merge's resolver (between `sync`'s exit 4
+# and its re-run), the review's reviewer (before `reviewed`) and fixer
 # (before `fix`) and the PR's writer (before `describe`) as subagents of the host agent; every guard is an exit code here.
 #   start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch>
 #   | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr> — each function's comment states its contract.

@@ -12,7 +12,7 @@ allowed-tools: Bash shell
 # solve-feature
 
 You drive the loop; a script guards every step. **You do not implement, check, review, fix, commit
-or close anything yourself** — each issue's coder, the reviewer, the fixer and the PR's writer are fresh subagents,
+or close anything yourself** — each issue's coder, a conflicting merge's resolver, the reviewer, the fixer and the PR's writer are fresh subagents,
 and the script decides whether their work lands and when the PR is ready.
 
 A bare word the user gave is the slug: pass it as is; `start` stops on a slug the tracker does not list. `<repo>` is the repo's absolute top level;
@@ -34,6 +34,14 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      whatever the subagent reported: `land` is what checks and records its result. It prints `pr=<n>`, and posts the coder's notes on the PR as one comment.
 3. **Review, fix and describe**, on `<n>`, the last `pr=` printed (by `land`, else `start`). With none, `next`
    printed why nothing landed: report it and end.
+   Before 3.1, once (a second review round does not sync): `bash "<skill-dir>/scripts/solve-feature.sh" sync <slug> <branch>`.
+   It merges the default branch in, gating and pushing that merge. Exit 4: the merge conflicts, left in progress,
+   and it prints `conflicts=<files>`. Then run a **fresh subagent** — none of this conversation, full tool access,
+   the repo's working directory, on `coder-model=` as for each issue's coder — with exactly this prompt: `Finish the
+   merge in progress in <repo>, resolving the conflicts in <files> so that both sides' intent is kept, reading
+   <repo>/.coding-crew/solve-feature/spec.md and the commits being merged in (git log HEAD..MERGE_HEAD); commit with
+   git commit --no-edit. This run is non-interactive; ask no questions`. Wait for it to finish, then run `sync`
+   again, once: any non-zero exit of that run, 4 included, stops the run like any other.
    1. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working directory —
      with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.coding-crew/solve-feature/spec.md; write the report to <repo>/.coding-crew/solve-feature/pr-<n>.review.json`.
      When `reviewer-model=` (as `next` last printed it) is non-empty, run it on the model in your own list that
