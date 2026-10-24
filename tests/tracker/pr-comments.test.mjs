@@ -99,6 +99,13 @@ test("an outsider's single inline comment counts 1 and its empty-body review 0",
   assert.deepEqual(r.json.omitted, { count: 1, authors: ["out"], line: "(omitted 1 comment(s) by @out: no write access to this repo)" });
 });
 
+test("names a deleted account's comment @ghost, as GitHub does", async () => {
+  const exec = fakeGh({ view: { reviews: [], comments: [{ author: null, body: "from a deleted account", createdAt: "t", url: "u" }] } });
+  const r = await prComments(["7"], exec);
+  assert.deepEqual(r.json.comments, []);
+  assert.equal(r.json.omitted.line, "(omitted 1 comment(s) by @ghost: no write access to this repo)");
+});
+
 test("a thread the agent answered last stays answered when only an outsider replied after", async () => {
   const exec = fakeGh({
     perms: { wanda: WRITE },
@@ -144,6 +151,20 @@ test("given a number, reads the current repo; given another repo's PR URL, reads
   const gql2 = other.calls.find((a) => a[1] === "graphql");
   assert.ok(gql2.includes("owner=acme") && gql2.includes("name=widgets") && gql2.includes("number=42"), gql2.join(" "));
   assert.deepEqual(other.calls.filter((a) => a.join(" ").includes("/permission")).map((a) => a[1]), ["repos/acme/widgets/collaborators/out/permission"]);
+});
+
+test("reads a PR URL copied from its Files or Commits tab, or with a query or anchor", async () => {
+  for (const url of [
+    "https://github.com/acme/widgets/pull/42/files",
+    "https://github.com/acme/widgets/pull/42/commits/abc123",
+    "https://github.com/acme/widgets/pull/42#discussion_r99",
+    "https://github.com/acme/widgets/pull/42?w=1",
+  ]) {
+    const exec = fakeGh({});
+    const r = await prComments([url], exec);
+    assert.equal(r.code, 0, `${url}: ${r.stderr}`);
+    assert.deepEqual(exec.calls.find((a) => a[0] === "pr"), ["pr", "view", "42", "--repo", "acme/widgets", "--json", "reviews,comments"], url);
+  }
 });
 
 test("exits 2 for an argument that is neither a PR number nor a PR URL, before any gh call", async () => {
