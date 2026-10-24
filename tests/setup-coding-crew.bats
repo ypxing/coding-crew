@@ -324,25 +324,32 @@ SH
   done
   # Otherwise a notice saying why, an empty slug and exit 0, so the solve job is skipped.
   PARENT_JSON='{"number":544,"state":"open","labels":[{"name":"enhancement"}],"body":"Feature: feat"}' ev unlabeled ready-for-human 'x'
-  [ "$status" -eq 0 ] && [ ! -s "$GITHUB_OUTPUT" ]
+  [ "$status" -eq 0 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
   [[ "$output" == *"::notice::"*"#544 is not labelled run-agent"* ]]
   PARENT_JSON='{"number":544,"state":"closed","labels":[{"name":"run-agent"}],"body":"Feature: feat"}' ev closed ready-for-human 'x'
-  [ "$status" -eq 0 ] && [ ! -s "$GITHUB_OUTPUT" ]
+  [ "$status" -eq 0 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
   [[ "$output" == *"::notice::"*"#544 is closed"* ]]
   PARENT_FAIL=1 ev closed ready-for-human 'x'
-  [ "$status" -eq 0 ] && [ ! -s "$GITHUB_OUTPUT" ]
+  [ "$status" -eq 0 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
   [[ "$output" == *"::notice::"*"no 'Feature: <slug>' line"* ]]
   # The human issue is itself a root: its own state and labels from the event, never the parent's.
   ISSUE_LABELS='[{"name":"run-agent"},{"name":"ready-for-human"}]' ev closed ready-for-human 'Feature: feat'
-  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ] && [ ! -e "$TEMP_DIR/gh.log" ]
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
+  [ ! -e "$TEMP_DIR/gh.log" ]
   ISSUE_LABELS='[{"name":"ready-for-human"}]' ev unlabeled ready-for-human 'Feature: feat'
-  [ ! -s "$GITHUB_OUTPUT" ] && [[ "$output" == *"::notice::"*"not labelled run-agent"* ]]
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::notice::"*"not labelled run-agent"* ]]
   ISSUE_STATE=closed ISSUE_LABELS='[{"name":"run-agent"}]' ev closed ready-for-human 'Feature: feat'
-  [ ! -s "$GITHUB_OUTPUT" ] && [[ "$output" == *"::notice::"*"closed"* ]]
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::notice::"*"closed"* ]]
 
   # A parent body that is code in a shell line stays text; every event field reaches the step through env.
   PARENT_JSON='{"number":544,"state":"open","labels":[{"name":"run-agent"}],"body":"$(touch pwned)\nFeature: feat"}' ev labeled run-agent '$(touch pwned)'
-  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ] && [ ! -e pwned ]
+  [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
+  [ ! -e pwned ]
   jq -e '.jobs.slug.steps[0].env | .ISSUE_ACTION == "${{ github.event.action }}" and .ISSUE_LABEL == "${{ github.event.label.name }}"
     and .ISSUE_NUMBER == "${{ github.event.issue.number }}" and .ISSUE_STATE == "${{ github.event.issue.state }}"
     and .ISSUE_LABELS == "${{ toJSON(github.event.issue.labels) }}" and .ISSUE_BODY == "${{ github.event.issue.body }}"' "$JSON" >/dev/null
