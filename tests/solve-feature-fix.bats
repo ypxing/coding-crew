@@ -608,6 +608,13 @@ git_fails() {
   [ "$status" -eq 1 ]
   ! grep -q '^pr comment' "$STATE/gh.log" || false
   [ "$(cat "$f")" = '- a note' ]
+  refuse_pushes
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"git push failed"* ]] || { echo "$output"; return 1; }
+  ! grep -q '^pr comment' "$STATE/gh.log" || false
+  [ "$(cat "$f")" = '- a note' ]
+  rm "$TEMP_DIR/origin.git/hooks/pre-receive"
   GH_COMMENT_FAIL=1 run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 1 ]
   [[ "$output" == *"solve-feature: "*"$f"*"gh pr comment 10 --body-file $f && rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
