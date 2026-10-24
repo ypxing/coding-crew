@@ -201,7 +201,7 @@ post_notes() {
   [ -s "$f" ] || return 0
   { printf '## %s\n\n' "$3"; cat "$f"; } >"$f.tmp" && mv "$f.tmp" "$f"
   gh pr comment "$n" --body-file "$f" >/dev/null ||
-    die "posting $f to PR #$n failed: post it by hand with gh pr comment $n --body-file $f before a re-run (on Actions the file is in the run's artifact)"
+    die "posting $f to PR #$n failed: post it by hand with gh pr comment $n --body-file $f && rm $f before a re-run (on Actions the file is in the run's artifact)"
   rm -f "$f"
 }
 

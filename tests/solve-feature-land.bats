@@ -356,7 +356,7 @@ notes() { printf '%s\n' "- tag a release once this merges" "" "- set the CREW_X 
   local f="$WORK/.coding-crew/solve-feature/coder.notes.md"
   GH_COMMENT_FAIL=1 run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"solve-feature: "*"$f"*"gh pr comment 10 --body-file $f"*"artifact"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"solve-feature: "*"$f"*"gh pr comment 10 --body-file $f && rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
   [ "$(head -n1 "$f")" = "## Notes for a person from the coder of 2" ]
   grep -qx -- '- set the CREW_X repo variable' "$f"
   grep -q "gh pr comment 10 --body-file" .coding-crew/solve-feature/outcome

@@ -610,7 +610,7 @@ git_fails() {
   [ "$(cat "$f")" = '- a note' ]
   GH_COMMENT_FAIL=1 run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"solve-feature: "*"$f"*"gh pr comment 10 --body-file $f"*"artifact"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"solve-feature: "*"$f"*"gh pr comment 10 --body-file $f && rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
   [ "$(head -n1 "$f")" = "## Notes for a person from the fixer of PR #10's review" ]
 }
 
