@@ -156,14 +156,15 @@ no protection and no ruleset requiring a PR it can push there directly. Both rea
 
 ```bash
 if DEFAULT=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name) &&
-  PROTECTED=$(gh api "repos/{owner}/{repo}/branches/$DEFAULT" --jq .protected) &&
+  PROTECTED=$(gh api "repos/{owner}/{repo}/branches/$DEFAULT" --jq .protection.enabled) &&
   RULES=$(gh api "repos/{owner}/{repo}/rules/branches/$DEFAULT" --jq '.[].type') &&
   [ "$PROTECTED" = false ] && ! grep -qxE 'pull_request|update' <<<"$RULES"; then
   echo "Warning: nothing protects $DEFAULT, so the workflow's token can push straight to $DEFAULT. Add a ruleset with a pull_request rule for it (Settings → Rules → Rulesets)."
 fi
 ```
 
-Show the warning when it prints one; it changes nothing (`non_fast_forward` alone only blocks force pushes).
+Show the warning when it prints one; it changes nothing (`non_fast_forward` alone only blocks force pushes;
+`.protection.enabled` is classic protection, while `.protected` is true for any ruleset).
 
 The runner's fresh checkout has no `~/.coding-crew/`, so a tracker set only at user level reads as `local`
 there. When the project's `config.json` has no `tracker` section, write it, keeping its other sections:

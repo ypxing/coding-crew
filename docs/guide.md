@@ -559,7 +559,9 @@ issues' bodies, so read them first.
 write, maintain or admin permission (anyone else's label ends with a notice), and a review round never runs on a PR
 from a fork. Each job declares its own permissions: only `approve-ci` has `actions: write`, only `solve` (the agent's
 job) `id-token: write`, and the run step drops `ACTIONS_ID_TOKEN_REQUEST_TOKEN`/`_URL` before the agent starts, so
-the agent cannot request an OIDC token. No step after the agent on its runner holds a secret: the CI approval and
+no process the agent can read without root holds them. The agent has sudo on a GitHub-hosted runner and could still
+read them from the runner's memory: let no AWS role other than the Bedrock one below trust this repo's tokens from any
+workflow (`repo:<org>/<repo>:*`). No step after the agent on its runner holds a secret: the CI approval and
 Copilot's review request run as their own jobs. Every outside action is pinned by commit SHA.
 
 - `NPM_TOKEN`: for private npm packages, store a **read-only** granular npm token as this repo secret. Only the
@@ -590,7 +592,8 @@ workflow:
 2. Trust policy: the GitHub OIDC provider as `Federated`, `token.actions.githubusercontent.com:aud` equal to
    `sts.amazonaws.com`, and `token.actions.githubusercontent.com:sub` matching (`StringLike`)
    `repo:<org>/*:job_workflow_ref:<owner>/coding-crew/.github/workflows/crew-solve-feature.yml@<ref>`, `<owner>`
-   and `<ref>` being the coding-crew copy and tag (or `refs/heads/stable`) the callers name.
+   being the coding-crew copy the callers name and `<ref>` its full ref: `refs/tags/vX.Y.Z` for the tag they pin
+   (not the bare `vX.Y.Z`), or `refs/heads/stable`.
 3. Permissions policy: only `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`, on the named
    foundation-model and inference-profile ARNs the runs use.
 4. The role's maximum session duration at least the job's `timeout-minutes` (360 by default, so 6 hours).

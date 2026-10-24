@@ -972,11 +972,6 @@ SH
   GH_HELD= run bash -e "$TEMP_DIR/ci-step.sh"
   [ "$status" -eq 0 ]
   ! grep -q 'api -X POST\|workflow run' "$STATE/gh.log" || false
-
-  rm -f "$STATE/gh.log"
-  PR= run bash -e "$TEMP_DIR/ci-step.sh"
-  [ "$status" -eq 0 ]
-  [ ! -e "$STATE/gh.log" ]
 }
 
 @test "the reusable workflow: the outcome step gives solve's outputs, the PR of any outcome naming one and ready only for ready pr=<n>" {
@@ -1107,12 +1102,20 @@ solve_step() {
   [ "$status" -eq 7 ]
 }
 
+@test "the reusable workflow: a review round checks out the default branch, so the NPM_TOKEN install never runs the PR's agent-written tree" {
+  wf_json
+  # pull_request_review's github.ref is refs/pull/<n>/merge: the feature branch the agent wrote, merged in.
+  [ "$(jq -r '.jobs.solve.steps[] | select(.uses // "" | startswith("actions/checkout@")) | .with.ref' "$JSON")" = \
+    "\${{ github.event_name == 'pull_request_review' && github.event.repository.default_branch || '' }}" ]
+}
+
 @test "the reusable workflow's run step hides the OIDC request variables from either agent; no step after it in solve references a secret, COPILOT_GITHUB_TOKEN only in request-copilot-review" {
   wf_json
   solve_step "Run solve-feature"
   local a
   for a in copilot claude; do
-    printf '#!/usr/bin/env bash\nenv | grep -E "^ACTIONS_ID_TOKEN_REQUEST_" | sort; echo end\n' > "$STUB/$a" && chmod +x "$STUB/$a"
+    # Its parent's /proc environ too: an `unset` leaves the variables there, readable by any child (Linux only).
+    printf '#!/usr/bin/env bash\n{ env; [ ! -r /proc/$PPID/environ ] || tr "\\\\0" "\\\\n" < /proc/$PPID/environ; } | grep -E "^ACTIONS_ID_TOKEN_REQUEST_" | sort; echo end\n' > "$STUB/$a" && chmod +x "$STUB/$a"
   done
   run env ACTIONS_ID_TOKEN_REQUEST_TOKEN=tok ACTIONS_ID_TOKEN_REQUEST_URL=https://x CREW_AGENT=copilot CREW_MODEL= SLUG=feat bash -e "$TEMP_DIR/step.sh"
   [ "$status" -eq 0 ]

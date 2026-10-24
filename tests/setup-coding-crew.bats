@@ -581,14 +581,17 @@ protection_check() {
 echo "gh $*" >> "$TEMP_DIR/gh.log"
 case "$*" in
   "repo view"*) [ -z "$FAIL_REPO" ] || { echo 'gh: not authenticated' >&2; exit 1; }; echo main ;;
-  "api repos/{owner}/{repo}/branches/main --jq .protected") [ -z "$FAIL_BRANCH" ] || { echo 'gh: HTTP 403' >&2; exit 1; }; echo "$PROTECTED" ;;
+  # .protected is true whenever any ruleset targets the branch, a non_fast_forward-only one too; .protection.enabled is
+  # classic branch protection alone.
+  "api repos/{owner}/{repo}/branches/main --jq .protected") echo true ;;
+  "api repos/{owner}/{repo}/branches/main --jq .protection.enabled") [ -z "$FAIL_BRANCH" ] || { echo 'gh: HTTP 403' >&2; exit 1; }; echo "$PROTECTED" ;;
   "api repos/{owner}/{repo}/rules/branches/main --jq .[].type") [ -z "$FAIL_RULES" ] || { echo 'gh: HTTP 500' >&2; exit 1; }; printf '%s\n' $RULES ;;
   *) echo "unexpected: $*" >&2; exit 9 ;;
 esac
 SH
   chmod +x "$stub/gh"
   export PATH="$stub:$PATH" TEMP_DIR
-  # p <protected> <rule types> — runs the block; $output holds what it printed.
+  # p <classic protection enabled> <rule types> — runs the block; $output holds what it printed.
   p() { rm -f "$TEMP_DIR/gh.log"; PROTECTED="$1" RULES="$2" run bash "$TEMP_DIR/protect.sh"; }
 
   for rules in '' 'non_fast_forward' 'deletion non_fast_forward'; do

@@ -82,8 +82,8 @@ name: crew-solve-feature
 # (solve-feature on GitHub Actions) has the `sub` customisation, the trust and permissions policies and a budget
 # alarm; customising `sub` breaks the repo's existing OIDC roles until their trust policies are updated.
 #
-# Secrets and the agent: the run step drops the OIDC request variables before the agent starts, and no step after it
-# on the agent's runner holds a secret. NPM_TOKEN, a read-only granular npm token, reaches only the step that runs
+# Secrets and the agent: the run step drops the OIDC request variables before the agent starts (with the runner's
+# sudo it could still read them from the runner's memory), and no step after it on the agent's runner holds a secret. NPM_TOKEN, a read-only granular npm token, reaches only the step that runs
 # dev-commands.json's `install` (host mode) before the agent, through the repo's .npmrc `${NPM_TOKEN}`; a
 # registry_auth command is not run there, and an install the agent runs itself (docker mode, a new private
 # package) has no token and stops for a person.
@@ -269,9 +269,12 @@ jobs:
           # The agent cannot refresh the role's credentials (no OIDC token in its session): they last the whole job.
           echo "duration=$((TIMEOUT_MINUTES * 60))" >> "$GITHUB_OUTPUT"
 
+      # A review round's own ref is refs/pull/<n>/merge, the agent-written branch, whose dev-commands.json and package
+      # scripts the install step below would run with NPM_TOKEN; the round's solve-feature checks out that branch itself.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request_review' && github.event.repository.default_branch || '' }}
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -355,7 +358,10 @@ jobs:
         run: |
           set -o pipefail
           # id-token: write puts these in every step: with them the agent could mint a token for any role trusting the repo.
-          unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
+          # Re-run this script without them, not `unset`: an unset leaves them in this shell's /proc/<pid>/environ,
+          # which the agent, a child of this shell, can read.
+          [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN+x}${ACTIONS_ID_TOKEN_REQUEST_URL+x}" ] ||
+            exec env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL bash -eo pipefail "$0"
           for v in ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL; do
             [ -n "${!v:-}" ] || unset "$v"
           done
@@ -519,7 +525,6 @@ jobs:
           PR: ${{ needs.solve.outputs.pr }}
         run: |
           pr=$PR
-          [ -n "$pr" ] || { echo "No PR in .coding-crew/solve-feature/outcome: no CI to start."; exit 0; }
           read -r branch sha < <(gh pr view "$pr" --json headRefName,headRefOid --jq '"\(.headRefName) \(.headRefOid)"') ||
             { echo "::warning::could not read PR #$pr's head: its CI waits for approval"; exit 0; }
           # GitHub holds a bot-made PR's run as `action_required`, with no jobs run.
