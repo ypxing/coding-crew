@@ -46,7 +46,7 @@ MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 BRANCH_WORK=(. ':!.coding-crew/config.json')
 git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 || BRANCH_WORK+=(':!.coding-crew/dev-commands.json')
 [ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head \
-  "$LOGS"/pr-*.discarded.md "$LOGS/review.base"
+  "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base"
 # The tracker and checks libraries, in the coding-crew-lib skill installed beside this one.
 CLI="$SELF/../../coding-crew-lib/scripts/tracker/cli.mjs" CHECKS="$SELF/../../coding-crew-lib/scripts/checks"
 [ -f "$CLI" ] || die "tracker CLI not found ($CLI): install the coding-crew-lib skill beside solve-feature (npx skills add ypxing/coding-crew -s coding-crew-lib, adding -g at user level) or re-run install.sh"
@@ -189,8 +189,20 @@ next() {
   # backend's validateRef, so a ref it rejects stops here, before it reaches the coder's prompt.
   node "$CLI" fetch "$ref" >"$LOGS/${ref//\//_}.issue.md" || die "fetch $ref failed (see above)"
   # One coder at a time writes its report here; an earlier one's would read as this coder's at land's solve stop.
-  rm -f "$LOGS/coder.report.md"
+  rm -f "$LOGS/coder.report.md" "$LOGS/coder.notes.md"
   echo "$ref"
+}
+
+# post_notes <pr> <file> <heading> — a non-empty notes file a subagent left for a person goes on the PR as one comment,
+# verbatim under <heading>, then is deleted: only GitHub keeps it across a stop and a fresh runner. The heading is
+# written into the file first, so the file a failed post leaves is ready to post by hand.
+post_notes() {
+  local n="$1" f="$2"
+  [ -s "$f" ] || return 0
+  { printf '## %s\n\n' "$3"; cat "$f"; } >"$f.tmp" && mv "$f.tmp" "$f"
+  gh pr comment "$n" --body-file "$f" >/dev/null ||
+    die "posting $f to PR #$n failed: post it by hand with gh pr comment $n --body-file $f before a re-run (on Actions the file is in the run's artifact)"
+  rm -f "$f"
 }
 
 stop() { # <step> <reason> [<log>]; exit 1
@@ -273,6 +285,7 @@ land() {
     url=$(gh pr create --draft --title "$(pr_title "$rs")" --body-file "$f") || die "gh pr create failed"
     PR_N="${url##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $url"
   fi
+  post_notes "$PR_N" "$LOGS/coder.notes.md" "Notes for a person from the coder of $REF"
   echo "pr=$PR_N"
 }
 
@@ -334,6 +347,7 @@ fix() {
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   git rev-parse HEAD >"$LOGS/review.base"
+  post_notes "$PR" "$LOGS/pr-$PR.notes.md" "Notes for a person from the fixer of PR #$PR's review"
 
   # "Changed nothing" is no commit on the branch's own line past the round's head: what merge_in brought in sits
   # behind a merge's second parent, and a fix committed here and pushed by hand still counts.

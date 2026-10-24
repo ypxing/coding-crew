@@ -303,3 +303,69 @@ EOF
   [ ! -f "$STATE/checks.log" ]
   grep -q 'checks library not found' .coding-crew/solve-feature/outcome
 }
+
+# --- land: the coder's notes for a person ------------------------------------------------
+
+notes() { printf '%s\n' "- tag a release once this merges" "" "- set the CREW_X repo variable" > .coding-crew/solve-feature/coder.notes.md; }
+
+@test "land posts a non-empty coder.notes.md as one PR comment headed with the issue's ref, verbatim, then deletes it; pr= stays last" {
+  land_ready
+  notes
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = pr=10 ]
+  [ "$(grep -c '^pr comment' "$STATE/gh.log")" = 1 ]
+  [ "$(sed -n 3p "$STATE/pr-comment.1")" = 10 ]
+  [ "$(cat "$STATE/pr-comment.1.body")" = "$(printf '%s\n' "## Notes for a person from the coder of 2" "" "- tag a release once this merges" "" "- set the CREW_X repo variable")" ]
+  [ ! -e .coding-crew/solve-feature/coder.notes.md ]
+  # The PR exists before the comment: created first.
+  [ "$(grep -nE '^pr (create|comment)' "$STATE/gh.log" | cut -d' ' -f2 | paste -sd' ' -)" = "create comment" ]
+}
+
+@test "land with no or an empty coder.notes.md posts no comment" {
+  land_ready
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ]
+  run bash "$SCRIPT" next feat
+  coder 3
+  : > .coding-crew/solve-feature/coder.notes.md
+  run bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 0 ]
+  [ "$output" = pr=10 ]
+  ! grep -q '^pr comment' "$STATE/gh.log" || false
+}
+
+@test "land that stops at its checks or its push posts no comment and leaves coder.notes.md in place" {
+  land_ready
+  notes
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  [ -s .coding-crew/solve-feature/coder.notes.md ]
+  coder 2
+  refuse_pushes
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"2 push failed"* ]]
+  [ -s .coding-crew/solve-feature/coder.notes.md ]
+  ! grep -q '^pr comment' "$STATE/gh.log" || false
+}
+
+@test "a failed gh pr comment stops land naming the notes file, the command to post it and the Actions artifact, the heading already in the file" {
+  land_ready
+  notes
+  local f="$WORK/.coding-crew/solve-feature/coder.notes.md"
+  GH_COMMENT_FAIL=1 run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"solve-feature: "*"$f"*"gh pr comment 10 --body-file $f"*"artifact"* ]] || { echo "$output"; return 1; }
+  [ "$(head -n1 "$f")" = "## Notes for a person from the coder of 2" ]
+  grep -qx -- '- set the CREW_X repo variable' "$f"
+  grep -q "gh pr comment 10 --body-file" .coding-crew/solve-feature/outcome
+}
+
+@test "next deletes a leftover coder.notes.md, so an earlier coder's notes never post under the next issue" {
+  run bash "$SCRIPT" start feat
+  notes
+  run bash "$SCRIPT" next feat
+  [ "$output" = 2 ]
+  [ ! -e .coding-crew/solve-feature/coder.notes.md ]
+}
