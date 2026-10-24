@@ -56,6 +56,14 @@ _stub() {
   [[ "$output" == *"Failed files (1)"* ]]
 }
 
+@test "a file that does not exist, such as an unmatched glob, stops the run before any bats starts" {
+  _stub a.bats 1
+  run bash "$RUNNER" "$TEMP_DIR/a.bats" "$TEMP_DIR/nope*.bats"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"no such file: $TEMP_DIR/nope*.bats"* ]]
+  [ ! -s "$STARTS" ]
+}
+
 # A PATH of every command but bats, and a local bats-core whose v1.13.0 tag ships the fake bats.
 _no_bats_path() {
   local d f

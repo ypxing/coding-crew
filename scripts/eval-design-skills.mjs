@@ -20,7 +20,7 @@ const STAGE_INSTRUCTIONS = {
   close:
     "EVAL MODE (non-interactive): the frontier is empty. Output exactly what you would send the user to close Phase 1 (everything up to and including your hand-off: the 'Ready to write the PRD?' line, or the hand-off to `to-issues`). Then assume the user agreed with no other change, and output ONLY the '## Decisions' and '## Out of Scope' sections the next document would carry (the PRD, or the one issue when the work stays one slice). You may read the repo to check facts, but modify nothing.",
   slice:
-    "EVAL MODE (non-interactive): the ARGUMENTS above are the feature's PRD; do not look for or fetch another. Explore the repo read-only, then output ONLY your step 5 breakdown: the numbered slices, each with its title, acceptance-criteria count (criteria count), `Blocked by`, and the split reason that produced it (none when there is one slice). Then stop. No user will answer. Modify nothing and publish nothing.",
+    "EVAL MODE (non-interactive): the ARGUMENTS above are the feature's PRD; do not look for or fetch another. Explore the repo read-only, then output ONLY your step 5 breakdown: the numbered slices, each with its title, type (AFK, HITL first or HITL last), acceptance-criteria count (criteria count), `Blocked by`, and the split reason that produced it (none when there is one slice). Then stop. No user will answer. Modify nothing and publish nothing.",
   prepublish:
     "EVAL MODE (non-interactive): you are at step 6, the drafts are written and `deps.json` agrees with every `## Blocked by`. The ARGUMENTS above are the drafts (and the PRD, when there is one), inline: there are no files to read for them, so wherever your skill reads a draft or the PRD from a path, use this text. You may read the repo read-only. Do not publish. Output ONLY what you would ask the user or change in the drafts before publishing, ranked by importance, each with the draft it concerns and why the answer matters; if there is nothing, say so. Then stop. No user will answer. Modify nothing.",
 };
@@ -28,12 +28,12 @@ const STAGE_INSTRUCTIONS = {
 const METRICS = ["sized", "do_least", "asked_well", "overbuilt", "underbuilt", "false_cut", "chain_priced"];
 // Higher is better for these; lower is better for the rest.
 const GOOD_HIGH = new Set(["sized", "do_least", "asked_well", "chain_priced"]);
-const TO_ISSUES_METRICS = ["count_ok", "splits_justified", "overmerged", "oversplit"];
+const TO_ISSUES_METRICS = ["count_ok", "splits_justified", "overmerged", "oversplit", "hitl_placed"];
 
 export const SKILL_SCORING = {
   "crew-grill": { metrics: METRICS, goodHigh: GOOD_HIGH, rubric: "rubric.md" },
   "crew-brainstorm": { metrics: METRICS, goodHigh: GOOD_HIGH, rubric: "rubric.md" },
-  "to-issues": { metrics: TO_ISSUES_METRICS, goodHigh: new Set(["count_ok", "splits_justified"]),
+  "to-issues": { metrics: TO_ISSUES_METRICS, goodHigh: new Set(["count_ok", "splits_justified", "hitl_placed"]),
     rubric: "rubric-to-issues.md" },
 };
 

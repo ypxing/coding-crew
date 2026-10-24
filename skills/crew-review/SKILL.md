@@ -36,8 +36,10 @@ Your caller names them; a bare number is a PR, nothing at all is the current bra
   - A file.
   - An issue ref, read with the tracker CLI's `fetch` (`node "<skill-dir>/../coding-crew-lib/scripts/tracker/cli.mjs" fetch <ref>`,
     `<skill-dir>` being the directory you read this file from).
-  - Given a PR and no spec, the PR body's `<details><summary>Spec</summary>` block when it has one, else the whole
-    body. A branch with no spec named has none.
+  - Given a PR and no spec, when its body has the marker `<!-- solve-feature:slug <s> -->`: the tracker CLI's
+    `prd --feature-slug <s>` output, then every issue of that feature, open or closed, that
+    `known --feature-slug <s> --out <dir>` writes (an open one is still unmet); else the whole body. Read the marker,
+    never the body's `Spec:` line. A branch with no spec named has none.
 - **The report's path.** Write the report there; with none, print it.
 
 ## Run

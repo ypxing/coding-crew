@@ -476,11 +476,7 @@ Users need accounts.
 
 **Tested:** checks pass
 
-<details><summary>Spec</summary>
-
-$(cat .coding-crew/solve-feature/spec.md)
-
-</details>
+Spec: PRD #1, feature \`feat\`
 
 Closes #2
 Closes #3
@@ -496,7 +492,22 @@ EOF
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ]
   [ "$(grep -c '^## Why$' "$STATE/pr-body")" -eq 1 ]
-  [ "$(grep -c '^### 2-two — Two$' "$STATE/pr-body")" -eq 1 ]
+  [ "$(grep -c '^Spec: ' "$STATE/pr-body")" -eq 1 ]
+  ! grep -q '<details>' "$STATE/pr-body" || false
+  [ -s .coding-crew/solve-feature/spec.md ]
+}
+
+@test "describe's Spec line names only the feature for a PRD without an issue header, and when prd exits 3" {
+  fixed
+  printf '# PRD: Feat\n\nthe prd\n' > "$STATE/prd.md"
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(grep '^Spec: ' "$STATE/pr-body")" = 'Spec: feature `feat`' ]
+
+  rm "$STATE/prd.md"
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(grep '^Spec: ' "$STATE/pr-body")" = 'Spec: feature `feat`' ]
 }
 
 @test "with anything needing a person describe lists it under Needs attention, leaves the PR a draft and writes needs-attention" {
@@ -504,7 +515,7 @@ EOF
   summary
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(sed -n '/^## Needs attention$/,/^<details>/p' "$STATE/pr-body")" = "$(printf '## Needs attention\n\n- no logout endpoint\n\n<details><summary>Spec</summary>')" ]
+  [ "$(sed -n '/^## Needs attention$/,/^Spec: /p' "$STATE/pr-body")" = "$(printf '## Needs attention\n\n- no logout endpoint\n\nSpec: PRD #1, feature `feat`')" ]
   [ "$(grep -n -m1 '^## Why$' "$STATE/pr-body" | cut -d: -f1)" -lt "$(grep -n -m1 '^## Needs attention$' "$STATE/pr-body" | cut -d: -f1)" ]
   [ "$(sed -n 2p "$STATE/pr-body")" = "$ATTRIBUTION" ]
   ! grep -q '^pr ready' "$STATE/gh.log" || false
@@ -526,7 +537,7 @@ EOF
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   ! grep -q '^pr ready' "$STATE/gh.log" || false
   [ "$(cat "$STATE/pr-title")" = Feat ]
-  [ "$(head -4 "$STATE/pr-body")" = "$(printf '<!-- solve-feature:begin -->\n%s\n\n<details><summary>Spec</summary>' "$ATTRIBUTION")" ]
+  [ "$(head -4 "$STATE/pr-body")" = "$(printf '<!-- solve-feature:begin -->\n%s\n\nSpec: PRD #1, feature `feat`' "$ATTRIBUTION")" ]
   [ "$(cat .coding-crew/solve-feature/outcome)" = "ready pr=10" ]
 }
 
@@ -555,7 +566,7 @@ EOF
   threads "false true" "true false false"
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(sed -n '/^## Needs attention$/,/^<details>/p' "$STATE/pr-body")" = "$(printf '## Needs attention\n\n- 3 unresolved review threads: https://github.com/o/r/pull/10\n\n<details><summary>Spec</summary>')" ]
+  [ "$(sed -n '/^## Needs attention$/,/^Spec: /p' "$STATE/pr-body")" = "$(printf '## Needs attention\n\n- 3 unresolved review threads: https://github.com/o/r/pull/10\n\nSpec: PRD #1, feature `feat`')" ]
   grep -q '^api graphql .*--paginate' "$STATE/gh.log"
   ! grep -q '^pr ready' "$STATE/gh.log" || false
   [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention pr=10" ]

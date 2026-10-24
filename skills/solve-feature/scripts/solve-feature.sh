@@ -86,7 +86,7 @@ pr_view() { # sets PR_N and PR_IS_DRAFT (true|false) when the branch has an OPEN
   PR_IS_DRAFT=$(jq -r 'select(.state == "OPEN") | .isDraft' <<<"$view" 2>/dev/null || true)
 }
 
-# .coding-crew/solve-feature/spec.md, which the reviewer and the PR body read: the PRD, then every issue of the feature, open
+# .coding-crew/solve-feature/spec.md, which the reviewer and the PR writer read: the PRD, then every issue of the feature, open
 # or closed, with its acceptance criteria. All of them: an issue another run landed is met in the code, and one
 # still open is a gap a person must see.
 write_spec() {
@@ -341,7 +341,8 @@ fix() {
   # Needs a person: the reviewer's gaps, an unmet spec, each line the fixer left in unfixed.md, and a fixer that
   # changed nothing without saying why (it crashed or gave up).
   attention=$(jq -r '.gaps // [] | .[] | tostring' "$report")
-  [ "$spec" = met ] || attention+=$'\n'"the reviewer found the spec unmet"
+  # The gaps already name what is unmet; the bare line is for an unmet spec with none named.
+  [ "$spec" = met ] || [ -n "$(jq -r '.gaps // [] | .[]' "$report")" ] || attention+=$'\n'"the reviewer found the spec unmet"
   [ ! -f "$unfixed" ] || attention+=$'\n'"$(cat "$unfixed")"
   [ ! -f "$discarded" ] || attention+=$'\n'"the reviewer changed the tree; discarded: $(paste -sd' ' "$discarded")"
   [ "$total" = 0 ] || [ "$moved" = yes ] || [ -s "$unfixed" ] || attention+=$'\n'"the fixer changed nothing"
@@ -380,6 +381,15 @@ describe() {
   local need; need=$(cat "$att")
   [ "$UNRESOLVED" = 0 ] || need=$(printf '%s\n%s unresolved review threads: %s' "$need" "$UNRESOLVED" "$PR_URL" | grep -v '^[[:space:]]*$')
   refs=$(node "$CLI" closing-refs --feature-slug "$SLUG") || die "closing-refs failed for '$SLUG' (see above)"
+  # The spec is named, not copied: spec.md stays for the reviewer, and a person opens the PRD itself.
+  local prd_head rc=0 spec_line="Spec: feature \`$SLUG\`"
+  prd_head=$(node "$CLI" prd --feature-slug "$SLUG") || rc=$?
+  prd_head=${prd_head%%$'\n'*}
+  case $rc in
+    0) [[ ! "$prd_head" =~ ^'<!-- PRD issue #'([0-9]+): ]] || spec_line="Spec: PRD #${BASH_REMATCH[1]}, feature \`$SLUG\`" ;;
+    3) ;;
+    *) die "reading the feature's PRD failed (exit $rc)" ;;
+  esac
   [ ! -f "$f" ] || title=$(head -n 1 "$f" | sed -n 's/^# //p')
   {
     echo "$BEGIN"
@@ -388,7 +398,7 @@ describe() {
     # write-pr's summary minus its title line, which titles the PR instead.
     if [ -f "$f" ]; then if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d'; echo; fi
     if [ -n "$need" ]; then printf '## Needs attention\n\n'; sed 's/^/- /' <<<"$need"; echo; fi
-    printf '<details><summary>Spec</summary>\n\n%s\n\n</details>\n\n' "$(cat "$LOGS/spec.md")"
+    printf '%s\n\n' "$spec_line"
     [ -z "$refs" ] || printf '%s\n' "$refs"
     printf '%s\n' "<!-- solve-feature:slug $SLUG -->" "$END"
   } >"$body"

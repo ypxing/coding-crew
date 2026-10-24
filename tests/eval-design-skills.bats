@@ -246,7 +246,7 @@ EOF
   last=$(tail -n 1 "$d/s1-head-1.prompt.txt")
   [[ "$last" == "EVAL MODE"* ]]
   [[ "$last" == *"step 5 breakdown"* ]]
-  [[ "$last" == *"title"*"criteria count"*"Blocked by"*"split reason"* ]]
+  [[ "$last" == *"title"*"type (AFK, HITL first or HITL last)"*"criteria count"*"Blocked by"*"split reason"* ]]
   [[ "$last" == *"Then stop."* ]]
   [ ! -e "$d/c1-base-1.prompt.txt" ]
 }
@@ -260,14 +260,15 @@ EOF
   gj=$(grep -l 'Small is right.' "$T"/jp-*.txt)
   grep -q 'TO-ISSUES-RUBRIC-TEXT' "$sj"
   ! grep -q '^RUBRIC-TEXT' "$sj"
-  grep -q '"count_ok": 0|1|null, "splits_justified": 0|1|null, "overmerged": 0|1|null, "oversplit": 0|1|null' "$sj"
+  grep -q '"count_ok": 0|1|null, "splits_justified": 0|1|null, "overmerged": 0|1|null, "oversplit": 0|1|null, "hitl_placed": 0|1|null' "$sj"
   ! grep -q '"sized"' "$sj"
   grep -q '^RUBRIC-TEXT' "$gj"
   ! grep -q 'TO-ISSUES-RUBRIC-TEXT' "$gj"
   grep -q '"sized": 0|1|null' "$gj"
   ! grep -q 'count_ok' "$gj"
-  [[ "$output" == *"| case | version | n | count_ok | splits_justified | overmerged | oversplit | cost |"* ]]
-  [[ "$output" == *"| s1 | head | 1 | 1/1 | 1/1 | 0/1 | n/a | \$0.25 |"* ]]
+  [[ "$output" == *"| case | version | n | count_ok | splits_justified | overmerged | oversplit | hitl_placed | cost |"* ]]
+  [[ "$output" == *"| s1 | head | 1 | 1/1 | 1/1 | 0/1 | n/a | n/a | \$0.25 |"* ]]
+  [[ "$output" == *"Higher is better: count_ok, splits_justified, hitl_placed."* ]]
   [[ "$output" == *"| case | version | n | sized | do_least | asked_well | overbuilt | underbuilt | false_cut | chain_priced | cost |"* ]]
   [[ "$output" == *"| c1 | head | 1 | 1/1 | n/a | 1/1 | 0/1 | 0/1 | n/a | n/a | \$0.25 |"* ]]
 }
@@ -327,7 +328,7 @@ EOF
   ! grep -q 'gap_raised' "$sj"
   [[ "$output" == *"| case | version | n | gap_raised | noise | cost |"* ]]
   [[ "$output" == *"| p1 | head | 1 | 1/1 | 0/1 | \$0.25 |"* ]]
-  [[ "$output" == *"| case | version | n | count_ok | splits_justified | overmerged | oversplit | cost |"* ]]
+  [[ "$output" == *"| case | version | n | count_ok | splits_justified | overmerged | oversplit | hitl_placed | cost |"* ]]
   [[ "$output" == *"Higher is better: gap_raised. Lower is better: noise."* ]]
 }
 
@@ -360,19 +361,19 @@ EOF
   rm -r "$d"
 }
 
-@test "the committed to-issues cases dry-run as 4 cases x 2 versions x runs" {
+@test "the committed to-issues cases dry-run as 5 cases x 2 versions x runs" {
   run bash -c "cd '$REPO_ROOT' && node scripts/eval-design-skills.mjs --skill to-issues --base HEAD --dry-run --runs 2"
   [ "$status" -eq 0 ]
   d=$(prompts_dir "$output")
   rm -r "$d"
-  [[ "$output" == *"16 subject runs (4 cases × 2 versions × 2)"* ]]
-  for c in slice-review-catches slice-promote-after-merge slice-crew-afk-review prepublish-tracker-wrappers; do
+  [[ "$output" == *"20 subject runs (5 cases × 2 versions × 2)"* ]]
+  for c in slice-review-catches slice-promote-after-merge slice-crew-afk-review slice-agent-agnostic-install prepublish-tracker-wrappers; do
     [ "$(grep -c "  $c " <<<"$output")" -eq 4 ]
   done
 }
 
 @test "the committed to-issues cases pin repo_ref to a commit and use the slice stage" {
-  for c in slice-review-catches slice-promote-after-merge slice-crew-afk-review; do
+  for c in slice-review-catches slice-promote-after-merge slice-crew-afk-review slice-agent-agnostic-install; do
     f="$REPO_ROOT/scripts/eval-design-skills/cases/$c.md"
     grep -q '^skill: to-issues$' "$f"
     grep -q '^stage: slice$' "$f"

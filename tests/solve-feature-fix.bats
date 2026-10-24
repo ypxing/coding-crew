@@ -281,14 +281,14 @@ push_says() {
   pushed
 }
 
-@test "a gap, an unmet spec and each unfixed line are handed to describe as needing attention" {
+@test "each gap and unfixed line, or an unmet spec with no gap named, is handed to describe as needing attention" {
   fix_ready '{"spec":"unmet","gaps":["no logout endpoint"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"},{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
   printf -- '#2: race on the lock: needs a design call\n\n' > .coding-crew/solve-feature/pr-10.unfixed.md
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(attention)" = "$(printf 'no logout endpoint\nthe reviewer found the spec unmet\n#2: race on the lock: needs a design call')" ]
+  [ "$(attention)" = "$(printf 'no logout endpoint\n#2: race on the lock: needs a design call')" ]
   [ ! -e .coding-crew/solve-feature/pr-10.unfixed.md ]
-  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=3 review-again=yes" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=2 review-again=yes" ]
 
   # The spec unmet with no gap named still needs a person.
   report '{"spec":"unmet","gaps":[],"findings":[]}'
