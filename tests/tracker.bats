@@ -18,6 +18,7 @@ run_node_test() {
 }
 
 @test "tracker: body-format.test.mjs passes" { run_node_test tests/tracker/body-format.test.mjs; }
+@test "tracker: pr-comments.test.mjs passes" { run_node_test tests/tracker/pr-comments.test.mjs; }
 @test "tracker: tracker-cli-write.test.mjs passes" { run_node_test tests/tracker/tracker-cli-write.test.mjs; }
 @test "tracker: tracker-cli.test.mjs passes" { run_node_test tests/tracker/tracker-cli.test.mjs; }
 @test "tracker: tracker-config.test.mjs passes" { run_node_test tests/tracker/tracker-config.test.mjs; }
