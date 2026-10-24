@@ -9,7 +9,7 @@
 #   wait <slug>
 #       blocks until the slug's latest run has ended, then prints what status prints for it: a run with a run.pid
 #       (local) once its process is gone, so the line carries the cost from the JSON result line that ends the log;
-#       one without, once the outcome is written
+#       one without, once the outcome is written, its pane or terminal is gone, or its state cannot be read
 # A destination is scripts/destinations/<name>.sh: `prepare <slug> <base-branch>` prints the worktree path;
 # `launch <slug> <worktree> <argv…>` starts the run there and records its id in the logs dir
 # (<worktree>/.coding-crew/solve-feature): a detached run's pid in run.pid, a pane's or terminal's in run.pane;
@@ -67,7 +67,7 @@ slug_worktrees() { # <slug> — every worktree crew-afk dispatched the slug to: 
 }
 
 dispatch() {
-  local to=local branch="" slug="" base wt logs pid
+  local to=local branch="" slug="" base wt logs
   while [ $# -gt 0 ]; do case "$1" in
     --) shift; break ;;
     --to) [ $# -ge 2 ] || usage "--to needs a value"; to="$2"; shift 2 ;;
@@ -105,8 +105,9 @@ dispatch() {
   include "$wt"
   logs="$wt/.coding-crew/solve-feature"
   mkdir -p "$logs" && echo '*' >"$logs/.gitignore"
-  # A stale outcome would read as this run's result until solve-feature's start clears it.
-  rm -f "$logs/outcome" "$logs/run.pid" "$logs/run.log" "$logs/run.branch"
+  # A stale outcome would read as this run's result until solve-feature's start clears it, and a stale run id
+  # as this run still going when its launch fails.
+  rm -f "$logs/outcome" "$logs/run.pid" "$logs/run.pane" "$logs/run.log" "$logs/run.branch"
   echo "$to" >"$logs/run.dest"
   echo "$slug" >"$logs/run.slug"
   [ -z "$branch" ] || echo "$branch" >"$logs/run.branch"

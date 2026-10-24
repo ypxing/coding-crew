@@ -325,6 +325,8 @@ case "$1 $2" in
   # $T/herdr-root-agent names the agent in the workspace's root pane (default: none, the startup shell).
   "worktree open") echo "{\"result\":{\"workspace\":{\"workspace_id\":\"w1\"},\"root_pane\":{\"pane_id\":\"w1:p1\",\"agent\":\"$(cat "$T/herdr-root-agent" 2>/dev/null)\"}}}" ;;
   "tab create") echo '{"result":{"tab":{"tab_id":"t1"},"root_pane":{"pane_id":"w1:p2"}}}' ;;
+  # $T/herdr-run-fail: typing the command into the pane fails.
+  "pane run") [ ! -f "$T/herdr-run-fail" ] || exit 1 ;;
   # $T/herdr-pane-gone: the pane is gone; $T/herdr-pane-fail: herdr cannot tell.
   "pane get") [ ! -f "$T/herdr-pane-gone" ] || { echo '{"error":{"code":"pane_not_found","message":"no pane"}}' >&2; exit 1; }
     [ ! -f "$T/herdr-pane-fail" ] || { echo '{"error":{"code":"server_down","message":"no server"}}' >&2; exit 1; }
@@ -525,6 +527,21 @@ OWT_LOGS() { echo "$T/orca-wt/app-report-cli/.coding-crew/solve-feature"; }
   echo '{"ok":true,"result":{"terminal":{"handle":"h1","connected":false,"orphaned":false}}}' > "$T/orca-show"
   run bash "$SCRIPT" wait report-cli
   [ "$output" = "report-cli: ended without an outcome — its orca terminal is gone; re-run /crew-afk report-cli --to orca to continue" ]
+}
+
+@test "a re-dispatch whose launch fails leaves no earlier run.pane, so the next dispatch is not blocked" {
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  echo "ready pr=7" > "$WT/.coding-crew/solve-feature/outcome"
+  touch "$T/herdr-run-fail"
+  run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [ ! -e "$WT/.coding-crew/solve-feature/run.pane" ]
+  run bash "$SCRIPT" status report-cli
+  [[ "$output" == "report-cli: ended without an outcome — "* ]]
+  rm "$T/herdr-run-fail"
+  run bash "$SCRIPT" dispatch report-cli --to local "${LAUNCH[@]}"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 @test "an interactive run with no run.pane, dispatched before it was recorded, does not block a dispatch" {
