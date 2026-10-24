@@ -467,15 +467,47 @@ Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it files th
 ### solve-feature on GitHub Actions (optional)
 
 `/solve-feature` runs one feature from a terminal or a worktree pane. To run it on a GitHub runner
-instead, run `/setup-coding-crew` with the github tracker and answer yes to its Actions step: it copies
-[`hosts/github-actions.yml`](../skills/setup-coding-crew/hosts/github-actions.yml) to
-`.github/workflows/solve-feature.yml`, creates the `run-agent` label, sets the repo variable
+instead, run `/setup-coding-crew` with the github tracker and answer yes to its Actions step: it copies the caller
+file [`hosts/github-actions.yml`](../skills/setup-coding-crew/hosts/github-actions.yml) to
+`.github/workflows/solve-feature.yml` (once it has checked that the coding-crew release the file names is tagged), creates the `run-agent` label, sets the repo variable
 `CREW_AGENT` to the agent you pick and prints the commit line for it. `copilot` (the default) is billed
 to GitHub Copilot with no API key; `claude` runs Claude Code on an `ANTHROPIC_API_KEY` or
 `CLAUDE_CODE_OAUTH_TOKEN` repo secret. Commit, then label any issue of a feature `run-agent` (on a sub-issue the
 job also labels the root) or run the workflow by hand with the slug. A finished `ready-for-human` issue of a
 `run-agent` feature (its label removed, as `mark-done` does, or the issue closed) re-runs it while the root is open
-(when whoever finished it has triage access or more), so a run that stopped for a person resumes once they are done. The file's header explains billing.
+(when whoever finished it has triage access or more), so a run that stopped for a person resumes once they are done.
+
+The caller file is short: the triggers, the permissions (with `id-token: write`), and one job, `run`, that calls
+coding-crew's reusable workflow [`crew-solve-feature.yml`](../.github/workflows/crew-solve-feature.yml) at a release
+tag (`uses: ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@vX.Y.Z`), passing `ANTHROPIC_API_KEY`,
+`CLAUDE_CODE_OAUTH_TOKEN`, `COPILOT_GITHUB_TOKEN` and `NPM_TOKEN` by name. Everything the job does lives in the
+reusable workflow, whose header explains billing and the rest. To pick up a newer coding-crew, bump the tag on that
+`uses:` line; Dependabot's `github-actions` ecosystem opens those PRs:
+
+```yaml
+# .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+```
+
+The runner installs the skills of that same release (the composite action `ypxing/coding-crew/actions/install`, at
+the tag the reusable workflow names), never `main`: the repo variable `CODING_CREW_REF` is no longer read. `with:
+timeout-minutes: <n>` on the `run` job changes the solve job's timeout (360 by default). The checks a run adds show
+as `run / slug` and `run / solve`, not `slug` and `solve`, so a branch rule requiring the old names needs the new
+ones. An older full copy of the workflow keeps working until `/setup-coding-crew redo actions` replaces it.
+
+**An internal copy.** An organisation that allows only its own actions can run its own copy of coding-crew: push a
+mirror of `ypxing/coding-crew` to `<org>/coding-crew` (`git clone --mirror`, then `git push --mirror`); in the
+copy's Settings → Actions → General → Access, allow access from the organisation's repositories, so their runners
+download its workflow and action with no token; then create a `stable` branch from a release tag with one commit
+that changes the reusable workflow's install line to `uses: <org>/coding-crew/actions/install@stable`. Callers use
+`<org>/coding-crew/.github/workflows/crew-solve-feature.yml@stable`. To update, fetch the new release into the
+copy, rebase a branch of `stable` onto its tag (the one-line commit on top) and merge it into `stable` by PR: every
+repo picks it up on its next run.
 
 The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all
 --no-color --output-format json` or `claude -p "/solve-feature $SLUG" --dangerously-skip-permissions --output-format stream-json
@@ -483,7 +515,7 @@ The job launches the skill with `copilot -p "Use the solve-feature skill on $SLU
 variable `CREW_MODEL` names one (else the CLI's default for the account); the agent runs each coder, the
 reviewer, the fixer and the PR's writer as its own subagents, on that model unless `solveFeature.models` names
 theirs; the repo variables `CREW_CODER_MODEL` and `CREW_REVIEWER_MODEL` override `solveFeature.models` for the coder
-(and fixer) and the reviewer on the runner, and `CODING_CREW_REF` (a branch or tag) picks the coding-crew the runner installs, `main` when unset. Claude's job log shows the run as it goes, one line per step (the model, each command and subagent, a
+(and fixer) and the reviewer on the runner, and for Claude Code, `ANTHROPIC_DEFAULT_HAIKU_MODEL`, `_SONNET_MODEL` and `_OPUS_MODEL`, when set, pin the model each alias means. Claude's job log shows the run as it goes, one line per step (the model, each command and subagent, a
 failed tool), Copilot's too (each subagent's model as it ends). Both keep the whole stream as `.coding-crew/solve-feature/session.jsonl`
 (Copilot's own logs beside it, in `copilot-logs/`). Every run uploads `.coding-crew/solve-feature/` as an artifact, so the checks log a stop names
 outlives the runner; a stop at an issue's checks has already pushed its work and made the issue ready again,

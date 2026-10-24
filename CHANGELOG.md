@@ -8,6 +8,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Upgrading
 
+- setup-coding-crew, solve-feature on Actions: the workflow is now coding-crew's reusable workflow
+  `.github/workflows/crew-solve-feature.yml`, and `/setup-coding-crew` writes a short caller that names it at a
+  release tag (`@v2.3.0`) and passes the four secrets by name; bump that tag to update (Dependabot's
+  `github-actions` ecosystem can). The runner installs that release's skills through the composite action
+  `actions/install`, with no clone: the repo variable `CODING_CREW_REF` is no longer read. Checks show as
+  `run / slug` and `run / solve`; a branch rule naming `solve` needs the new name. An existing full copy keeps
+  working until `/setup-coding-crew redo actions` replaces it; setup refuses a caller whose tag is not released
+  yet. `scripts/cut-release.sh` refuses a release whose pinned `uses:` refs do not read its tag (#614).
 - install, all skills: the tracker, checks and git-workflow libraries are installed once, in a new `coding-crew-lib`
   skill, instead of a copy inside every skill: a `claude` project install writes 65 files, not 248. `install.sh`
   installs it with any skill and removes the old per-skill copies on reinstall; an `npx skills add -s <name>` install
