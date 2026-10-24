@@ -452,6 +452,7 @@ SH
 #!/usr/bin/env bash
 echo "GH_TOKEN=$GH_TOKEN gh $*" >> "$TEMP_DIR/gh.log"
 case "$1 $2" in
+  "pr view") [ -z "$GH_VIEW_FAIL" ] || exit 1; echo "${GH_SCOPE:-false true}" ;;
   "api repos/o/r/pulls/12/reviews") [ -z "$GH_LIST_FAIL" ] || exit 1; printf '%s\n' $GH_REVIEWERS ;;
   "pr edit") [ -z "$GH_EDIT_FAIL" ] || { echo "HTTP 422" >&2; exit 1; } ;;
 esac
@@ -461,8 +462,17 @@ SH
 
   GH_TOKEN=pat run bash -e "$TEMP_DIR/request-copilot-review-step.sh"
   [ "$status" -eq 0 ]
-  [ "$(cat "$TEMP_DIR/gh.log")" = "$(printf '%s\n' 'GH_TOKEN=gha gh api repos/o/r/pulls/12/reviews --paginate --jq .[].user.login' \
+  [ "$(sed 1d "$TEMP_DIR/gh.log")" = "$(printf '%s\n' 'GH_TOKEN=gha gh api repos/o/r/pulls/12/reviews --paginate --jq .[].user.login' \
     'GH_TOKEN=pat gh pr edit 12 --add-reviewer @copilot')" ]
+  [[ "$(head -n 1 "$TEMP_DIR/gh.log")" == "GH_TOKEN=gha gh pr view 12 --json isCrossRepository,body "* ]]
+  # The agent wrote the outcome: a fork's PR, one with no solve-feature block, or an unreadable one gets no request.
+  local s
+  for s in 'GH_SCOPE=true true' 'GH_SCOPE=false false' 'GH_VIEW_FAIL=1'; do
+    rm -f "$TEMP_DIR/gh.log"
+    run env "$s" GH_TOKEN=pat bash -e "$TEMP_DIR/request-copilot-review-step.sh"
+    [ "$status" -eq 0 ] && [[ "$output" == *"::warning::"*"PR #12"* ]]
+    ! grep -q 'reviews\|pr edit' "$TEMP_DIR/gh.log" || false
+  done
   # Copilot reviewed already: a second request would re-review, every ready round.
   rm -f "$TEMP_DIR/gh.log"
   GH_TOKEN=pat GH_REVIEWERS='alice copilot-pull-request-reviewer[bot]' run bash -e "$TEMP_DIR/request-copilot-review-step.sh"

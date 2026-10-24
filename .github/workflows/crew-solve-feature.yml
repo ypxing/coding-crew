@@ -298,6 +298,9 @@ jobs:
           [ -n "$NPM_TOKEN" ] || unset NPM_TOKEN
           echo "Running: $cmd"
           bash -c "$cmd"
+          # solve-feature refuses a dirty tree: drop what the install rewrote (a lockfile) or left untracked;
+          # ignored files (node_modules) stay.
+          git checkout -q -- . && git clean -fdq
 
       # address-pr-comments refuses to run on the default branch, the local branch actions/checkout left for `ref:`.
       # -f drops what the install changed in tracked files (a lockfile); node_modules, ignored, stays.
@@ -534,8 +537,12 @@ jobs:
           PR: ${{ needs.solve.outputs.pr }}
         run: |
           pr=$PR
-          read -r branch sha < <(gh pr view "$pr" --json headRefName,headRefOid --jq '"\(.headRefName) \(.headRefOid)"') ||
+          read -r branch sha cross block < <(gh pr view "$pr" --json headRefName,headRefOid,isCrossRepository,body \
+            --jq '"\(.headRefName) \(.headRefOid) \(.isCrossRepository) \((.body // "") | gsub("\r"; "") | split("\n") | any(. == "<!-- solve-feature:begin -->"))"') ||
             { echo "::warning::could not read PR #$pr's head: its CI waits for approval"; exit 0; }
+          # The agent wrote the outcome naming the PR: approve only a solve-feature PR of this repo's own.
+          [ "$cross" = false ] && [ "$block" = true ] ||
+            { echo "::warning::PR #$pr is not a solve-feature PR from this repo: its CI is left alone"; exit 0; }
           # GitHub holds a bot-made PR's run as `action_required`, with no jobs run.
           held=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&event=pull_request&status=action_required" \
             --jq '.workflow_runs[] | "\(.id) \(.path)"') ||
@@ -571,6 +578,12 @@ jobs:
         run: |
           pr=$PR
           [ -n "$pr" ] && [ "$READY" = true ] || { echo "The PR is not ready: no Copilot review to request."; exit 0; }
+          # The agent wrote the outcome naming the PR: the PAT asks only for a solve-feature PR of this repo's own.
+          scope=$(GH_TOKEN="$READ_TOKEN" gh pr view "$pr" --json isCrossRepository,body \
+            --jq '"\(.isCrossRepository) \((.body // "") | gsub("\r"; "") | split("\n") | any(. == "<!-- solve-feature:begin -->"))"') ||
+            { echo "::warning::could not read PR #$pr: request Copilot's review by hand"; exit 0; }
+          [ "$scope" = "false true" ] ||
+            { echo "::warning::PR #$pr is not a solve-feature PR from this repo: no Copilot review requested"; exit 0; }
           reviewers=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$GITHUB_REPOSITORY/pulls/$pr/reviews" --paginate --jq '.[].user.login') ||
             { echo "::warning::could not list PR #$pr's reviews: request Copilot's review by hand"; exit 0; }
           # Copilot reviews a PR once; a request after its review would start another, every ready round.

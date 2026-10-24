@@ -939,7 +939,7 @@ J
 #!/usr/bin/env bash
 echo "gh $*" >> "$STATE/gh.log"
 case "$1 $2" in
-  "pr view") echo "feature/$3 sha$3" ;;
+  "pr view") echo "feature/$3 sha$3 ${GH_CROSS:-false} ${GH_BLOCK:-true}" ;;
   "api -X") [ -z "$GH_APPROVE_FAIL" ] || { echo "HTTP 403" >&2; exit 1; } ;;
   "api "*) [ -z "$GH_HELD" ] || printf '%s\n' "$GH_HELD" ;;
   "workflow run") [ -z "$GH_WF_FAIL" ] || { echo "HTTP 403" >&2; exit 1; } ;;
@@ -975,6 +975,15 @@ SH
   GH_HELD= run bash -e "$TEMP_DIR/ci-step.sh"
   [ "$status" -eq 0 ]
   ! grep -q 'api -X POST\|workflow run' "$STATE/gh.log" || false
+
+  # The agent wrote the outcome: a fork's PR, or one with no solve-feature block, gets no approval or dispatch.
+  local v
+  for v in GH_CROSS=true GH_BLOCK=false; do
+    rm -f "$STATE/gh.log"
+    run env $v bash -e "$TEMP_DIR/ci-step.sh"
+    [ "$status" -eq 0 ] && [[ "$output" == *"::warning::PR #12 is not a solve-feature PR from this repo"* ]]
+    ! grep -q 'actions/runs\|workflow run' "$STATE/gh.log" || false
+  done
 }
 
 @test "the reusable workflow: the outcome step gives solve's outputs, the PR of any outcome naming one and ready only for ready pr=<n>" {
@@ -1090,16 +1099,24 @@ solve_step() {
   run env NPM_TOKEN=t bash -e "$TEMP_DIR/step.sh"
   [ "$status" -eq 0 ] && [[ "$output" == *"no install command: skipped"* ]]
   [ ! -e registry-auth-ran ]
-  echo '{"install":"echo \"token=$NPM_TOKEN\" > installed","install_mode":"docker"}' > .coding-crew/dev-commands.json
+  echo '{"install":"echo \"token=$NPM_TOKEN\" > \"$STATE/installed\"","install_mode":"docker"}' > .coding-crew/dev-commands.json
   run env NPM_TOKEN=t bash -e "$TEMP_DIR/step.sh"
   [ "$status" -eq 0 ] && [[ "$output" == *"::notice::"*"install_mode docker: skipped"* ]]
-  [ ! -e installed ]
+  [ ! -e "$STATE/installed" ]
   # Host mode runs the raw install with the token, never registry_auth; a failed install fails the job before the agent.
-  echo '{"install":"echo \"token=$NPM_TOKEN\" > installed","install_mode":"host","registry_auth":"touch registry-auth-ran"}' > .coding-crew/dev-commands.json
+  echo '{"install":"echo \"token=$NPM_TOKEN\" > \"$STATE/installed\"","install_mode":"host","registry_auth":"touch \"$STATE/registry-auth-ran\""}' > .coding-crew/dev-commands.json
   run env NPM_TOKEN=t bash -e "$TEMP_DIR/step.sh"
   [ "$status" -eq 0 ]
-  [ "$(cat installed)" = token=t ]
-  [ ! -e registry-auth-ran ]
+  [ "$(cat "$STATE/installed")" = token=t ]
+  [ ! -e "$STATE/registry-auth-ran" ]
+  # solve-feature refuses a dirty tree: a rewritten lockfile and an untracked output are dropped, ignored files kept.
+  echo node_modules/ > .gitignore && echo '{}' > package-lock.json
+  echo '{"install":"echo rewritten > package-lock.json && mkdir -p node_modules && touch node_modules/dep stray"}' > .coding-crew/dev-commands.json
+  git add -f .gitignore package-lock.json .coding-crew/dev-commands.json && git commit -q -m deps
+  run env NPM_TOKEN= bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 0 ]
+  [ -z "$(git status --porcelain)" ]
+  [ "$(cat package-lock.json)" = '{}' ] && [ -f node_modules/dep ] && [ ! -e stray ]
   echo '{"install":"exit 7"}' > .coding-crew/dev-commands.json
   run env NPM_TOKEN= bash -e "$TEMP_DIR/step.sh"
   [ "$status" -eq 7 ]

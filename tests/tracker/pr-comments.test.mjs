@@ -150,6 +150,7 @@ test("given a number, reads the current repo; given another repo's PR URL, reads
   assert.deepEqual(other.calls.find((a) => a[0] === "pr"), ["pr", "view", "42", "--repo", "acme/widgets", "--json", "reviews,comments"]);
   const gql2 = other.calls.find((a) => a[1] === "graphql");
   assert.ok(gql2.includes("owner=acme") && gql2.includes("name=widgets") && gql2.includes("number=42"), gql2.join(" "));
+  assert.equal(gql2[gql2.indexOf("owner=acme") - 1], "-f");
   assert.deepEqual(other.calls.filter((a) => a.join(" ").includes("/permission")).map((a) => a[1]), ["repos/acme/widgets/collaborators/out/permission"]);
 });
 
