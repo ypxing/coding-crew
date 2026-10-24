@@ -555,6 +555,47 @@ on a thread the agent answered does not reopen it, though its open thread still 
 until a person resolves it. Issue and PR bodies are not filtered: labelling a feature `run-agent` trusts its
 issues' bodies, so read them first.
 
+**Who starts a run, and what the agent holds.** A `run-agent` label starts a run only when whoever added it has
+write, maintain or admin permission (anyone else's label ends with a notice), and a review round never runs on a PR
+from a fork. Each job declares its own permissions: only `approve-ci` has `actions: write`, only `solve` (the agent's
+job) `id-token: write`, and the run step drops `ACTIONS_ID_TOKEN_REQUEST_TOKEN`/`_URL` before the agent starts, so
+the agent cannot request an OIDC token. No step after the agent on its runner holds a secret: the CI approval and
+Copilot's review request run as their own jobs. Every outside action is pinned by commit SHA.
+
+- `NPM_TOKEN`: for private npm packages, store a **read-only** granular npm token as this repo secret. Only the
+  step before the agent that runs `.coding-crew/dev-commands.json`'s `install` command sees it, through the repo's
+  own `.npmrc` (`//registry.npmjs.org/:_authToken=${NPM_TOKEN}`). That step skips with no file, no `install`
+  field, or `install_mode: docker`, and never runs `registry_auth` or `env`, which could write the token into a
+  file the agent reads: a repo whose registry needs `registry_auth` is not served by this path. An install the
+  agent runs itself (docker mode, or a private package an issue adds) has no token, fails the issue's checks, and
+  the run stops for a person.
+- CI auto-approval: the job approves the PR's held CI runs, so agent-written code runs with whatever secrets the
+  repo's CI workflows hold. Keep deploy and publishing secrets out of workflows that run on `pull_request`, or
+  behind an environment with required reviewers.
+- Setup warns when nothing protects the default branch (no branch protection, no ruleset with a `pull_request` or
+  `update` rule): the workflow's token, with `contents: write`, could push straight to it.
+
+**Claude Code on AWS Bedrock.** With `CREW_AGENT=claude`, set the repo variables `CREW_CLAUDE_PROVIDER=bedrock`,
+`CREW_AWS_ROLE_ARN` (the IAM role to assume) and `CREW_AWS_REGION`. The `solve` job then assumes the role through
+GitHub OIDC (`aws-actions/configure-aws-credentials`, for `timeout-minutes` × 60 seconds, since the agent cannot
+refresh credentials mid-run) and runs Claude Code with `CLAUDE_CODE_USE_BEDROCK=1`; no Anthropic secret is needed.
+`CREW_MODEL` and `solveFeature.models` then name Bedrock model IDs or inference profiles. Bedrock with
+`CREW_AGENT=copilot`, or with either AWS variable empty, fails the job before the agent. Lock the role to this
+workflow:
+
+1. Make the repo's OIDC `sub` claim name the workflow that asks for the token:
+   `gh api -X PUT repos/<owner>/<repo>/actions/oidc/customization/sub -F use_default=false -f 'include_claim_keys[]=repo' -f 'include_claim_keys[]=job_workflow_ref'`.
+   **This breaks the repo's existing OIDC roles** (any whose trust policy matches the default `sub`) until their
+   trust policies are updated to the new shape.
+2. Trust policy: the GitHub OIDC provider as `Federated`, `token.actions.githubusercontent.com:aud` equal to
+   `sts.amazonaws.com`, and `token.actions.githubusercontent.com:sub` matching (`StringLike`)
+   `repo:<org>/*:job_workflow_ref:<owner>/coding-crew/.github/workflows/crew-solve-feature.yml@<ref>`, `<owner>`
+   and `<ref>` being the coding-crew copy and tag (or `refs/heads/stable`) the callers name.
+3. Permissions policy: only `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`, on the named
+   foundation-model and inference-profile ARNs the runs use.
+4. The role's maximum session duration at least the job's `timeout-minutes` (360 by default, so 6 hours).
+5. A budget alarm (AWS Budgets) on the account's Bedrock spend.
+
 ---
 
 ### Planning Skills

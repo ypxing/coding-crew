@@ -562,3 +562,52 @@ SH
   cmp "$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" .github/workflows/solve-feature.yml
   [ "$(cat "$TEMP_DIR/gh.log")" = "$(printf '%s\n' "gh api repos/ypxing/coding-crew/git/ref/tags/$tag" 'gh label create run-agent --force' 'gh variable set CREW_AGENT --body copilot')" ]
 }
+
+# protection_check — Step 3's bash block that reads the default branch's protection and rulesets.
+protection_check() {
+  awk '/^```bash/ { c = 1; b = ""; next } c && /^```/ { c = 0; if (b ~ /rules\/branches/) { printf "%s", b; exit } next } c { b = b $0 "\n" }' \
+    "$REPO_ROOT/skills/setup-coding-crew/SKILL.md"
+}
+
+@test "Step 3 warns when the default branch is unprotected and no pull_request or update rule applies; silent otherwise; a failed gh call prints its error and no warning" {
+  local stub="$TEMP_DIR/stub"
+  protection_check > "$TEMP_DIR/protect.sh"
+  [ -s "$TEMP_DIR/protect.sh" ]
+  # Both endpoints read with read access; /protection needs admin and 404s on an unprotected branch.
+  ! grep -q '/protection' "$TEMP_DIR/protect.sh" || false
+  mkdir -p "$stub"
+  cat > "$stub/gh" <<'SH'
+#!/usr/bin/env bash
+echo "gh $*" >> "$TEMP_DIR/gh.log"
+case "$*" in
+  "repo view"*) [ -z "$FAIL_REPO" ] || { echo 'gh: not authenticated' >&2; exit 1; }; echo main ;;
+  "api repos/{owner}/{repo}/branches/main --jq .protected") [ -z "$FAIL_BRANCH" ] || { echo 'gh: HTTP 403' >&2; exit 1; }; echo "$PROTECTED" ;;
+  "api repos/{owner}/{repo}/rules/branches/main --jq .[].type") [ -z "$FAIL_RULES" ] || { echo 'gh: HTTP 500' >&2; exit 1; }; printf '%s\n' $RULES ;;
+  *) echo "unexpected: $*" >&2; exit 9 ;;
+esac
+SH
+  chmod +x "$stub/gh"
+  export PATH="$stub:$PATH" TEMP_DIR
+  # p <protected> <rule types> — runs the block; $output holds what it printed.
+  p() { rm -f "$TEMP_DIR/gh.log"; PROTECTED="$1" RULES="$2" run bash "$TEMP_DIR/protect.sh"; }
+
+  for rules in '' 'non_fast_forward' 'deletion non_fast_forward'; do
+    p false "$rules"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Warning:"*"push straight to main"*"pull_request"* ]] || { echo "[$rules] $output"; return 1; }
+  done
+  grep -qF 'gh api repos/{owner}/{repo}/rules/branches/main --jq .[].type' "$TEMP_DIR/gh.log"
+  for rules in 'pull_request' 'update' 'non_fast_forward pull_request'; do
+    p false "$rules"
+    [ "$status" -eq 0 ] && [ -z "$output" ] || { echo "[$rules] $output"; return 1; }
+  done
+  p true ''
+  [ "$status" -eq 0 ] && [ -z "$output" ]
+
+  for f in FAIL_REPO FAIL_BRANCH FAIL_RULES; do
+    rm -f "$TEMP_DIR/gh.log"
+    run env "$f=1" PROTECTED=false RULES= bash "$TEMP_DIR/protect.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"gh: "* ]] && [[ "$output" != *"Warning:"* ]] || { echo "$f: $output"; return 1; }
+  done
+}

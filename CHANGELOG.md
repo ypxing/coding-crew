@@ -8,6 +8,15 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Upgrading
 
+- solve-feature on Actions: the reusable workflow is hardened. A `run-agent` label starts a run only from a user
+  with write access or more, and a review round never runs on a fork's PR. Each job has its own permissions
+  (`actions: write` only on the new `approve-ci` job, `id-token: write` only on `solve`); the agent's step drops the
+  OIDC request variables, and the CI approval and Copilot's review request run as jobs of their own, off the
+  agent's runner. `NPM_TOKEN` (a read-only npm token) reaches only a new step before the agent that runs
+  dev-commands.json's `install` in host mode. Claude Code can run on AWS Bedrock through OIDC with the repo
+  variables `CREW_CLAUDE_PROVIDER=bedrock`, `CREW_AWS_ROLE_ARN` and `CREW_AWS_REGION` (IAM setup in
+  `docs/guide.md`). Outside actions are pinned by commit SHA, and setup warns when nothing protects the default
+  branch (#615).
 - setup-coding-crew, solve-feature on Actions: the workflow is now coding-crew's reusable workflow
   `.github/workflows/crew-solve-feature.yml`, and `/setup-coding-crew` writes a short caller that names it at a
   release tag (`@v2.3.0`) and passes the four secrets by name; bump that tag to update (Dependabot's

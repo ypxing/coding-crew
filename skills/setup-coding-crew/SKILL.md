@@ -128,7 +128,8 @@ On yes, ask which agent CLI the runner uses, and keep the answer as `<agent>`:
 
 - `copilot` (the default): billed to GitHub Copilot through the workflow's own token, no secret.
 - `claude`: Claude Code, billed through a repo secret the user adds: `ANTHROPIC_API_KEY` (an Anthropic Console
-  key) or `CLAUDE_CODE_OAUTH_TOKEN` (what `claude setup-token` prints, billed to their Claude subscription).
+  key) or `CLAUDE_CODE_OAUTH_TOKEN` (what `claude setup-token` prints, billed to their Claude subscription); or
+  on AWS Bedrock with no secret, through repo variables and an IAM role coding-crew's `docs/guide.md` describes.
 
 The caller's tag must be released (coding-crew installs from `main`, which can be ahead of its last release), so
 the block checks it before writing anything:
@@ -148,6 +149,21 @@ fi
 ```
 
 When it prints the not-released line or the tag check's error, nothing was written: say so and go to Step 4.
+
+Once it wrote the caller, check the default branch: the workflow's token has `contents: write`, so on a branch with
+no protection and no ruleset requiring a PR it can push there directly. Both reads need only read access; a failed
+`gh` call prints its error and the block warns nothing:
+
+```bash
+if DEFAULT=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name) &&
+  PROTECTED=$(gh api "repos/{owner}/{repo}/branches/$DEFAULT" --jq .protected) &&
+  RULES=$(gh api "repos/{owner}/{repo}/rules/branches/$DEFAULT" --jq '.[].type') &&
+  [ "$PROTECTED" = false ] && ! grep -qxE 'pull_request|update' <<<"$RULES"; then
+  echo "Warning: nothing protects $DEFAULT, so the workflow's token can push straight to $DEFAULT. Add a ruleset with a pull_request rule for it (Settings → Rules → Rulesets)."
+fi
+```
+
+Show the warning when it prints one; it changes nothing (`non_fast_forward` alone only blocks force pushes).
 
 The runner's fresh checkout has no `~/.coding-crew/`, so a tracker set only at user level reads as `local`
 there. When the project's `config.json` has no `tracker` section, write it, keeping its other sections:
