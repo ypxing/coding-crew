@@ -19,8 +19,10 @@ launch() { # <slug> <worktree> <argv…>
     handle=$(jq -r '.result.terminals | select(length == 1) | .[0] | select(.agentIdentity == null) | .handle // empty' \
       <<<"$out" 2>/dev/null) || handle=""
   if [ -n "$handle" ]; then
-    orca terminal send --terminal "$handle" --text "$(printf '%q ' "$@")" --enter --json >/dev/null ||
-      die "orca terminal send failed"
+    # A re-run lists the same lone terminal again, so the stop names the one way out: closing it.
+    out=$(orca terminal send --terminal "$handle" --text "$(printf '%q ' "$@")" --enter --json) ||
+      die "orca terminal send failed: $(jq -ce '.error | {code, message}' <<<"$out" 2>/dev/null || echo "$out");" \
+        "close terminal $handle in orca and re-run"
   else
     # --command is typed into the terminal's shell, so the argv goes in quoted.
     out=$(orca terminal create --worktree "path:$wt" --title "$slug" --command "$(printf '%q ' "$@")" --json) ||

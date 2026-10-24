@@ -403,6 +403,8 @@ orca_terminals() { # <terminal JSON objects…> — what the stub's terminal lis
   run bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}"
   [ "$status" -ne 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"orca terminal send failed"* ]]
+  [[ "$output" == *terminal_handle_stale* ]]
+  [[ "$output" == *"close terminal h0 in orca and re-run"* ]]
   [ ! -e "$T/orca-wt/app-report-cli/.coding-crew/solve-feature/run.pane" ]
   ! grep -q '^terminal create' "$T/orca-calls"
 }
