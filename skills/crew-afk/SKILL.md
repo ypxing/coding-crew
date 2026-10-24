@@ -70,8 +70,8 @@ own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
    ```
 
    Relay what it prints: the run goes on without you, so do not wait for it in the foreground, read its
-   log or check on it. On a non-zero exit, relay the message as printed. Only a local run is refused while it
-   is still going: a second dispatch to orca or herdr starts a second agent beside the first.
+   log or check on it. On a non-zero exit, relay the message as printed. A dispatch on a slug whose run is
+   still going stops, whatever destination either run uses: its message names the run's pid, pane or terminal.
 3. **Watch the end**, after a dispatch that exited 0, if you can run a command in the background and be told when
    it exits: run it that way and relay its lines when it does. It prints what `status` prints, once the run has
    ended. Otherwise skip this step: `/crew-afk status` works as today.

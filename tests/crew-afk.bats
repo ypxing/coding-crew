@@ -263,6 +263,7 @@ SH
   stub_orca
   bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
   touch -t 202001010000 "$T/orca-wt/app-report-cli/.coding-crew/solve-feature/run.slug"
+  echo '{"ok":true,"result":{"terminal":{"handle":"h1","connected":false,"orphaned":true}}}' > "$T/orca-show"
   bash "$SCRIPT" dispatch report-cli "${LAUNCH[@]}" >/dev/null
   bash "$SCRIPT" wait report-cli >"$T/wait-out" &
   waiter=$!
@@ -301,10 +302,16 @@ stub_orca() {
 #!/usr/bin/env bash
 echo "$*" >> "$T/orca-calls"
 case "$1 $2" in
-  "worktree show") exit 1 ;;
+  "worktree show") [ -d "$T/orca-wt/app-report-cli" ] || exit 1
+    echo "{\"ok\":true,\"result\":{\"worktree\":{\"path\":\"$T/orca-wt/app-report-cli\"}}}" ;;
   "worktree create") git -C "$MAIN" worktree add -q --detach "$T/orca-wt/app-report-cli" >&2
     echo "{\"ok\":true,\"result\":{\"worktree\":{\"path\":\"$T/orca-wt/app-report-cli\"}}}" ;;
   "terminal create") echo '{"ok":true,"result":{"terminal":{"handle":"h1"}}}' ;;
+  # $T/orca-show holds what terminal show prints (default: connected); $T/orca-show-fail makes it fail as orca
+  # 1.4.230 does under --json: exit 1, the error as indented JSON on stdout, nothing on stderr.
+  "terminal show") [ ! -f "$T/orca-show-fail" ] ||
+    { printf '{\n  "ok": false,\n  "error": {\n    "code": "terminal_handle_stale",\n    "message": "terminal_handle_stale"\n  }\n}\n'; exit 1; }
+    cat "$T/orca-show" 2>/dev/null || echo '{"ok":true,"result":{"terminal":{"handle":"h1","connected":true,"orphaned":false}}}' ;;
 esac
 SH
   chmod +x "$T/stub/orca"
@@ -317,8 +324,15 @@ echo "$*" >> "$T/herdr-calls"
 case "$1 $2" in
   "worktree create") while [ $# -gt 0 ]; do [ "$1" = --path ] && p="$2"; shift; done
     git worktree add -q --detach "$p" >&2 ;;
-  "worktree open") echo '{"result":{"workspace":{"workspace_id":"w1"}}}' ;;
-  "tab create") echo '{"result":{"tab":{"tab_id":"t1"},"root_pane":{"pane_id":"p1"}}}' ;;
+  # $T/herdr-root-agent names the agent in the workspace's root pane (default: none, the startup shell).
+  "worktree open") echo "{\"result\":{\"workspace\":{\"workspace_id\":\"w1\"},\"root_pane\":{\"pane_id\":\"w1:p1\",\"agent\":\"$(cat "$T/herdr-root-agent" 2>/dev/null)\"}}}" ;;
+  "tab create") echo '{"result":{"tab":{"tab_id":"t1"},"root_pane":{"pane_id":"w1:p2"}}}' ;;
+  # $T/herdr-run-fail: typing the command into the pane fails.
+  "pane run") [ ! -f "$T/herdr-run-fail" ] || exit 1 ;;
+  # $T/herdr-pane-gone: the pane is gone; $T/herdr-pane-fail: herdr cannot tell.
+  "pane get") [ ! -f "$T/herdr-pane-gone" ] || { echo '{"error":{"code":"pane_not_found","message":"no pane"}}' >&2; exit 1; }
+    [ ! -f "$T/herdr-pane-fail" ] || { echo '{"error":{"code":"server_down","message":"no server"}}' >&2; exit 1; }
+    echo "{\"result\":{\"pane\":{\"pane_id\":\"$3\"}}}" ;;
 esac
 SH
   chmod +x "$T/stub/herdr"
@@ -341,7 +355,7 @@ SH
   [ "$output" = "report-cli: no outcome yet — orca run, see its terminal" ]
 }
 
-@test "--to herdr creates the worktree through herdr and types the launch argv, quoted and uncapped, into a new pane" {
+@test "--to herdr creates the worktree through herdr and types the launch argv, quoted and uncapped, into its idle startup pane" {
   stub_herdr
   run bash "$SCRIPT" dispatch report-cli --to herdr -- claude --dangerously-skip-permissions "/solve-feature report-cli"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
@@ -349,8 +363,10 @@ SH
   [ -z "$(field pid)" ] && [ -z "$(field session)" ]
   grep -qxF "worktree create --cwd $MAIN --branch crew-afk/report-cli --base main --path $WT --label report-cli --no-focus" "$T/herdr-calls"
   # Typed into the pane's shell: `agent start` waits for an idle agent, which one given a prompt never is.
-  grep -qxF 'pane run p1 claude --dangerously-skip-permissions /solve-feature\ report-cli ' "$T/herdr-calls"
+  grep -qxF 'pane run w1:p1 claude --dangerously-skip-permissions /solve-feature\ report-cli ' "$T/herdr-calls"
+  ! grep -q '^tab create' "$T/herdr-calls"
   ! grep -q '^agent start' "$T/herdr-calls"
+  [ "$(cat "$WT/.coding-crew/solve-feature/run.pane")" = w1:p1 ]
   [ ! -f "$T/timeout-argv" ]
   run bash "$SCRIPT" status report-cli
   [ "$output" = "report-cli: no outcome yet — herdr run, see its terminal" ]
@@ -368,10 +384,178 @@ SH
   [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 1 ]
 }
 
-@test "each destination defines only prepare and launch" {
+@test "each destination defines only prepare, launch and live" {
   local f
   for f in "$REPO_ROOT"/skills/crew-afk/scripts/destinations/*.sh; do
-    [ "$(env -i PATH="$PATH" bash --norc -c 'source "$1"; declare -F' _ "$f" | awk '{print $3}' | sort | paste -sd' ' -)" = "launch prepare" ] || { echo "$f"; return 1; }
+    [ "$(env -i PATH="$PATH" bash --norc -c 'source "$1"; declare -F' _ "$f" | awk '{print $3}' | sort | paste -sd' ' -)" = "launch live prepare" ] || { echo "$f"; return 1; }
   done
 }
 
+
+@test "dispatch --to herdr while the slug's herdr run has no outcome and its pane exists exits 1 naming the pane and creates none" {
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  logs="$WT/.coding-crew/solve-feature"
+  echo kept > "$logs/run.log"
+  before=$(cat "$logs/run.dest" "$logs/run.slug" "$logs/run.pane" "$logs/run.log")
+  : > "$T/herdr-calls"
+  run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"a run for report-cli is still going (herdr pane w1:p1)"* ]]
+  [[ "$output" == *"wait for it to end, or close that pane, then re-run"* ]]
+  [ "$(grep -v '^pane get' "$T/herdr-calls")" = "" ]
+  [ "$(cat "$logs/run.dest" "$logs/run.slug" "$logs/run.pane" "$logs/run.log")" = "$before" ]
+}
+
+@test "--to herdr on a workspace whose root pane runs an agent types the argv into a new tab's pane" {
+  stub_herdr
+  echo claude > "$T/herdr-root-agent"
+  run bash "$SCRIPT" dispatch report-cli --to herdr -- claude "/solve-feature report-cli"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -q '^tab create --workspace w1 ' "$T/herdr-calls"
+  grep -qxF 'pane run w1:p2 claude /solve-feature\ report-cli ' "$T/herdr-calls"
+  [ "$(cat "$WT/.coding-crew/solve-feature/run.pane")" = w1:p2 ]
+}
+
+OWT_LOGS() { echo "$T/orca-wt/app-report-cli/.coding-crew/solve-feature"; }
+
+@test "dispatch --to orca while the slug's orca run has no outcome and its terminal is connected exits 1, reading orca's worktree" {
+  stub_orca
+  bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
+  [ "$(cat "$(OWT_LOGS)/run.pane")" = h1 ]
+  [ ! -e "$WT" ]
+  : > "$T/orca-calls"
+  run bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"a run for report-cli is still going (orca terminal h1): wait for it to end, or close that terminal, then re-run"* ]]
+  [ "$(cat "$T/orca-calls")" = "terminal show --terminal h1 --json" ]
+}
+
+@test "a dispatch refuses across destinations and worktrees, and a refused one calls no prepare" {
+  stub_orca
+  stub_herdr
+  # A live herdr run: --to local and --to orca refuse.
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  : > "$T/herdr-calls"
+  for to in local orca; do
+    run bash "$SCRIPT" dispatch report-cli --to "$to" "${LAUNCH[@]}"
+    [ "$status" -eq 1 ] || { echo "$to: $output"; return 1; }
+    [[ "$output" == *"still going (herdr pane w1:p1)"* ]]
+  done
+  [ ! -e "$T/orca-calls" ] && [ ! -e "$T/claude-argv" ]
+  ! grep -q '^worktree' "$T/herdr-calls"
+  git -C "$MAIN" worktree remove --force "$WT"
+  # A live local run: --to herdr and --to orca refuse.
+  bash "$SCRIPT" dispatch report-cli "${LAUNCH[@]}" >/dev/null
+  pid=$(cat "$WT/.coding-crew/solve-feature/run.pid")
+  : > "$T/herdr-calls"
+  for to in herdr orca; do
+    run bash "$SCRIPT" dispatch report-cli --to "$to" "${LAUNCH[@]}"
+    [ "$status" -eq 1 ] || { echo "$to: $output"; return 1; }
+    [[ "$output" == *"still going (pid $pid): wait for it to end, then re-run"* ]]
+  done
+  [ ! -s "$T/herdr-calls" ] && [ ! -e "$T/orca-calls" ]
+  [ ! -e "$T/orca-wt" ]
+  [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 2 ]
+}
+
+@test "a live orca run, in orca's own worktree, refuses --to local and --to herdr" {
+  stub_orca
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
+  for to in local herdr; do
+    run bash "$SCRIPT" dispatch report-cli --to "$to" "${LAUNCH[@]}"
+    [ "$status" -eq 1 ] || { echo "$to: $output"; return 1; }
+    [[ "$output" == *"still going (orca terminal h1)"* ]]
+  done
+  [ ! -e "$WT" ] && [ ! -e "$T/herdr-calls" ]
+}
+
+@test "a re-dispatch reuses the worktree once the previous run wrote an outcome, or once its pane or terminal is gone" {
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  echo 'ready pr=7' > "$WT/.coding-crew/solve-feature/outcome"
+  run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(field worktree)" = "$WT" ]
+  touch "$T/herdr-pane-gone"
+  run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(grep -c '^worktree create' "$T/herdr-calls")" -eq 1 ]
+  stub_orca
+  git -C "$MAIN" worktree remove --force "$WT"
+  bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
+  echo '{"ok":true,"result":{"terminal":{"handle":"h1","connected":true,"orphaned":true}}}' > "$T/orca-show"
+  run bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(field worktree)" = "$T/orca-wt/app-report-cli" ]
+  [ "$(grep -c '^worktree create' "$T/orca-calls")" -eq 1 ]
+}
+
+@test "a live query that fails other than with gone stops the dispatch with the CLI's error" {
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  touch "$T/herdr-pane-fail"
+  run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'server_down'* ]]
+  [[ "$output" == *"if the pane is gone, delete $WT/.coding-crew/solve-feature/run.pane and re-run"* ]]
+  git -C "$MAIN" worktree remove --force "$WT"
+  stub_orca
+  bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
+  touch "$T/orca-show-fail"
+  run bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'could not tell whether report-cli'"'"'s orca run is still going: {"code":"terminal_handle_stale"'* ]]
+  [[ "$output" == *"if the terminal is gone, delete $(OWT_LOGS)/run.pane and re-run"* ]]
+}
+
+@test "status and wait report an interactive run whose pane is gone as ended, and a failing query as unknown" {
+  export CREW_AFK_WAIT_INTERVAL=0.1
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  touch "$T/herdr-pane-gone"
+  run bash "$SCRIPT" status report-cli
+  [ "$output" = "report-cli: ended without an outcome — its herdr terminal is gone; re-run /crew-afk report-cli --to herdr to continue" ]
+  run bash "$SCRIPT" wait report-cli
+  [ "$status" -eq 0 ] && [ "$output" = "report-cli: ended without an outcome — its herdr terminal is gone; re-run /crew-afk report-cli --to herdr to continue" ]
+  rm "$T/herdr-pane-gone"; touch "$T/herdr-pane-fail"
+  run bash "$SCRIPT" status
+  [[ "$output" == 'report-cli: run state unknown — herdr query failed: {"error":{"code":"server_down"'* ]]
+  run bash "$SCRIPT" wait report-cli
+  [ "$status" -eq 0 ] && [[ "$output" == "report-cli: run state unknown — herdr query failed: "* ]]
+  git -C "$MAIN" worktree remove --force "$WT"
+  stub_orca
+  bash "$SCRIPT" dispatch report-cli --to orca "${LAUNCH[@]}" >/dev/null
+  echo '{"ok":true,"result":{"terminal":{"handle":"h1","connected":false,"orphaned":false}}}' > "$T/orca-show"
+  run bash "$SCRIPT" wait report-cli
+  [ "$output" = "report-cli: ended without an outcome — its orca terminal is gone; re-run /crew-afk report-cli --to orca to continue" ]
+  touch "$T/orca-show-fail"
+  run bash "$SCRIPT" status report-cli
+  [[ "$output" == 'report-cli: run state unknown — orca query failed: {"code":"terminal_handle_stale"'* ]]
+}
+
+@test "a re-dispatch whose launch fails leaves no earlier run.pane, so the next dispatch is not blocked" {
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  echo "ready pr=7" > "$WT/.coding-crew/solve-feature/outcome"
+  touch "$T/herdr-run-fail"
+  run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [ ! -e "$WT/.coding-crew/solve-feature/run.pane" ]
+  run bash "$SCRIPT" status report-cli
+  [[ "$output" == "report-cli: ended without an outcome — "* ]]
+  rm "$T/herdr-run-fail"
+  run bash "$SCRIPT" dispatch report-cli --to local "${LAUNCH[@]}"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "an interactive run with no run.pane, dispatched before it was recorded, does not block a dispatch" {
+  stub_herdr
+  bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}" >/dev/null
+  rm "$WT/.coding-crew/solve-feature/run.pane"
+  run bash "$SCRIPT" status report-cli
+  [[ "$output" == "report-cli: ended without an outcome — "* ]]
+  run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
