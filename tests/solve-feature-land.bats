@@ -199,8 +199,7 @@ EOF
   loop
   [ "$(cut -d' ' -f1 "$STATE/node.log" | sort -u | paste -sd' ' -)" = "features fetch known next prd" ]
   grep -q '"$CLI" reopen' "$SCRIPT"
-  # describe's Spec line names a header-less PRD by the path the spec gives it, for a person; nothing reads it back.
-  ! grep -nE 'KIND|github|scratch|"\$CLI" config|\$REF" =~' "$SCRIPT" | grep -vF 'spec_line="Spec: .coding-crew/scratch/$SLUG/PRD.md' || false
+  ! grep -nE 'KIND|github|scratch|"\$CLI" config|\$REF" =~' "$SCRIPT" || false
 }
 
 @test "a refused land push reopens the issue, quotes git's reason and sends the user to re-run where git can push, not to land" {

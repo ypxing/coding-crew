@@ -497,12 +497,12 @@ EOF
   [ -s .coding-crew/solve-feature/spec.md ]
 }
 
-@test "describe's Spec line names a local PRD by its path, and only the feature when prd exits 3" {
+@test "describe's Spec line names only the feature for a PRD without an issue header, and when prd exits 3" {
   fixed
   printf '# PRD: Feat\n\nthe prd\n' > "$STATE/prd.md"
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(grep '^Spec: ' "$STATE/pr-body")" = 'Spec: .coding-crew/scratch/feat/PRD.md, feature `feat`' ]
+  [ "$(grep '^Spec: ' "$STATE/pr-body")" = 'Spec: feature `feat`' ]
 
   rm "$STATE/prd.md"
   run bash "$SCRIPT" describe feat 10

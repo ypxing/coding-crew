@@ -386,8 +386,7 @@ describe() {
   prd_head=$(node "$CLI" prd --feature-slug "$SLUG") || rc=$?
   prd_head=${prd_head%%$'\n'*}
   case $rc in
-    0) if [[ "$prd_head" =~ ^'<!-- PRD issue #'([0-9]+): ]]; then spec_line="Spec: PRD #${BASH_REMATCH[1]}, feature \`$SLUG\`"
-       else spec_line="Spec: .coding-crew/scratch/$SLUG/PRD.md, feature \`$SLUG\`"; fi ;;
+    0) [[ ! "$prd_head" =~ ^'<!-- PRD issue #'([0-9]+): ]] || spec_line="Spec: PRD #${BASH_REMATCH[1]}, feature \`$SLUG\`" ;;
     3) ;;
     *) die "reading the feature's PRD failed (exit $rc)" ;;
   esac
