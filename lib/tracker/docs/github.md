@@ -32,7 +32,7 @@ node "$TRACKER" fetch <number> [--comments]               # print one issue (tit
 node "$TRACKER" features                                  # list the features: <slug>, open|closed, count of issues that can start now
 node "$TRACKER" prd --feature-slug <slug>                 # print the feature's PRD: issue
 node "$TRACKER" next --feature-slug <slug>                # the number of the next issue to run, or exit 3
-node "$TRACKER" known --feature-slug <slug> --out <dir>   # write the feature's issues, open and closed, into <dir>
+node "$TRACKER" known --feature-slug <slug> --out <dir>   # write the feature's issues, open and closed (not wontfix), into <dir>
 node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace | --append]
 node "$TRACKER" publish-prd --feature-slug <slug> --title "<feature title>" --body-file <file>
 node "$TRACKER" rewrite <number> --body-file <file> --status <status> --feature-slug <slug>
@@ -142,7 +142,8 @@ maps to a close-reason.
 `done` has two representations on purpose: "merged into the feature branch" and "shipped" are
 different facts, and only a PR merge establishes the second. Closing at the first would show
 issues as completed on GitHub while their code exists only in a local branch. Both read as
-`done` for `next` and for `## Blocked by` resolution. `gh issue create --label x` and `gh issue edit
+`done` for `next` and for `## Blocked by` resolution; a `wontfix` blocker resolves too, but `known`
+leaves a `wontfix` issue out. `gh issue create --label x` and `gh issue edit
 --add-label x` fail outright if `x` isn't already a repo label, so the tracker creates all six status labels
 (including `blocked` and `needs-info`, which a person picks in GitHub's UI) with `gh label create <name> --color <fixed colour>` (no `--force`: a label that already exists, and the colour a team gave it, is left as it is),
 once per CLI invocation, before the first call that applies one: `publish-issues`, `rewrite`, `mark-done` and
