@@ -418,6 +418,20 @@ MK
   [ -f "$WORK/.npmrc" ]
 }
 
+@test "--skip-env runs neither env nor registry_auth and expands no template" {
+  stub_docker 0
+  printf 'x=${NPM_TOKEN}\n' > "$WORK/.npmrc.tpl"
+  _cache '{"env": "touch env-ran && touch .env", "registry_auth": "touch registry-auth-ran"}'
+  NPM_TOKEN=secret run bash "$SCRIPT" --project-root "$WORK" --skip-env
+  [ "$status" -eq 0 ]
+  [ ! -e "$WORK/env-ran" ] && [ ! -e "$WORK/.env" ]
+  [ ! -e "$WORK/registry-auth-ran" ] && [ ! -e "$WORK/.npmrc" ]
+  # Without the flag, as before.
+  run bash "$SCRIPT" --project-root "$WORK"
+  [ "$status" -eq 0 ]
+  [ -e "$WORK/env-ran" ] && [ -e "$WORK/registry-auth-ran" ]
+}
+
 @test "no registry_auth leaves ensure-env.sh to its own template-only fallback" {
   stub_docker 0
   run bash "$SCRIPT" --project-root "$WORK"

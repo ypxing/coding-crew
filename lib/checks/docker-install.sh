@@ -4,12 +4,13 @@
 #
 # Usage:
 #   bash scripts/docker-install.sh --project-root <path> \
-#     [--service <name>] [--timeout <sec, default 1800>] [--force]
+#     [--service <name>] [--timeout <sec, default 1800>] [--force] [--skip-env]
 # The service and the install command come from the clone's dev commands file ("docker_service",
 # "install"; commands-file.sh), and ensure-env.sh runs its "registry_auth"; with no
-# docker_service, the compose file's first service. Generates this checkout's override, then installs
-# only when the root dependency volume (named by lockfile hash) lacks a .crew-stamp; --force deletes
-# the stamp first. An install command that runs docker itself (e.g. `make deps` wrapping `docker compose
+# docker_service, the compose file's first service. --skip-env does not run ensure-env.sh (no .env,
+# registry_auth or *.tpl expansion), for a caller holding a registry token one of those could write
+# into the checkout. Generates this checkout's override, then installs only when the root dependency
+# volume (named by lockfile hash) lacks a .crew-stamp; --force deletes the stamp first. An install command that runs docker itself (e.g. `make deps` wrapping `docker compose
 # run`) runs on the host, as run.sh runs such a check, its compose calls given the override by the shim.
 # A failed install removes the override again, so the next run.sh call retries it. Once the override is
 # written, prune-volumes.sh removes the repo's volumes no live checkout names any more.
@@ -27,6 +28,7 @@ PROJECT_ROOT=""
 SERVICE=""
 TIMEOUT=1800
 FORCE=0
+SKIP_ENV=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -40,6 +42,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --force) FORCE=1; shift ;;
+    --skip-env) SKIP_ENV=1; shift ;;
     --help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -110,7 +113,7 @@ else
   CONTAINER_CMD="$(IFS=' && '; echo "${STEPS[*]}")"
 fi
 
-bash "$SELF_DIR/ensure-env.sh" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true
+[[ "$SKIP_ENV" -eq 1 ]] || bash "$SELF_DIR/ensure-env.sh" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true
 
 [[ -n "$OVERRIDE" ]] || _fail 1 "generate override" "$PROJECT_ROOT is not a git checkout — the override is written to its git dir"
 GENERATED=1
