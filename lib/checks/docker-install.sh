@@ -110,7 +110,9 @@ else
   done
   [[ ${#STEPS[@]} -gt 0 ]] || _fail 2 detect "No install command matched any manifest directory at $PROJECT_ROOT"
 
-  CONTAINER_CMD="$(IFS=' && '; echo "${STEPS[*]}")"
+  # IFS joins with its first character only, so join by hand.
+  CONTAINER_CMD="${STEPS[0]}"
+  for step in "${STEPS[@]:1}"; do CONTAINER_CMD+=" && $step"; done
 fi
 
 [[ "$SKIP_ENV" -eq 1 ]] || bash "$SELF_DIR/ensure-env.sh" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true

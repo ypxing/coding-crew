@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- dep-install: a docker-mode install with no `install` command and several manifest directories now runs each
+  directory's install; the commands were joined with a space instead of `&&`, so the next directory's `cd` became
+  arguments to the first install (#639).
 - solve-feature workflow: with `install_mode: docker`, the install step before the agent now runs the docker-mode
   install with `NPM_TOKEN`, so a repo with private npm packages runs in docker mode on GitHub Actions instead of
   stopping on its first checks; `docker-install.sh` gains `--skip-env` so `.env`, `registry_auth` and credential

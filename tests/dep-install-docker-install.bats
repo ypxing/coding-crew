@@ -278,6 +278,16 @@ _installs() { grep -c . "$FAKE/install.calls" || true; }
   [ -f "$(vol_dir)/.crew-stamp" ]
 }
 
+@test "two manifest dirs run both installs, joined with &&" {
+  use_fake_docker
+  mkdir -p "$WORK/web" "$FAKE/app/web" && echo '{}' > "$WORK/web/package.json" && echo x > "$WORK/web/pnpm-lock.yaml"
+  printf '#!/bin/sh\necho "pnpm $*" >> "%s/install.calls"\n' "$FAKE" > "$STUB/pnpm" && chmod +x "$STUB/pnpm"
+  run bash "$SCRIPT" --project-root "$WORK"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == "Running: docker compose run --rm app sh -c 'cd /opt/app && npm ci && cd /opt/app/web && pnpm install --frozen-lockfile'"* ]] || { echo "$output"; return 1; }
+  [ "$(_installs)" -eq 2 ]
+}
+
 @test "with the stamp present, no install command runs and it exits 0" {
   use_fake_docker
   bash "$SCRIPT" --project-root "$WORK" >/dev/null
