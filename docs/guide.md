@@ -584,11 +584,14 @@ Copilot's review request run as their own jobs. Every outside action is pinned b
 
 - `NPM_TOKEN`: for private npm packages, store a **read-only** granular npm token as this repo secret. Only the
   step before the agent that runs `.coding-crew/dev-commands.json`'s `install` command sees it, through the repo's
-  own `.npmrc` (`//registry.npmjs.org/:_authToken=${NPM_TOKEN}`). That step skips with no file, no `install`
-  field, or `install_mode: docker`, and never runs `registry_auth` or `env`, which could write the token into a
-  file the agent reads: a repo whose registry needs `registry_auth` is not served by this path. An install the
-  agent runs itself (docker mode, or a private package an issue adds) has no token, fails the issue's checks, and
-  the run stops for a person.
+  own `.npmrc` (`//registry.npmjs.org/:_authToken=${NPM_TOKEN}`). In host mode it runs the command (and skips with
+  no file or no `install` field); with `install_mode: docker` it runs coding-crew's docker install, filling the
+  containers' dependency volumes the agent's checks then use, and stops the compose project afterwards. Neither
+  runs `registry_auth`, `env` or the credential templates (`.npmrc.tpl` and the like) with the token, as any could
+  write it into a file the agent reads (docker mode creates `.env` and expands the templates first, without it): a
+  repo whose registry needs `registry_auth` is not served by this path. An install the agent runs itself (a
+  private package an issue adds, a review round whose branch changed the lockfile) has no token, fails the issue's
+  checks, and the run stops for a person.
 - CI auto-approval: the job approves the PR's held CI runs, so agent-written code runs with whatever secrets the
   repo's CI workflows hold. Keep deploy and publishing secrets out of workflows that run on `pull_request`, or
   behind an environment with required reviewers.
