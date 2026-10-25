@@ -84,9 +84,9 @@ name: crew-solve-feature
 #
 # Secrets and the agent: the run step drops the OIDC request variables before the agent starts (with the runner's
 # sudo it could still read them from the runner's memory), and no step after it on the agent's runner holds a secret. NPM_TOKEN, a read-only granular npm token, reaches only the step that runs
-# dev-commands.json's `install` (host mode) before the agent, through the repo's .npmrc `${NPM_TOKEN}`; a
-# registry_auth command is not run there, and an install the agent runs itself (docker mode, a new private
-# package) has no token and stops for a person.
+# dev-commands.json's `install` before the agent (host mode, or docker mode into the containers' dependency volumes),
+# through the repo's .npmrc `${NPM_TOKEN}`; registry_auth, env and the credential templates are not run with it,
+# and an install the agent runs itself (a new private package) has no token and stops for a person.
 on:
   workflow_call:
     inputs:
