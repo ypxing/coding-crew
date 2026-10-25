@@ -179,14 +179,17 @@ call (`grep -rn -E 'patternA|patternB'`) and read several files per turn.
 
 ### 4. Implement with TDD
 
-**Run every project command through `run.sh`** — test runs, type checks, linting, and any ad-hoc
-command, a one-off `docker compose` one included. It runs the command where `install_mode` says:
-inside docker (with this checkout's compose override) or on the host. Never hand-build a `docker
-compose` command.
+<!-- fragment:project-commands -->
+**Run every project command through `run.sh`** — test runs, type checks, linting, a look at an installed
+dependency, and any ad-hoc command, a one-off `docker compose` one included. It runs the command where the dev
+commands file's `install_mode` says: inside docker (with this checkout's compose override), where a docker-mode
+project's dependencies are installed and the host has none, or on the host. Never hand-build a `docker compose`
+command.
 
 ```bash
-bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$(git rev-parse --show-toplevel)" -- "<command>"
 ```
+<!-- /fragment:project-commands -->
 
 Run commands in the foreground and wait for them — never in the background. Between edits run only
 what your change touches (one test file, not the suite); before committing, the tests your change

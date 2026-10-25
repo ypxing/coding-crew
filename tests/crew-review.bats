@@ -53,3 +53,9 @@ SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
   ! grep -qF 'you write every finding yourself' "$SKILL" || false
   grep -qF 'print it' "$SKILL"
 }
+
+@test "the reviewer runs project commands through run.sh: a docker-mode project's dependencies are only in its container" {
+  grep -qF '<!-- fragment:project-commands -->' "$SKILL"
+  grep -qF 'checks/run.sh" --project-root "$(git rev-parse --show-toplevel)"' "$SKILL"
+  grep -qF 'project'"'"'s dependencies are installed and the host has none' "$SKILL"
+}

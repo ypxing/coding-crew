@@ -65,6 +65,18 @@ Leave the repo as you found it: never edit, commit or change its tree. Run what 
 under review, experiments — in a scratch copy when they would write to it, in a new directory from `mktemp -d`, never
 a fixed path such as `/tmp/<name>`: other reviews share the machine.
 
+<!-- fragment:project-commands -->
+**Run every project command through `run.sh`** — test runs, type checks, linting, a look at an installed
+dependency, and any ad-hoc command, a one-off `docker compose` one included. It runs the command where the dev
+commands file's `install_mode` says: inside docker (with this checkout's compose override), where a docker-mode
+project's dependencies are installed and the host has none, or on the host. Never hand-build a `docker compose`
+command.
+
+```bash
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$(git rev-parse --show-toplevel)" -- "<command>"
+```
+<!-- /fragment:project-commands -->
+
 Start helper subagents whenever they help. Every judgement about the change is made on your model, never a weaker
 one, and the report is yours, judged across the whole change.
 
