@@ -34,7 +34,7 @@ permissions:
 
 jobs:
   run:
-    uses: ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@v2.3.1
+    uses: ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@v2.3.2
     with:
       slug: ${{ inputs.slug }}
     secrets:
