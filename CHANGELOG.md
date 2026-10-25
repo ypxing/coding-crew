@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.3.1]
+
 - tracker: `known` leaves out a `wontfix` issue (github: closed as not planned; local: `Status: wontfix`), so a
   dropped issue no longer lands in solve-feature's review spec, where the reviewer counted its criteria unmet. The
   github tracker now reports such an issue as `wontfix` instead of `done`; as a `## Blocked by` entry it still
