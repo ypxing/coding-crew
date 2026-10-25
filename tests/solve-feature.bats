@@ -1438,6 +1438,6 @@ SH
 @test "SKILL.md has the fixer run project commands through run.sh as solve-issue does, where a docker-mode project's dependencies are" {
   local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
   local prompt; prompt=$(awk '/with exactly this prompt: `Judge each finding/{f=1} f; f && /ask no questions`/{exit}' "$skill" | tr '\n' ' ' | sed 's/  */ /g')
-  [[ "$prompt" == *"Run every project command through run.sh, as the solve-issue skill's Step 4 says: it runs where the project's dependencies are installed. Use the tdd skill"* ]] || { echo "$prompt"; return 1; }
+  [[ "$prompt" == *"Run every project command through run.sh in the coding-crew-lib skill (coding-crew-lib/scripts/checks/run.sh --project-root <repo> -- \"<command>\"), as the solve-issue skill's Step 4 says: it runs where the project's dependencies are installed. Use the tdd skill"* ]] || { echo "$prompt"; return 1; }
   grep -qF '<!-- fragment:project-commands -->' "$REPO_ROOT/skills/solve-issue/SKILL.md"
 }
