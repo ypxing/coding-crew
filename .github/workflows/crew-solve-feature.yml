@@ -345,12 +345,15 @@ jobs:
           git checkout -q -- . && git clean -fdq
 
       # address-pr-comments refuses to run on the default branch, the local branch actions/checkout left for `ref:`.
-      # -f drops what the install changed in tracked files (a lockfile); node_modules, ignored, stays.
+      # -f drops what the install changed in tracked files (a lockfile); node_modules, ignored, stays. A docker install's
+      # override names the default branch's dependency volumes: without it the agent's first check installs the PR's.
       - name: Check out the review round's PR branch
         if: github.event_name == 'pull_request_review'
         env:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: git checkout -q -f -B "$HEAD_REF" --track "origin/$HEAD_REF"
+        run: |
+          git checkout -q -f -B "$HEAD_REF" --track "origin/$HEAD_REF"
+          rm -f "$(git rev-parse --git-dir)/crew-compose.override.yml"
 
       - name: Git identity for the runner
         run: |

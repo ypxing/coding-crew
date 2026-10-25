@@ -1248,7 +1248,9 @@ solve_step() {
   run env NPM_TOKEN= bash -e "$TEMP_DIR/step.sh"
   [ "$status" -eq 0 ]
   [ -z "$(git status --porcelain)" ]
-  [ "$(cat package-lock.json)" = '{}' ] && [ -f node_modules/dep ] && [ ! -e stray ]
+  [ "$(cat package-lock.json)" = '{}' ]
+  [ -f node_modules/dep ]
+  [ ! -e stray ]
   echo '{"install":"exit 7"}' > .coding-crew/dev-commands.json
   run env NPM_TOKEN= bash -e "$TEMP_DIR/step.sh"
   [ "$status" -eq 7 ]
@@ -1299,7 +1301,10 @@ SH
   # The compose project stopped, its volumes kept.
   [ "$(cat "$STATE/docker.calls")" = "compose -p work down" ]
   # Tracked rewrites and untracked files dropped; the generated .env (excluded) kept.
-  [ -z "$(git status --porcelain)" ] && [ "$(cat package-lock.json)" = '{}' ] && [ ! -e stray ] && [ -f .env ]
+  [ -z "$(git status --porcelain)" ]
+  [ "$(cat package-lock.json)" = '{}' ]
+  [ ! -e stray ]
+  [ -f .env ]
 
   rm -f "$STATE/docker.calls"
   run env PATH="$path" CREW_AGENT=copilot GITHUB_WORKSPACE="$WORK" NPM_TOKEN= bash -e "$TEMP_DIR/step.sh"
@@ -1351,6 +1356,9 @@ SH
   git clone -q "$TEMP_DIR/origin" "$TEMP_DIR/ws" && cd "$TEMP_DIR/ws"
   git remote set-head origin -d
   mkdir node_modules && touch node_modules/dep && echo '{"rewritten":1}' > package-lock.json
+  # A docker-mode install's override names volumes hashed from the default branch's lockfiles: the PR branch's
+  # first check must install for its own.
+  touch .git/crew-compose.override.yml
   local check="$REPO_ROOT/lib/git-workflow/branch-safety-check.sh"
   run bash "$check"
   [ "$status" -eq 1 ]
@@ -1359,6 +1367,7 @@ SH
   [ "$(git rev-parse --abbrev-ref HEAD)" = feature/x ]
   [ -f pr.txt ]
   [ -f node_modules/dep ]
+  [ ! -e .git/crew-compose.override.yml ]
   [ -z "$(git status --porcelain --untracked-files=no)" ]
   [ "$(git rev-parse --abbrev-ref '@{upstream}')" = origin/feature/x ]
   run bash "$check"
