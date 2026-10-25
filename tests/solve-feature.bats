@@ -1218,7 +1218,7 @@ solve_step() {
   done
 }
 
-@test "the reusable workflow: NPM_TOKEN only in the install step before the agent, which runs dev-commands.json's install in host mode and skips saying why otherwise" {
+@test "the reusable workflow: NPM_TOKEN only in the install step before the agent, which runs dev-commands.json's install in host mode and skips saying why with nothing to install" {
   wf_json
   local name="Install the project's dependencies"
   [ "$(jq -c '[.jobs[].steps[] | select(tostring | test("secrets.NPM_TOKEN")) | .name]' "$JSON")" = "[\"$name\"]" ]
@@ -1235,10 +1235,6 @@ solve_step() {
   run env NPM_TOKEN=t bash -e "$TEMP_DIR/step.sh"
   [ "$status" -eq 0 ] && [[ "$output" == *"no install command: skipped"* ]]
   [ ! -e registry-auth-ran ]
-  echo '{"install":"echo \"token=$NPM_TOKEN\" > \"$STATE/installed\"","install_mode":"docker"}' > .coding-crew/dev-commands.json
-  run env NPM_TOKEN=t bash -e "$TEMP_DIR/step.sh"
-  [ "$status" -eq 0 ] && [[ "$output" == *"::notice::"*"install_mode docker: skipped"* ]]
-  [ ! -e "$STATE/installed" ]
   # Host mode runs the raw install with the token, never registry_auth; a failed install fails the job before the agent.
   echo '{"install":"echo \"token=$NPM_TOKEN\" > \"$STATE/installed\"","install_mode":"host","registry_auth":"touch \"$STATE/registry-auth-ran\""}' > .coding-crew/dev-commands.json
   run env NPM_TOKEN=t bash -e "$TEMP_DIR/step.sh"
@@ -1258,6 +1254,70 @@ solve_step() {
   [ "$status" -eq 7 ]
 }
 
+# docker_install_fixture — a docker-mode $WORK with a compose file and .env.example, the user-level coding-crew-lib of
+# both agents with a stub docker-install.sh (exit $DOCKER_INSTALL_RC) that records its path, argv and NPM_TOKEN, and a
+# stub docker that records its argv.
+docker_install_fixture() {
+  local d lib
+  for d in .claude .copilot; do
+    lib="$HOME/$d/skills/coding-crew-lib/scripts/checks"
+    mkdir -p "$lib" && cp -R "$REPO_ROOT/lib/checks/." "$lib/"
+    cat > "$lib/docker-install.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s %s\n' "$0" "$*" > "$STATE/docker-install.args"
+printf '%s\n' "${NPM_TOKEN-<unset>}" > "$STATE/docker-install.token"
+# What the container's bind mount can leave: a rewritten lockfile, an untracked file.
+echo rewritten > package-lock.json && touch stray
+rc="${DOCKER_INSTALL_RC:-0}"
+[ "$rc" -eq 0 ] || echo "docker-install: failed — service app, step install, exit $rc" >&2
+exit "$rc"
+SH
+  done
+  mkdir -p "$TEMP_DIR/dbin"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$STATE/docker.calls"\n' > "$TEMP_DIR/dbin/docker"
+  chmod +x "$TEMP_DIR/dbin/docker"
+  printf 'services:\n  app:\n    volumes: [".:/opt/app"]\n' > docker-compose.yml
+  echo '{"name":"w"}' > package.json && echo '{}' > package-lock.json && echo FOO=bar > .env.example
+  echo '{"install_mode":"docker","registry_auth":"echo \"t=${NPM_TOKEN-}\" > \"$STATE/registry-auth\""}' > .coding-crew/dev-commands.json
+  git add -A && git commit -q -m docker
+}
+
+@test "the reusable workflow: in docker mode the install step runs the user-level docker-install.sh with NPM_TOKEN, after ensure-env.sh without it, then stops the compose project" {
+  wf_json
+  solve_step "Install the project's dependencies"
+  docker_install_fixture
+  local path="$TEMP_DIR/dbin:$PATH"
+
+  run env PATH="$path" CREW_AGENT=claude GITHUB_WORKSPACE="$WORK" NPM_TOKEN=t bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" != *"skipped"* ]]
+  [ "$(cat "$STATE/docker-install.args")" = "$HOME/.claude/skills/coding-crew-lib/scripts/checks/docker-install.sh --project-root $WORK --skip-env" ]
+  [ "$(cat "$STATE/docker-install.token")" = t ]
+  # ensure-env.sh ran first, without the token.
+  diff .env.example .env
+  [ "$(cat "$STATE/registry-auth")" = t= ]
+  # The compose project stopped, its volumes kept.
+  [ "$(cat "$STATE/docker.calls")" = "compose -p work down" ]
+  # Tracked rewrites and untracked files dropped; the generated .env (excluded) kept.
+  [ -z "$(git status --porcelain)" ] && [ "$(cat package-lock.json)" = '{}' ] && [ ! -e stray ] && [ -f .env ]
+
+  rm -f "$STATE/docker.calls"
+  run env PATH="$path" CREW_AGENT=copilot GITHUB_WORKSPACE="$WORK" NPM_TOKEN= bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(cat "$STATE/docker-install.args")" == "$HOME/.copilot/skills/coding-crew-lib/scripts/checks/docker-install.sh "* ]]
+  [ "$(cat "$STATE/docker-install.token")" = '<unset>' ]
+
+  # A failed install, nothing to install (exit 2) included, fails the step with its exit code and reason, after the stop.
+  local rc
+  for rc in 3 2; do
+    rm -f "$STATE/docker.calls"
+    run env PATH="$path" CREW_AGENT=claude GITHUB_WORKSPACE="$WORK" NPM_TOKEN=t DOCKER_INSTALL_RC=$rc bash -e "$TEMP_DIR/step.sh"
+    [ "$status" -eq "$rc" ] || { echo "rc $rc: $status $output"; return 1; }
+    [[ "$output" == *"docker-install: failed — service app, step install, exit $rc"* ]]
+    [ "$(cat "$STATE/docker.calls")" = "compose -p work down" ]
+  done
+}
+
 @test "the reusable workflow: a review round installs on the default branch, then hands the agent the PR's branch, past address-pr-comments' branch check" {
   wf_json
   # pull_request_review's github.ref is refs/pull/<n>/merge: the feature branch the agent wrote, merged in, which the
@@ -1270,7 +1330,11 @@ solve_step() {
   switch=$(grep -nxF "Check out the review round's PR branch" <<<"$names" | cut -d: -f1)
   run=$(grep -nxF "Run solve-feature" <<<"$names" | cut -d: -f1)
   [ -n "$switch" ]
-  [ "$install" -lt "$switch" ]
+  # The install needs the user-level coding-crew-lib, and runs before any role credentials exist.
+  [ "$(grep -nxF "Install coding-crew (user-level)" <<<"$names" | cut -d: -f1)" -eq $((install - 1)) ]
+  [ "$switch" -eq $((install + 1)) ]
+  [ "$(grep -nxF "Git identity for the runner" <<<"$names" | cut -d: -f1)" -eq $((switch + 1)) ]
+  [ "$(grep -nxF "AWS credentials for Bedrock" <<<"$names" | cut -d: -f1)" -gt "$switch" ]
   [ "$switch" -lt "$run" ]
   local step; step=$(jq -c '.jobs.solve.steps[] | select(.name == "Check out the review round'"'"'s PR branch")' "$JSON")
   [ "$(jq -r '.if' <<<"$step")" = "github.event_name == 'pull_request_review'" ]

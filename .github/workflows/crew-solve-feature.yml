@@ -281,35 +281,6 @@ jobs:
         with:
           node-version: 22
 
-      # NPM_TOKEN is this step's alone, read by the repo's .npmrc `${NPM_TOKEN}`. registry_auth and env are never run:
-      # either could write the token into a file the agent then reads.
-      - name: Install the project's dependencies
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          f=.coding-crew/dev-commands.json
-          [ -f "$f" ] || { echo "No $f: skipped the dependency install, the agent installs what it needs."; exit 0; }
-          if [ "$(jq -r '.install_mode // "host"' "$f")" = docker ]; then
-            echo "::notice::$f has install_mode docker: skipped, the agent installs in its containers without NPM_TOKEN"
-            exit 0
-          fi
-          cmd=$(jq -r '.install // empty' "$f")
-          [ -n "$cmd" ] || { echo "$f has no install command: skipped the dependency install."; exit 0; }
-          [ -n "$NPM_TOKEN" ] || unset NPM_TOKEN
-          echo "Running: $cmd"
-          bash -c "$cmd"
-          # solve-feature refuses a dirty tree: drop what the install rewrote (a lockfile) or left untracked;
-          # ignored files (node_modules) stay.
-          git checkout -q -- . && git clean -fdq
-
-      # address-pr-comments refuses to run on the default branch, the local branch actions/checkout left for `ref:`.
-      # -f drops what the install changed in tracked files (a lockfile); node_modules, ignored, stays.
-      - name: Check out the review round's PR branch
-        if: github.event_name == 'pull_request_review'
-        env:
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: git checkout -q -f -B "$HEAD_REF" --track "origin/$HEAD_REF"
-
       - name: Install the agent CLI
         run: |
           # --ignore-scripts: no dependency's lifecycle script runs with the runner's token. Claude Code's
@@ -332,6 +303,54 @@ jobs:
         uses: ypxing/coding-crew/actions/install@v2.3.0
         with:
           agent: ${{ env.CREW_AGENT }}
+
+      # NPM_TOKEN is this step's alone, read by the repo's .npmrc `${NPM_TOKEN}`. Nothing that could write the token
+      # into a file the agent then reads runs with it. It runs after the user-level install (docker mode runs its
+      # scripts) and before any role credentials exist.
+      - name: Install the project's dependencies
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          f=.coding-crew/dev-commands.json
+          [ -f "$f" ] || { echo "No $f: skipped the dependency install, the agent installs what it needs."; exit 0; }
+          [ -n "$NPM_TOKEN" ] || unset NPM_TOKEN
+          if [ "$(jq -r '.install_mode // "host"' "$f")" = docker ]; then
+            case "$CREW_AGENT" in
+              copilot) lib="$HOME/.copilot/skills/coding-crew-lib/scripts/checks" ;;
+              claude) lib="$HOME/.claude/skills/coding-crew-lib/scripts/checks" ;;
+              *) echo "::error::repo variable CREW_AGENT is '$CREW_AGENT': copilot or claude"; exit 1 ;;
+            esac
+            # What the agent's first run.sh would set up, without the token: the override written below
+            # means no later run.sh call runs it again.
+            env -u NPM_TOKEN bash "$lib/ensure-env.sh" --project-root "$GITHUB_WORKSPACE"
+            rc=0
+            bash "$lib/docker-install.sh" --project-root "$GITHUB_WORKSPACE" --skip-env || rc=$?
+            # No container started while the token was set outlives this step (dependency services the install
+            # started hold it in their env); the volumes stay for the agent. -p: a failed install removed the override.
+            name=$(bash "$lib/gen-override.sh" --project-root "$GITHUB_WORKSPACE" --query project-name 2>/dev/null) || name=
+            if [ -n "$name" ]; then
+              (cd "$GITHUB_WORKSPACE" && PATH="$lib/shim:$PATH" docker compose -p "$name" down) ||
+                { [ "$rc" -ne 0 ] || rc=1; echo "::error::docker compose down failed: containers started with NPM_TOKEN may still run"; }
+            fi
+            [ "$rc" -eq 0 ] || exit "$rc"
+            git checkout -q -- . && git clean -fdq
+            exit 0
+          fi
+          cmd=$(jq -r '.install // empty' "$f")
+          [ -n "$cmd" ] || { echo "$f has no install command: skipped the dependency install."; exit 0; }
+          echo "Running: $cmd"
+          bash -c "$cmd"
+          # solve-feature refuses a dirty tree: drop what the install rewrote (a lockfile) or left untracked;
+          # ignored files (node_modules) stay.
+          git checkout -q -- . && git clean -fdq
+
+      # address-pr-comments refuses to run on the default branch, the local branch actions/checkout left for `ref:`.
+      # -f drops what the install changed in tracked files (a lockfile); node_modules, ignored, stays.
+      - name: Check out the review round's PR branch
+        if: github.event_name == 'pull_request_review'
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: git checkout -q -f -B "$HEAD_REF" --track "origin/$HEAD_REF"
 
       - name: Git identity for the runner
         run: |
