@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- crew-review, solve-feature: the reviewer and the review fixer now run every project command through `run.sh`, as
+  solve-issue's coder does, so in docker mode they see the dependencies installed in the container instead of a host
+  with none; a reviewer had reported an installed private package as nonexistent and the fixer stubbed it (#643).
+
 ## [2.3.1]
 
 - tracker: `known` leaves out a `wontfix` issue (github: closed as not planned; local: `Status: wontfix`), so a

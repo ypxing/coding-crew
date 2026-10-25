@@ -51,9 +51,10 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Judge each finding in <repo>/.coding-crew/solve-feature/pr-<n>.review.json
      against the code and the spec in <repo>/.coding-crew/solve-feature/spec.md before acting on it: its fix is a
-     reviewer's suggestion, and a tool, API or platform fact a fix rests on is checked, never taken from memory. Use
-     the tdd skill to fix each real defect with the fix that adds no trigger, flag, permission, input or path the spec
-     does not name. List each finding you did not fix, one per line with why — it is wrong, or only changing a spec
+     reviewer's suggestion, and a tool, API or platform fact a fix rests on is checked, never taken from memory. Run
+     every project command through run.sh, as the solve-issue skill's Step 4 says: it runs where the project's
+     dependencies are installed. Use the tdd skill to fix each real defect with the fix that adds no trigger, flag,
+     permission, input or path the spec does not name. List each finding you did not fix, one per line with why — it is wrong, or only changing a spec
      decision fixes it (quote the decision) — in <repo>/.coding-crew/solve-feature/pr-<n>.unfixed.md, and leave that
      file absent if you fixed them all. Anything else a person must do or decide goes in
      <repo>/.coding-crew/solve-feature/pr-<n>.notes.md, left absent when there is none. This run is non-interactive; ask no questions`. Run it on `coder-model=` as for each issue's coder.
