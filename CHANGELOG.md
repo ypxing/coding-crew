@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tracker: `known` leaves out a `wontfix` issue (github: closed as not planned; local: `Status: wontfix`), so a
+  dropped issue no longer lands in solve-feature's review spec, where the reviewer counted its criteria unmet. The
+  github tracker now reports such an issue as `wontfix` instead of `done`; as a `## Blocked by` entry it still
+  resolves (#640).
 - dep-install: a docker-mode install with no `install` command and several manifest directories now runs each
   directory's install; the commands were joined with a space instead of `&&`, so the next directory's `cd` became
   arguments to the first install (#639).

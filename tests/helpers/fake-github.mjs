@@ -5,7 +5,7 @@
  *   in-process: `fakeGithub(issues, {fail})` is an `exec` for github.mjs (`.calls`, `.issues`)
  *   as a script: `node fake-github.mjs <issues.json> <gh argv…>` reads and rewrites issues.json,
  *   for a `gh` stub on PATH.
- * An issue is `{number, title, body, state: OPEN|CLOSED, labels: [{name}], parent?, pull_request?}`.
+ * An issue is `{number, title, body, state: OPEN|CLOSED, labels: [{name}], state_reason?, parent?, pull_request?}`.
  * REST lists page like the API (`per_page`, default 30): one page unless `--paginate`, the pages
  * as one array only with `--slurp`. Any milestone call, and `gh issue list`, fails.
  */
@@ -47,6 +47,7 @@ const rest = (i, issues = []) => {
     body: i.body ?? "",
     state: String(i.state).toLowerCase(),
     labels: i.labels ?? [],
+    ...(i.state_reason ? { state_reason: i.state_reason } : {}),
     ...(i.pull_request
       ? { pull_request: i.pull_request }
       : { sub_issues_summary: { total: subs.length, completed, percent_completed: subs.length ? Math.floor((100 * completed) / subs.length) : 0 } }),

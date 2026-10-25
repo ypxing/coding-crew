@@ -98,7 +98,7 @@ pr_view() { # sets PR_N and PR_IS_DRAFT (true|false) when the branch has an OPEN
 
 # .coding-crew/solve-feature/spec.md, which the reviewer and the PR writer read: the PRD, then every issue of the feature, open
 # or closed, with its acceptance criteria. All of them: an issue another run landed is met in the code, and one
-# still open is a gap a person must see.
+# still open is a gap a person must see. A wontfix one was dropped, so `known` leaves it out.
 write_spec() {
   local spec="$LOGS/spec.md" dir="$LOGS/issues" rc=0 f title
   node "$CLI" prd --feature-slug "$SLUG" >"$spec" || rc=$?

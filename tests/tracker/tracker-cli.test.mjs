@@ -341,6 +341,16 @@ test("known (local) writes every open and done issue under its own filename", as
   assert.match(readFileSync(join(out, "01-done.md"), "utf8"), /## Implements\n\nD1/);
 });
 
+test("known (local) leaves out an issue whose Status: is wontfix", async () => {
+  const dir = root();
+  writeIssue(dir, "open", "01-open.md", "# Open\n\nStatus: ready-for-agent\n");
+  writeIssue(dir, "open", "02-dropped.md", "# Dropped\n\nStatus: wontfix\n");
+  const out = join(dir, "known");
+  const r = await cli(dir, ["known", "--feature-slug", "feat", "--out", out]);
+  assert.equal(r.code, 0);
+  assert.deepEqual(readdirSync(out), ["01-open.md"]);
+});
+
 test("known (local) with no issues writes an empty directory", async () => {
   const dir = root();
   const out = join(dir, "known");
@@ -364,6 +374,22 @@ test("known (github) writes <n>-<slug>.md for the root and every sub-issue, open
   assert.equal(r.code, 0);
   assert.deepEqual(readdirSync(out).sort(), ["5-old-thing.md", "7-add-the-store.md"]);
   assert.equal(readFileSync(join(out, "7-add-the-store.md"), "utf8"), "# Add the store\n\n## Implements\n\nD1\n");
+});
+
+test("known (github) leaves out an issue closed as not planned (wontfix)", async () => {
+  const exec = fakeGithub(
+    ghFeature(
+      "feat",
+      ghIssue(1, { title: "PRD: Feat" }),
+      { ...ghIssue(5, { title: "Shipped", state: "closed" }), state_reason: "completed" },
+      { ...ghIssue(6, { title: "Dropped", state: "closed" }), state_reason: "not_planned" },
+    ),
+  );
+  const dir = root({ github: true });
+  const out = join(dir, "known");
+  const r = await cli(dir, ["known", "--feature-slug", "feat", "--out", out], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(readdirSync(out), ["5-shipped.md"]);
 });
 
 test("known (github) writes all 34 sub-issues of a feature whose PRD is its root", async () => {

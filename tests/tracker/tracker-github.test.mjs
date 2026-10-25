@@ -284,6 +284,19 @@ test("selectDispatchable includes a ready issue whose only blocker is a closed i
   assert.ok(argv(exec).includes("api repos/{owner}/{repo}/issues/40"), argv(exec).join("\n"));
 });
 
+test("selectDispatchable includes a ready issue whose blockers were closed as not planned, in the feature or outside it", () => {
+  const exec = fakeGithub([
+    ...ghFeature(
+      "feat",
+      ghIssue(1),
+      { ...ghIssue(3, { state: "CLOSED" }), state_reason: "not_planned" },
+      ghIssue(2, { labels: ["ready-for-agent"], body: "## Blocked by\n\n- Issue 3\n- #40\n" }),
+    ),
+    { ...ghIssue(40, { state: "CLOSED" }), state_reason: "not_planned" },
+  ]);
+  assert.deepEqual(selectDispatchable(repo(), { featureSlug: "feat", exec }).map((i) => i.number), [2]);
+});
+
 test("selectDispatchable includes a ready issue whose blocker is outside the feature, open and awaiting-merge", () => {
   const exec = outsideBlocker(ghIssue(40, { labels: ["awaiting-merge"] }));
   assert.deepEqual(selectDispatchable(repo(), { featureSlug: "feat", exec }).map((i) => i.number), [2]);
