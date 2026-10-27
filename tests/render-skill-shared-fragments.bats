@@ -143,3 +143,14 @@ light_path() {
   grep -qxF '<!-- fragment:untrusted-text -->' "$t"
   ! grep -qE '^<!-- fragment:light-path(-outcome)? -->$' "$t" || false
 }
+
+@test "crew-grill and crew-triage both render the worth-asking fragment, which names neither skill" {
+  local f="$REPO_ROOT/skills/_shared/fragments/worth-asking.md" skill
+  grep -qF 'Would a staff engineer on this team need to ask this' "$f"
+  [ "$(grep -cE '^- \*\*(Discoverable|Already answered|Testable|Conventional|Analysis|Deferrable|Rubber-stamp)\*\* — ' "$f")" -eq 7 ]
+  ! grep -qiE 'crew-|triage|grill|gate' "$f" || false
+  for skill in crew-grill crew-triage; do
+    grep -qxF '<!-- fragment:worth-asking -->' "$REPO_ROOT/skills/$skill/SKILL.md"
+    grep -qxF '<!-- /fragment:worth-asking -->' "$REPO_ROOT/skills/$skill/SKILL.md"
+  done
+}

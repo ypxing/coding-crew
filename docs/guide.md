@@ -497,11 +497,12 @@ job also labels the root) or run the workflow by hand with the slug. A finished 
 (when whoever finished it has triage access or more), so a run that stopped for a person resumes once they are done.
 
 `run-agent` on an issue that belongs to no feature yet (no `Feature:` line on it or its parent, as a fresh
-`needs-triage` issue has) triages it in the same run: the `crew-triage` skill judges whether the issue states its
+`needs-triage` issue has) triages it in the same run: the `crew-triage` skill reads the code the issue touches, then
+judges whether the issue states its
 problem with evidence, has testable acceptance criteria and leaves no open decision you would want to make
 yourself. If so, `/to-issues` turns it into a feature with no approve prompt (rewriting the issue, or splitting it
 under a PRD) and `/solve-feature` builds it to the usual draft PR. If not, the run comments `## Open questions` on
-the issue, @mentioning whoever added the label, removes `run-agent` and passes: settle the questions locally with
+the issue, only those neither the code, the docs nor the issue answers, each naming what it checked, @mentioning whoever added the label, removes `run-agent` and passes: settle the questions locally with
 `/crew-grill #<n>`, which ends in the issues a later `run-agent` builds. Nothing reviews the breakdown before code
 is written on this path; the draft PR and its review are the check.
 

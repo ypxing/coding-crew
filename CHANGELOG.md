@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- crew-triage, crew-grill: crew-triage now reads the code an issue touches before judging it, and runs each failed
+  check through crew-grill's "would a staff engineer be embarrassed to ask this?" test (now the shared
+  `worth-asking` fragment): a check the code, the docs or the issue answers is re-judged with that evidence instead
+  of posted, and each posted open question carries a `checked:` receipt. On amaysim-au/product-services#393 it had
+  posted three questions the repo or the issue already answered. crew-grill's text is unchanged (#658).
+
 ## [2.3.3]
 
 - solve-feature: `next` run after a stop no longer overwrites the stop's outcome line, so the Actions job and
