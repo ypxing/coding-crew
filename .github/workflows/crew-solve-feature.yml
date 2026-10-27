@@ -25,7 +25,7 @@ name: crew-solve-feature
 # ending in the usual draft PR. If not, crew-triage comments `## Open questions` on the issue, @mentioning whoever
 # added the label and naming `/crew-grill #<n>` to settle them; the last step then removes `run-agent` and the run
 # passes as `triaged #<n>: needs-grill`.
-# The label is not removed afterwards: the concurrency group makes a re-label wait for the run in
+# On a solve run the label is not removed afterwards: the concurrency group makes a re-label wait for the run in
 # flight rather than start a second one on the same branch. It so marks the features that run here: a finished
 # `ready-for-human` issue (its label removed, as mark-done does, or the issue closed with it on) re-runs its feature
 # when the root is open and labelled `run-agent` and whoever finished it has triage, write, maintain or admin

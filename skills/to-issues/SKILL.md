@@ -40,7 +40,10 @@ shows no breakdown and no approve/adjust prompt: anything it would list under it
 check's **Yours** questions (`references/publish.md`), stop the run before anything is published and go back
 to the caller as open questions, one per item, each with its evidence; items 5–7 stand as the rules decided
 them. `publish-issues` exit 4 or 5 is an open question, never `--replace`; any other exit 1 stops the run with
-its stderr. A `to-prd` this run invokes is told the run is non-interactive too.
+its stderr. A `to-prd` this run invokes is told the run is non-interactive too, so it leaves its PRD as the
+draft `.coding-crew/scratch/<feature-slug>/.prd-draft.md` unpublished: copy that draft to `.drafts/PRD.md` in
+place of the `prd` output, and publish it with to-prd's step-6 `publish-prd` command only once the builder check
+leaves no open question, right before `publish-issues`, then write the ref it prints into each draft's `PRD:` line.
 
 ## Process
 
