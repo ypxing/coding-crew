@@ -6,6 +6,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- crew-solve-feature workflow, crew-triage (new), to-issues, to-prd: `run-agent` added by a write+ user to an issue
+  with no `Feature:` line on it or its parent no longer fails the run: it triages the issue. The new crew-triage
+  skill judges it complete enough, then to-issues (non-interactive, no approve prompt) and solve-feature build it to
+  the usual draft PR; otherwise it comments `## Open questions`, @mentioning the label's sender and pointing at
+  `/crew-grill #<n>`, and the run removes `run-agent` and passes as `triaged #<n>: needs-grill`. to-issues and to-prd
+  gain a "Non-interactive run" rule; the install action adds crew-triage and to-issues. This is a paid run where the
+  label used to fail (#650).
+
 ## [2.3.2]
 
 - crew-review, solve-feature: the reviewer and the review fixer now run every project command through `run.sh`, as

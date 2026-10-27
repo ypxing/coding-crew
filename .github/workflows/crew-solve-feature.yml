@@ -19,6 +19,12 @@ name: crew-solve-feature
 # The slug for an issue trigger is the root issue's `Feature: <slug>` line, which the GitHub tracker writes on
 # every root issue and only there: an issue without one is a sub-issue, and its parent is the root. `run-agent` on
 # any issue of the feature starts it; on a sub-issue the slug step also adds the label to the root.
+# `run-agent` on an issue with no such line on it or its parent (one nobody has triaged into a feature) starts a
+# triage run instead, keyed by the issue's number: the crew-triage skill judges whether the issue is complete
+# enough to build. If it is, to-issues turns it into a feature with no approve prompt and solve-feature builds it,
+# ending in the usual draft PR. If not, crew-triage comments `## Open questions` on the issue, @mentioning whoever
+# added the label and naming `/crew-grill #<n>` to settle them; the last step then removes `run-agent` and the run
+# passes as `triaged #<n>: needs-grill`.
 # The label is not removed afterwards: the concurrency group makes a re-label wait for the run in
 # flight rather than start a second one on the same branch. It so marks the features that run here: a finished
 # `ready-for-human` issue (its label removed, as mark-done does, or the issue closed with it on) re-runs its feature

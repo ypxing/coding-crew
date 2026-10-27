@@ -104,6 +104,7 @@ When a plan is already one complete, testable change, `/crew-grill` skips its qu
 | `/crew-grill`            | Stress-test a plan and turn it into issues                 |
 | `/crew-brainstorm`       | Shape a fuzzy idea into a design, then issues              |
 | `/to-issues`             | Split a plan into issues, or sharpen an existing one       |
+| `/crew-triage`           | Triage an issue unattended: build it, or ask its questions |
 | `/crew-afk`              | Run a feature in its own worktree; see how it ended        |
 | `/solve-feature`         | Run one feature's issues on one branch, each one verified  |
 | `/crew-review`           | Review a branch or PR against its spec; report only        |
