@@ -54,6 +54,7 @@ Every frontier node passes two gates, in order: Gate 1 asks whether the question
 
 Facts are your job, never the user's. Test every node with:
 
+<!-- fragment:worth-asking -->
 > Would a staff engineer on this team need to ask this — or would they be embarrassed to?
 
 They'd be embarrassed to ask anything that is:
@@ -65,6 +66,7 @@ They'd be embarrassed to ask anything that is:
 - **Analysis** — "will this scale?", "is this safe?": the user's answer would be a guess; the reasoning is yours.
 - **Deferrable** — not needed to write the issues, and cheap to reverse at implementation time.
 - **Rubber-stamp** — you recommend X, X is plainly right, and you are asking permission.
+<!-- /fragment:worth-asking -->
 
 A node that fails Gate 1 is not a question: get the answer, record it as a fact, and keep expanding the tree. A decision with one dominant answer is a fact lookup plus a default, and it is yours; genuine forks are the user's. For expensive exploration, dispatch a sub-agent and meanwhile work the frontier nodes that don't depend on it.
 
