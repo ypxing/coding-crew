@@ -314,7 +314,7 @@ jobs:
       # CLI included), from $HOME (~/.copilot/skills, ~/.claude/skills). `uses:` takes no expression and `./` is the
       # caller's checkout, so the owner and tag are literal: this file's own release, bumped by each release commit.
       - name: Install coding-crew (user-level)
-        uses: ypxing/coding-crew/actions/install@v2.3.2
+        uses: ypxing/coding-crew/actions/install@v2.3.3
         with:
           agent: ${{ env.CREW_AGENT }}
 
