@@ -133,7 +133,14 @@ case "$1 $2" in
     jq -n --argjson n "$n" --argjson d "${PR_DRAFT:-true}" --rawfile b "$STATE/pr-body" --arg o "$oid" \
       --arg s "${PR_STATE:-OPEN}" --arg h "${PR_HEAD_REF:-feature/feat}" \
       '{number: $n, state: $s, url: "https://github.com/o/r/pull/\($n)", isDraft: $d, body: $b, headRefOid: $o, headRefName: $h}' ;;
+  # GH_CREATE_FAIL refuses it, printing its value as gh's last stderr line (none when it is "silent"); GH_CREATE_HOOK
+  # names a pre-receive hook it installs first, so the pushes after it are refused.
   "pr create") k=$(( $(ls "$STATE" | grep -c '^pr-create\.[0-9]*$') + 1 )); printf '%s\n' "$@" > "$STATE/pr-create.$k"
+    if [ -n "${GH_CREATE_FAIL:-}" ]; then
+      [ -z "${GH_CREATE_HOOK:-}" ] || { printf '#!/bin/sh\nexit 1\n' > "$GH_CREATE_HOOK"; chmod +x "$GH_CREATE_HOOK"; }
+      [ "$GH_CREATE_FAIL" = silent ] || printf 'pull request create failed\n%s\n\n' "$GH_CREATE_FAIL" >&2
+      exit 1
+    fi
     cp "$file" "$STATE/pr-body"; touch "$STATE/pr-created"; echo "https://github.com/o/r/pull/10" ;;
   "pr edit") k=$(( $(ls "$STATE" | grep -c '^pr-edit\.[0-9]*$') + 1 )); printf '%s\n' "$@" > "$STATE/pr-edit.$k"; cp "$file" "$STATE/pr-body" ;;
   # Each comment's arguments in $STATE/pr-comment.<k> and its body in pr-comment.<k>.body; GH_COMMENT_FAIL refuses it.

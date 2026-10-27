@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: a failed `gh pr create` in `land` now makes the issue ready again (committing and pushing a file
+  tracker's reopen) and stops at step `pr`, quoting gh's reason and naming the "Allow GitHub Actions to create and
+  approve pull requests" setting, so a plain re-run opens the PR; it used to leave the issue closed with no PR, which
+  no re-run got past (#653).
 - crew-solve-feature workflow, crew-triage (new), to-issues, to-prd: `run-agent` added by a write+ user to an issue
   with no `Feature:` line on it or its parent no longer fails the run: it triages the issue. The new crew-triage
   skill judges it complete enough, then to-issues (non-interactive, no approve prompt) and solve-feature build it to

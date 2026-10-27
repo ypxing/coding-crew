@@ -249,6 +249,18 @@ hand_back() {
   stop checks "$1; $REF is ready again with its work pushed to $BRANCH: $2" "$3"
 }
 
+# pr_create_failed — gh pr create failed on a closed, pushed issue: reopen it, push the reopen's commit (a file
+# tracker's), then stop, so a plain re-run's coder takes the issue up and the next land opens the PR.
+pr_create_failed() {
+  local why redo
+  why=$(grep -v '^[[:space:]]*$' "$LOGS/pr-create.err" | tail -1 || true)
+  why="gh pr create failed${why:+: $why}"
+  redo="fix the cause (on GitHub Actions, the repo's \"Allow GitHub Actions to create and approve pull requests\" setting, under Settings → Actions → General → Workflow permissions), then re-run"
+  reopen_ref pr "$why" "Reopen $REF: its PR creation failed" "reopen $REF by hand, then $redo"
+  push -u origin "$BRANCH" || stop pr "$why; $REF is ready again but git push failed: $PUSH_WHY; once it can push, $redo"
+  stop pr "$why; $REF is ready again with its work pushed to $BRANCH: $redo"
+}
+
 # land — the coder left <branch> clean with <ref> closed: merge in origin's branch, gate with the checks, push,
 # open the draft PR if there is none; prints pr=<n>.
 land() {
@@ -289,7 +301,9 @@ land() {
     # describe writes the whole body at the end; until then it only carries the markers address-pr-comments reads.
     f="$LOGS/pr-body.md"
     printf '%s\n' "$BEGIN" "Implemented by solve-feature (\`$SLUG\`) — in progress." "<!-- solve-feature:slug $SLUG -->" "$END" >"$f"
-    url=$(gh pr create --draft --title "$(pr_title "$rs")" --body-file "$f") || die "gh pr create failed"
+    rc=0; url=$(gh pr create --draft --title "$(pr_title "$rs")" --body-file "$f" 2>"$LOGS/pr-create.err") || rc=$?
+    cat "$LOGS/pr-create.err" >&2
+    [ "$rc" = 0 ] || pr_create_failed
     PR_N="${url##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $url"
   fi
   post_notes "$PR_N" "$LOGS/coder.notes.md" "Notes for a person from the coder of $REF"

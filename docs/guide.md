@@ -550,7 +550,7 @@ theirs; the repo variables `CREW_CODER_MODEL` and `CREW_REVIEWER_MODEL` override
 (and fixer) and the reviewer on the runner, and for Claude Code, `ANTHROPIC_DEFAULT_HAIKU_MODEL`, `_SONNET_MODEL` and `_OPUS_MODEL`, when set, pin the model each alias means. Claude's job log shows the run as it goes, one line per step (the model, each command and subagent, a
 failed tool), Copilot's too (each subagent's model as it ends). Both keep the whole stream as `.coding-crew/solve-feature/session.jsonl`
 (Copilot's own logs beside it, in `copilot-logs/`). Every run uploads `.coding-crew/solve-feature/` as an artifact, so the checks log a stop names
-outlives the runner; a stop at an issue's checks has already pushed its work and made the issue ready again,
+outlives the runner; a stop at an issue's checks or at opening its draft PR has already pushed its work and made the issue ready again,
 so a re-run picks it up there. A stop
 exits the session without failing it, so the job's last step fails it unless the run's one-line
 `.coding-crew/solve-feature/outcome` starts with `ready` — written by the describe step (`solve-feature.sh
