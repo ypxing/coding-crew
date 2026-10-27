@@ -233,6 +233,65 @@ EOF
   stops_at push "git push failed: pre-receive hook declined; reopen 2 failed (see above): reopen 2 by hand, then re-run where git can push"
 }
 
+# pr_stopped <reason> — land just stopped at pr with the issue ready again; no PR opened.
+pr_stopped() {
+  [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
+  [[ "$output" == *"solve-feature: 2 pr failed: $1"* ]] || { echo "$output"; return 1; }
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: 2 pr failed: $1"* ]]
+  [[ "$output" != *"run land"* ]]
+  ! grep -q 'run land' .coding-crew/solve-feature/outcome || false
+  [ ! -f "$STATE/pr-created" ]
+  [ "$(node "$LIB/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
+}
+
+@test "a failed gh pr create reopens the issue, quotes gh's reason, names the Actions setting and sends the user to re-run" {
+  land_ready
+  local reason="GraphQL: GitHub Actions is not permitted to create or approve pull requests (createPullRequest)"
+  GH_CREATE_FAIL="$reason" run bash "$SCRIPT" land feat 2 feature/feat
+  local tail="2 is ready again with its work pushed to feature/feat: fix the cause (on GitHub Actions, the repo's \"Allow GitHub Actions to create and approve pull requests\" setting, docs/guide.md:493), then re-run"
+  pr_stopped "gh pr create failed: $reason; $tail"
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 pr failed: gh pr create failed: $reason; $tail" ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  # gh's own stderr still reaches the terminal.
+  [[ "$output" == *"pull request create failed"* ]]
+
+  coder 2
+  GH_CREATE_FAIL=silent run bash "$SCRIPT" land feat 2 feature/feat
+  pr_stopped "gh pr create failed; 2 is ready again with its work pushed"
+}
+
+@test "with a file tracker, a failed gh pr create commits the reopen's file move and pushes it; a refused push there quotes git's reason" {
+  land_ready
+  local coded; coded=$(git rev-parse HEAD)
+  REOPEN_TOUCHES="$WORK/issue-state.md" GH_CREATE_FAIL=boom run bash "$SCRIPT" land feat 2 feature/feat
+  pr_stopped "gh pr create failed: boom; 2 is ready again with its work pushed"
+  [ "$(git log -1 --format=%s)" = "Reopen 2: its PR creation failed" ]
+  [ "$(git show --name-only --format= HEAD)" = issue-state.md ]
+  [ "$(git rev-parse HEAD~1)" = "$coded" ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  [ -z "$(git status --porcelain)" ]
+
+  rm issue-state.md && git commit -qam "drop state"
+  coder 2
+  GH_CREATE_HOOK="$TEMP_DIR/origin.git/hooks/pre-receive" REOPEN_TOUCHES="$WORK/issue-state.md" GH_CREATE_FAIL=boom \
+    run bash "$SCRIPT" land feat 2 feature/feat
+  pr_stopped "gh pr create failed: boom; 2 is ready again but git push failed: pre-receive hook declined; once it can push, fix the cause"
+  [[ "$output" == *"then re-run"* ]]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" != "$(git rev-parse HEAD)" ]
+}
+
+@test "a re-run after a failed gh pr create lands the issue once gh can create the PR" {
+  land_ready
+  GH_CREATE_FAIL=boom run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  run bash "$SCRIPT" next feat
+  [ "$output" = 2 ]
+  coder 2
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = pr=10 ]
+}
+
 @test "land merges a commit others pushed to the branch before its checks, then pushes; nothing new makes no merge commit" {
   land_ready
   local bot; bot=$(branch_moves bot.txt "lint fix")
