@@ -51,7 +51,8 @@ prompt), when the prompt names one.
 
 Three of the light path's checks decide whether the issue can be built as it stands. Answer each with
 evidence, a quote from the issue or a `file:line`. Check 2 (**One slice**) does not apply here: splitting the
-issue is `to-issues`' job.
+issue is `to-issues`' job. So is work only a person can do (a credential, a system no automation reaches):
+`to-issues` gives it its own issue for a person, so it fails no check.
 
 <!-- fragment:light-path-checks -->
 1. **Problem** — the source states the problem with its cost or evidence.
