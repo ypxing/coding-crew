@@ -248,7 +248,7 @@ pr_stopped() {
   land_ready
   local reason="GraphQL: GitHub Actions is not permitted to create or approve pull requests (createPullRequest)"
   GH_CREATE_FAIL="$reason" run bash "$SCRIPT" land feat 2 feature/feat
-  local tail="2 is ready again with its work pushed to feature/feat: fix the cause (on GitHub Actions, the repo's \"Allow GitHub Actions to create and approve pull requests\" setting, docs/guide.md:493), then re-run"
+  local tail="2 is ready again with its work pushed to feature/feat: fix the cause (on GitHub Actions, the repo's \"Allow GitHub Actions to create and approve pull requests\" setting, under Settings → Actions → General → Workflow permissions), then re-run"
   pr_stopped "gh pr create failed: $reason; $tail"
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 pr failed: gh pr create failed: $reason; $tail" ]
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
