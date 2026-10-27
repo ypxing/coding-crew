@@ -436,6 +436,20 @@ EOF
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: next failed: nothing landed: no ready issue for feat and no open PR" ]
 }
 
+@test "next after a stop keeps the stop's outcome line, still exiting 3 with its stderr" {
+  run bash "$SCRIPT" start feat
+  jq 'map(.state = "CLOSED")' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  echo "stopped: land failed: gh pr create failed" > .coding-crew/solve-feature/outcome
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"nothing landed: no ready issue for feat and no open PR"* ]]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: land failed: gh pr create failed" ]
+  # A die in next leaves it too.
+  NEXT_PRINTS='2; rm -rf /' run bash "$SCRIPT" next feat
+  [ "$status" -eq 1 ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: land failed: gh pr create failed" ]
+}
+
 # --- sync: the default branch merged in before the review ------------------------------
 
 # synced_branch — both issues landed on feature/feat in PR #10: sync's input as the loop leaves it; TIP is its head.
