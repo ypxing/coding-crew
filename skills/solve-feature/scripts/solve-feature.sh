@@ -11,7 +11,12 @@ set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGS=""
 # The run's one-line result, read by a host such as the Actions job; a missing file means it never finished.
-outcome() { [ -z "$LOGS" ] || printf '%s\n' "$1" >"$LOGS/outcome"; }
+# next only reads the tracker, so a stop it writes after another stop is that stop's consequence: it keeps the first.
+outcome() {
+  [ -n "$LOGS" ] || return 0
+  [ "$CMD" = next ] && grep -q '^stopped:' "$LOGS/outcome" 2>/dev/null && return 0
+  printf '%s\n' "$1" >"$LOGS/outcome"
+}
 die() { echo "solve-feature: $*" >&2; outcome "stopped: $CMD failed: $*"; exit 1; }
 usage() {
   [ -z "${1:-}" ] || echo "solve-feature: $1" >&2

@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: `next` run after a stop no longer overwrites the stop's outcome line, so the Actions job and
+  `crew-afk status` name the real cause (e.g. `land`'s failed `gh pr create`) instead of `nothing landed` (#654).
 - solve-feature: a failed `gh pr create` in `land` now makes the issue ready again (committing and pushing a file
   tracker's reopen) and stops at step `pr`, quoting gh's reason and naming the "Allow GitHub Actions to create and
   approve pull requests" setting, so a plain re-run opens the PR; it used to leave the issue closed with no PR, which
