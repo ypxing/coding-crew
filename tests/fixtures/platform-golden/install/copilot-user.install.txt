@@ -96,6 +96,7 @@ HOME/.copilot/skills/to-issues/ /
 HOME/.copilot/skills/to-issues/SKILL.md exec=0 unrendered=0
 HOME/.copilot/skills/to-issues/references/ /
 HOME/.copilot/skills/to-issues/references/expand-contract.md exec=0
+HOME/.copilot/skills/to-issues/references/non-interactive.md exec=0
 HOME/.copilot/skills/to-issues/references/publish.md exec=0
 HOME/.copilot/skills/to-prd/ /
 HOME/.copilot/skills/to-prd/SKILL.md exec=0 unrendered=0

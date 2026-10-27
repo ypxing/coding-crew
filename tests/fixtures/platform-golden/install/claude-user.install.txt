@@ -94,6 +94,7 @@ HOME/.claude/skills/to-issues/ /
 HOME/.claude/skills/to-issues/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/to-issues/references/ /
 HOME/.claude/skills/to-issues/references/expand-contract.md exec=0
+HOME/.claude/skills/to-issues/references/non-interactive.md exec=0
 HOME/.claude/skills/to-issues/references/publish.md exec=0
 HOME/.claude/skills/to-prd/ /
 HOME/.claude/skills/to-prd/SKILL.md exec=0 unrendered=0

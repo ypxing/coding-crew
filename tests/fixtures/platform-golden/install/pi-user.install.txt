@@ -97,6 +97,7 @@ HOME/.pi/agent/skills/to-issues/ /
 HOME/.pi/agent/skills/to-issues/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/to-issues/references/ /
 HOME/.pi/agent/skills/to-issues/references/expand-contract.md exec=0
+HOME/.pi/agent/skills/to-issues/references/non-interactive.md exec=0
 HOME/.pi/agent/skills/to-issues/references/publish.md exec=0
 HOME/.pi/agent/skills/to-prd/ /
 HOME/.pi/agent/skills/to-prd/SKILL.md exec=0 unrendered=0
