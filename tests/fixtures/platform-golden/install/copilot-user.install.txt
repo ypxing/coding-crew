@@ -1,5 +1,5 @@
 HOME/.coding-crew/ /
-HOME/.coding-crew/manifest.json 495b1aba66687eb35fd2f37a63fbdb5f0d6e1335
+HOME/.coding-crew/manifest.json 73107880c85b0ebf5888a051c8402f9517e47a2c
 HOME/.copilot/ /
 HOME/.copilot/skills/ /
 HOME/.copilot/skills/add-tests/ /
@@ -63,6 +63,8 @@ HOME/.copilot/skills/crew-grill/ /
 HOME/.copilot/skills/crew-grill/SKILL.md exec=0 unrendered=0
 HOME/.copilot/skills/crew-review/ /
 HOME/.copilot/skills/crew-review/SKILL.md exec=0 unrendered=0
+HOME/.copilot/skills/crew-triage/ /
+HOME/.copilot/skills/crew-triage/SKILL.md exec=0 unrendered=0
 HOME/.copilot/skills/dep-install/ /
 HOME/.copilot/skills/dep-install/SKILL.md exec=0 unrendered=0
 HOME/.copilot/skills/dep-install/references/ /

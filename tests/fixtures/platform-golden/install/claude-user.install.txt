@@ -61,6 +61,8 @@ HOME/.claude/skills/crew-grill/ /
 HOME/.claude/skills/crew-grill/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/crew-review/ /
 HOME/.claude/skills/crew-review/SKILL.md exec=0 unrendered=0
+HOME/.claude/skills/crew-triage/ /
+HOME/.claude/skills/crew-triage/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/dep-install/ /
 HOME/.claude/skills/dep-install/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/dep-install/references/ /
@@ -102,4 +104,4 @@ HOME/.claude/skills/upgrade-deps/agents/openai.yaml exec=0
 HOME/.claude/skills/write-pr/ /
 HOME/.claude/skills/write-pr/SKILL.md exec=0 unrendered=0
 HOME/.coding-crew/ /
-HOME/.coding-crew/manifest.json 3744aa1f79675be1e815de6ffbab5ad31e573783
+HOME/.coding-crew/manifest.json c4a7d6a99c0053ed5396fb1990382fa571d8475c

@@ -76,6 +76,14 @@
         "coding-crew-lib"
       ]
     },
+    "crew-triage": {
+      "source-dir": "crew-triage",
+      "deps": [
+        "to-issues",
+        "solve-feature",
+        "coding-crew-lib"
+      ]
+    },
     "crew-grill": {
       "source-dir": "crew-grill",
       "deps": [

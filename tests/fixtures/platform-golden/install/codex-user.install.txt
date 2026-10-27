@@ -61,6 +61,8 @@ HOME/.agents/skills/crew-grill/ /
 HOME/.agents/skills/crew-grill/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/crew-review/ /
 HOME/.agents/skills/crew-review/SKILL.md exec=0 unrendered=0
+HOME/.agents/skills/crew-triage/ /
+HOME/.agents/skills/crew-triage/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/dep-install/ /
 HOME/.agents/skills/dep-install/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/dep-install/references/ /
@@ -102,4 +104,4 @@ HOME/.agents/skills/upgrade-deps/agents/openai.yaml exec=0
 HOME/.agents/skills/write-pr/ /
 HOME/.agents/skills/write-pr/SKILL.md exec=0 unrendered=0
 HOME/.coding-crew/ /
-HOME/.coding-crew/manifest.json b00e8adcfde4ca89a62dc3f19c5056d7b84d1d94
+HOME/.coding-crew/manifest.json cca1d2f79c7d2eab5bc0a8b655f4d40e450da0a8

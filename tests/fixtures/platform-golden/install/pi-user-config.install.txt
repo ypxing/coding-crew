@@ -1,5 +1,5 @@
 HOME/.coding-crew/ /
-HOME/.coding-crew/manifest.json 30594166f725370fd0e13d3e9f47eff8a869e8e2
+HOME/.coding-crew/manifest.json 27addc484c413d2a9cf136cfd5879bde0d9bd0e0
 CONFIG/skills/ /
 CONFIG/skills/add-tests/ /
 CONFIG/skills/add-tests/SKILL.md exec=0 unrendered=0
@@ -62,6 +62,8 @@ CONFIG/skills/crew-grill/ /
 CONFIG/skills/crew-grill/SKILL.md exec=0 unrendered=0
 CONFIG/skills/crew-review/ /
 CONFIG/skills/crew-review/SKILL.md exec=0 unrendered=0
+CONFIG/skills/crew-triage/ /
+CONFIG/skills/crew-triage/SKILL.md exec=0 unrendered=0
 CONFIG/skills/dep-install/ /
 CONFIG/skills/dep-install/SKILL.md exec=0 unrendered=0
 CONFIG/skills/dep-install/references/ /

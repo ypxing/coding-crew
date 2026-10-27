@@ -116,7 +116,7 @@ lib_link_problems() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   n=$(find "$home/.agents/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
   [ "$n" -eq "$(jq '.skills | length' "$REPO_ROOT/registry.json")" ] || { ls "$home/.agents/skills"; return 1; }
-  [ "$n" -eq 18 ]
+  [ "$n" -eq 19 ]
   ! grep -l '{{' "$home"/.agents/skills/*/SKILL.md || false
   git init -q "$BATS_TEST_TMPDIR/project"
   run env HOME="$home" bash -c "cd '$BATS_TEST_TMPDIR/project' && node '$home/.agents/skills/coding-crew-lib/scripts/tracker/cli.mjs' config"

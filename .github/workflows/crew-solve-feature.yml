@@ -115,7 +115,8 @@ on:
 jobs:
   # The slug is a job of its own because a concurrency group can only read a job's outputs, never
   # a step's: the group below needs the slug, and an issue trigger has it only in the root issue's body, a review round
-  # in the PR body. No slug output skips the solve job.
+  # in the PR body. An untriaged issue has no slug yet, so its run is keyed by the issue's number (triage). No slug
+  # and no triage output skips the solve job.
   slug:
     runs-on: ubuntu-latest
     # The parent lookup and the root's run-agent label; the permission reads need only metadata.
@@ -130,6 +131,7 @@ jobs:
     outputs:
       slug: ${{ steps.slug.outputs.slug }}
       pr: ${{ steps.slug.outputs.pr }}
+      triage: ${{ steps.slug.outputs.triage }}
     steps:
       - name: Read the slug
         id: slug
@@ -218,6 +220,11 @@ jobs:
                   gh issue edit "$root" --repo "$GITHUB_REPOSITORY" --add-label run-agent ||
                     echo "::warning::could not label root issue #$root run-agent: label it by hand, or a finished human issue will not re-run the feature"
                 fi
+                # An issue in no feature yet: the run triages it, and builds what triage turns it into.
+                if [ -z "$slug" ] && [ "$ISSUE_ACTION" = labeled ]; then
+                  printf 'slug=\ntriage=%s\n' "$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
                 ;;
             esac
           fi
@@ -229,7 +236,7 @@ jobs:
 
   solve:
     needs: slug
-    if: needs.slug.outputs.slug != ''
+    if: needs.slug.outputs.slug != '' || needs.slug.outputs.triage != ''
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
     # id-token: write only for Bedrock's role; the run step hides it from the agent.
@@ -243,8 +250,9 @@ jobs:
       pr: ${{ steps.outcome.outputs.pr }}
       ready: ${{ steps.outcome.outputs.ready }}
     # One run per feature at a time (the loop takes no lock); a newer trigger replaces a pending one (see Review rounds above).
+    # A triage run has no slug yet: one run per issue.
     concurrency:
-      group: solve-feature-${{ needs.slug.outputs.slug }}
+      group: solve-feature-${{ needs.slug.outputs.slug || format('issue-{0}', needs.slug.outputs.triage) }}
       cancel-in-progress: false
     env:
       CREW_AGENT: ${{ vars.CREW_AGENT || 'copilot' }}
@@ -370,11 +378,14 @@ jobs:
           role-duration-seconds: ${{ steps.provider.outputs.duration }}
 
       - name: Run solve-feature
+        id: session
         env:
           # Copilot stops waiting for a background subagent after 600s by default and ends the session mid-issue.
           COPILOT_TASK_WAIT_TIMEOUT_SECONDS: 3600
           SLUG: ${{ needs.slug.outputs.slug }}
           REVIEW_PR: ${{ needs.slug.outputs.pr }}
+          TRIAGE: ${{ needs.slug.outputs.triage }}
+          TRIAGE_SENDER: ${{ github.event.sender.login }}
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           # To bill a person rather than the organisation, or when the organisation policy is off,
@@ -407,6 +418,11 @@ jobs:
           if [ -n "$REVIEW_PR" ]; then
             prompt="Use the address-pr-comments skill on PR #$REVIEW_PR; this run is non-interactive"
             claude_prompt="/address-pr-comments $REVIEW_PR $prompt"
+          elif [ -n "$TRIAGE" ]; then
+            prompt="Use the crew-triage skill on issue #$TRIAGE for @$TRIAGE_SENDER; this run is non-interactive"
+            claude_prompt="/crew-triage $TRIAGE $prompt"
+            # The outcome step counts only an open-questions comment posted after this.
+            echo "started=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
           fi
           case "$CREW_AGENT" in
             copilot)
@@ -480,7 +496,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: solve-feature-${{ needs.slug.outputs.slug }}-${{ github.run_attempt }}
+          name: solve-feature-${{ needs.slug.outputs.slug || format('issue-{0}', needs.slug.outputs.triage) }}-${{ github.run_attempt }}
           path: .coding-crew/solve-feature/
           include-hidden-files: true
           if-no-files-found: ignore
@@ -490,12 +506,32 @@ jobs:
         env:
           SLUG: ${{ needs.slug.outputs.slug }}
           REVIEW_PR: ${{ needs.slug.outputs.pr }}
+          TRIAGE: ${{ needs.slug.outputs.triage }}
+          SESSION_STARTED: ${{ steps.session.outputs.started }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           logs=.coding-crew/solve-feature
+          # open_questions — this run's identity commented `## Open questions` (the tracker's write-section) on the
+          # triaged issue since the session started: triage found the issue not ready to build.
+          open_questions() {
+            [ -n "$SESSION_STARTED" ] || return 1
+            gh api "repos/$GITHUB_REPOSITORY/issues/$TRIAGE/comments" --paginate 2>/dev/null |
+              jq -se --arg since "$SESSION_STARTED" 'add // [] | any(.[]; .user.login == "github-actions[bot]"
+                and .created_at >= $since and ((.body // "") | gsub("\r"; "") | split("\n")[0]) == "## Open questions")' >/dev/null
+          }
           # A review round writes no outcome when it started no solve-feature run (nothing to fix).
           if line=$(cat "$logs/outcome" 2>/dev/null); then :
           elif [ -n "$REVIEW_PR" ]; then line="no solve-feature run this round"
+          elif [ -n "$TRIAGE" ] && open_questions; then
+            line="triaged #$TRIAGE: needs-grill"
+            gh issue edit "$TRIAGE" --repo "$GITHUB_REPOSITORY" --remove-label run-agent ||
+              echo "::warning::could not remove run-agent from issue #$TRIAGE: remove it by hand, or a re-label will not start a run"
           else line="never finished: the session ended early or never started (see the first failed step)"
+          fi
+          # A triage run has no slug: its issue names it, and the feature's slug comes from its root issue.
+          if [ -n "$SLUG" ]; then title="solve-feature $SLUG" artifact="solve-feature-$SLUG" rerun="/solve-feature $SLUG there"
+          else title="triage #$TRIAGE" artifact="solve-feature-issue-$TRIAGE"
+            rerun="/solve-feature there on the slug in the feature's root issue's \`Feature:\` line"
           fi
           # Claude's session names its model in the init event, Copilot's on each top-level message.
           model=$(jq -r '(select(.type == "system" and .subtype == "init") | .model),
@@ -511,12 +547,12 @@ jobs:
           pr=${pr:-$REVIEW_PR}
           {
             # A double-backtick span: git's reason can quote names in single backticks.
-            echo "### solve-feature $SLUG: \`\` $line \`\`"
+            echo "### $title: \`\` $line \`\`"
             [ -z "$pr" ] || echo "- PR: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr"
             echo "- Agent: $CREW_AGENT, model ${model:-${CREW_MODEL:-unpinned (the CLI default)}}"
             [ -z "$subagent_models" ] || echo "- Subagent models: $subagent_models"
             [ ! -s "$logs/unpushed.bundle" ] ||
-              echo "- Unpushed commits: in the artifact's unpushed.bundle. In a clone where git can push, fetch them with \`gh run download $GITHUB_RUN_ID -n solve-feature-$SLUG-$GITHUB_RUN_ATTEMPT -D /tmp/sf-$GITHUB_RUN_ID && git fetch /tmp/sf-$GITHUB_RUN_ID/unpushed.bundle 'refs/heads/*:refs/heads/*'\`, then run /solve-feature $SLUG there"
+              echo "- Unpushed commits: in the artifact's unpushed.bundle. In a clone where git can push, fetch them with \`gh run download $GITHUB_RUN_ID -n $artifact-$GITHUB_RUN_ATTEMPT -D /tmp/sf-$GITHUB_RUN_ID && git fetch /tmp/sf-$GITHUB_RUN_ID/unpushed.bundle 'refs/heads/*:refs/heads/*'\`, then run $rerun"
             ref=${line#stopped: }
             case "$line" in
               "stopped: "*" solve failed: "*) files="$logs/coder.report.md" ;;
@@ -535,6 +571,7 @@ jobs:
           # A review round waiting on a person is not a failure: the PR's draft state and open threads show it.
           case "$line" in
             ready*) echo "solve-feature: $line" ;;
+            "triaged #"*) echo "::notice::crew-triage: $line" ;;
             "no solve-feature run this round" | needs-attention*)
               [ -n "$REVIEW_PR" ] || { echo "::error::solve-feature: $line"; exit 1; }
               echo "::notice::address-pr-comments on PR #$REVIEW_PR: $line" ;;

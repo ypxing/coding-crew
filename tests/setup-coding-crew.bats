@@ -279,7 +279,7 @@ SH
   [ "$status" -ne 0 ]
   GITHUB_EVENT_NAME=workflow_dispatch INPUT_SLUG=feat PR_BODY= run bash -e "$TEMP_DIR/slug-step.sh"
   [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
-  [ "$(jq -r '.jobs.solve.concurrency.group' "$JSON")" = 'solve-feature-${{ needs.slug.outputs.slug }}' ]
+  [ "$(jq -r '.jobs.solve.concurrency.group' "$JSON")" = "solve-feature-\${{ needs.slug.outputs.slug || format('issue-{0}', needs.slug.outputs.triage) }}" ]
 }
 
 @test "host file: an issue event's slug is its own Feature: line, else its parent's; run-agent starts a run only from write access; a finished human issue runs only an open run-agent root; run-agent on a sub-issue labels the root" {
@@ -322,14 +322,19 @@ SH
   [ "$status" -eq 0 ]
   [ "$(cat "$GITHUB_OUTPUT")" = 'slug=feat' ]
   [[ "$output" == *"::warning::"*"#544"* ]]
-  # No parent, or a parent without the line: today's error.
-  PARENT_FAIL=1 ev labeled run-agent 'A sub-issue.'
-  [ "$status" -eq 1 ]
-  [ ! -s "$GITHUB_OUTPUT" ]
-  [[ "$output" == *"::error::"*"label the feature's root issue"* ]]
-  PARENT_JSON='{"number":9,"state":"open","labels":[],"body":"An epic."}' ev labeled run-agent 'A sub-issue.'
-  [ "$status" -eq 1 ]
+  # No parent, or a parent without the line: the issue is untriaged, so the run triages it, and labels no root.
+  PARENT_FAIL=1 ev labeled run-agent 'An untriaged issue.'
+  [ "$status" -eq 0 ]
+  [ "$(cat "$GITHUB_OUTPUT")" = $'slug=\ntriage=545' ] || { echo "$output"; cat "$GITHUB_OUTPUT"; return 1; }
+  PARENT_JSON='{"number":9,"state":"open","labels":[],"body":"An epic."}' ev labeled run-agent 'An untriaged issue.'
+  [ "$status" -eq 0 ]
+  [ "$(cat "$GITHUB_OUTPUT")" = $'slug=\ntriage=545' ]
   ! grep -q 'issue edit' "$TEMP_DIR/gh.log" || false
+  # Without write access the label triages nothing either.
+  PERM=$'read\ntriage' PARENT_FAIL=1 ev labeled run-agent 'An untriaged issue.'
+  [ "$status" -eq 0 ]
+  [ ! -s "$GITHUB_OUTPUT" ]
+  [[ "$output" == *"::notice::alice has no write access to this repo: their label starts no run"* ]]
 
   # A finished human issue under an open run-agent root re-runs the feature, for both signals; no label is added.
   local a
@@ -528,6 +533,100 @@ SH
   echo 'ready pr=12' > .coding-crew/solve-feature/outcome
   REVIEW_PR=12 run bash -e "$TEMP_DIR/last-step.sh"
   [ "$status" -eq 0 ]
+}
+
+@test "host file: a triage run sends crew-triage the issue and the label's sender, saying it is non-interactive, for both agents, keyed by the issue; the install includes crew-triage and to-issues" {
+  host_json
+  jq -e '.jobs.solve.if | test("needs.slug.outputs.triage != ..")' "$JSON" >/dev/null
+  jq -e '.jobs.slug.outputs.triage == "${{ steps.slug.outputs.triage }}"' "$JSON" >/dev/null
+  jq -e '.jobs.solve.steps[] | select(.name == "Run solve-feature")
+    | .env.TRIAGE == "${{ needs.slug.outputs.triage }}" and .env.TRIAGE_SENDER == "${{ github.event.sender.login }}"' "$JSON" >/dev/null
+  [ "$(jq -r '.jobs.solve.steps[] | select(.name == "Keep the run'"'"'s logs") | .with.name' "$JSON")" = \
+    "solve-feature-\${{ needs.slug.outputs.slug || format('issue-{0}', needs.slug.outputs.triage) }}-\${{ github.run_attempt }}" ]
+  step_run solve "Run solve-feature"
+  for a in copilot claude; do
+    printf '#!/usr/bin/env bash\necho "%s $*"\n' "$a" > "$STUB/$a" && chmod +x "$STUB/$a"
+  done
+  export GITHUB_OUTPUT="$TEMP_DIR/out"
+  local sentence='Use the crew-triage skill on issue #545 for @alice; this run is non-interactive'
+  run env CREW_AGENT=copilot CREW_MODEL= SLUG= REVIEW_PR= TRIAGE=545 TRIAGE_SENDER=alice ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= bash -e "$TEMP_DIR/solve-step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(head -n 1 .coding-crew/solve-feature/session.jsonl)" == "copilot -p $sentence --allow-all "* ]]
+  run env CREW_AGENT=claude CREW_MODEL= SLUG= REVIEW_PR= TRIAGE=545 TRIAGE_SENDER=alice ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN=tok bash -e "$TEMP_DIR/solve-step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(head -n 1 .coding-crew/solve-feature/session.jsonl)" == "claude -p /crew-triage 545 $sentence --dangerously-skip-permissions "* ]]
+  # The session's start, which the outcome step reads an open-questions comment against.
+  grep -qE '^started=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$' "$GITHUB_OUTPUT"
+  grep -qE -- '--skills [a-z,-]*crew-triage' "$REPO_ROOT/actions/install/action.yml"
+  grep -qE -- '--skills [a-z,-]*to-issues' "$REPO_ROOT/actions/install/action.yml"
+}
+
+@test "host file: a triage run with an outcome is a solve run; with none, an open-questions comment of the run's own since its start removes run-agent and passes; neither fails" {
+  host_json
+  jq -r '.jobs.solve.steps[-1].run' "$JSON" > "$TEMP_DIR/last-step.sh"
+  jq -e '.jobs.solve.steps[-1].env | .TRIAGE == "${{ needs.slug.outputs.triage }}" and .GH_TOKEN == "${{ github.token }}"
+    and .SESSION_STARTED == "${{ steps.session.outputs.started }}"' "$JSON" >/dev/null
+  jq -e '.jobs.solve.steps[] | select(.name == "Run solve-feature") | .id == "session"' "$JSON" >/dev/null
+  cat > "$STUB/gh" <<'SH'
+#!/usr/bin/env bash
+echo "gh $*" >> "$TEMP_DIR/gh.log"
+case "$1 $2" in
+  "api repos/o/r/issues/545/comments") [ -z "$LIST_FAIL" ] || exit 1; printf '%s\n' "$COMMENTS" ;;
+  "issue edit") [ -z "$EDIT_FAIL" ] || { echo "HTTP 403" >&2; exit 1; } ;;
+esac
+SH
+  chmod +x "$STUB/gh"
+  export TEMP_DIR GITHUB_STEP_SUMMARY="$TEMP_DIR/summary.md" GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=o/r \
+    GITHUB_RUN_ID=77 GITHUB_RUN_ATTEMPT=1 CREW_AGENT=claude CREW_MODEL= SLUG= REVIEW_PR= TRIAGE=545 SESSION_STARTED=2026-10-27T10:00:00Z
+  local bot='github-actions[bot]' q=$'## Open questions\n\n1. Which?'
+  # comments <login> <created_at> <body> — one comment array, as the API pages it.
+  comments() { jq -cn --arg u "$1" --arg t "$2" --arg b "$3" '[{user: {login: $u}, created_at: $t, body: $b}]'; }
+  # tri — runs the step afresh; $output, the summary and gh.log hold the result.
+  tri() { rm -f "$TEMP_DIR/gh.log" "$GITHUB_STEP_SUMMARY"; run bash -e "$TEMP_DIR/last-step.sh"; }
+
+  COMMENTS="$(comments "$bot" 2026-10-27T10:05:00Z "$q")" tri
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -qxF 'gh issue edit 545 --repo o/r --remove-label run-agent' "$TEMP_DIR/gh.log"
+  grep -qF 'triaged #545: needs-grill' "$GITHUB_STEP_SUMMARY"
+  grep -q '^### triage #545' "$GITHUB_STEP_SUMMARY"
+  # A CRLF comment, and one on a later page, still count.
+  COMMENTS="$(printf '%s\n%s' "$(comments alice 2026-10-27T10:01:00Z x)" "$(comments "$bot" 2026-10-27T10:05:00Z $'## Open questions\r\n\r\n1.')")" tri
+  [ "$status" -eq 0 ]
+  # The label refused: a warning, and the run still passes.
+  EDIT_FAIL=1 COMMENTS="$(comments "$bot" 2026-10-27T10:05:00Z "$q")" tri
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::warning::"*"run-agent"*"#545"* ]]
+  # Before the session, by someone else, another heading, an unreadable list, or no start: never finished.
+  local c
+  for c in "$(comments "$bot" 2026-10-27T09:59:59Z "$q")" "$(comments alice 2026-10-27T10:05:00Z "$q")" \
+    "$(comments "$bot" 2026-10-27T10:05:00Z $'Text\n## Open questions')" '[]'; do
+    COMMENTS="$c" tri
+    [ "$status" -ne 0 ] && [[ "$output" == *"never finished"* ]] || { echo "$c: $output"; return 1; }
+    ! grep -q 'issue edit' "$TEMP_DIR/gh.log" || false
+  done
+  LIST_FAIL=1 COMMENTS= tri
+  [ "$status" -ne 0 ] && [[ "$output" == *"never finished"* ]]
+  SESSION_STARTED= COMMENTS="$(comments "$bot" 2026-10-27T10:05:00Z "$q")" tri
+  [ "$status" -ne 0 ] && [[ "$output" == *"never finished"* ]]
+
+  # An outcome file: handled as a solve run, with no comment lookup; the summary and hint name the issue.
+  mkdir -p .coding-crew/solve-feature
+  echo 'ready pr=12' > .coding-crew/solve-feature/outcome
+  tri
+  [ "$status" -eq 0 ]
+  [ ! -e "$TEMP_DIR/gh.log" ]
+  grep -qF '### triage #545: `` ready pr=12 ``' "$GITHUB_STEP_SUMMARY"
+  echo 'stopped: 2 solve failed: x' > .coding-crew/solve-feature/outcome
+  echo bundle > .coding-crew/solve-feature/unpushed.bundle
+  tri
+  [ "$status" -ne 0 ]
+  grep -qF 'gh run download 77 -n solve-feature-issue-545-1 ' "$GITHUB_STEP_SUMMARY"
+  grep -qF "run /solve-feature there on the slug in the feature's root issue's \`Feature:\` line" "$GITHUB_STEP_SUMMARY"
+  # A solve run keeps its own names.
+  SLUG=feat TRIAGE= tri
+  grep -qF 'gh run download 77 -n solve-feature-feat-1 ' "$GITHUB_STEP_SUMMARY"
+  grep -qF 'then run /solve-feature feat there' "$GITHUB_STEP_SUMMARY"
+  grep -q '^### solve-feature feat:' "$GITHUB_STEP_SUMMARY"
 }
 
 # actions_write — Step 3's bash block that checks the caller's tag and writes the workflow, <agent> as copilot.

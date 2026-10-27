@@ -33,6 +33,15 @@ stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, 
 own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
 <!-- /fragment:tracker-configuration -->
 
+**Non-interactive run.** A run whose prompt says it is non-interactive asks nothing, and publishes only what
+needs no answer. The slug is derived from the title (kebab-case, short) with no question, whatever the slice
+count; a slug `features` already lists is an open question: never extend another feature unattended. Step 5
+shows no breakdown and no approve/adjust prompt: anything it would list under items 1–4, and the builder
+check's **Yours** questions (`references/publish.md`), stop the run before anything is published and go back
+to the caller as open questions, one per item, each with its evidence; items 5–7 stand as the rules decided
+them. `publish-issues` exit 4 or 5 is an open question, never `--replace`; any other exit 1 stops the run with
+its stderr. A `to-prd` this run invokes is told the run is non-interactive too.
+
 ## Process
 
 ### 1. Gather context and determine feature slug

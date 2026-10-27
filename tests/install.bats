@@ -266,7 +266,7 @@ _skills_copied() {
   [ -z "$(ls -A "$home")" ]
   _skills_copied "$repo/.claude/skills"
   # The libraries once, in coding-crew-lib, not a copy per skill.
-  [ "$(find "$repo/.claude/skills" -type f | wc -l | tr -d ' ')" -eq 65 ] || { find "$repo/.claude/skills" -type f | wc -l; return 1; }
+  [ "$(find "$repo/.claude/skills" -type f | wc -l | tr -d ' ')" -eq 66 ] || { find "$repo/.claude/skills" -type f | wc -l; return 1; }
   [ ! -e "$repo/.coding-crew/lib" ]
   [ "$(jq 'has("libs")' "$repo/.coding-crew/manifest.json")" = false ]
 

@@ -1,5 +1,5 @@
 REPO/.coding-crew/ /
-REPO/.coding-crew/manifest.json 30594166f725370fd0e13d3e9f47eff8a869e8e2
+REPO/.coding-crew/manifest.json 27addc484c413d2a9cf136cfd5879bde0d9bd0e0
 REPO/.pi/ /
 REPO/.pi/skills/ /
 REPO/.pi/skills/add-tests/ /
@@ -63,6 +63,8 @@ REPO/.pi/skills/crew-grill/ /
 REPO/.pi/skills/crew-grill/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/crew-review/ /
 REPO/.pi/skills/crew-review/SKILL.md exec=0 unrendered=0
+REPO/.pi/skills/crew-triage/ /
+REPO/.pi/skills/crew-triage/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/dep-install/ /
 REPO/.pi/skills/dep-install/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/dep-install/references/ /
