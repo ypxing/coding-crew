@@ -555,6 +555,9 @@ SH
   run env CREW_AGENT=claude CREW_MODEL= SLUG= REVIEW_PR= TRIAGE=545 TRIAGE_SENDER=alice ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN=tok bash -e "$TEMP_DIR/solve-step.sh"
   [ "$status" -eq 0 ]
   [[ "$(head -n 1 .coding-crew/solve-feature/session.jsonl)" == "claude -p /crew-triage 545 $sentence --dangerously-skip-permissions "* ]]
+  # to-issues leaves its drafts under .coding-crew/scratch/ in this checkout, and solve-feature's start then needs
+  # a clean tree: the github tracker writes no ignore file there, so the step does.
+  [ "$(cat .coding-crew/scratch/.gitignore)" = '*' ]
   # The session's start, which the outcome step reads an open-questions comment against.
   grep -qE '^started=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$' "$GITHUB_OUTPUT"
   grep -qE -- '--skills [a-z,-]*crew-triage' "$REPO_ROOT/actions/install/action.yml"

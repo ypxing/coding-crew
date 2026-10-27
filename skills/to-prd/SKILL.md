@@ -10,8 +10,8 @@ something is unclear, state your assumption. Do confirm technical choices (seams
 the user before writing the final document, except those already settled (step 4).
 
 **Non-interactive run.** A run whose prompt, or whose caller, says it is non-interactive asks nothing: step 4
-confirms no seam with the user, and the seams you chose go into the PRD's `## Assumptions`, one line each. Invoked by
-a calling skill (`to-issues`), step 6 writes the draft and does not publish it: the caller publishes it once its
+confirms no seam with the user, and the seams you chose go into the PRD's `## Assumptions`, one line each. On such a
+run, invoked by `to-issues`, step 6 writes the draft and does not publish it: the caller publishes it once its
 own checks leave no open question, so a run that stops on one publishes nothing.
 
 <!-- fragment:missing-library -->

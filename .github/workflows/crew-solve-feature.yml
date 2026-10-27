@@ -427,6 +427,9 @@ jobs:
           elif [ -n "$TRIAGE" ]; then
             prompt="Use the crew-triage skill on issue #$TRIAGE for @$TRIAGE_SENDER; this run is non-interactive"
             claude_prompt="/crew-triage $TRIAGE $prompt"
+            # to-issues leaves its drafts under .coding-crew/scratch/, which the github tracker does not ignore, and
+            # solve-feature then starts in this same checkout, on a clean tree only.
+            mkdir -p .coding-crew/scratch && echo '*' > .coding-crew/scratch/.gitignore
             # The outcome step counts only an open-questions comment posted after this.
             echo "started=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
           fi

@@ -4,7 +4,7 @@ description: >
   Triages one issue that belongs to no feature yet, with nobody to ask: judges whether it is complete enough to
   build, and if so turns it into a feature with to-issues and builds it with solve-feature into a draft PR; if not,
   posts its open questions on the issue for a person to settle with crew-grill. Use when an untriaged issue should
-  be taken as far as it can go unattended, as on a GitHub Actions run. Trigger with /crew-triage <issue-ref>
+  be taken as far as it can go unattended. Trigger with /crew-triage <issue-ref>
   [for @<login>].
 ---
 
