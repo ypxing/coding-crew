@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.3.4]
+
 - crew-triage, crew-grill: crew-triage now reads the code an issue touches before judging it, and runs each failed
   check through crew-grill's "would a staff engineer be embarrassed to ask this?" test (now the shared
   `worth-asking` fragment): a check the code, the docs or the issue answers is re-judged with that evidence instead
