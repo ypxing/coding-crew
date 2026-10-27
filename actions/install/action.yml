@@ -1,5 +1,5 @@
 name: Install coding-crew
-description: Installs the skills solve-feature runs (solve-feature, crew-review, address-pr-comments and what they need) user-level, into $HOME, for one agent CLI.
+description: Installs the skills an Actions run uses (solve-feature, crew-review, address-pr-comments, crew-triage, to-issues and what they need) user-level, into $HOME, for one agent CLI.
 
 # The runner downloads this action's repository at the ref the caller names, so the install needs no clone, token
 # or fetch of its own: an organisation's internal copy of coding-crew works with only its Actions Access setting.
@@ -15,4 +15,4 @@ runs:
       shell: bash
       env:
         CREW_AGENT: ${{ inputs.agent }}
-      run: TARGET_REPO="$HOME" bash "$GITHUB_ACTION_PATH/../../install.sh" "$CREW_AGENT" --skills solve-feature,crew-review,address-pr-comments
+      run: TARGET_REPO="$HOME" bash "$GITHUB_ACTION_PATH/../../install.sh" "$CREW_AGENT" --skills solve-feature,crew-review,address-pr-comments,crew-triage,to-issues

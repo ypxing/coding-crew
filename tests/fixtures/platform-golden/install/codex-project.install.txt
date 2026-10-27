@@ -61,6 +61,8 @@ REPO/.agents/skills/crew-grill/ /
 REPO/.agents/skills/crew-grill/SKILL.md exec=0 unrendered=0
 REPO/.agents/skills/crew-review/ /
 REPO/.agents/skills/crew-review/SKILL.md exec=0 unrendered=0
+REPO/.agents/skills/crew-triage/ /
+REPO/.agents/skills/crew-triage/SKILL.md exec=0 unrendered=0
 REPO/.agents/skills/dep-install/ /
 REPO/.agents/skills/dep-install/SKILL.md exec=0 unrendered=0
 REPO/.agents/skills/dep-install/references/ /
@@ -92,6 +94,7 @@ REPO/.agents/skills/to-issues/ /
 REPO/.agents/skills/to-issues/SKILL.md exec=0 unrendered=0
 REPO/.agents/skills/to-issues/references/ /
 REPO/.agents/skills/to-issues/references/expand-contract.md exec=0
+REPO/.agents/skills/to-issues/references/non-interactive.md exec=0
 REPO/.agents/skills/to-issues/references/publish.md exec=0
 REPO/.agents/skills/to-prd/ /
 REPO/.agents/skills/to-prd/SKILL.md exec=0 unrendered=0
@@ -102,4 +105,4 @@ REPO/.agents/skills/upgrade-deps/agents/openai.yaml exec=0
 REPO/.agents/skills/write-pr/ /
 REPO/.agents/skills/write-pr/SKILL.md exec=0 unrendered=0
 REPO/.coding-crew/ /
-REPO/.coding-crew/manifest.json b00e8adcfde4ca89a62dc3f19c5056d7b84d1d94
+REPO/.coding-crew/manifest.json cca1d2f79c7d2eab5bc0a8b655f4d40e450da0a8

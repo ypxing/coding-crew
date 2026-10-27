@@ -33,6 +33,9 @@ stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, 
 own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
 <!-- /fragment:tracker-configuration -->
 
+**Non-interactive run.** A run whose prompt says it is non-interactive asks nothing: read
+`<skill-dir>/references/non-interactive.md` before step 1.
+
 ## Process
 
 ### 1. Gather context and determine feature slug

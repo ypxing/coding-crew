@@ -50,7 +50,7 @@ Sort each question it returns into one of three piles, once:
 
 - **Answered** — the conversation or the code settles it: write the answer into the draft.
 - **Minor** — a sensible implementer could settle it without changing what gets built: settle it and record one `(auto)` line as the last line of the draft's `## What to build`.
-- **Yours** — only the user can answer it, and it changes what gets built: return to step 5, which asks only these, in one message ranked by importance, then re-render and publish.
+- **Yours** — only the user can answer it, and it changes what gets built: return to step 5, which asks only these, in one message ranked by importance, then re-render and publish. On a non-interactive run they go back to the caller as open questions, and nothing is published.
 
 Print `builder check: N answered, M (auto), K asked`. One round: dispatch no second check after the answers.
 
@@ -60,7 +60,7 @@ Print `builder check: N answered, M (auto), K asked`. One round: dispatch no sec
 node "$TRACKER" publish-issues --feature-slug <feature-slug> --drafts .coding-crew/scratch/<feature-slug>/.drafts
 ```
 
-It creates the issues in dependency order and prints one `<draft> <ref>` line per issue; the drafts directory (`known/` and `PRD.md` included) is deleted after a full publish. Finish by telling the user the feature slug, the PRD's ref when one was written, and those `<draft> <ref>` lines, with each `ready-for-human` issue marked as one a person must act on: the slug is what every later step takes. Two exits are questions for the user, and both write nothing:
+It creates the issues in dependency order and prints one `<draft> <ref>` line per issue; the drafts directory (`known/` and `PRD.md` included) is deleted after a full publish. Finish by telling the user the feature slug, the PRD's ref when one was written, and those `<draft> <ref>` lines, with each `ready-for-human` issue marked as one a person must act on: the slug is what every later step takes. Two exits are questions for the user (for the caller, on a non-interactive run: never re-run with `--replace` then), and both write nothing:
 
 - **Exit 4** — the feature has completed issues: stop, and tell the user: "Some issues are already completed. Please reconcile manually (delete or archive the old issues directory) before re-running."
 - **Exit 5** — the feature already has open issues, which publishing would overwrite (stderr lists them): show them, warn they will be overwritten, and ask for confirmation. On yes, re-run the same command with `--replace`; on no, stop.

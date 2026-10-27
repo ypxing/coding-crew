@@ -1,5 +1,5 @@
 REPO/.coding-crew/ /
-REPO/.coding-crew/manifest.json 495b1aba66687eb35fd2f37a63fbdb5f0d6e1335
+REPO/.coding-crew/manifest.json 73107880c85b0ebf5888a051c8402f9517e47a2c
 REPO/.github/ /
 REPO/.github/skills/ /
 REPO/.github/skills/add-tests/ /
@@ -63,6 +63,8 @@ REPO/.github/skills/crew-grill/ /
 REPO/.github/skills/crew-grill/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/crew-review/ /
 REPO/.github/skills/crew-review/SKILL.md exec=0 unrendered=0
+REPO/.github/skills/crew-triage/ /
+REPO/.github/skills/crew-triage/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/dep-install/ /
 REPO/.github/skills/dep-install/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/dep-install/references/ /
@@ -94,6 +96,7 @@ REPO/.github/skills/to-issues/ /
 REPO/.github/skills/to-issues/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/to-issues/references/ /
 REPO/.github/skills/to-issues/references/expand-contract.md exec=0
+REPO/.github/skills/to-issues/references/non-interactive.md exec=0
 REPO/.github/skills/to-issues/references/publish.md exec=0
 REPO/.github/skills/to-prd/ /
 REPO/.github/skills/to-prd/SKILL.md exec=0 unrendered=0

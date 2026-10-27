@@ -17,6 +17,7 @@ add-tests tdd                   # cites tdd'"'"'s rule the coder follows; the co
 crew-afk crew-grill             # tells the person to plan the feature first
 crew-afk crew-brainstorm        # tells the person to plan the feature first
 crew-afk to-issues              # tells the person to plan the feature first
+crew-triage crew-grill          # tells the person where to settle the open questions
 setup-coding-crew solve-feature # what setup prepares the repo for, and its workflow file
 setup-coding-crew solve-issue   # says which earlier run discovered the dev commands file
 to-issues add-tests             # a caller: names the findings file add-tests hands over

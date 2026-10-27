@@ -109,7 +109,7 @@ setup() {
   local skill body want got
   want=$(jq -r '.skills | to_entries[] | select((.value.deps // []) | index("coding-crew-lib")) | .key | select(. != "solve-feature")' \
     "$REPO_ROOT/registry.json" | LC_ALL=C sort)
-  [ "$(wc -l <<< "$want" | tr -d ' ')" -eq 13 ] || { echo "$want"; return 1; }
+  [ "$(wc -l <<< "$want" | tr -d ' ')" -eq 14 ] || { echo "$want"; return 1; }
   got=$(cd "$REPO_ROOT/skills" && grep -lxF '<!-- fragment:missing-library -->' */SKILL.md | sed 's#/SKILL.md##' | LC_ALL=C sort)
   [ "$got" = "$want" ] || { diff <(echo "$want") <(echo "$got"); return 1; }
 }
@@ -122,4 +122,24 @@ setup() {
   grep -qF -- '`-g`' "$f"
   grep -qF 'install.sh' "$f"
   grep -qi 'stop' "$f"
+}
+
+# light_path <skill> — the rendered light path, from its first marker to its last, markers dropped and blank runs squeezed.
+light_path() {
+  sed -n '/^<!-- fragment:light-path -->$/,/^<!-- \/fragment:light-path-outcome -->$/p' "$REPO_ROOT/skills/$1/SKILL.md" \
+    | grep -v '^<!-- /\?fragment:' | cat -s
+}
+
+@test "crew-grill and crew-brainstorm render the whole light path, its four checks from light-path-checks; crew-triage renders the checks alone" {
+  local d="$REPO_ROOT/skills/_shared/fragments" skill want
+  [ "$(grep -cE '^[1-4]\. \*\*' "$d/light-path-checks.md")" -eq 4 ]
+  ! grep -qE '^[1-4]\. \*\*' "$d/light-path.md" "$d/light-path-outcome.md" || false
+  want=$(printf '%s\n\n%s\n\n%s\n' "$(cat "$d/light-path.md")" "$(cat "$d/light-path-checks.md")" "$(cat "$d/light-path-outcome.md")")
+  for skill in crew-grill crew-brainstorm; do
+    [ "$(light_path "$skill")" = "$want" ] || { diff <(echo "$want") <(light_path "$skill"); return 1; }
+  done
+  local t="$REPO_ROOT/skills/crew-triage/SKILL.md"
+  grep -qxF '<!-- fragment:light-path-checks -->' "$t"
+  grep -qxF '<!-- fragment:untrusted-text -->' "$t"
+  ! grep -qE '^<!-- fragment:light-path(-outcome)? -->$' "$t" || false
 }
