@@ -128,7 +128,7 @@ for ((i = 0; i < ${#args[@]}; i++)); do
 done
 case "$1 $2" in
   # GH_BODY_FAIL refuses a read of the body; GH_EDIT_FAIL refuses pr edit.
-  "pr view") [ -z "${GH_BODY_FAIL:-}" ] || [[ " $* " != *" --json body "* ]] || exit 1
+  "pr view") [ -z "${GH_BODY_FAIL:-}" ] || [[ " $* " != *" --json body"* ]] || exit 1
     if [ -f "$STATE/pr-created" ]; then n=10; elif [ -n "${PR_EXISTS:-}" ]; then n=9; else exit 1; fi
     [ -f "$STATE/pr-body" ] || printf 'hand intro\n' > "$STATE/pr-body"
     oid=${PR_HEAD_OID:-$(git rev-parse -q --verify refs/remotes/origin/feature/feat || true)}

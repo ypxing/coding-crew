@@ -475,6 +475,11 @@ describe() {
   [ ! -f "$LOGS/spec.md" ] || prd_head=$(head -n 1 "$LOGS/spec.md")
   [[ ! "$prd_head" =~ ^'<!-- PRD issue #'([0-9]+): ]] || spec_line="Spec: PRD #${BASH_REMATCH[1]}, feature \`$SLUG\`"
   [ ! -f "$f" ] || title=$(head -n 1 "$f" | sed -n 's/^# //p')
+  # The notes section as the PR shows it now, so a note a person deleted stays deleted; with no note left, none.
+  local view notes
+  view=$(gh pr view "$PR" --json body,isDraft) || die "gh pr view $PR failed"
+  notes=$(jq -r '.body' <<<"$view" | sed -n "\|^$NOTES_BEGIN\$|,\|^$NOTES_END\$|p")
+  grep -q '^### ' <<<"$notes" || notes=""
   {
     echo "$BEGIN"
     # Written here, not by the writer subagent, so a reviewer always sees that agents wrote this PR.
@@ -482,6 +487,7 @@ describe() {
     # write-pr's summary minus its title line, which titles the PR instead.
     if [ -f "$f" ]; then if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d'; echo; fi
     if [ -n "$need" ]; then printf '## Needs attention\n\n'; sed 's/^/- /' <<<"$need"; echo; fi
+    [ -z "$notes" ] || printf '%s\n\n' "$notes"
     printf '%s\n\n' "$spec_line"
     [ -z "$refs" ] || printf '%s\n' "$refs"
     printf '%s\n' "<!-- solve-feature:slug $SLUG -->" "$END"
@@ -489,7 +495,7 @@ describe() {
   gh pr edit "$PR" ${title:+--title "$title"} --body-file "$body" >/dev/null || die "gh pr edit $PR failed"
   if [ -n "$need" ]; then result=needs-attention
   else
-    result=ready draft=$(gh pr view "$PR" --json isDraft | jq -r '.isDraft') || die "gh pr view $PR failed"
+    result=ready draft=$(jq -r '.isDraft' <<<"$view")
     [ "$draft" != true ] || gh pr ready "$PR" >/dev/null || die "gh pr ready $PR failed; the body is written, so run gh pr ready $PR by hand"
   fi
   outcome "$result pr=$PR"

@@ -581,7 +581,10 @@ git_fails() {
 
 # --- fix: the fixer's notes for a person -------------------------------------------------
 
-@test "fix posts a non-empty pr-<n>.notes.md after its push as one comment headed with the fixer and PR, deletes it, and a second round posts nothing" {
+# notes_section — the body's notes section, its markers included.
+notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-feature:notes:end -->$/p' "$STATE/pr-body"; }
+
+@test "fix writes a non-empty pr-<n>.notes.md after its push into the PR body's notes section under the fixer, the PR and the date, deletes it, and a second round writes nothing" {
   fix_ready
   TIP=$(git rev-parse HEAD)
   printf '%s\n' "- rotate the CI token after merge" > .coding-crew/solve-feature/pr-10.notes.md
@@ -589,47 +592,81 @@ git_fails() {
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
-  [ "$(grep -c '^pr comment' "$STATE/gh.log")" = 1 ]
-  [ "$(sed -n 3p "$STATE/pr-comment.1")" = 10 ]
-  [ "$(cat "$STATE/pr-comment.1.body")" = "$(printf '%s\n' "## Notes for a person from the fixer of PR #10's review" "" "- rotate the CI token after merge")" ]
+  ! grep -q '^pr comment' "$STATE/gh.log" || false
+  [ "$(grep -c '^pr edit 10' "$STATE/gh.log")" = 1 ]
+  [ "$(notes_section)" = "$(printf '%s\n' '<!-- solve-feature:notes:begin -->' '## Notes for a person' '' 'Delete a note here once it is handled.' '' "### the fixer of PR #10's review · $(date +%F)" '' '- rotate the CI token after merge' '' '<!-- solve-feature:notes:end -->')" ]
+  [ "$(tail -2 "$STATE/pr-body")" = "$(printf '<!-- solve-feature:slug feat -->\n<!-- solve-feature:end -->')" ]
   [ ! -e .coding-crew/solve-feature/pr-10.notes.md ]
   [ -z "$(attention)" ]
-  # A second review round with no new notes posts nothing again.
+  # A second review round with no new notes writes nothing again.
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]
-  [ "$(grep -c '^pr comment' "$STATE/gh.log")" = 1 ]
+  [ "$(grep -c '^pr edit 10' "$STATE/gh.log")" = 1 ]
 }
 
-@test "fix whose checks or push stop posts no notes; a failed gh pr comment stops naming the file, its command and the artifact" {
+@test "fix whose checks or push stop writes no notes; a failed gh pr edit stops naming the file, the by-hand way and the artifact" {
   fix_ready
   TIP=$(git rev-parse HEAD)
   local f="$WORK/.coding-crew/solve-feature/pr-10.notes.md"
   echo '- a note' > "$f"
+  : > "$STATE/gh.log"
   CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 1 ]
-  ! grep -q '^pr comment' "$STATE/gh.log" || false
+  ! grep -qE '^pr (comment|edit)' "$STATE/gh.log" || false
   [ "$(cat "$f")" = '- a note' ]
   refuse_pushes
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 1 ]
   [[ "$output" == *"git push failed"* ]] || { echo "$output"; return 1; }
-  ! grep -q '^pr comment' "$STATE/gh.log" || false
+  ! grep -qE '^pr (comment|edit)' "$STATE/gh.log" || false
   [ "$(cat "$f")" = '- a note' ]
   rm "$TEMP_DIR/origin.git/hooks/pre-receive"
-  GH_COMMENT_FAIL=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  GH_EDIT_FAIL=1 run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"solve-feature: "*"$f"*"gh pr comment 10 --body-file $f && rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
-  [ "$(head -n1 "$f")" = "## Notes for a person from the fixer of PR #10's review" ]
+  [[ "$output" == *"solve-feature: "*"$f"*"Notes for a person"*"gh pr edit 10"*"rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
+  [ "$(head -n1 "$f")" = "### the fixer of PR #10's review · $(date +%F)" ]
 }
 
-@test "a notes comment leaves describe's outcome as the review alone decides it" {
+@test "describe carries the notes section from the current body verbatim after Needs attention, and its outcome stays the review's" {
   fix_ready '{"spec":"met","gaps":[],"findings":[]}'
   echo '- tag a release after merge' > .coding-crew/solve-feature/pr-10.notes.md
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]
-  grep -q '^pr comment 10' "$STATE/gh.log"
+  local section; section=$(notes_section)
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$output" = "ready pr=10" ]
-  ! grep -q 'tag a release' "$STATE/pr-body" || false
+  [ "$(notes_section)" = "$section" ]
+  [ "$(grep -A2 '^<!-- solve-feature:notes:end -->$' "$STATE/pr-body")" = "$(printf '%s\n' '<!-- solve-feature:notes:end -->' '' 'Spec: PRD #1, feature `feat`')" ]
+  # A second describe neither drops nor doubles it.
+  run bash "$SCRIPT" describe feat 10
+  [ "$(notes_section)" = "$section" ]
+}
+
+@test "describe keeps a person's deletions: a deleted note is not restored, and a section with no note left is dropped" {
+  fix_ready '{"spec":"met","gaps":["a gap"],"findings":[]}'
+  echo '- first note' > .coding-crew/solve-feature/pr-10.notes.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ]
+  echo '- second note' > .coding-crew/solve-feature/pr-10.notes.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^### ' "$STATE/pr-body")" = 2 ]
+  # A person deletes the first note by hand.
+  awk '/^### / && !n++ { skip = 1; next } /^(### |<!-- solve-feature:notes:end)/ { skip = 0 } !skip' "$STATE/pr-body" > "$STATE/pr-body.new"
+  mv "$STATE/pr-body.new" "$STATE/pr-body"
+  ! grep -q 'first note' "$STATE/pr-body" || false
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "needs-attention pr=10" ]
+  ! grep -q 'first note' "$STATE/pr-body" || false
+  grep -qx -- '- second note' "$STATE/pr-body"
+  [ "$(grep -c '^<!-- solve-feature:notes:begin -->$' "$STATE/pr-body")" = 1 ]
+  [ "$(grep -n '^## Needs attention$' "$STATE/pr-body" | cut -d: -f1)" -lt "$(grep -n '^<!-- solve-feature:notes:begin -->$' "$STATE/pr-body" | cut -d: -f1)" ]
+  # Every note deleted: the section goes, markers included.
+  awk '/^### / { skip = 1; next } /^<!-- solve-feature:notes:end/ { skip = 0 } !skip' "$STATE/pr-body" > "$STATE/pr-body.new"
+  mv "$STATE/pr-body.new" "$STATE/pr-body"
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  ! grep -q 'solve-feature:notes\|Notes for a person' "$STATE/pr-body" || false
 }
