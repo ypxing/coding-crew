@@ -6,9 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
-- solve-feature (Actions): the job summary page shows only the run's own outcome lines; the agent no longer gets
-  `GITHUB_STEP_SUMMARY`, so tools it runs (Vitest wrote a test report per run, ten in one pilot) and the agent
-  itself can no longer write to the page (#636).
+- solve-feature (Actions): tools the agent runs no longer write to the job summary page, which keeps to the run's
+  own outcome lines; the agent no longer gets `GITHUB_STEP_SUMMARY` (Vitest wrote a test report per run, ten in one
+  pilot) (#636).
 - tracker, address-pr-comments: a repo can list GitHub App bot logins under `github.trustedBots` in its
   `.coding-crew/config.json`, and their issue and PR comments (Wiz's security findings, say) then reach the agent
   like a collaborator's, on a private or internal repo only; before, every bot but Copilot's reviewer was dropped. Listed bots start no review rounds,

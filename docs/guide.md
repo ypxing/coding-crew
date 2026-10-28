@@ -559,8 +559,8 @@ describe`) once it has marked the PR ready. It fails on `needs-attention pr=<n>`
 recorded (`stopped: <what> failed: <reason>`), and when the file is absent because the session ended before the run
 finished. The same step writes the run's summary page: the outcome, the PR, the model, and what to read next
 (a stop's coder report and checks log tail, a needs-attention's list), so a failed run says why without the
-artifact. Nothing else reaches that page: the agent runs without `GITHUB_STEP_SUMMARY`, so test runners that write
-a job summary (Vitest) add nothing to it.
+artifact. Tools the agent runs add nothing to it: the agent runs without `GITHUB_STEP_SUMMARY`, so test runners
+that write a job summary (Vitest) do not find it.
 
 The job pushes and opens the PR with the workflow's own `GITHUB_TOKEN`, so the PR's `pull_request` runs wait for
 someone with write access to approve them, after every push. After the session, the job approves the runs held on
