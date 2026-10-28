@@ -584,7 +584,7 @@ Which comments reach the agent: only those by Copilot's reviewer, by the identit
 repo lists under `github.trustedBots` in `.coding-crew/config.json`, or by a user with write, maintain or admin
 permission on the repo. GitHub reports no permission for a bot, so a GitHub App's comments (Wiz's, say) reach the
 agent only when listed: `{"github": {"trustedBots": ["wiz-security-bot-22793c4344"]}}`, its login with or without
-`[bot]`, matched exactly. The key is read from the project's file only, never `~/.coding-crew/config.json`, applies
+`[bot]`, matched exactly (the bare login only while no user or organisation account holds it). The key is read from the project's file only, never `~/.coding-crew/config.json`, applies
 to this repo's PRs only, and a listed bot's reviews start no rounds: the agent reads its comments when a round
 runs. A round reads the PR's reviews, comments and threads through
 coding-crew-lib's `pr-comments.mjs`, and `fetch --comments` reads an issue's, both dropping everyone else's comments

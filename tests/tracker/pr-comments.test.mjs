@@ -18,7 +18,7 @@ const thread = (id, comments, extra = {}) => ({ id, isResolved: false, path: "a.
  * A fake `gh`: `perms` maps a login to its permission output (missing → 404), `pages` is the
  * reviewThreads pages in order, `view` the `gh pr view` JSON. Every call is recorded.
  */
-function fakeGh({ perms = {}, pages = [[]], view = { reviews: [], comments: [] }, user = "me" }) {
+function fakeGh({ perms = {}, pages = [[]], view = { reviews: [], comments: [] }, user = "me", accounts = {} }) {
   const calls = [];
   const exec = (cmd, args) => {
     calls.push(args);
@@ -28,6 +28,11 @@ function fakeGh({ perms = {}, pages = [[]], view = { reviews: [], comments: [] }
     if (perm) {
       const login = decodeURIComponent(perm[1]);
       return login in perms ? { code: 0, stdout: perms[login], stderr: "" } : { code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)\n" };
+    }
+    const account = /^api users\/([^ ]+)/.exec(line);
+    if (account) {
+      const login = decodeURIComponent(account[1]);
+      return login in accounts ? { code: 0, stdout: `${accounts[login]}\n`, stderr: "" } : { code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)\n" };
     }
     if (args[0] === "pr" && args[1] === "view") return { code: 0, stdout: JSON.stringify(view), stderr: "" };
     if (args[0] === "api" && args[1] === "graphql") {
@@ -207,8 +212,9 @@ function gitRepo(config) {
 const trusting = (...bots) => ({ github: { trustedBots: bots } });
 
 /** A fake `gh` whose PR holds a review, a top-level comment and a thread by each of `logins`. */
-function prBy(logins, { repoView } = {}) {
+function prBy(logins, { repoView, accounts } = {}) {
   const exec = fakeGh({
+    accounts,
     view: {
       reviews: logins.map((l) => ({ author: { login: l }, body: `review by ${l}`, state: "COMMENTED", submittedAt: "t" })),
       comments: logins.map((l) => c(l, `top by ${l}`)),
@@ -314,4 +320,30 @@ test("a malformed github section or trustedBots exits 1 naming the config file a
     assert.match(r.stderr, /\.coding-crew\/config\.json/);
     assert.match(r.stderr, /"github": \{"trustedBots": \["<bot login>"/);
   }
+});
+
+test("a user or organisation account holding a listed bot's bare login is not trusted as the bot", async () => {
+  const exec = prBy([WIZ, `${WIZ}[bot]`], { accounts: { [WIZ]: "User" } });
+  const r = await prCommentsIn(gitRepo(trusting(WIZ)), ["7"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json.comments.map((x) => x.author), [`${WIZ}[bot]`]);
+  assert.deepEqual(r.json.omitted.authors, [WIZ]);
+});
+
+test("a listed bare login is untrusted when the account lookup fails other than with a 404", async () => {
+  const base = prBy([WIZ]);
+  const exec = (cmd, args) => (args[0] === "api" && args[1].startsWith("users/") ? { code: 1, stdout: "", stderr: "gh: API rate limit exceeded (HTTP 403)\n" } : base(cmd, args));
+  exec.calls = base.calls;
+  const r = await prCommentsIn(gitRepo(trusting(WIZ)), ["7"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json.comments, []);
+});
+
+test("a null trustedBots exits 1; a padded login matches as its trimmed self", async () => {
+  const bad = await prCommentsIn(gitRepo({ github: { trustedBots: null } }), ["7"], prBy([`${WIZ}[bot]`]));
+  assert.equal(bad.code, 1);
+  assert.match(bad.stderr, /"github": \{"trustedBots": \["<bot login>"/);
+  const padded = await prCommentsIn(gitRepo(trusting(` ${WIZ} `)), ["7"], prBy([`${WIZ}[bot]`]));
+  assert.equal(padded.code, 0, padded.stderr);
+  assert.equal(padded.json.comments.length, 1);
 });

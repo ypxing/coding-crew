@@ -308,7 +308,29 @@ test("fetch (github) --comments keeps a github.trustedBots bot's comment with no
   assert.deepEqual(permissionCalls(exec).map((c) => c[2]), ["repos/{owner}/{repo}/collaborators/dependabot%5Bbot%5D/permission"]);
 });
 
-const MALFORMED_GITHUB = [{ github: [] }, { github: { trustedBots: "x" } }, { github: { trustedBots: [""] } }];
+const MALFORMED_GITHUB = [{ github: [] }, { github: { trustedBots: "x" } }, { github: { trustedBots: [""] } }, { github: { trustedBots: null } }];
+
+test("fetch (github) --comments keeps a listed bot's bare login only while no user or organisation holds it", async () => {
+  const dir = configJson(root({ github: true }), { github: { trustedBots: [WIZ] } });
+  const issue = issueWith([WIZ, "finding"]);
+  // `api users/…` before `api user`: fakeGh routes by prefix, first match.
+  const free = fakeGh({ [`api users/${WIZ}`]: { code: 1, stderr: "gh: Not Found (HTTP 404)\n" }, "api user": { stdout: "me\n" }, ...issue });
+  const kept = await cli(dir, ["fetch", "12", "--comments"], free);
+  assert.equal(kept.code, 0, kept.stderr);
+  assert.match(kept.stdout, /finding/);
+  assert.equal(permissionCalls(free).length, 0);
+
+  const squatted = fakeGh({
+    [`api users/${WIZ}`]: { stdout: "User\n" },
+    "api user": { stdout: "me\n" },
+    [`api repos/{owner}/{repo}/collaborators/${WIZ}/permission`]: { code: 1, stderr: "gh: Not Found (HTTP 404)\n" },
+    ...issue,
+  });
+  const dropped = await cli(dir, ["fetch", "12", "--comments"], squatted);
+  assert.equal(dropped.code, 0, dropped.stderr);
+  assert.doesNotMatch(dropped.stdout, /finding/);
+  assert.match(dropped.stdout, new RegExp(`omitted 1 comment\\(s\\) by @${WIZ}:`));
+});
 
 test("fetch (github) --comments exits 1 on a malformed github section, naming the file and the expected shape", async () => {
   for (const config of MALFORMED_GITHUB) {
