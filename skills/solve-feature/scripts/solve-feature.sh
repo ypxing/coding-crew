@@ -195,16 +195,31 @@ next() {
   echo "$ref"
 }
 
-# post_notes <pr> <file> <heading> — a non-empty notes file a subagent left for a person goes on the PR as one comment,
-# verbatim under <heading>, then is deleted: only GitHub keeps it across a stop and a fresh runner. The heading is
-# written into the file first, so the file a failed post leaves is ready to post by hand.
+# post_notes <pr> <file> <tag> — a non-empty notes file a subagent left for a person goes into the PR body's notes
+# section as one block, verbatim under `### <tag>`, then is deleted: only GitHub keeps it across a stop and a fresh
+# runner. The tag is written into the file first, so the file a failed write leaves is ready to add by hand.
 post_notes() {
-  local n="$1" f="$2"
+  local n="$1" f="$2" body new
   [ -s "$f" ] || return 0
-  { printf '## %s\n\n' "$3"; cat "$f"; } >"$f.tmp" && mv "$f.tmp" "$f"
-  gh pr comment "$n" --body-file "$f" >/dev/null ||
-    die "posting $f to PR #$n failed: post it by hand with gh pr comment $n --body-file $f && rm $f before a re-run (on Actions the file is in the run's artifact)"
-  rm -f "$f"
+  { printf '### %s\n\n' "$3"; cat "$f"; } >"$f.tmp" && mv "$f.tmp" "$f"
+  local why="adding $f to PR #$n's body failed: add its contents to the PR body's Notes for a person section by hand (gh pr edit $n), then rm $f before a re-run (on Actions the file is in the run's artifact)"
+  body=$(gh pr view "$n" --json body | jq -r '.body') || die "$why"
+  new="$LOGS/pr-$n.notes-body.md"
+  if grep -qxF "$NOTES_END" <<<"$body"; then
+    awk -v e="$NOTES_END" -v f="$f" '$0 == e && !d { while ((getline l < f) > 0) print l; print ""; d = 1 } { print }' <<<"$body" >"$new"
+  else
+    # A new section goes before the slug line address-pr-comments reads, inside begin/end; at the end of a body a
+    # person stripped of both, so the note is never dropped.
+    awk -v s="<!-- solve-feature:slug " -v e="$END" -v nb="$NOTES_BEGIN" -v ne="$NOTES_END" -v f="$f" '
+      function section() {
+        print nb; print "## Notes for a person"; print ""; print "Delete a note here once it is handled."; print ""
+        while ((getline l < f) > 0) print l; print ""; print ne; d = 1 }
+      !d && (index($0, s) == 1 || $0 == e) { section() }
+      { print }
+      END { if (!d) section() }' <<<"$body" >"$new"
+  fi
+  gh pr edit "$n" --body-file "$new" >/dev/null || die "$why"
+  rm -f "$f" "$new"
 }
 
 stop() { # <step> <reason> [<log>]; exit 1
@@ -214,6 +229,8 @@ stop() { # <step> <reason> [<log>]; exit 1
 
 # address-pr-comments finds a solve-feature PR by the begin line and reads its slug from the slug line.
 BEGIN='<!-- solve-feature:begin -->' END='<!-- solve-feature:end -->'
+# The notes section, inside begin/end: post_notes adds to it, describe carries it over verbatim.
+NOTES_BEGIN='<!-- solve-feature:notes:begin -->' NOTES_END='<!-- solve-feature:notes:end -->'
 pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the spec, else the issue's own
   local t; t=$(head -n 1 "$LOGS/spec.md" | sed -nE 's/^<!-- PRD issue #[0-9]+: (.*) -->$/\1/p' | sed 's/^PRD: //')
   [ -n "$t" ] || t=$(grep -m1 '^# ' "$LOGS/$1.issue.md" | sed 's/^# //')
@@ -301,7 +318,7 @@ land() {
     [ "$rc" = 0 ] || pr_create_failed
     PR_N="${url##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $url"
   fi
-  post_notes "$PR_N" "$LOGS/coder.notes.md" "Notes for a person from the coder of $REF"
+  post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)"
   echo "pr=$PR_N"
 }
 
@@ -405,7 +422,7 @@ fix() {
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   git rev-parse HEAD >"$LOGS/review.base"
-  post_notes "$PR" "$LOGS/pr-$PR.notes.md" "Notes for a person from the fixer of PR #$PR's review"
+  post_notes "$PR" "$LOGS/pr-$PR.notes.md" "the fixer of PR #$PR's review · $(date +%F)"
 
   # "Changed nothing" is no commit on the branch's own line past the round's head: what merge_in brought in sits
   # behind a merge's second parent, and a fix committed here and pushed by hand still counts.
