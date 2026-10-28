@@ -47,7 +47,10 @@ function fakeGh({ perms = {}, pages = [[]], view = { reviews: [], comments: [] }
       const after = args.find((a) => a.startsWith("after="))?.slice("after=".length);
       const i = after ? Number(after.replace("cursor", "")) : 0;
       const hasNextPage = i + 1 < pages.length;
-      const reviewThreads = { nodes: pages[i], pageInfo: { hasNextPage, endCursor: hasNextPage ? `cursor${i + 1}` : null } };
+      // A comment's id comes back only when the query asks for it, as on GitHub.
+      const withIds = /comments\(first: 100\) \{ nodes \{ id /.test(line);
+      const nodes = withIds ? pages[i] : pages[i].map((t) => ({ ...t, comments: { nodes: t.comments.nodes.map(({ id, ...rest }) => rest) } }));
+      const reviewThreads = { nodes, pageInfo: { hasNextPage, endCursor: hasNextPage ? `cursor${i + 1}` : null } };
       return { code: 0, stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads } } } }), stderr: "" };
     }
     return { code: 1, stdout: "", stderr: `unexpected gh ${line}` };
