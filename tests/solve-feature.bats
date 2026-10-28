@@ -1388,20 +1388,29 @@ SH
   [ "$status" -eq 0 ]
 }
 
-@test "the reusable workflow's run step hides the OIDC request variables from either agent; no step after it in solve references a secret, COPILOT_GITHUB_TOKEN only in request-copilot-review" {
+@test "the reusable workflow's run step hides the OIDC request variables and the step summary file from either agent; no step after it in solve references a secret, COPILOT_GITHUB_TOKEN only in request-copilot-review" {
   wf_json
   solve_step "Run solve-feature"
   local a
   for a in copilot claude; do
     # Its parent's /proc environ too: an `unset` leaves the variables there, readable by any child (Linux only).
-    printf '#!/usr/bin/env bash\n{ env; [ ! -r /proc/$PPID/environ ] || tr "\\\\0" "\\\\n" < /proc/$PPID/environ; } | grep -E "^ACTIONS_ID_TOKEN_REQUEST_" | sort; echo end\n' > "$STUB/$a" && chmod +x "$STUB/$a"
+    printf '#!/usr/bin/env bash\n{ env; [ ! -r /proc/$PPID/environ ] || tr "\\\\0" "\\\\n" < /proc/$PPID/environ; } | grep -E "^(ACTIONS_ID_TOKEN_REQUEST_|GITHUB_STEP_SUMMARY=)" | sort; echo end\n' > "$STUB/$a" && chmod +x "$STUB/$a"
   done
-  run env ACTIONS_ID_TOKEN_REQUEST_TOKEN=tok ACTIONS_ID_TOKEN_REQUEST_URL=https://x CREW_AGENT=copilot CREW_MODEL= SLUG=feat bash -e "$TEMP_DIR/step.sh"
+  run env GITHUB_STEP_SUMMARY="$TEMP_DIR/summary" CREW_AGENT=claude CREW_MODEL= SLUG=feat CLAUDE_CODE_OAUTH_TOKEN=t bash -e "$TEMP_DIR/step.sh"
   [ "$status" -eq 0 ]
   [ "$(cat .coding-crew/solve-feature/session.jsonl)" = end ]
-  run env ACTIONS_ID_TOKEN_REQUEST_TOKEN=tok ACTIONS_ID_TOKEN_REQUEST_URL=https://x CREW_AGENT=claude CREW_MODEL= SLUG=feat CLAUDE_CODE_OAUTH_TOKEN=t bash -e "$TEMP_DIR/step.sh"
+  run env ACTIONS_ID_TOKEN_REQUEST_TOKEN=tok ACTIONS_ID_TOKEN_REQUEST_URL=https://x GITHUB_STEP_SUMMARY="$TEMP_DIR/summary" CREW_AGENT=copilot CREW_MODEL= SLUG=feat bash -e "$TEMP_DIR/step.sh"
   [ "$status" -eq 0 ]
   [ "$(cat .coding-crew/solve-feature/session.jsonl)" = end ]
+  run env ACTIONS_ID_TOKEN_REQUEST_TOKEN=tok ACTIONS_ID_TOKEN_REQUEST_URL=https://x GITHUB_STEP_SUMMARY="$TEMP_DIR/summary" CREW_AGENT=claude CREW_MODEL= SLUG=feat CLAUDE_CODE_OAUTH_TOKEN=t bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 0 ]
+  [ "$(cat .coding-crew/solve-feature/session.jsonl)" = end ]
+  [ ! -e "$TEMP_DIR/summary" ]
+  # With none of the three set there is nothing to drop: the step runs as it was started, without the re-exec.
+  printf '#!/usr/bin/env bash\n[ ! -r /proc/$PPID/cmdline ] || tr "\\\\0" " " < /proc/$PPID/cmdline; echo; echo end\n' > "$STUB/claude"
+  run env -u GITHUB_STEP_SUMMARY CREW_AGENT=claude CREW_MODEL= SLUG=feat CLAUDE_CODE_OAUTH_TOKEN=t bash -e "$TEMP_DIR/step.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(cat .coding-crew/solve-feature/session.jsonl)" != *pipefail* ]]
 
   local i; i="$(jq '.jobs.solve.steps | map(.name) | index("Run solve-feature")' "$JSON")"
   [ "$(jq -c ".jobs.solve.steps[$i + 1:] | map(select(tostring | test(\"secrets[.]\"))) | map(.name)" "$JSON")" = '[]' ]

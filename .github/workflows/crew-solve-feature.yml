@@ -408,11 +408,13 @@ jobs:
         # as the model to use.
         run: |
           set -o pipefail
-          # id-token: write puts these in every step: with them the agent could mint a token for any role trusting the repo.
+          # id-token: write puts the two ACTIONS_ID_TOKEN_REQUEST_ ones in every step: with them the agent could mint a
+          # token for any role trusting the repo. GITHUB_STEP_SUMMARY, the job summary file, too: tools the agent runs
+          # (Vitest, once per test run) append to it, and the agent could write anything onto the run page.
           # Re-run this script without them, not `unset`: an unset leaves them in this shell's /proc/<pid>/environ,
           # which the agent, a child of this shell, can read.
-          [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN+x}${ACTIONS_ID_TOKEN_REQUEST_URL+x}" ] ||
-            exec env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL bash -eo pipefail "$0"
+          [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN+x}${ACTIONS_ID_TOKEN_REQUEST_URL+x}${GITHUB_STEP_SUMMARY+x}" ] ||
+            exec env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL -u GITHUB_STEP_SUMMARY bash -eo pipefail "$0"
           for v in ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL; do
             [ -n "${!v:-}" ] || unset "$v"
           done
