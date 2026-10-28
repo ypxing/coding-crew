@@ -648,6 +648,14 @@ EOF
   [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention pr=10" ]
 }
 
+@test "an attention line already starting with a bullet renders as one bullet in Needs attention" {
+  fixed
+  printf -- '- already a bullet\nplain line\n' > .coding-crew/solve-feature/pr-10.attention.md
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(sed -n '/^## Needs attention$/,/^Spec: /{/^- /p;}' "$STATE/pr-body")" = "$(printf -- '- already a bullet\n- plain line')" ]
+}
+
 @test "a report whose spec is unmet, with no gap or finding, leaves the PR a draft and writes needs-attention" {
   fixed '{"spec":"unmet","gaps":[],"findings":[]}'
   [ "$(attention)" = "the reviewer found the spec unmet" ]

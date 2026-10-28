@@ -127,7 +127,8 @@ for ((i = 0; i < ${#args[@]}; i++)); do
   esac
 done
 case "$1 $2" in
-  "pr view")
+  # GH_BODY_FAIL refuses a read of the body; GH_EDIT_FAIL refuses pr edit.
+  "pr view") [ -z "${GH_BODY_FAIL:-}" ] || [[ " $* " != *" --json body"* ]] || exit 1
     if [ -f "$STATE/pr-created" ]; then n=10; elif [ -n "${PR_EXISTS:-}" ]; then n=9; else exit 1; fi
     [ -f "$STATE/pr-body" ] || printf 'hand intro\n' > "$STATE/pr-body"
     oid=${PR_HEAD_OID:-$(git rev-parse -q --verify refs/remotes/origin/feature/feat || true)}
@@ -143,10 +144,7 @@ case "$1 $2" in
       exit 1
     fi
     cp "$file" "$STATE/pr-body"; touch "$STATE/pr-created"; echo "https://github.com/o/r/pull/10" ;;
-  "pr edit") k=$(( $(ls "$STATE" | grep -c '^pr-edit\.[0-9]*$') + 1 )); printf '%s\n' "$@" > "$STATE/pr-edit.$k"; cp "$file" "$STATE/pr-body" ;;
-  # Each comment's arguments in $STATE/pr-comment.<k> and its body in pr-comment.<k>.body; GH_COMMENT_FAIL refuses it.
-  "pr comment") k=$(( $(ls "$STATE" | grep -c '^pr-comment\.[0-9]*$') + 1 )); printf '%s\n' "$@" > "$STATE/pr-comment.$k"
-    [ -z "${GH_COMMENT_FAIL:-}" ] || exit 1; cp "$file" "$STATE/pr-comment.$k.body"; echo "https://github.com/o/r/pull/$3#issuecomment-1" ;;
+  "pr edit") [ -z "${GH_EDIT_FAIL:-}" ] || exit 1; k=$(( $(ls "$STATE" | grep -c '^pr-edit\.[0-9]*$') + 1 )); printf '%s\n' "$@" > "$STATE/pr-edit.$k"; cp "$file" "$STATE/pr-body" ;;
   "pr ready") if [ "${4:-}" = --undo ]; then [ -z "${GH_UNDO_FAIL:-}" ] || exit 1; else [ -z "${GH_READY_FAIL:-}" ] || exit 1; fi ;;
   # The review threads, one JSON document per page as `--paginate` prints them: $STATE/threads.<k>, else one empty
   # page. Without --paginate only the first page.

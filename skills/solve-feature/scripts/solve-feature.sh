@@ -195,16 +195,32 @@ next() {
   echo "$ref"
 }
 
-# post_notes <pr> <file> <heading> — a non-empty notes file a subagent left for a person goes on the PR as one comment,
-# verbatim under <heading>, then is deleted: only GitHub keeps it across a stop and a fresh runner. The heading is
-# written into the file first, so the file a failed post leaves is ready to post by hand.
+# post_notes <pr> <file> <tag> — a non-empty notes file a subagent left for a person goes into the PR body's notes
+# section as one block, verbatim under `### <tag>`, then is deleted: only GitHub keeps it across a stop and a fresh
+# runner. The tag is written into the file first, so the file a failed write leaves is ready to add by hand.
 post_notes() {
-  local n="$1" f="$2"
+  local n="$1" f="$2" body new
   [ -s "$f" ] || return 0
-  { printf '## %s\n\n' "$3"; cat "$f"; } >"$f.tmp" && mv "$f.tmp" "$f"
-  gh pr comment "$n" --body-file "$f" >/dev/null ||
-    die "posting $f to PR #$n failed: post it by hand with gh pr comment $n --body-file $f && rm $f before a re-run (on Actions the file is in the run's artifact)"
-  rm -f "$f"
+  { printf '### %s\n\n' "$3"; cat "$f"; } >"$f.tmp" && mv "$f.tmp" "$f"
+  local why="adding $f to PR #$n's body failed: add its contents to the PR body's Notes for a person section by hand (gh pr edit $n), then rm $f before a re-run (on Actions the file is in the run's artifact)"
+  # A body a person edited in the web UI comes back with CRLF line endings, which no marker match below would see.
+  body=$(gh pr view "$n" --json body | jq -r '.body' | tr -d '\r') || die "$why"
+  new="$LOGS/pr-$n.notes-body.md"
+  if grep -qxF "$NOTES_END" <<<"$body"; then
+    awk -v e="$NOTES_END" -v f="$f" '$0 == e && !d { while ((getline l < f) > 0) print l; print ""; d = 1 } { print }' <<<"$body" >"$new"
+  else
+    # A new section goes before the slug line address-pr-comments reads, inside begin/end; at the end of a body a
+    # person stripped of both, so the note is never dropped.
+    awk -v s="<!-- solve-feature:slug " -v e="$END" -v nb="$NOTES_BEGIN" -v ne="$NOTES_END" -v f="$f" '
+      function section() {
+        print nb; print "## Notes for a person"; print ""; print "Delete a note here once it is handled."; print ""
+        while ((getline l < f) > 0) print l; print ""; print ne; d = 1 }
+      !d && (index($0, s) == 1 || $0 == e) { section() }
+      { print }
+      END { if (!d) section() }' <<<"$body" >"$new"
+  fi
+  gh pr edit "$n" --body-file "$new" >/dev/null || die "$why"
+  rm -f "$f" "$new"
 }
 
 stop() { # <step> <reason> [<log>]; exit 1
@@ -214,6 +230,8 @@ stop() { # <step> <reason> [<log>]; exit 1
 
 # address-pr-comments finds a solve-feature PR by the begin line and reads its slug from the slug line.
 BEGIN='<!-- solve-feature:begin -->' END='<!-- solve-feature:end -->'
+# The notes section, inside begin/end: post_notes adds to it, describe carries it over verbatim.
+NOTES_BEGIN='<!-- solve-feature:notes:begin -->' NOTES_END='<!-- solve-feature:notes:end -->'
 pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the spec, else the issue's own
   local t; t=$(head -n 1 "$LOGS/spec.md" | sed -nE 's/^<!-- PRD issue #[0-9]+: (.*) -->$/\1/p' | sed 's/^PRD: //')
   [ -n "$t" ] || t=$(grep -m1 '^# ' "$LOGS/$1.issue.md" | sed 's/^# //')
@@ -293,7 +311,8 @@ land() {
   fi
   pr_view
   if [ -z "$PR_N" ]; then
-    # describe writes the whole body at the end; until then it only carries the markers address-pr-comments reads.
+    # describe writes the whole body at the end; until then it carries the markers address-pr-comments reads and,
+    # once a note lands, the notes section.
     f="$LOGS/pr-body.md"
     printf '%s\n' "$BEGIN" "Implemented by solve-feature (\`$SLUG\`) — in progress." "<!-- solve-feature:slug $SLUG -->" "$END" >"$f"
     rc=0; url=$(gh pr create --draft --title "$(pr_title "$rs")" --body-file "$f" 2>"$LOGS/pr-create.err") || rc=$?
@@ -301,7 +320,7 @@ land() {
     [ "$rc" = 0 ] || pr_create_failed
     PR_N="${url##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $url"
   fi
-  post_notes "$PR_N" "$LOGS/coder.notes.md" "Notes for a person from the coder of $REF"
+  post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)"
   echo "pr=$PR_N"
 }
 
@@ -405,7 +424,7 @@ fix() {
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   git rev-parse HEAD >"$LOGS/review.base"
-  post_notes "$PR" "$LOGS/pr-$PR.notes.md" "Notes for a person from the fixer of PR #$PR's review"
+  post_notes "$PR" "$LOGS/pr-$PR.notes.md" "the fixer of PR #$PR's review · $(date +%F)"
 
   # "Changed nothing" is no commit on the branch's own line past the round's head: what merge_in brought in sits
   # behind a merge's second parent, and a fix committed here and pushed by hand still counts.
@@ -443,7 +462,8 @@ unresolved_threads() {
 }
 
 # The whole body, written once at the end. Readiness and the outcome come after it, so a failed write never leaves a
-# ready PR with land's one-line body. A re-run rewrites all of it, text a person added included.
+# ready PR with land's one-line body. A re-run rewrites all of it, text a person added included, but the notes
+# section, kept as the PR shows it.
 describe() {
   local f="$LOGS/pr-$PR.summary.md" att="$LOGS/pr-$PR.attention.md" body="$LOGS/pr-$PR.body.md" title="" refs draft result
   [ -f "$att" ] || die "no review result at $att: run fix $SLUG $PR <branch> first"
@@ -458,13 +478,19 @@ describe() {
   [ ! -f "$LOGS/spec.md" ] || prd_head=$(head -n 1 "$LOGS/spec.md")
   [[ ! "$prd_head" =~ ^'<!-- PRD issue #'([0-9]+): ]] || spec_line="Spec: PRD #${BASH_REMATCH[1]}, feature \`$SLUG\`"
   [ ! -f "$f" ] || title=$(head -n 1 "$f" | sed -n 's/^# //p')
+  # The notes section as the PR shows it now, so a note a person deleted stays deleted; with no note left, none.
+  local view notes
+  view=$(gh pr view "$PR" --json body,isDraft) || die "gh pr view $PR failed"
+  notes=$(jq -r '.body' <<<"$view" | tr -d '\r' | sed -n "\|^$NOTES_BEGIN\$|,\|^$NOTES_END\$|p")
+  grep -q '^### ' <<<"$notes" || notes=""
   {
     echo "$BEGIN"
     # Written here, not by the writer subagent, so a reviewer always sees that agents wrote this PR.
     printf '> Written by solve-feature (`%s`): its coder, reviewer and fixer were agents; no person has read this body.\n\n' "$SLUG"
     # write-pr's summary minus its title line, which titles the PR instead.
     if [ -f "$f" ]; then if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d'; echo; fi
-    if [ -n "$need" ]; then printf '## Needs attention\n\n'; sed 's/^/- /' <<<"$need"; echo; fi
+    if [ -n "$need" ]; then printf '## Needs attention\n\n'; sed '/^- /!s/^/- /' <<<"$need"; echo; fi
+    [ -z "$notes" ] || printf '%s\n\n' "$notes"
     printf '%s\n\n' "$spec_line"
     [ -z "$refs" ] || printf '%s\n' "$refs"
     printf '%s\n' "<!-- solve-feature:slug $SLUG -->" "$END"
@@ -472,7 +498,7 @@ describe() {
   gh pr edit "$PR" ${title:+--title "$title"} --body-file "$body" >/dev/null || die "gh pr edit $PR failed"
   if [ -n "$need" ]; then result=needs-attention
   else
-    result=ready draft=$(gh pr view "$PR" --json isDraft | jq -r '.isDraft') || die "gh pr view $PR failed"
+    result=ready draft=$(jq -r '.isDraft' <<<"$view")
     [ "$draft" != true ] || gh pr ready "$PR" >/dev/null || die "gh pr ready $PR failed; the body is written, so run gh pr ready $PR by hand"
   fi
   outcome "$result pr=$PR"

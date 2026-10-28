@@ -366,22 +366,60 @@ pr_stopped() {
 # --- land: the coder's notes for a person ------------------------------------------------
 
 notes() { printf '%s\n' "- tag a release once this merges" "" "- set the CREW_X repo variable" > .coding-crew/solve-feature/coder.notes.md; }
+# notes_section — the body's notes section, its markers included.
+notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-feature:notes:end -->$/p' "$STATE/pr-body"; }
 
-@test "land posts a non-empty coder.notes.md as one PR comment headed with the issue's ref, verbatim, then deletes it; pr= stays last" {
+@test "land writes a non-empty coder.notes.md into the PR body's notes section under the issue's ref and the date, posts no comment, then deletes it; pr= stays last" {
   land_ready
   notes
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$output" = pr=10 ]
-  [ "$(grep -c '^pr comment' "$STATE/gh.log")" = 1 ]
-  [ "$(sed -n 3p "$STATE/pr-comment.1")" = 10 ]
-  [ "$(cat "$STATE/pr-comment.1.body")" = "$(printf '%s\n' "## Notes for a person from the coder of 2" "" "- tag a release once this merges" "" "- set the CREW_X repo variable")" ]
+  ! grep -q '^pr comment' "$STATE/gh.log" || false
+  [ "$(cat "$STATE/pr-body")" = "$(cat <<EOF
+<!-- solve-feature:begin -->
+Implemented by solve-feature (\`feat\`) — in progress.
+<!-- solve-feature:notes:begin -->
+## Notes for a person
+
+Delete a note here once it is handled.
+
+### the coder of 2 · $(date +%F)
+
+- tag a release once this merges
+
+- set the CREW_X repo variable
+
+<!-- solve-feature:notes:end -->
+<!-- solve-feature:slug feat -->
+<!-- solve-feature:end -->
+EOF
+)" ]
   [ ! -e .coding-crew/solve-feature/coder.notes.md ]
-  # The PR exists before the comment: created first.
-  [ "$(grep -nE '^pr (create|comment)' "$STATE/gh.log" | cut -d' ' -f2 | paste -sd' ' -)" = "create comment" ]
+  # The PR exists before the notes: created first.
+  [ "$(grep -nE '^pr (create|edit)' "$STATE/gh.log" | cut -d' ' -f2 | paste -sd' ' -)" = "create edit" ]
 }
 
-@test "land with no or an empty coder.notes.md posts no comment" {
+@test "a later land appends its notes to the section, keeping the body's other text and the notes already there" {
+  land_ready
+  notes
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ]
+  printf 'a person added this\n' >> "$STATE/pr-body"
+  run bash "$SCRIPT" next feat
+  coder 3
+  echo '- rotate the key' > .coding-crew/solve-feature/coder.notes.md
+  run bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = pr=10 ]
+  [ "$(grep -c '^<!-- solve-feature:notes:begin -->$' "$STATE/pr-body")" = 1 ]
+  [ "$(grep '^### ' "$STATE/pr-body")" = "$(printf '### the coder of 2 · %s\n### the coder of 3 · %s' "$(date +%F)" "$(date +%F)")" ]
+  [ "$(notes_section | tail -3)" = "$(printf -- '- rotate the key\n\n<!-- solve-feature:notes:end -->')" ]
+  grep -qx 'a person added this' "$STATE/pr-body"
+  grep -qx -- '- set the CREW_X repo variable' "$STATE/pr-body"
+}
+
+@test "land with no or an empty coder.notes.md makes no body edit for notes" {
   land_ready
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ]
@@ -391,10 +429,11 @@ notes() { printf '%s\n' "- tag a release once this merges" "" "- set the CREW_X 
   run bash "$SCRIPT" land feat 3 feature/feat
   [ "$status" -eq 0 ]
   [ "$output" = pr=10 ]
-  ! grep -q '^pr comment' "$STATE/gh.log" || false
+  ! grep -qE '^pr (comment|edit)' "$STATE/gh.log" || false
+  ! grep -q 'solve-feature:notes' "$STATE/pr-body" || false
 }
 
-@test "land that stops at its checks or its push posts no comment and leaves coder.notes.md in place" {
+@test "land that stops at its checks or its push writes no notes and leaves coder.notes.md in place" {
   land_ready
   notes
   CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
@@ -406,19 +445,27 @@ notes() { printf '%s\n' "- tag a release once this merges" "" "- set the CREW_X 
   [ "$status" -eq 1 ]
   [[ "$output" == *"2 push failed"* ]]
   [ -s .coding-crew/solve-feature/coder.notes.md ]
-  ! grep -q '^pr comment' "$STATE/gh.log" || false
+  ! grep -qE '^pr (comment|edit)' "$STATE/gh.log" || false
 }
 
-@test "a failed gh pr comment stops land naming the notes file, the command to post it and the Actions artifact, the heading already in the file" {
+@test "a failed gh pr view or gh pr edit stops land naming the notes file, the by-hand way to add it and the Actions artifact, the tag already in the file" {
   land_ready
   notes
   local f="$WORK/.coding-crew/solve-feature/coder.notes.md"
-  GH_COMMENT_FAIL=1 run bash "$SCRIPT" land feat 2 feature/feat
+  GH_EDIT_FAIL=1 run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"solve-feature: "*"$f"*"gh pr comment 10 --body-file $f && rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
-  [ "$(head -n1 "$f")" = "## Notes for a person from the coder of 2" ]
+  [[ "$output" == *"solve-feature: "*"$f"*"Notes for a person"*"gh pr edit 10"*"rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
+  [ "$(head -n1 "$f")" = "### the coder of 2 · $(date +%F)" ]
   grep -qx -- '- set the CREW_X repo variable' "$f"
-  grep -q "gh pr comment 10 --body-file" .coding-crew/solve-feature/outcome
+  grep -q "gh pr edit 10" .coding-crew/solve-feature/outcome
+  # A failed read of the body stops the same way.
+  run bash "$SCRIPT" next feat
+  coder 3
+  notes
+  GH_BODY_FAIL=1 run bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"solve-feature: "*"$f"*"gh pr edit 10"*"rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
+  [ "$(head -n1 "$f")" = "### the coder of 3 · $(date +%F)" ]
 }
 
 @test "next deletes a leftover coder.notes.md, so an earlier coder's notes never post under the next issue" {

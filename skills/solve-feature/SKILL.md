@@ -31,7 +31,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      version): a version you do not offer → the closest model of the same family; a family you do not offer → your
      own model. When it is empty, on your own. Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" land <slug> <ref> <branch>`, with `start`'s `branch=` — always,
-     whatever the subagent reported: `land` is what checks and records its result. It prints `pr=<n>`, and posts the coder's notes on the PR as one comment.
+     whatever the subagent reported: `land` is what checks and records its result. It prints `pr=<n>`, and adds the coder's notes to the PR body's notes section.
 3. **Review, fix and describe**, on `<n>`, the last `pr=` printed (by `land`, else `start`). With none, `next`
    printed why nothing landed: report it and end.
    Before 3.1, once (a second review round does not sync): `bash "<skill-dir>/scripts/solve-feature.sh" sync <slug> <branch>`.
@@ -61,7 +61,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      <repo>/.coding-crew/solve-feature/pr-<n>.notes.md, left absent when there is none. This run is non-interactive; ask no questions`. Run it on `coder-model=` as for each issue's coder.
      Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" fix <slug> <n> <branch>` — always, whatever the subagents
-     reported. It gates the fixes with the checks, commits and pushes them, posts the fixer's notes on the PR as one comment,
+     reported. It gates the fixes with the checks, commits and pushes them, adds the fixer's notes to the PR body's notes section,
      and records what needs a person.
      Report its last line, `FIX: findings=<k> needs-attention=<a> review-again=yes|no`. After the first review,
      `review-again=yes` means run 3.1–3.3 once more; after the second review, go on to 3.4 whatever it prints.
