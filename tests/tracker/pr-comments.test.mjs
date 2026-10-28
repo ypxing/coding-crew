@@ -1,5 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { run } from "../../lib/tracker/pr-comments.mjs";
 
@@ -182,4 +186,132 @@ test("exits 1 with gh's stderr when a read fails", async () => {
   const r = await prComments(["7"], exec);
   assert.equal(r.code, 1);
   assert.match(r.stderr, /no pull requests found/);
+});
+
+// github.trustedBots: a repo's own allowlist of bot logins, read from the main checkout's config.json.
+
+const WIZ = "wiz-security-bot-22793c4344";
+
+/** A temp git repo whose `.coding-crew/config.json` is `config` (absent when null). */
+function gitRepo(config) {
+  const dir = mkdtempSync(join(tmpdir(), "crew-pr-comments-"));
+  spawnSync("git", ["init", "-q", "-b", "main", dir]);
+  spawnSync("git", ["-C", dir, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]);
+  if (config !== null) {
+    mkdirSync(join(dir, ".coding-crew"), { recursive: true });
+    writeFileSync(join(dir, ".coding-crew/config.json"), typeof config === "string" ? config : JSON.stringify(config));
+  }
+  return dir;
+}
+
+const trusting = (...bots) => ({ github: { trustedBots: bots } });
+
+/** A fake `gh` whose PR holds a review, a top-level comment and a thread by each of `logins`. */
+function prBy(logins, { repoView } = {}) {
+  const exec = fakeGh({
+    view: {
+      reviews: logins.map((l) => ({ author: { login: l }, body: `review by ${l}`, state: "COMMENTED", submittedAt: "t" })),
+      comments: logins.map((l) => c(l, `top by ${l}`)),
+    },
+    pages: [logins.map((l, i) => thread(`T${i}`, [c(l, `inline by ${l}`)]))],
+  });
+  if (!repoView) return exec;
+  const wrapped = (cmd, args) => {
+    if (args[0] === "repo" && args[1] === "view") {
+      exec.calls.push(args);
+      return repoView;
+    }
+    return exec(cmd, args);
+  };
+  wrapped.calls = exec.calls;
+  return wrapped;
+}
+
+async function prCommentsIn(cwd, argv, exec) {
+  let stdout = "";
+  let stderr = "";
+  const code = await run(argv, { exec, cwd, out: (s) => (stdout += s), err: (s) => (stderr += s) });
+  return { code, stderr, json: code === 0 ? JSON.parse(stdout) : null };
+}
+
+const permissionLogins = (exec) => exec.calls.filter((a) => a.join(" ").includes("/permission")).map((a) => decodeURIComponent(a[1].split("/").at(-2)));
+
+test("a listed bot's review, top-level comment and thread comments are kept under its REST and GraphQL names, with no permission call", async () => {
+  const exec = prBy([`${WIZ}[bot]`, WIZ]);
+  const r = await prCommentsIn(gitRepo(trusting(WIZ)), ["7"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json.reviews.map((x) => x.author), [`${WIZ}[bot]`, WIZ]);
+  assert.deepEqual(r.json.comments.map((x) => x.author), [`${WIZ}[bot]`, WIZ]);
+  assert.deepEqual(r.json.threads.map((t) => t.comments[0].author), [`${WIZ}[bot]`, WIZ]);
+  assert.deepEqual(r.json.omitted, { count: 0, authors: [] });
+  assert.deepEqual(permissionLogins(exec), []);
+});
+
+test("a bot not on the list is still dropped and named in the omitted line; no prefix match", async () => {
+  const exec = prBy(["dependabot[bot]", `${WIZ}-other[bot]`]);
+  const r = await prCommentsIn(gitRepo(trusting(WIZ)), ["7"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json.reviews, []);
+  assert.deepEqual(r.json.threads, []);
+  assert.equal(r.json.omitted.line, `(omitted 6 comment(s) by @dependabot[bot], @${WIZ}-other[bot]: no write access to this repo)`);
+});
+
+test("with no github section, the output is what it was before the allowlist", async () => {
+  const logins = [`${WIZ}[bot]`, "wanda"];
+  const mk = () => {
+    const exec = prBy(logins);
+    return (cmd, args) => (args.join(" ").includes("wanda/permission") ? { code: 0, stdout: WRITE, stderr: "" } : exec(cmd, args));
+  };
+  const plain = await prCommentsIn(gitRepo(null), ["7"], mk());
+  const otherSections = await prCommentsIn(gitRepo({ tracker: { kind: "github" } }), ["7"], mk());
+  assert.equal(plain.code, 0, plain.stderr);
+  assert.deepEqual(otherSections, plain);
+  assert.deepEqual(plain.json.reviews.map((x) => x.author), ["wanda"]);
+  assert.equal(plain.json.omitted.count, 3);
+});
+
+test("given a PR URL, the list applies to the current repo in any letter case, not to another repo, nor when gh repo view fails", async () => {
+  const dir = gitRepo(trusting(WIZ));
+  const url = "https://github.com/Amaysim-AU/smpp-gateway/pull/114";
+  const cases = [
+    [{ code: 0, stdout: "amaysim-au/SMPP-gateway\n", stderr: "" }, 1],
+    [{ code: 0, stdout: "amaysim-au/other-repo\n", stderr: "" }, 0],
+    [{ code: 1, stdout: "", stderr: "no git remotes found\n" }, 0],
+  ];
+  for (const [repoView, kept] of cases) {
+    const exec = prBy([`${WIZ}[bot]`], { repoView });
+    const r = await prCommentsIn(dir, [url], exec);
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(r.json.comments.length, kept, JSON.stringify(repoView));
+    assert.equal(exec.calls.filter((a) => a[0] === "repo").length, 1);
+  }
+});
+
+test("given a PR number, or a URL with no list, gh repo view is never called", async () => {
+  const byNumber = prBy([`${WIZ}[bot]`]);
+  await prCommentsIn(gitRepo(trusting(WIZ)), ["7"], byNumber);
+  assert.equal(byNumber.calls.filter((a) => a[0] === "repo").length, 0);
+  const noList = prBy([`${WIZ}[bot]`]);
+  await prCommentsIn(gitRepo(null), ["https://github.com/acme/widgets/pull/42"], noList);
+  assert.equal(noList.calls.filter((a) => a[0] === "repo").length, 0);
+});
+
+test("from a linked worktree with no config.json of its own, the main checkout's list applies", async () => {
+  const main = gitRepo(trusting(WIZ));
+  const wt = join(mkdtempSync(join(tmpdir(), "crew-pr-comments-wt-")), "wt");
+  const add = spawnSync("git", ["-C", main, "worktree", "add", "-q", "-b", "side", wt], { encoding: "utf8" });
+  assert.equal(add.status, 0, add.stderr);
+  const r = await prCommentsIn(wt, ["7"], prBy([`${WIZ}[bot]`]));
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json.comments.length, 1);
+});
+
+test("a malformed github section or trustedBots exits 1 naming the config file and the expected shape", async () => {
+  for (const config of [{ github: [] }, { github: "x" }, { github: { trustedBots: "wiz" } }, { github: { trustedBots: [""] } }, { github: { trustedBots: [3] } }]) {
+    const dir = gitRepo(config);
+    const r = await prCommentsIn(dir, ["7"], prBy([`${WIZ}[bot]`]));
+    assert.equal(r.code, 1, JSON.stringify(config));
+    assert.match(r.stderr, /\.coding-crew\/config\.json/);
+    assert.match(r.stderr, /"github": \{"trustedBots": \["<bot login>"/);
+  }
 });

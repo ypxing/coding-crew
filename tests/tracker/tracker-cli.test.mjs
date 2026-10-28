@@ -284,6 +284,58 @@ test("fetch (github) --comments with only untrusted comments prints the omitted 
   assert.equal(permissionCalls(exec).length, 1);
 });
 
+const WIZ = "wiz-security-bot-22793c4344";
+
+/** Writes the main root's `.coding-crew/config.json` (a string as is). */
+function configJson(dir, config) {
+  mkdirSync(join(dir, ".coding-crew"), { recursive: true });
+  writeFileSync(join(dir, ".coding-crew/config.json"), typeof config === "string" ? config : JSON.stringify(config));
+  return dir;
+}
+
+test("fetch (github) --comments keeps a github.trustedBots bot's comment with no permission call for it", async () => {
+  const dir = configJson(root({ github: true }), { github: { trustedBots: [WIZ] } });
+  const exec = fakeGh({
+    "api user": { stdout: "me\n" },
+    "api repos/{owner}/{repo}/collaborators/dependabot%5Bbot%5D/permission": { stdout: "none\nnone\n" },
+    ...issueWith([`${WIZ}[bot]`, "finding"], ["dependabot[bot]", "bump"]),
+  });
+  const r = await cli(dir, ["fetch", "12", "--comments"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, new RegExp(`### @${WIZ}\\[bot\\] — [^\\n]*\\n\\nfinding\\n`));
+  assert.doesNotMatch(r.stdout, /bump/);
+  assert.ok(r.stdout.endsWith("(omitted 1 comment(s) by @dependabot[bot]: no write access to this repo)\n"), r.stdout);
+  assert.deepEqual(permissionCalls(exec).map((c) => c[2]), ["repos/{owner}/{repo}/collaborators/dependabot%5Bbot%5D/permission"]);
+});
+
+const MALFORMED_GITHUB = [{ github: [] }, { github: { trustedBots: "x" } }, { github: { trustedBots: [""] } }];
+
+test("fetch (github) --comments exits 1 on a malformed github section, naming the file and the expected shape", async () => {
+  for (const config of MALFORMED_GITHUB) {
+    const dir = configJson(root({ github: true }), config);
+    const r = await cli(dir, ["fetch", "12", "--comments"], fakeGh({ "api user": { stdout: "me\n" }, ...issueWith(["ann", "x"]) }));
+    assert.equal(r.code, 1, JSON.stringify(config));
+    assert.ok(r.stderr.includes(join(dir, ".coding-crew/config.json")), r.stderr);
+    assert.match(r.stderr, /"trustedBots" is an array of non-empty bot logins/);
+  }
+});
+
+test("a malformed github section fails neither config, plain fetch (github), nor fetch --comments (local)", async () => {
+  for (const config of MALFORMED_GITHUB) {
+    const gh = configJson(root({ github: true }), config);
+    assert.equal((await cli(gh, ["config"])).code, 0);
+    const exec = fakeGh(issueWith(["ann", "x"]));
+    const plain = await cli(gh, ["fetch", "12"], exec);
+    assert.equal(plain.code, 0, plain.stderr);
+    assert.equal(permissionCalls(exec).length, 0);
+
+    const local = configJson(root(), { ...config, tracker: { kind: "local" } });
+    writeIssue(local, "open", "01-thing.md", "# Thing\n");
+    const r = await cli(local, ["fetch", ".coding-crew/scratch/feat/issues/open/01-thing.md", "--comments"]);
+    assert.equal(r.code, 0, r.stderr);
+  }
+});
+
 test("fetch (github) exits 3 when the issue does not exist", async () => {
   const exec = fakeGh({
     "issue view": { code: 1, stderr: "GraphQL: Could not resolve to an issue or pull request with the number of 999. (repository.issue)\n" },
