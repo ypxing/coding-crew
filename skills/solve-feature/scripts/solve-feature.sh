@@ -311,7 +311,8 @@ land() {
   fi
   pr_view
   if [ -z "$PR_N" ]; then
-    # describe writes the whole body at the end; until then it only carries the markers address-pr-comments reads.
+    # describe writes the whole body at the end; until then it carries the markers address-pr-comments reads and,
+    # once a note lands, the notes section.
     f="$LOGS/pr-body.md"
     printf '%s\n' "$BEGIN" "Implemented by solve-feature (\`$SLUG\`) — in progress." "<!-- solve-feature:slug $SLUG -->" "$END" >"$f"
     rc=0; url=$(gh pr create --draft --title "$(pr_title "$rs")" --body-file "$f" 2>"$LOGS/pr-create.err") || rc=$?
@@ -461,7 +462,8 @@ unresolved_threads() {
 }
 
 # The whole body, written once at the end. Readiness and the outcome come after it, so a failed write never leaves a
-# ready PR with land's one-line body. A re-run rewrites all of it, text a person added included.
+# ready PR with land's one-line body. A re-run rewrites all of it, text a person added included, but the notes
+# section, kept as the PR shows it.
 describe() {
   local f="$LOGS/pr-$PR.summary.md" att="$LOGS/pr-$PR.attention.md" body="$LOGS/pr-$PR.body.md" title="" refs draft result
   [ -f "$att" ] || die "no review result at $att: run fix $SLUG $PR <branch> first"
