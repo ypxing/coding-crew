@@ -32,6 +32,7 @@ node "$TRACKER" prd --feature-slug <slug>                 # print the feature's 
 node "$TRACKER" next --feature-slug <slug>                # the absolute path of the next issue to run, or exit 3
 node "$TRACKER" closing-refs --feature-slug <slug>        # prints nothing: a local issue has no PR to close it
 node "$TRACKER" known --feature-slug <slug> --out <dir>   # copy the feature's issues, open and done (not wontfix), into <dir>
+node "$TRACKER" spec --feature-slug <slug>                # print the feature's spec: the PRD, then each issue `known` writes, whole
 node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace | --append]
 node "$TRACKER" publish-prd --feature-slug <slug> --title "<feature title>" --body-file <file>
 node "$TRACKER" rewrite <ref> --body-file <file> --status <status> --feature-slug <slug>

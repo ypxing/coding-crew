@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tracker, solve-feature, crew-review: a new tracker op, `spec --feature-slug <slug>`, prints a feature's spec (its PRD,
+  then every issue of the feature, whole). solve-feature's reviewer, fixer and merge resolver and crew-review now read
+  the same spec, and it holds each issue's whole body, not only its acceptance criteria, so a feature with no PRD
+  keeps its issue's `## Decisions` and `## Out of Scope` in view (#664).
 - solve-feature (Actions): tools the agent runs no longer write to the job summary page, which keeps to the run's
   own outcome lines; the agent no longer gets `GITHUB_STEP_SUMMARY` (Vitest wrote a test report per run, ten in one
   pilot) (#636).

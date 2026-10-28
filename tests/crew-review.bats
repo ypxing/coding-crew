@@ -29,8 +29,8 @@ SKILL="$REPO_ROOT/skills/crew-review/SKILL.md"
   grep -qF '"gaps"' "$SKILL"
   grep -qF '"findings"' "$SKILL"
   grep -qF '<!-- solve-feature:slug <s> -->' "$SKILL"
-  grep -qF 'prd --feature-slug <s>' "$SKILL"
-  grep -qF 'known --feature-slug <s> --out <dir>' "$SKILL"
+  grep -qF 'spec --feature-slug <s>' "$SKILL"
+  ! grep -qE '`(prd|known) --feature-slug' "$SKILL" || false
   grep -qF 'else the whole body' "$SKILL"
   ! grep -qF '<details><summary>Spec</summary>' "$SKILL" || false
 }

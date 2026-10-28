@@ -98,12 +98,13 @@ case "\$2" in
     [ -z "\${REOPEN_TOUCHES:-}" ] || echo reopened > "\$REOPEN_TOUCHES"
     jq --arg r "\$3" 'map(if (.ref // (.number | tostring)) == \$r then .labels = [{"name":"ready-for-agent"}] else . end)' "\$STATE/issues.json" > "\$STATE/i.tmp"
     mv "\$STATE/i.tmp" "\$STATE/issues.json"; echo "REOPENED: \$3" ;;
-  prd) [ -f "\$STATE/prd.md" ] || exit 3; cat "\$STATE/prd.md" ;;
   features) printf 'feat\topen\t2\nother\tclosed\t0\n' ;;
-  # \`known\`: every issue but a PRD: one, named <number>-<title>.md, or by its ref's basename.
-  known) mkdir -p "\$6"
+  # \`spec\`: prd.md and a blank line, then each issue but a PRD: one, named <number>-<title>.md or by its ref's basename, as a ### section; SPEC_RC fails it.
+  spec) [ -z "\${SPEC_RC:-}" ] || { echo "spec: boom" >&2; exit "\$SPEC_RC"; }
+    [ ! -f "\$STATE/prd.md" ] || { cat "\$STATE/prd.md"; echo; }
     jq -r '.[] | select(.title | test("^PRD:") | not) | "\\(.ref // (.number | tostring))\\t\\(.ref // "\\(.number)-\\(.title | ascii_downcase).md")"' "\$STATE/issues.json" |
-      while IFS=\$'\\t' read -r r n; do cp "\$STATE/\${r//\\//_}.md" "\$6/\${n##*/}"; done ;;
+      while IFS=\$'\\t' read -r r n; do n=\${n##*/}; f="\$STATE/\${r//\\//_}.md"
+        printf '### %s — %s\\n' "\${n%.md}" "\$(sed -n '1s/^# //p' "\$f")"; sed 1d "\$f"; done ;;
   closing-refs) [ -z "\${CLOSING_REFS_RC:-}" ] || { echo "gh: boom" >&2; exit "\$CLOSING_REFS_RC"; }
     [ "\${TRACKER_KIND:-github}" = github ] || exit 0; jq -r 'sort_by(.number) | .[] | select(.state == "OPEN" and any(.labels[]; .name == "awaiting-merge")) | "Closes #\(.number)"' "\$STATE/issues.json" ;;
   *) exit 2 ;;

@@ -101,21 +101,11 @@ pr_view() { # sets PR_N and PR_IS_DRAFT (true|false) when the branch has an OPEN
   PR_IS_DRAFT=$(jq -r 'select(.state == "OPEN") | .isDraft' <<<"$view" 2>/dev/null || true)
 }
 
-# .coding-crew/solve-feature/spec.md, which the reviewer and the PR writer read: the PRD, then every issue of the feature, open
-# or closed, with its acceptance criteria. All of them: an issue another run landed is met in the code, and one
-# still open is a gap a person must see. A wontfix one was dropped, so `known` leaves it out.
+# .coding-crew/solve-feature/spec.md, which the reviewer and the PR writer read: the tracker's spec op, the PRD then
+# every issue of the feature, open or closed. All of them: an issue another run landed is met in the code, and one
+# still open is a gap a person must see.
 write_spec() {
-  local spec="$LOGS/spec.md" dir="$LOGS/issues" rc=0 f title
-  node "$CLI" prd --feature-slug "$SLUG" >"$spec" || rc=$?
-  case $rc in 0) echo >>"$spec" ;; 3) ;; *) die "reading the feature's PRD failed (exit $rc)" ;; esac
-  rm -rf "$dir"
-  node "$CLI" known --feature-slug "$SLUG" --out "$dir" || die "known failed for '$SLUG' (see above)"
-  ls "$dir" | sort -n | while IFS= read -r f; do
-    title=$(grep -m1 '^# ' "$dir/$f" | sed 's/^# //' || true)
-    printf '### %s — %s\n' "${f%.md}" "${title:-${f%.md}}"
-    # Plain bullets, not task boxes: GitHub counts a PR's boxes as its open tasks.
-    awk '/^## /{f = tolower($0) ~ /^## acceptance criteria/} f' "$dir/$f" | sed -E 's/^([[:space:]]*)[-*] \[[ xX]\] /\1- /'
-  done >>"$spec"
+  node "$CLI" spec --feature-slug "$SLUG" >"$LOGS/spec.md" || die "spec failed for '$SLUG' (see above)"
 }
 
 # die_setup_clash <default> — after a failed checkout or merge: when an untracked setup file is one origin/<default>
@@ -464,14 +454,9 @@ describe() {
   [ "$UNRESOLVED" = 0 ] || need=$(printf '%s\n%s unresolved review threads: %s' "$need" "$UNRESOLVED" "$PR_URL" | grep -v '^[[:space:]]*$')
   refs=$(node "$CLI" closing-refs --feature-slug "$SLUG") || die "closing-refs failed for '$SLUG' (see above)"
   # The spec is named, not copied: spec.md stays for the reviewer, and a person opens the PRD itself.
-  local prd_head rc=0 spec_line="Spec: feature \`$SLUG\`"
-  prd_head=$(node "$CLI" prd --feature-slug "$SLUG") || rc=$?
-  prd_head=${prd_head%%$'\n'*}
-  case $rc in
-    0) [[ ! "$prd_head" =~ ^'<!-- PRD issue #'([0-9]+): ]] || spec_line="Spec: PRD #${BASH_REMATCH[1]}, feature \`$SLUG\`" ;;
-    3) ;;
-    *) die "reading the feature's PRD failed (exit $rc)" ;;
-  esac
+  local prd_head="" spec_line="Spec: feature \`$SLUG\`"
+  [ ! -f "$LOGS/spec.md" ] || prd_head=$(head -n 1 "$LOGS/spec.md")
+  [[ ! "$prd_head" =~ ^'<!-- PRD issue #'([0-9]+): ]] || spec_line="Spec: PRD #${BASH_REMATCH[1]}, feature \`$SLUG\`"
   [ ! -f "$f" ] || title=$(head -n 1 "$f" | sed -n 's/^# //p')
   {
     echo "$BEGIN"
