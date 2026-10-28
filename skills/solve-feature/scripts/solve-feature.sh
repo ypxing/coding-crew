@@ -203,7 +203,8 @@ post_notes() {
   [ -s "$f" ] || return 0
   { printf '### %s\n\n' "$3"; cat "$f"; } >"$f.tmp" && mv "$f.tmp" "$f"
   local why="adding $f to PR #$n's body failed: add its contents to the PR body's Notes for a person section by hand (gh pr edit $n), then rm $f before a re-run (on Actions the file is in the run's artifact)"
-  body=$(gh pr view "$n" --json body | jq -r '.body') || die "$why"
+  # A body a person edited in the web UI comes back with CRLF line endings, which no marker match below would see.
+  body=$(gh pr view "$n" --json body | jq -r '.body' | tr -d '\r') || die "$why"
   new="$LOGS/pr-$n.notes-body.md"
   if grep -qxF "$NOTES_END" <<<"$body"; then
     awk -v e="$NOTES_END" -v f="$f" '$0 == e && !d { while ((getline l < f) > 0) print l; print ""; d = 1 } { print }' <<<"$body" >"$new"
@@ -478,7 +479,7 @@ describe() {
   # The notes section as the PR shows it now, so a note a person deleted stays deleted; with no note left, none.
   local view notes
   view=$(gh pr view "$PR" --json body,isDraft) || die "gh pr view $PR failed"
-  notes=$(jq -r '.body' <<<"$view" | sed -n "\|^$NOTES_BEGIN\$|,\|^$NOTES_END\$|p")
+  notes=$(jq -r '.body' <<<"$view" | tr -d '\r' | sed -n "\|^$NOTES_BEGIN\$|,\|^$NOTES_END\$|p")
   grep -q '^### ' <<<"$notes" || notes=""
   {
     echo "$BEGIN"

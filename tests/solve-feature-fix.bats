@@ -670,3 +670,19 @@ notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-fe
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   ! grep -q 'solve-feature:notes\|Notes for a person' "$STATE/pr-body" || false
 }
+
+@test "a body GitHub returns with CRLF line endings, as after a web edit, keeps its notes through a fix and a describe" {
+  fix_ready '{"spec":"met","gaps":[],"findings":[]}'
+  echo '- first note' > .coding-crew/solve-feature/pr-10.notes.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ]
+  sed 's/$/\r/' "$STATE/pr-body" > "$STATE/pr-body.new" && mv "$STATE/pr-body.new" "$STATE/pr-body"
+  echo '- second note' > .coding-crew/solve-feature/pr-10.notes.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -qx -- '- first note' "$STATE/pr-body"
+  grep -qx -- '- second note' "$STATE/pr-body"
+  [ "$(grep -c '^<!-- solve-feature:notes:begin -->$' "$STATE/pr-body")" = 1 ]
+}
