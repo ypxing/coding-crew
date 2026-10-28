@@ -195,12 +195,15 @@ function writers(...logins) {
 }
 
 /** An `issue view 12` route whose comments are `[login, body]` pairs. */
+/** The author-type read's answer: issueWith's comment `IC_<i>` written by a `types[i]`. */
+const authorTypes = (...types) => ({ "api graphql": { stdout: JSON.stringify({ data: { nodes: types.map((t, i) => ({ id: `IC_${i}`, author: { __typename: t } })) } }) } });
+
 const issueWith = (...comments) => ({
   "issue view 12": {
     stdout: JSON.stringify({
       title: "Fix it",
       body: "body",
-      comments: comments.map(([login, body], i) => ({ author: { login }, createdAt: `2026-01-0${i + 1}T00:00:00Z`, body })),
+      comments: comments.map(([login, body], i) => ({ id: `IC_${i}`, author: { login }, createdAt: `2026-01-0${i + 1}T00:00:00Z`, body })),
     }),
   },
 });
@@ -262,11 +265,24 @@ test("fetch (github) --comments on Actions, where gh api user fails, posts as gi
   try {
     const exec = fakeGh({
       "api user": { code: 1, stderr: "gh: Resource not accessible by integration (HTTP 403)\n" },
+      ...authorTypes("Bot", "Bot"),
       ...issueWith(["github-actions[bot]", "from the bot"], ["github-actions", "graphql name"]),
     });
     const r = await cli(root({ github: true }), ["fetch", "12", "--comments"], exec);
     assert.match(r.stdout, /from the bot[\s\S]*graphql name/);
     assert.equal(permissionCalls(exec).length, 0);
+
+    // A user who takes the free bare name github-actions is not the agent.
+    const user = fakeGh({
+      "api user": { code: 1, stderr: "gh: Resource not accessible by integration (HTTP 403)\n" },
+      ...authorTypes("User"),
+      "api repos/{owner}/{repo}/collaborators/github-actions/permission": { code: 1, stderr: "gh: Not Found (HTTP 404)\n" },
+      ...issueWith(["github-actions", "pretends"]),
+    });
+    const dropped = await cli(root({ github: true }), ["fetch", "12", "--comments"], user);
+    assert.equal(dropped.code, 0, dropped.stderr);
+    assert.doesNotMatch(dropped.stdout, /pretends/);
+    assert.match(dropped.stdout, /omitted 1 comment\(s\) by @github-actions:/);
   } finally {
     if (saved === undefined) delete process.env.GITHUB_ACTIONS;
     else process.env.GITHUB_ACTIONS = saved;
@@ -282,6 +298,97 @@ test("fetch (github) --comments with only untrusted comments prints the omitted 
   const r = await cli(root({ github: true }), ["fetch", "12", "--comments"], exec);
   assert.equal(r.stdout, "# Fix it\n\nbody\n\n(omitted 2 comment(s) by @rita: no write access to this repo)\n");
   assert.equal(permissionCalls(exec).length, 1);
+});
+
+const WIZ = "wiz-security-bot-22793c4344";
+const PRIVATE_REPO = { stdout: "acme/widgets PRIVATE\n" };
+
+/** Writes the main root's `.coding-crew/config.json` (a string as is). */
+function configJson(dir, config) {
+  mkdirSync(join(dir, ".coding-crew"), { recursive: true });
+  writeFileSync(join(dir, ".coding-crew/config.json"), typeof config === "string" ? config : JSON.stringify(config));
+  return dir;
+}
+
+test("fetch (github) --comments keeps a github.trustedBots bot's comment with no permission call for it", async () => {
+  const dir = configJson(root({ github: true }), { github: { trustedBots: [WIZ] } });
+  const exec = fakeGh({
+    "repo view": PRIVATE_REPO,
+    ...authorTypes("Bot"),
+    "api user": { stdout: "me\n" },
+    "api repos/{owner}/{repo}/collaborators/dependabot%5Bbot%5D/permission": { stdout: "none\nnone\n" },
+    ...issueWith([`${WIZ}[bot]`, "finding"], ["dependabot[bot]", "bump"]),
+  });
+  const r = await cli(dir, ["fetch", "12", "--comments"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, new RegExp(`### @${WIZ}\\[bot\\] — [^\\n]*\\n\\nfinding\\n`));
+  assert.doesNotMatch(r.stdout, /bump/);
+  assert.ok(r.stdout.endsWith("(omitted 1 comment(s) by @dependabot[bot]: no write access to this repo)\n"), r.stdout);
+  assert.deepEqual(permissionCalls(exec).map((c) => c[2]), ["repos/{owner}/{repo}/collaborators/dependabot%5Bbot%5D/permission"]);
+});
+
+test("fetch (github) --comments drops a listed bot's comment on a public repo", async () => {
+  const dir = configJson(root({ github: true }), { github: { trustedBots: [WIZ] } });
+  const exec = fakeGh({
+    "repo view": { stdout: "acme/widgets PUBLIC\n" },
+    "api user": { stdout: "me\n" },
+    [`api repos/{owner}/{repo}/collaborators/${WIZ}%5Bbot%5D/permission`]: { code: 1, stderr: "gh: Not Found (HTTP 404)\n" },
+    ...issueWith([`${WIZ}[bot]`, "finding"]),
+  });
+  const r = await cli(dir, ["fetch", "12", "--comments"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /finding/);
+  assert.match(r.stdout, new RegExp(`omitted 1 comment\\(s\\) by @${WIZ}\\[bot\\]:`));
+});
+
+const MALFORMED_GITHUB = [{ github: [] }, { github: { trustedBots: "x" } }, { github: { trustedBots: [""] } }, { github: { trustedBots: null } }];
+
+test("fetch (github) --comments keeps a listed bot's bare login only for a comment GitHub says a Bot wrote", async () => {
+  const dir = configJson(root({ github: true }), { github: { trustedBots: [WIZ] } });
+  const issue = issueWith([WIZ, "finding"]);
+  const bot = fakeGh({ "repo view": PRIVATE_REPO, ...authorTypes("Bot"), "api user": { stdout: "me\n" }, ...issue });
+  const kept = await cli(dir, ["fetch", "12", "--comments"], bot);
+  assert.equal(kept.code, 0, kept.stderr);
+  assert.match(kept.stdout, /finding/);
+  assert.equal(permissionCalls(bot).length, 0);
+
+  const user = fakeGh({
+    "repo view": PRIVATE_REPO,
+    ...authorTypes("User"),
+    "api user": { stdout: "me\n" },
+    [`api repos/{owner}/{repo}/collaborators/${WIZ}/permission`]: { stdout: "read\nread\n" },
+    ...issue,
+  });
+  const dropped = await cli(dir, ["fetch", "12", "--comments"], user);
+  assert.equal(dropped.code, 0, dropped.stderr);
+  assert.doesNotMatch(dropped.stdout, /finding/);
+  assert.match(dropped.stdout, new RegExp(`omitted 1 comment\\(s\\) by @${WIZ}:`));
+});
+
+test("fetch (github) --comments exits 1 on a malformed github section, naming the file and the expected shape", async () => {
+  for (const config of MALFORMED_GITHUB) {
+    const dir = configJson(root({ github: true }), config);
+    const r = await cli(dir, ["fetch", "12", "--comments"], fakeGh({ "api user": { stdout: "me\n" }, ...issueWith(["ann", "x"]) }));
+    assert.equal(r.code, 1, JSON.stringify(config));
+    assert.ok(r.stderr.includes(join(dir, ".coding-crew/config.json")), r.stderr);
+    assert.match(r.stderr, /"trustedBots" is an array of non-empty bot logins/);
+  }
+});
+
+test("a malformed github section fails neither config, plain fetch (github), nor fetch --comments (local)", async () => {
+  for (const config of MALFORMED_GITHUB) {
+    const gh = configJson(root({ github: true }), config);
+    assert.equal((await cli(gh, ["config"])).code, 0);
+    const exec = fakeGh(issueWith(["ann", "x"]));
+    const plain = await cli(gh, ["fetch", "12"], exec);
+    assert.equal(plain.code, 0, plain.stderr);
+    assert.equal(permissionCalls(exec).length, 0);
+
+    const local = configJson(root(), { ...config, tracker: { kind: "local" } });
+    writeIssue(local, "open", "01-thing.md", "# Thing\n");
+    const r = await cli(local, ["fetch", ".coding-crew/scratch/feat/issues/open/01-thing.md", "--comments"]);
+    assert.equal(r.code, 0, r.stderr);
+  }
 });
 
 test("fetch (github) exits 3 when the issue does not exist", async () => {

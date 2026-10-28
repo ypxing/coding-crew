@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tracker, address-pr-comments: a repo can list GitHub App bot logins under `github.trustedBots` in its
+  `.coding-crew/config.json`, and their issue and PR comments (Wiz's security findings, say) then reach the agent
+  like a collaborator's, on a private or internal repo only; before, every bot but Copilot's reviewer was dropped. Listed bots start no review rounds,
+  a dismissed bot thread stays open for a person, and no reply posts a bot's commands such as `#wiz_ignore`. On Actions, a user
+  who takes the free name `github-actions` is no longer trusted as the agent itself (#647).
+
 ## [2.3.4]
 
 - crew-triage, crew-grill: crew-triage now reads the code an issue touches before judging it, and runs each failed
