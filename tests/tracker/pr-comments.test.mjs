@@ -23,7 +23,7 @@ const thread = (id, comments, extra = {}) => ({ id, isResolved: false, path: "a.
 const repoAs = (visibility, name = "acme/widgets") => ({ code: 0, stdout: `${name} ${visibility}\n`, stderr: "" });
 const PRIVATE_REPO = repoAs("PRIVATE");
 
-function fakeGh({ perms = {}, pages = [[]], view = { reviews: [], comments: [] }, user = "me", repoView = PRIVATE_REPO, types = {}, nodesFail = false }) {
+function fakeGh({ perms = {}, pages = [[]], view = { reviews: [], comments: [] }, user = "me", repoView = PRIVATE_REPO, types = {}, nodesFail = false, missing = [] }) {
   const calls = [];
   const exec = (cmd, args) => {
     calls.push(args);
@@ -40,7 +40,11 @@ function fakeGh({ perms = {}, pages = [[]], view = { reviews: [], comments: [] }
     const nodes = /nodes\(ids: (\[.*?\])\) \{/.exec(line);
     if (nodes) {
       if (nodesFail) return { code: 1, stdout: "", stderr: "gh: Something went wrong\n" };
-      const data = { nodes: JSON.parse(nodes[1]).map((id) => ({ id, author: { __typename: types[id.split("|")[0]] ?? "Bot" } })) };
+      // A `missing` id resolves to null and fails the call, as GitHub does for a deleted comment.
+      const ids = JSON.parse(nodes[1]);
+      const data = { nodes: ids.map((id) => (missing.includes(id) ? null : { id, author: { __typename: types[id.split("|")[0]] ?? "Bot" } })) };
+      const gone = ids.filter((id) => missing.includes(id));
+      if (gone.length) return { code: 1, stdout: JSON.stringify({ data, errors: gone.map((id) => ({ type: "NOT_FOUND", message: `Could not resolve to a node with the global id of '${id}'` })) }), stderr: "gh: Could not resolve to a node\n" };
       return { code: 0, stdout: JSON.stringify({ data }), stderr: "" };
     }
     if (args[0] === "api" && args[1] === "graphql") {
@@ -223,11 +227,12 @@ function gitRepo(config) {
 const trusting = (...bots) => ({ github: { trustedBots: bots } });
 
 /** A fake `gh` whose PR holds a review, a top-level comment and a thread by each of `logins`. */
-function prBy(logins, { repoView, types, nodesFail } = {}) {
+function prBy(logins, { repoView, types, nodesFail, missing } = {}) {
   return fakeGh({
     repoView,
     types,
     nodesFail,
+    missing,
     view: {
       reviews: logins.map((l) => ({ id: `${l}|review by ${l}`, author: { login: l }, body: `review by ${l}`, state: "COMMENTED", submittedAt: "t" })),
       comments: logins.map((l) => c(l, `top by ${l}`)),
@@ -356,6 +361,15 @@ test("a failed author-type read drops a listed bot's comments", async () => {
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.json.comments, []);
   assert.deepEqual(r.json.omitted.authors, [WIZ]);
+});
+
+test("a comment deleted before the author-type read drops only itself, not the rest of its page", async () => {
+  const exec = prBy([WIZ], { missing: [`${WIZ}|top by ${WIZ}`] });
+  const r = await prCommentsIn(gitRepo(trusting(WIZ)), ["7"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json.reviews.length, 1);
+  assert.equal(r.json.threads.length, 1);
+  assert.deepEqual(r.json.comments, []);
 });
 
 test("author types are read only for listed logins, at most 100 comments a call", async () => {
