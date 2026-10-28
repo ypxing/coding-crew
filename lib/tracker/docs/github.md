@@ -33,6 +33,7 @@ node "$TRACKER" features                                  # list the features: <
 node "$TRACKER" prd --feature-slug <slug>                 # print the feature's PRD: issue
 node "$TRACKER" next --feature-slug <slug>                # the number of the next issue to run, or exit 3
 node "$TRACKER" known --feature-slug <slug> --out <dir>   # write the feature's issues, open and closed (not wontfix), into <dir>
+node "$TRACKER" spec --feature-slug <slug>                # print the feature's spec: the PRD, then each issue `known` writes, whole
 node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace | --append]
 node "$TRACKER" publish-prd --feature-slug <slug> --title "<feature title>" --body-file <file>
 node "$TRACKER" rewrite <number> --body-file <file> --status <status> --feature-slug <slug>

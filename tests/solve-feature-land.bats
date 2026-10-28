@@ -195,9 +195,9 @@ EOF
   ! grep -q '^config' "$STATE/node.log" || false
 }
 
-@test "start, next and land reach the tracker through features, prd, known, next, fetch and reopen only, and name no tracker kind" {
+@test "start, next and land reach the tracker through features, spec, next, fetch and reopen only, and name no tracker kind" {
   loop
-  [ "$(cut -d' ' -f1 "$STATE/node.log" | sort -u | paste -sd' ' -)" = "features fetch known next prd" ]
+  [ "$(cut -d' ' -f1 "$STATE/node.log" | sort -u | paste -sd' ' -)" = "features fetch next spec" ]
   grep -q '"$CLI" reopen' "$SCRIPT"
   ! grep -nE 'KIND|github|scratch|"\$CLI" config|\$REF" =~' "$SCRIPT" || false
 }

@@ -353,45 +353,28 @@ main_moves() {
   [ "$(out reviewer-model)" = haiku ]
 }
 
-@test "start writes .coding-crew/solve-feature/spec.md: the PRD, then each issue known writes with its criteria as plain bullets" {
+@test "start writes .coding-crew/solve-feature/spec.md as the tracker's spec op prints it, and stops when spec fails" {
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(cat .coding-crew/solve-feature/spec.md)" = "$(cat <<'EOF'
-<!-- PRD issue #1: PRD: Feat -->
-# PRD: Feat
-
-the prd
-
-### 2-two — Two
-## Acceptance criteria
-
-- works for `<before>` & co
-- Two done
-
-### 3-three — Three
-## Acceptance criteria
-
-- works for `<before>` & co
-- Three done
-EOF
-)" ]
-  grep -qx 'known --feature-slug feat --out .*' "$STATE/node.log"
+  [ "$(cat .coding-crew/solve-feature/spec.md)" = "$(node "$LIB/tracker/cli.mjs" spec --feature-slug feat)" ]
+  grep -qx 'spec --feature-slug feat' "$STATE/node.log"
+  ! grep -qE '^(prd|known) ' "$STATE/node.log" || false
+  [ ! -e .coding-crew/solve-feature/issues ]
   [ -z "$(git status --porcelain)" ]
+
+  SPEC_RC=1 run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: start failed: "*spec* ]] || { cat .coding-crew/solve-feature/outcome; return 1; }
 }
 
-@test "start writes a spec with no PRD when prd exits 3, closed issues included, and removes an old outcome and review files" {
+@test "start removes an old outcome and review files" {
   mkdir -p .coding-crew/solve-feature && echo '*' > .coding-crew/solve-feature/.gitignore && echo 'ready pr=7' > .coding-crew/solve-feature/outcome
   echo old > .coding-crew/solve-feature/pr-7.unfixed.md && echo old > .coding-crew/solve-feature/pr-7.review.json && echo old > .coding-crew/solve-feature/pr-7.head
   echo old > .coding-crew/solve-feature/pr-7.summary.md && echo old > .coding-crew/solve-feature/pr-7.attention.md
   echo old > .coding-crew/solve-feature/pr-7.discarded.md && echo old > .coding-crew/solve-feature/review.base
   echo old > .coding-crew/solve-feature/pr-7.notes.md
-  rm "$STATE/prd.md"
-  jq 'map(if .number == 2 then .state = "CLOSED" else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(head -1 .coding-crew/solve-feature/spec.md)" = "### 2-two — Two" ]
-  grep -qx '### 3-three — Three' .coding-crew/solve-feature/spec.md
-  ! grep -q PRD .coding-crew/solve-feature/spec.md || false
   [ ! -e .coding-crew/solve-feature/outcome ]
   [ ! -e .coding-crew/solve-feature/pr-7.unfixed.md ]
   [ ! -e .coding-crew/solve-feature/pr-7.review.json ]
@@ -632,17 +615,25 @@ EOF
   [ -s .coding-crew/solve-feature/spec.md ]
 }
 
-@test "describe's Spec line names only the feature for a PRD without an issue header, and when prd exits 3" {
+@test "describe's Spec line reads spec.md's first line, naming only the feature when it is no PRD-issue line, never calling prd" {
   fixed
-  printf '# PRD: Feat\n\nthe prd\n' > "$STATE/prd.md"
+  printf '<!-- PRD issue #42: PRD: Other -->\nbody\n' > .coding-crew/solve-feature/spec.md
+  : > "$STATE/node.log"
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(grep '^Spec: ' "$STATE/pr-body")" = 'Spec: PRD #42, feature `feat`' ]
+  ! grep -q '^prd' "$STATE/node.log" || false
+
+  printf '# PRD: Feat\n\nthe prd\n' > .coding-crew/solve-feature/spec.md
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(grep '^Spec: ' "$STATE/pr-body")" = 'Spec: feature `feat`' ]
 
-  rm "$STATE/prd.md"
+  printf '### 2-two — Two\n' > .coding-crew/solve-feature/spec.md
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(grep '^Spec: ' "$STATE/pr-body")" = 'Spec: feature `feat`' ]
+  ! grep -q '^prd' "$STATE/node.log" || false
 }
 
 @test "with anything needing a person describe lists it under Needs attention, leaves the PR a draft and writes needs-attention" {
