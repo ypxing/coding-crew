@@ -18,7 +18,11 @@ const thread = (id, comments, extra = {}) => ({ id, isResolved: false, path: "a.
  * A fake `gh`: `perms` maps a login to its permission output (missing → 404), `pages` is the
  * reviewThreads pages in order, `view` the `gh pr view` JSON. Every call is recorded.
  */
-function fakeGh({ perms = {}, pages = [[]], view = { reviews: [], comments: [] }, user = "me", accounts = {} }) {
+/** `gh repo view`'s `<owner/name> <visibility>` for the current repo. */
+const repoAs = (visibility, name = "acme/widgets") => ({ code: 0, stdout: `${name} ${visibility}\n`, stderr: "" });
+const PRIVATE_REPO = repoAs("PRIVATE");
+
+function fakeGh({ perms = {}, pages = [[]], view = { reviews: [], comments: [] }, user = "me", accounts = {}, repoView = PRIVATE_REPO }) {
   const calls = [];
   const exec = (cmd, args) => {
     calls.push(args);
@@ -35,6 +39,7 @@ function fakeGh({ perms = {}, pages = [[]], view = { reviews: [], comments: [] }
       return login in accounts ? { code: 0, stdout: `${accounts[login]}\n`, stderr: "" } : { code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)\n" };
     }
     if (args[0] === "pr" && args[1] === "view") return { code: 0, stdout: JSON.stringify(view), stderr: "" };
+    if (args[0] === "repo" && args[1] === "view") return repoView;
     if (args[0] === "api" && args[1] === "graphql") {
       const after = args.find((a) => a.startsWith("after="))?.slice("after=".length);
       const i = after ? Number(after.replace("cursor", "")) : 0;
@@ -213,24 +218,15 @@ const trusting = (...bots) => ({ github: { trustedBots: bots } });
 
 /** A fake `gh` whose PR holds a review, a top-level comment and a thread by each of `logins`. */
 function prBy(logins, { repoView, accounts } = {}) {
-  const exec = fakeGh({
+  return fakeGh({
     accounts,
+    repoView,
     view: {
       reviews: logins.map((l) => ({ author: { login: l }, body: `review by ${l}`, state: "COMMENTED", submittedAt: "t" })),
       comments: logins.map((l) => c(l, `top by ${l}`)),
     },
     pages: [logins.map((l, i) => thread(`T${i}`, [c(l, `inline by ${l}`)]))],
   });
-  if (!repoView) return exec;
-  const wrapped = (cmd, args) => {
-    if (args[0] === "repo" && args[1] === "view") {
-      exec.calls.push(args);
-      return repoView;
-    }
-    return exec(cmd, args);
-  };
-  wrapped.calls = exec.calls;
-  return wrapped;
 }
 
 async function prCommentsIn(cwd, argv, exec) {
@@ -280,8 +276,8 @@ test("given a PR URL, the list applies to the current repo in any letter case, n
   const dir = gitRepo(trusting(WIZ));
   const url = "https://github.com/Amaysim-AU/smpp-gateway/pull/114";
   const cases = [
-    [{ code: 0, stdout: "amaysim-au/SMPP-gateway\n", stderr: "" }, 1],
-    [{ code: 0, stdout: "amaysim-au/other-repo\n", stderr: "" }, 0],
+    [repoAs("PRIVATE", "amaysim-au/SMPP-gateway"), 1],
+    [repoAs("PRIVATE", "amaysim-au/other-repo"), 0],
     [{ code: 1, stdout: "", stderr: "no git remotes found\n" }, 0],
   ];
   for (const [repoView, kept] of cases) {
@@ -293,10 +289,27 @@ test("given a PR URL, the list applies to the current repo in any letter case, n
   }
 });
 
-test("given a PR number, or a URL with no list, gh repo view is never called", async () => {
-  const byNumber = prBy([`${WIZ}[bot]`]);
-  await prCommentsIn(gitRepo(trusting(WIZ)), ["7"], byNumber);
-  assert.equal(byNumber.calls.filter((a) => a[0] === "repo").length, 0);
+test("the list applies only on a private or internal repo: public or a failed gh repo view drops a listed bot", async () => {
+  const cases = [
+    [repoAs("PRIVATE"), 1],
+    [repoAs("INTERNAL"), 1],
+    [repoAs("PUBLIC"), 0],
+    [{ code: 1, stdout: "", stderr: "no git remotes found\n" }, 0],
+  ];
+  for (const [repoView, kept] of cases) {
+    const exec = prBy([`${WIZ}[bot]`, WIZ], { repoView });
+    const r = await prCommentsIn(gitRepo(trusting(WIZ)), ["7"], exec);
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(r.json.comments.length, kept * 2, JSON.stringify(repoView));
+    assert.equal(exec.calls.filter((a) => a[0] === "repo").length, 1);
+    if (!kept) assert.deepEqual(r.json.omitted.authors, [`${WIZ}[bot]`, WIZ]);
+  }
+});
+
+test("with no list, or no listed bot among the authors, gh repo view is never called", async () => {
+  const noListed = prBy(["dependabot[bot]"]);
+  await prCommentsIn(gitRepo(trusting(WIZ)), ["7"], noListed);
+  assert.equal(noListed.calls.filter((a) => a[0] === "repo").length, 0);
   const noList = prBy([`${WIZ}[bot]`]);
   await prCommentsIn(gitRepo(null), ["https://github.com/acme/widgets/pull/42"], noList);
   assert.equal(noList.calls.filter((a) => a[0] === "repo").length, 0);

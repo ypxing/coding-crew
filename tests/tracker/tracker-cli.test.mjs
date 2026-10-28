@@ -285,6 +285,7 @@ test("fetch (github) --comments with only untrusted comments prints the omitted 
 });
 
 const WIZ = "wiz-security-bot-22793c4344";
+const PRIVATE_REPO = { stdout: "acme/widgets PRIVATE\n" };
 
 /** Writes the main root's `.coding-crew/config.json` (a string as is). */
 function configJson(dir, config) {
@@ -296,6 +297,7 @@ function configJson(dir, config) {
 test("fetch (github) --comments keeps a github.trustedBots bot's comment with no permission call for it", async () => {
   const dir = configJson(root({ github: true }), { github: { trustedBots: [WIZ] } });
   const exec = fakeGh({
+    "repo view": PRIVATE_REPO,
     "api user": { stdout: "me\n" },
     "api repos/{owner}/{repo}/collaborators/dependabot%5Bbot%5D/permission": { stdout: "none\nnone\n" },
     ...issueWith([`${WIZ}[bot]`, "finding"], ["dependabot[bot]", "bump"]),
@@ -308,19 +310,34 @@ test("fetch (github) --comments keeps a github.trustedBots bot's comment with no
   assert.deepEqual(permissionCalls(exec).map((c) => c[2]), ["repos/{owner}/{repo}/collaborators/dependabot%5Bbot%5D/permission"]);
 });
 
+test("fetch (github) --comments drops a listed bot's comment on a public repo", async () => {
+  const dir = configJson(root({ github: true }), { github: { trustedBots: [WIZ] } });
+  const exec = fakeGh({
+    "repo view": { stdout: "acme/widgets PUBLIC\n" },
+    "api user": { stdout: "me\n" },
+    [`api repos/{owner}/{repo}/collaborators/${WIZ}%5Bbot%5D/permission`]: { code: 1, stderr: "gh: Not Found (HTTP 404)\n" },
+    ...issueWith([`${WIZ}[bot]`, "finding"]),
+  });
+  const r = await cli(dir, ["fetch", "12", "--comments"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /finding/);
+  assert.match(r.stdout, new RegExp(`omitted 1 comment\\(s\\) by @${WIZ}\\[bot\\]:`));
+});
+
 const MALFORMED_GITHUB = [{ github: [] }, { github: { trustedBots: "x" } }, { github: { trustedBots: [""] } }, { github: { trustedBots: null } }];
 
 test("fetch (github) --comments keeps a listed bot's bare login only while no user or organisation holds it", async () => {
   const dir = configJson(root({ github: true }), { github: { trustedBots: [WIZ] } });
   const issue = issueWith([WIZ, "finding"]);
   // `api users/…` before `api user`: fakeGh routes by prefix, first match.
-  const free = fakeGh({ [`api users/${WIZ}`]: { code: 1, stderr: "gh: Not Found (HTTP 404)\n" }, "api user": { stdout: "me\n" }, ...issue });
+  const free = fakeGh({ "repo view": PRIVATE_REPO, [`api users/${WIZ}`]: { code: 1, stderr: "gh: Not Found (HTTP 404)\n" }, "api user": { stdout: "me\n" }, ...issue });
   const kept = await cli(dir, ["fetch", "12", "--comments"], free);
   assert.equal(kept.code, 0, kept.stderr);
   assert.match(kept.stdout, /finding/);
   assert.equal(permissionCalls(free).length, 0);
 
   const squatted = fakeGh({
+    "repo view": PRIVATE_REPO,
     [`api users/${WIZ}`]: { stdout: "User\n" },
     "api user": { stdout: "me\n" },
     [`api repos/{owner}/{repo}/collaborators/${WIZ}/permission`]: { code: 1, stderr: "gh: Not Found (HTTP 404)\n" },
