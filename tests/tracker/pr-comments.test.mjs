@@ -10,19 +10,20 @@ import { run } from "../../lib/tracker/pr-comments.mjs";
 // tracker/pr-comments.mjs — a PR's reviews, comments and review threads with untrusted authors'
 // removed, `gh` stubbed through the injected `exec`.
 
-const c = (login, body, extra = {}) => ({ author: { login }, body, createdAt: "2026-01-01T00:00:00Z", url: `u-${login}-${body}`, ...extra });
+const c = (login, body, extra = {}) => ({ id: `${login}|${body}`, author: { login }, body, createdAt: "2026-01-01T00:00:00Z", url: `u-${login}-${body}`, ...extra });
 
 const thread = (id, comments, extra = {}) => ({ id, isResolved: false, path: "a.js", line: 3, comments: { nodes: comments }, ...extra });
 
 /**
  * A fake `gh`: `perms` maps a login to its permission output (missing → 404), `pages` is the
- * reviewThreads pages in order, `view` the `gh pr view` JSON. Every call is recorded.
+ * reviewThreads pages in order, `view` the `gh pr view` JSON, `types` a login's `__typename` in the
+ * author-type read (missing → Bot; `nodesFail` fails it). Every call is recorded.
  */
 /** `gh repo view`'s `<owner/name> <visibility>` for the current repo. */
 const repoAs = (visibility, name = "acme/widgets") => ({ code: 0, stdout: `${name} ${visibility}\n`, stderr: "" });
 const PRIVATE_REPO = repoAs("PRIVATE");
 
-function fakeGh({ perms = {}, pages = [[]], view = { reviews: [], comments: [] }, user = "me", repoView = PRIVATE_REPO }) {
+function fakeGh({ perms = {}, pages = [[]], view = { reviews: [], comments: [] }, user = "me", repoView = PRIVATE_REPO, types = {}, nodesFail = false }) {
   const calls = [];
   const exec = (cmd, args) => {
     calls.push(args);
@@ -35,6 +36,13 @@ function fakeGh({ perms = {}, pages = [[]], view = { reviews: [], comments: [] }
     }
     if (args[0] === "pr" && args[1] === "view") return { code: 0, stdout: JSON.stringify(view), stderr: "" };
     if (args[0] === "repo" && args[1] === "view") return repoView;
+    // An id is `<login>|<body>` (see c()), so the fake can name each comment's author type.
+    const nodes = /nodes\(ids: (\[.*?\])\) \{/.exec(line);
+    if (nodes) {
+      if (nodesFail) return { code: 1, stdout: "", stderr: "gh: Something went wrong\n" };
+      const data = { nodes: JSON.parse(nodes[1]).map((id) => ({ id, author: { __typename: types[id.split("|")[0]] ?? "Bot" } })) };
+      return { code: 0, stdout: JSON.stringify({ data }), stderr: "" };
+    }
     if (args[0] === "api" && args[1] === "graphql") {
       const after = args.find((a) => a.startsWith("after="))?.slice("after=".length);
       const i = after ? Number(after.replace("cursor", "")) : 0;
@@ -212,11 +220,13 @@ function gitRepo(config) {
 const trusting = (...bots) => ({ github: { trustedBots: bots } });
 
 /** A fake `gh` whose PR holds a review, a top-level comment and a thread by each of `logins`. */
-function prBy(logins, { repoView } = {}) {
+function prBy(logins, { repoView, types, nodesFail } = {}) {
   return fakeGh({
     repoView,
+    types,
+    nodesFail,
     view: {
-      reviews: logins.map((l) => ({ author: { login: l }, body: `review by ${l}`, state: "COMMENTED", submittedAt: "t" })),
+      reviews: logins.map((l) => ({ id: `${l}|review by ${l}`, author: { login: l }, body: `review by ${l}`, state: "COMMENTED", submittedAt: "t" })),
       comments: logins.map((l) => c(l, `top by ${l}`)),
     },
     pages: [logins.map((l, i) => thread(`T${i}`, [c(l, `inline by ${l}`)]))],
@@ -327,6 +337,36 @@ test("a malformed github section or trustedBots exits 1 naming the config file a
     assert.match(r.stderr, /\.coding-crew\/config\.json/);
     assert.match(r.stderr, /"github": \{"trustedBots": \["<bot login>"/);
   }
+});
+
+test("a user who takes a listed bot's name is not trusted as the bot: only a comment GitHub says a Bot wrote counts", async () => {
+  const exec = prBy([WIZ], { types: { [WIZ]: "User" } });
+  const r = await prCommentsIn(gitRepo(trusting(WIZ)), ["7"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual([r.json.reviews, r.json.comments, r.json.threads], [[], [], []]);
+  assert.deepEqual(r.json.omitted.authors, [WIZ]);
+  assert.deepEqual(permissionLogins(exec), [WIZ]);
+});
+
+test("a failed author-type read drops a listed bot's comments", async () => {
+  const r = await prCommentsIn(gitRepo(trusting(WIZ)), ["7"], prBy([WIZ], { nodesFail: true }));
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json.comments, []);
+  assert.deepEqual(r.json.omitted.authors, [WIZ]);
+});
+
+test("author types are read only for listed logins, at most 100 comments a call", async () => {
+  const many = fakeGh({ pages: [Array.from({ length: 150 }, (_, i) => thread(`T${i}`, [c(WIZ, `n${i}`)]))] });
+  const r = await prCommentsIn(gitRepo(trusting(WIZ)), ["7"], many);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json.threads.length, 150);
+  const reads = many.calls.map((a) => /nodes\(ids: (\[.*?\])\) \{/.exec(a.join(" "))?.[1]).filter(Boolean).map((ids) => JSON.parse(ids));
+  assert.deepEqual(reads.map((ids) => ids.length), [100, 50]);
+
+  const mixed = prBy([WIZ, "dependabot[bot]"]);
+  await prCommentsIn(gitRepo(trusting(WIZ)), ["7"], mixed);
+  const ids = mixed.calls.flatMap((a) => JSON.parse(/nodes\(ids: (\[.*?\])\) \{/.exec(a.join(" "))?.[1] ?? "[]"));
+  assert.ok(ids.length > 0 && ids.every((id) => id.startsWith(`${WIZ}|`)), JSON.stringify(ids));
 });
 
 test("a null trustedBots exits 1; a padded login matches as its trimmed self", async () => {

@@ -200,7 +200,7 @@ const issueWith = (...comments) => ({
     stdout: JSON.stringify({
       title: "Fix it",
       body: "body",
-      comments: comments.map(([login, body], i) => ({ author: { login }, createdAt: `2026-01-0${i + 1}T00:00:00Z`, body })),
+      comments: comments.map(([login, body], i) => ({ id: `IC_${i}`, author: { login }, createdAt: `2026-01-0${i + 1}T00:00:00Z`, body })),
     }),
   },
 });
@@ -286,6 +286,8 @@ test("fetch (github) --comments with only untrusted comments prints the omitted 
 
 const WIZ = "wiz-security-bot-22793c4344";
 const PRIVATE_REPO = { stdout: "acme/widgets PRIVATE\n" };
+/** The author-type read's answer: issueWith's comment `IC_<i>` written by a `types[i]`. */
+const authorTypes = (...types) => ({ "api graphql": { stdout: JSON.stringify({ data: { nodes: types.map((t, i) => ({ id: `IC_${i}`, author: { __typename: t } })) } }) } });
 
 /** Writes the main root's `.coding-crew/config.json` (a string as is). */
 function configJson(dir, config) {
@@ -298,6 +300,7 @@ test("fetch (github) --comments keeps a github.trustedBots bot's comment with no
   const dir = configJson(root({ github: true }), { github: { trustedBots: [WIZ] } });
   const exec = fakeGh({
     "repo view": PRIVATE_REPO,
+    ...authorTypes("Bot"),
     "api user": { stdout: "me\n" },
     "api repos/{owner}/{repo}/collaborators/dependabot%5Bbot%5D/permission": { stdout: "none\nnone\n" },
     ...issueWith([`${WIZ}[bot]`, "finding"], ["dependabot[bot]", "bump"]),
@@ -326,14 +329,26 @@ test("fetch (github) --comments drops a listed bot's comment on a public repo", 
 
 const MALFORMED_GITHUB = [{ github: [] }, { github: { trustedBots: "x" } }, { github: { trustedBots: [""] } }, { github: { trustedBots: null } }];
 
-test("fetch (github) --comments keeps a listed bot's bare login with no account lookup, whoever else holds that name", async () => {
+test("fetch (github) --comments keeps a listed bot's bare login only for a comment GitHub says a Bot wrote", async () => {
   const dir = configJson(root({ github: true }), { github: { trustedBots: [WIZ] } });
-  const exec = fakeGh({ "repo view": PRIVATE_REPO, "api user": { stdout: "me\n" }, ...issueWith([WIZ, "finding"]) });
-  const r = await cli(dir, ["fetch", "12", "--comments"], exec);
-  assert.equal(r.code, 0, r.stderr);
-  assert.match(r.stdout, /finding/);
-  assert.equal(permissionCalls(exec).length, 0);
-  assert.equal(exec.calls.filter((c) => c[2]?.startsWith("users/")).length, 0);
+  const issue = issueWith([WIZ, "finding"]);
+  const bot = fakeGh({ "repo view": PRIVATE_REPO, ...authorTypes("Bot"), "api user": { stdout: "me\n" }, ...issue });
+  const kept = await cli(dir, ["fetch", "12", "--comments"], bot);
+  assert.equal(kept.code, 0, kept.stderr);
+  assert.match(kept.stdout, /finding/);
+  assert.equal(permissionCalls(bot).length, 0);
+
+  const user = fakeGh({
+    "repo view": PRIVATE_REPO,
+    ...authorTypes("User"),
+    "api user": { stdout: "me\n" },
+    [`api repos/{owner}/{repo}/collaborators/${WIZ}/permission`]: { stdout: "read\nread\n" },
+    ...issue,
+  });
+  const dropped = await cli(dir, ["fetch", "12", "--comments"], user);
+  assert.equal(dropped.code, 0, dropped.stderr);
+  assert.doesNotMatch(dropped.stdout, /finding/);
+  assert.match(dropped.stdout, new RegExp(`omitted 1 comment\\(s\\) by @${WIZ}:`));
 });
 
 test("fetch (github) --comments exits 1 on a malformed github section, naming the file and the expected shape", async () => {
