@@ -893,3 +893,105 @@ test("features exits 2 on an extra argument, on both trackers", async () => {
   const gh = await cli(dir, ["features", "extra"]);
   assert.equal(gh.code, 2);
 });
+
+// --- spec --------------------------------------------------------------------------
+
+test("spec (github) prints prd's output, a blank line, then each known issue in number order, whole, boxes as bullets", async () => {
+  const exec = fakeGithub(
+    ghFeature(
+      "feat",
+      { ...ghIssue(3, { title: "PRD: Feat" }), body: "## Decisions\n\n- **D1** — x" },
+      { ...ghIssue(10, { title: "Ten" }), body: "## Acceptance criteria\n\n- [ ] ten done" },
+      { ...ghIssue(7, { title: "Seven", state: "CLOSED" }), body: "## Decisions\n\n- keep it\n\n## Acceptance criteria\n\n- [x] a\n  * [X] nested\n- [ ] b\n\n## Out of Scope\n\n- c" },
+      { ...ghIssue(8, { title: "Dropped", state: "closed" }), state_reason: "not_planned", body: "gone" },
+    ),
+  );
+  const dir = root({ github: true });
+  const prd = (await cli(dir, ["prd", "--feature-slug", "feat"], exec)).stdout;
+  assert.match(prd, /^<!-- PRD issue #3: PRD: Feat -->\n[^]*- \*\*D1\*\* — x\n$/);
+  const r = await cli(dir, ["spec", "--feature-slug", "feat"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(
+    r.stdout,
+    [
+      prd,
+      "### 7-seven — Seven",
+      "",
+      "## Decisions",
+      "",
+      "- keep it",
+      "",
+      "## Acceptance criteria",
+      "",
+      "- a",
+      "  - nested",
+      "- b",
+      "",
+      "## Out of Scope",
+      "",
+      "- c",
+      "",
+      "### 10-ten — Ten",
+      "",
+      "## Acceptance criteria",
+      "",
+      "- ten done",
+      "",
+    ].join("\n"),
+  );
+});
+
+test("spec (local) with no PRD prints the issues alone, keeping Status:, the title only in the heading", async () => {
+  const dir = root();
+  writeIssue(dir, "open", "10-ten.md", "# Ten\n\nStatus: ready-for-agent\n\n- [ ] t\n");
+  writeIssue(dir, "done", "2-two.md", "Status: done\n\n# Two\n\n## Acceptance criteria\n\n- [x] w\n");
+  writeIssue(dir, "open", "notes.md", "no title here\n");
+  writeIssue(dir, "open", "3-dropped.md", "# Dropped\n\nStatus: wontfix\n");
+  const r = await cli(dir, ["spec", "--feature-slug", "feat"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(
+    r.stdout,
+    "### 2-two — Two\n\nStatus: done\n\n## Acceptance criteria\n\n- w\n\n" +
+      "### 10-ten — Ten\n\nStatus: ready-for-agent\n\n- t\n\n" +
+      "### notes — notes\n\nno title here\n",
+  );
+});
+
+test("spec (local) puts the PRD first, then a blank line", async () => {
+  const dir = root();
+  mkdirSync(join(dir, ".coding-crew/scratch/feat"), { recursive: true });
+  writeFileSync(join(dir, ".coding-crew/scratch/feat/PRD.md"), "# PRD: feat\n\nthe prd\n");
+  writeIssue(dir, "open", "01-one.md", "# One\n\n- [ ] x\n");
+  const r = await cli(dir, ["spec", "--feature-slug", "feat"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, "# PRD: feat\n\nthe prd\n\n### 01-one — One\n\n- x\n");
+});
+
+test("spec with no PRD and no issues prints nothing and exits 0, on both backends", async () => {
+  const local = await cli(root(), ["spec", "--feature-slug", "feat"]);
+  assert.deepEqual([local.code, local.stdout], [0, ""]);
+  const gh = await cli(root({ github: true }), ["spec", "--feature-slug", "feat"], fakeGithub([ghIssue(1)]));
+  assert.deepEqual([gh.code, gh.stdout], [0, ""]);
+});
+
+test("spec prints a section for each publish-clean draft, its criteria as plain bullets", async () => {
+  const dir = root();
+  const src = join(REPO, "tests/tracker/fixtures/publish-clean");
+  for (const f of readdirSync(src).filter((f) => f.endsWith(".md"))) writeIssue(dir, "open", f, readFileSync(join(src, f), "utf8"));
+  const r = await cli(dir, ["spec", "--feature-slug", "feat"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.stdout.match(/^### [0-9].*$/gm), ["### 01-store — store", "### 02-cli — cli", "### 03-docs — docs"]);
+  assert.match(r.stdout, /^- First criterion$/m);
+  assert.doesNotMatch(r.stdout, /\[[ xX]\]/);
+});
+
+test("spec exits 1 naming spec when a tracker read fails, and 2 with the usage line without --feature-slug", async () => {
+  const stderr = "HTTP 401: Bad credentials\n";
+  const r = await cli(root({ github: true }), ["spec", "--feature-slug", "feat"], fakeGh({ issue: { code: 1, stderr }, api: { code: 1, stderr } }));
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /^spec: /);
+  assert.ok(r.stderr.includes("Bad credentials"), r.stderr);
+  const u = await cli(root(), ["spec"]);
+  assert.equal(u.code, 2);
+  assert.match(u.stderr, /spec --feature-slug S/);
+});
