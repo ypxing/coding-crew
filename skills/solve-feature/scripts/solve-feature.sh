@@ -486,7 +486,7 @@ describe() {
     printf '> Written by solve-feature (`%s`): its coder, reviewer and fixer were agents; no person has read this body.\n\n' "$SLUG"
     # write-pr's summary minus its title line, which titles the PR instead.
     if [ -f "$f" ]; then if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d'; echo; fi
-    if [ -n "$need" ]; then printf '## Needs attention\n\n'; sed 's/^/- /' <<<"$need"; echo; fi
+    if [ -n "$need" ]; then printf '## Needs attention\n\n'; sed '/^- /!s/^/- /' <<<"$need"; echo; fi
     [ -z "$notes" ] || printf '%s\n\n' "$notes"
     printf '%s\n\n' "$spec_line"
     [ -z "$refs" ] || printf '%s\n' "$refs"
