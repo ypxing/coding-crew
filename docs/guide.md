@@ -580,7 +580,7 @@ pr=<n>` on a PR Copilot has not reviewed, the job requests it with the repo secr
 fine-grained PAT with Pull requests: write), used for that one call only; unset or refused, the job warns and you
 request Copilot by hand.
 
-Which comments reach the agent: only those by Copilot's reviewer, by the identity the agent posts as, by a bot the
+Which comments reach the agent: only those by Copilot's reviewer, by the identity the agent posts as (on Actions `github-actions`, only for a comment GitHub reports a Bot wrote), by a bot the
 repo lists under `github.trustedBots` in `.coding-crew/config.json`, or by a user with write, maintain or admin
 permission on the repo. GitHub reports no permission for a bot, so a GitHub App's comments (Wiz's, say) reach the
 agent only when listed: `{"github": {"trustedBots": ["wiz-security-bot-22793c4344"]}}`, its login with or without

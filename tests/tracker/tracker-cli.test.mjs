@@ -195,6 +195,9 @@ function writers(...logins) {
 }
 
 /** An `issue view 12` route whose comments are `[login, body]` pairs. */
+/** The author-type read's answer: issueWith's comment `IC_<i>` written by a `types[i]`. */
+const authorTypes = (...types) => ({ "api graphql": { stdout: JSON.stringify({ data: { nodes: types.map((t, i) => ({ id: `IC_${i}`, author: { __typename: t } })) } }) } });
+
 const issueWith = (...comments) => ({
   "issue view 12": {
     stdout: JSON.stringify({
@@ -262,11 +265,24 @@ test("fetch (github) --comments on Actions, where gh api user fails, posts as gi
   try {
     const exec = fakeGh({
       "api user": { code: 1, stderr: "gh: Resource not accessible by integration (HTTP 403)\n" },
+      ...authorTypes("Bot", "Bot"),
       ...issueWith(["github-actions[bot]", "from the bot"], ["github-actions", "graphql name"]),
     });
     const r = await cli(root({ github: true }), ["fetch", "12", "--comments"], exec);
     assert.match(r.stdout, /from the bot[\s\S]*graphql name/);
     assert.equal(permissionCalls(exec).length, 0);
+
+    // A user who takes the free bare name github-actions is not the agent.
+    const user = fakeGh({
+      "api user": { code: 1, stderr: "gh: Resource not accessible by integration (HTTP 403)\n" },
+      ...authorTypes("User"),
+      "api repos/{owner}/{repo}/collaborators/github-actions/permission": { code: 1, stderr: "gh: Not Found (HTTP 404)\n" },
+      ...issueWith(["github-actions", "pretends"]),
+    });
+    const dropped = await cli(root({ github: true }), ["fetch", "12", "--comments"], user);
+    assert.equal(dropped.code, 0, dropped.stderr);
+    assert.doesNotMatch(dropped.stdout, /pretends/);
+    assert.match(dropped.stdout, /omitted 1 comment\(s\) by @github-actions:/);
   } finally {
     if (saved === undefined) delete process.env.GITHUB_ACTIONS;
     else process.env.GITHUB_ACTIONS = saved;
@@ -286,8 +302,6 @@ test("fetch (github) --comments with only untrusted comments prints the omitted 
 
 const WIZ = "wiz-security-bot-22793c4344";
 const PRIVATE_REPO = { stdout: "acme/widgets PRIVATE\n" };
-/** The author-type read's answer: issueWith's comment `IC_<i>` written by a `types[i]`. */
-const authorTypes = (...types) => ({ "api graphql": { stdout: JSON.stringify({ data: { nodes: types.map((t, i) => ({ id: `IC_${i}`, author: { __typename: t } })) } }) } });
 
 /** Writes the main root's `.coding-crew/config.json` (a string as is). */
 function configJson(dir, config) {
