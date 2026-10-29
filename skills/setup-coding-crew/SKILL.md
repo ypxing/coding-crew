@@ -3,7 +3,7 @@ name: setup-coding-crew
 description: >
   Takes a repo from a fresh install to a working /solve-feature in one run: chooses the tracker with the
   configure-tracker skill, discovers the dev commands, saves them to .coding-crew/dev-commands.json and runs them, with the
-  github tracker optionally installs the solve-feature GitHub Actions workflow and its label, then prints the
+  github tracker installs the solve-feature GitHub Actions workflow and its label when asked, then prints the
   git commit line for the files it wrote. It never commits. Use when setting up coding-crew in a project, or to
   redo one of those steps. Trigger with /setup-coding-crew [redo tracker | redo commands | redo actions].
 argument-hint: "[redo tracker | redo commands | redo actions]"
@@ -18,7 +18,8 @@ setup files from there, committed or not. It is the parent of `git rev-parse --p
 started in (`git rev-parse --show-toplevel`): Step 4's commit line is for the user's shell there.
 
 A re-run acts only on what is missing: a configured tracker, commands already in the dev commands file and a
-workflow identical to the template are shown, not redone, and no file changes. When the user names a step ("change the tracker", "redo
+workflow identical to the template are shown, not redone, and no file changes; a missing workflow is only named,
+since "redo actions" installs it. When the user names a step ("change the tracker", "redo
 commands", "redo actions"), that step runs again. Every run ends with Step 4.
 
 This skill does not commit or push: it prints the command, and the user runs it.
@@ -101,9 +102,9 @@ bash "<skill-dir>/../coding-crew-lib/scripts/checks/run-checks.sh" --project-roo
 
 ## Step 3 — GitHub Actions
 
-Only with `tracker=github`. With `local`, say "The solve-feature Actions workflow needs the github tracker: its
-label trigger reads a root issue's `Feature:` line, and `.coding-crew/scratch/` issues are not in the runner's checkout",
-and go to Step 4.
+Only with `tracker=github`. With `local`, go to Step 4, on "redo actions" first saying "The solve-feature Actions
+workflow needs the github tracker: its label trigger reads a root issue's `Feature:` line, and `.coding-crew/scratch/`
+issues are not in the runner's checkout".
 
 The workflow a repo gets is a short caller, `<skill-dir>/hosts/github-actions.yml`: its triggers, permissions and
 the secrets it passes, and one job that runs coding-crew's reusable workflow
@@ -120,7 +121,9 @@ else echo differs; fi
 - `identical`: show "Actions workflow: installed, agent <a>", `<a>` being what
   `gh variable get CREW_AGENT` prints (`copilot` when it fails), and move on; on "redo actions", ask
   the agent question below and run the commands after it.
-- `absent`: ask "Run solve-feature on GitHub Actions, on a GitHub runner? [y/N]". On no, move on.
+- `absent`: on "redo actions", ask "Run solve-feature on GitHub Actions, on a GitHub runner? [y/N]"; on no, move
+  on. On any other run, ask nothing: show "Actions workflow: not installed (`/setup-coding-crew redo actions` adds
+  it)" and move on.
 - `differs`: show `diff -u "$WF" "<skill-dir>/hosts/github-actions.yml"` and ask whether to replace the file
   with the template. Overwrite only on yes; on no, move on.
 
