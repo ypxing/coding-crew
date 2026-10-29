@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.3.6]
+
 - solve-feature: `{"solveFeature":{"publish":false}}` in the user-level `~/.coding-crew/config.json` builds, reviews
   and fixes the feature without pushing or opening a PR: the body goes to `.coding-crew/solve-feature/local-pr-<branch>.md`
   and the outcome is `ready branch=<b>` or `needs-attention branch=<b>`, for you to push and open the PR later. The
