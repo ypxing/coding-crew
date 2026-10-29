@@ -201,6 +201,17 @@ EOF
   ! on_origin feature/feat || false
 }
 
+@test "land with publish false whose merge of a person-pushed origin branch conflicts says to merge by hand, not to re-run in a fresh clone" {
+  no_publish
+  land_ready
+  # The person pushed an earlier head themselves; a bot's commit on it conflicts with the coder's.
+  git push -q origin HEAD~1:refs/heads/feature/feat
+  branch_moves work-2.txt "the bot's version" >/dev/null
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 merge failed: merging origin/feature/feat into feature/feat conflicts in work-2.txt; 2 is ready again: merge it by hand in this checkout, commit, then re-run" ]
+}
+
 @test "fix with publish false compares with the head saved in review.base: a fixer that changed nothing is flagged, no gh pr view" {
   no_publish
   loop

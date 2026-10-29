@@ -437,14 +437,15 @@ recover; a re-run skips the issues already done and reuses the branch and the PR
 branch into it first (a conflict there stops the run for you to merge by hand). Before the review it merges the
 default branch in again, so the PR it marks ready does not conflict with it: a conflict there goes to a resolver
 subagent, and the run stops on it only when the resolver leaves it unresolved; the merge is gated by the checks, so a check failing on the merged tree, or a refused push, stops the run too. Every run ends with one line in
-`.coding-crew/solve-feature/outcome` for a host to read: `ready pr=<n>`, `needs-attention pr=<n>` or
-`stopped: <what> failed: <reason>`, `<what>` the subcommand that stopped (`start`, `next`, `sync`) or the issue ref or
+`.coding-crew/solve-feature/outcome` for a host to read: `ready pr=<n>`, `needs-attention pr=<n>` (`ready branch=<b>`,
+`needs-attention branch=<b>` when `solveFeature.publish` is `false`) or `stopped: <what> failed: <reason>`, `<what>` the subcommand that stopped (`start`, `next`, `sync`) or the issue ref or
 `review` and its step (`2 checks`, `review fix`); no file means the run never finished.
 
 | Setting | Effect |
 | --- | --- |
 | `--branch <name>` | The branch the run uses, never the default branch (default: one named after the slug) |
 | `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model name, a family with an optional version (`opus`, `claude-opus-5-5`, `opus 5.5`): the host runs the subagent on the matching model in its own list, the closest of the same family when it lacks that version, its own model when it lacks the family. Read from `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` when set and non-empty (a name for the one host where you set it: your shell, your agent CLI's settings `env`, or the workflow's repo variables), then the project's file, then `~/.coding-crew/config.json` for each key it lacks (an Actions runner sees only the project's committed file), then the default (your own) |
+| `~/.coding-crew/config.json` `solveFeature.publish` | `false` keeps the run on this machine: no `git push` and no PR; the branch is reviewed and fixed locally and the PR body, its title on the first line, is left in `.coding-crew/solve-feature/local-pr-<branch, / as _>.md` for you to push and open yourself. Read from the user-level file only, never the project's, so an Actions run always pushes |
 
 **Checks that modify files.** A check that leaves the tree modified fails. An auto-fixing lint
 (`make lint` running `--write`) can stay configured: run it once, commit what it rewrote, and re-run.
@@ -463,8 +464,8 @@ command that starts a session of its own CLI there, and crew-afk runs it as give
 | `orca` | An orca-managed worktree and an interactive agent in an orca terminal, uncapped: you watch and steer it |
 | `herdr` | An interactive agent in a new herdr pane on the worktree, uncapped |
 
-`/crew-afk status [<feature>]` prints each run's outcome line (`ready pr=<n>`, `needs-attention pr=<n>`
-or `stopped: …`), `running (pid <n>)`, or why there is none — for a local run that ended without one,
+`/crew-afk status [<feature>]` prints each run's outcome line (`ready pr=<n>`, `needs-attention pr=<n>`,
+their `branch=<b>` forms or `stopped: …`), `running (pid <n>)`, or why there is none — for a local run that ended without one,
 `re-run /crew-afk <slug> to continue` (a re-run skips the issues already done). For a local run whose
 command printed a JSON result with a cost as its last line, the outcome line ends with what the run cost
 and how long it took: `ready pr=7 cost=$1.73 (23 min)` (`cost=$<n> (<m> min)`); a run whose CLI prints
@@ -668,7 +669,7 @@ Edit these files after install — they override the defaults on the next run:
 | File                                           | Purpose                                         |
 | ---------------------------------------------- | ----------------------------------------------- |
 | `.coding-crew/config.json` (`tracker` section) | Where issues live: `{"tracker": {"kind": "github"}}` (default `local`) |
-| `~/.coding-crew/config.json` (`tracker`, `solveFeature.models`) | Your defaults for every project, same format |
+| `~/.coding-crew/config.json` (`tracker`, `solveFeature.models`, `solveFeature.publish`) | Your defaults for every project, same format; `solveFeature.publish` is read from this file only |
 
 Each value is looked up on its own: the project's `.coding-crew/config.json` (for the tracker, then a legacy
 `.coding-crew/docs/issue-tracker.md`), then `~/.coding-crew/config.json`, then the default. A broken user file

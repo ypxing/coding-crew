@@ -323,6 +323,8 @@ land() {
     local why="merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS"
     [ -n "$MERGE_CONFLICTS" ] || why="merging origin/$BRANCH into $BRANCH failed (see above)"
     local redo="re-run in a fresh clone, which redoes it on origin's branch, or merge it by hand in this checkout, commit, then re-run"
+    # PUBLISH=no: earlier issues' commits exist only here, so a fresh clone would build without them.
+    [ "$PUBLISH" = yes ] || redo="merge it by hand in this checkout, commit, then re-run"
     reopen_ref merge "$why" "Reopen $REF: its merge failed" "reopen $REF by hand, then $redo"
     stop merge "$why; $REF is ready again: $redo"
   fi
