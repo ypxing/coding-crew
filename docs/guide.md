@@ -454,7 +454,8 @@ Only a check that rewrites files on every run needs a non-mutating command in th
 
 **Unattended, in its own worktree.** `/crew-afk <feature>` starts that `/solve-feature` run for you
 and returns at once. It resolves the feature from a likely name, then prepares (or reuses) one
-worktree per feature beside your checkout, at `<repo>/../<repo-name>-worktrees/<slug>`, linking each
+worktree per feature outside your checkout, at `~/.coding-crew/worktrees/<repo-name>-<hash>/<slug>` (orca
+picks its own path), linking each
 `.worktreeinclude` entry and copying `.env` into it. The agent you ran `/crew-afk` in writes the
 command that starts a session of its own CLI there, and crew-afk runs it as given.
 
@@ -486,7 +487,8 @@ Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it files th
 ### solve-feature on GitHub Actions (optional)
 
 `/solve-feature` runs one feature from a terminal or a worktree pane. To run it on a GitHub runner
-instead, run `/setup-coding-crew` with the github tracker and answer yes to its Actions step: it copies the caller
+instead, run `/setup-coding-crew redo actions` with the github tracker (a plain run only says the workflow is not
+installed) and answer yes: it copies the caller
 file [`hosts/github-actions.yml`](../skills/setup-coding-crew/hosts/github-actions.yml) to
 `.github/workflows/solve-feature.yml` (once it has checked that the coding-crew release the file names is tagged), creates the `run-agent` label, sets the repo variable
 `CREW_AGENT` to the agent you pick and prints the commit line for it. `copilot` (the default) is billed
