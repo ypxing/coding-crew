@@ -100,10 +100,6 @@ dispatch() {
       2) die "could not tell whether $slug's $(cat "$prev/run.dest") run is still going: $id" ;;
     esac
   done < <(slug_worktrees "$slug")
-  # A slug dispatched before worktrees moved under ~/.coding-crew keeps its worktree beside the checkout: a second
-  # one would stop on git's refusal to check out the feature branch it holds.
-  local legacy; legacy="$(dirname "$MAIN")/$(basename "$MAIN")-worktrees"
-  ! worktrees | grep -qxF "$legacy/$slug" || WORKTREES=$legacy
   base=$(git -C "$MAIN" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
   wt=$(prepare "$slug" "${base:-main}")
   include "$wt"
