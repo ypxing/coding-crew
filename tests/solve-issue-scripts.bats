@@ -161,6 +161,15 @@ _cache() {
   grep -qx PIPED "$log"
 }
 
+@test "run-checks: a log dir it cannot create (a full disk) fails before any check runs, naming the dir, not as a check's failure" {
+  _cache "{\"test\": \"touch $TEMP_DIR/ran\"}"
+  TMPDIR="$TEMP_DIR/missing" run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 1 ]
+  [ ! -e "$TEMP_DIR/ran" ]
+  [[ "$output" == *"cannot create a log dir under $TEMP_DIR/missing"*"no check ran"*"CHECKS: fail" ]] || { echo "$output"; return 1; }
+  [[ "$output" != *"test: fail"* ]]
+}
+
 @test "run-checks: one failing check fails the run and does not hide the rest" {
   _cache '{"typecheck": "exit 4", "lint": "echo L", "test": "echo T"}'
   run bash "$RUN_CHECKS" --project-root "$WORK"
