@@ -54,13 +54,13 @@ BRANCH_WORK=(. ':!.coding-crew/config.json')
 git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 || BRANCH_WORK+=(':!.coding-crew/dev-commands.json')
 [ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head \
   "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base"
-# The tracker and checks libraries, in the coding-crew-lib skill installed beside this one.
 # solveFeature.publish: false keeps the run on this machine: no push, no PR, the body in local_body's file. Read from
 # the user-level config only: an Actions runner has none, so it never keeps commits that vanish with the runner.
 PUBLISH=yes
 [ "$(jq -r '.solveFeature.publish' "$HOME/.coding-crew/config.json" 2>/dev/null || true)" != false ] || PUBLISH=no
 # Keyed by branch as `gh pr view "$BRANCH"` is; not pr-body.md, land's draft body in publish mode.
 local_body() { echo "$LOGS/local-pr-${BRANCH//\//_}.md"; }
+# The tracker and checks libraries, in the coding-crew-lib skill installed beside this one.
 CLI="$SELF/../../coding-crew-lib/scripts/tracker/cli.mjs" CHECKS="$SELF/../../coding-crew-lib/scripts/checks"
 [ -f "$CLI" ] || die "tracker CLI not found ($CLI): install the coding-crew-lib skill beside solve-feature (npx skills add ypxing/coding-crew -s coding-crew-lib, adding -g at user level) or re-run install.sh"
 
@@ -361,7 +361,9 @@ land() {
 # conflicts=<files>; once someone finishes it, a re-run gates and pushes it. Success is judged here, never from
 # whoever resolved it: no merge in progress, a clean tree, the default branch in HEAD.
 sync() {
-  local default clog="$LOGS/sync.checks.log" rc=0 files before
+  local default clog="$LOGS/sync.checks.log" rc=0 files before prev
+  # Read before any stop below rewrites it: a sync that stopped left a merge, or a fix for its checks, ungated.
+  prev=$(cat "$LOGS/outcome" 2>/dev/null || true)
   [ "$(git branch --show-current)" = "$BRANCH" ] || die "branch changed to '$(git branch --show-current)'"
   # Ahead of the clean-tree check, which would otherwise read an unfinished merge as a dirty tree.
   files=$(git diff --name-only --diff-filter=U | paste -sd' ' -)
@@ -390,9 +392,9 @@ sync() {
     [ -n "$MERGE_CONFLICTS" ] || die "merging origin/$BRANCH into $BRANCH failed (see above)"
     die "merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS: merge it by hand, commit, then re-run"
   fi
-  # Ungated work is what origin lacks; with nothing pushed, what these merges brought in.
+  # Ungated work is what origin lacks; with nothing pushed, what these merges brought in, or what an earlier sync left.
   local gate=no
-  if [ "$PUBLISH" = no ]; then [ "$(git rev-parse HEAD)" = "$before" ] || gate=yes
+  if [ "$PUBLISH" = no ]; then [ "$(git rev-parse HEAD)" = "$before" ] && [[ "$prev" != "stopped: sync failed:"* ]] || gate=yes
   elif ! git merge-base --is-ancestor HEAD "origin/$BRANCH" 2>/dev/null; then gate=yes
   fi
   if [ "$gate" = yes ]; then

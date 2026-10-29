@@ -167,6 +167,30 @@ EOF
   ! on_origin feature/feat || false
 }
 
+@test "sync with publish false gates a re-run after its conflict was resolved, or after its checks failed and a fix was committed" {
+  no_publish
+  loop
+  echo mine > shared.txt && git add shared.txt && git commit -q -m "branch's shared"
+  git checkout -q main && echo "main's" > shared.txt && git add shared.txt && git commit -q -m "main: shared" && git push -q origin main
+  git checkout -q feature/feat
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 4 ]
+  # What the resolver subagent does; the re-run leaves HEAD where it is, yet the merge was never checked.
+  echo both > shared.txt && git add shared.txt && git commit -q --no-edit
+  rm -f "$STATE/checks.head"
+  CHECKS_RC=1 run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(cat "$STATE/checks.head")" = "$(git rev-parse HEAD)" ]
+  [ "$(cat .coding-crew/solve-feature/review.base 2>/dev/null)" != "$(git rev-parse HEAD)" ]
+  # The person's fix, then a re-run: gated again.
+  echo fixed > fixed.txt && git add fixed.txt && git commit -q -m "fix the checks"
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat "$STATE/checks.head")" = "$(git rev-parse HEAD)" ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+  ! on_origin feature/feat || false
+}
+
 @test "a checks failure at land with publish false reopens the issue and stops without saying the work was pushed" {
   no_publish
   land_ready
