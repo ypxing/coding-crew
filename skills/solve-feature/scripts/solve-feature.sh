@@ -114,16 +114,17 @@ pr_view() { # sets PR_N and PR_IS_DRAFT (true|false) when the branch has an OPEN
 # pr_body_read <pr> / pr_body_write <pr> <file> [<title>] — the PR body's one store: the PR on GitHub, or with
 # PUBLISH=no the branch's local body file, whose first line is `# <title>` so its reader has both.
 pr_body_read() {
-  # A body a person edited in the web UI comes back with CRLF line endings, which no marker match would see.
+  # A body a person edited, in the web UI or the local file, can come back with CRLF line endings, which no marker
+  # match would see.
   if [ "$PUBLISH" = yes ]; then gh pr view "$1" --json body | jq -r '.body' | tr -d '\r'
-  else tail -n +2 "$(local_body)" | sed '1{/^$/d;}'
+  else tail -n +2 "$(local_body)" | tr -d '\r' | sed '1{/^$/d;}'
   fi
 }
 pr_body_write() {
   local f t="${3:-}"
   if [ "$PUBLISH" = yes ]; then gh pr edit "$1" ${t:+--title "$t"} --body-file "$2" >/dev/null; return; fi
   f=$(local_body)
-  [ -n "$t" ] || [ ! -f "$f" ] || t=$(sed -n '1s/^# //p' "$f")
+  [ -n "$t" ] || [ ! -f "$f" ] || t=$(sed -n '1s/^# //p' "$f" | tr -d '\r')
   { printf '# %s\n\n' "$t"; cat "$2"; } >"$f.tmp" && mv "$f.tmp" "$f"
 }
 
@@ -346,7 +347,12 @@ land() {
     printf '%s\n' "$BEGIN" "Implemented by solve-feature (\`$SLUG\`) — in progress." "<!-- solve-feature:slug $SLUG -->" "$END" >"$f"
   fi
   if [ -z "$PR_N" ] && [ "$PUBLISH" = no ]; then
-    pr_body_write local "$f" "$(pr_title "$rs")" || die "cannot write $(local_body)"
+    # Reopened like a failed gh pr create: the issue is closed, so a re-run would skip it and never open the body.
+    if ! pr_body_write local "$f" "$(pr_title "$rs")"; then
+      local why="cannot write $(local_body)"
+      reopen_ref pr "$why" "Reopen $REF: writing its local PR body failed" "reopen $REF by hand, then fix the cause and re-run"
+      stop pr "$why; $REF is ready again with its work committed on $BRANCH: fix the cause, then re-run"
+    fi
     PR_N=local
   elif [ -z "$PR_N" ]; then
     rc=0; url=$(gh pr create --draft --title "$(pr_title "$rs")" --body-file "$f" 2>"$LOGS/pr-create.err") || rc=$?
@@ -532,7 +538,8 @@ describe() {
   local notes
   notes=$(pr_body_read "$PR") || die "reading PR $PR's body failed"
   notes=$(sed -n "\|^$NOTES_BEGIN\$|,\|^$NOTES_END\$|p" <<<"$notes")
-  grep -vxE "$NOTES_BEGIN|$NOTES_END|## Notes for a person|Delete a note here once it is handled\.|[[:space:]]*" <<<"$notes" | grep -q . || notes=""
+  # Not piped into grep -q: its early exit could fail the first grep under pipefail and drop the notes.
+  [ -n "$(grep -vxE "$NOTES_BEGIN|$NOTES_END|## Notes for a person|Delete a note here once it is handled\.|[[:space:]]*" <<<"$notes" || true)" ] || notes=""
   {
     echo "$BEGIN"
     # Written here, not by the writer subagent, so a reviewer always sees that agents wrote this PR.
