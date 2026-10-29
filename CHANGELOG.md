@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- setup-coding-crew: a plain run no longer asks whether to install the GitHub Actions workflow, which it re-asked on
+  every run after a no; it shows one line instead, and `/setup-coding-crew redo actions` asks.
 - checks: when `run-checks.sh` cannot create its log directory (a full disk, say), it stops before running any check
   and says so; before, every check failed writing to `/<check>.log`, and solve-issue and solve-feature reported the
   project's checks as failing (#670).

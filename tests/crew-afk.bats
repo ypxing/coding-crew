@@ -121,6 +121,22 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
   [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 2 ]
 }
 
+@test "a slug whose worktree is still beside the checkout, from before ~/.coding-crew, reuses it under local and herdr" {
+  local old="$T/app-worktrees/report-cli"
+  git -C "$MAIN" worktree add -q --detach "$old" origin/main
+  run bash "$SCRIPT" dispatch report-cli "${LAUNCH[@]}"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(field worktree)" = "$old" ]
+  wait_run "$old"
+  stub_herdr
+  run bash "$SCRIPT" dispatch report-cli --to herdr "${LAUNCH[@]}"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(field worktree)" = "$old" ]
+  ! grep -q '^worktree create' "$T/herdr-calls"
+  [ ! -e "$WT" ]
+  [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 2 ]
+}
+
 @test "a dispatch while the slug's run is live exits 1 naming the pid and starts nothing" {
   bash "$SCRIPT" dispatch report-cli "${LAUNCH[@]}" >/dev/null
   pid=$(cat "$WT/.coding-crew/solve-feature/run.pid")
