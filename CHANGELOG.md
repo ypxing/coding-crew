@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: `{"solveFeature":{"publish":false}}` in the user-level `~/.coding-crew/config.json` builds, reviews
+  and fixes the feature without pushing or opening a PR: the body goes to `.coding-crew/solve-feature/local-pr-<branch>.md`
+  and the outcome is `ready branch=<b>` or `needs-attention branch=<b>`, for you to push and open the PR later. The
+  project's config.json cannot set it, so an Actions run always pushes (#671).
+
 - crew-afk: `--to local` and `--to herdr` put a feature's worktree under `~/.coding-crew/worktrees/<repo>-<hash>/<slug>`
   instead of a `<repo>-worktrees` directory beside the checkout; a feature that already has a worktree at the old path
   keeps using it. `--to orca` keeps orca's own path (#673).
