@@ -1,11 +1,12 @@
 import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { copyFileSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { copyFileSync, mkdtempSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readTrackerConfig } from "../../lib/tracker/tracker-config.mjs";
+import { mainCheckout, readTrackerConfig } from "../../lib/tracker/tracker-config.mjs";
 import { run } from "../../lib/tracker/cli.mjs";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "tracker-config");
@@ -167,3 +168,16 @@ for (const [name, content] of [
     assert.ok(stderr.includes(path), stderr);
   });
 }
+
+test("mainCheckout: a checkout whose git dir is not named .git (git init --separate-git-dir) resolves to its top level from a subdirectory and from a linked worktree", () => {
+  const dir = realpathSync(repo()); // macOS: git reports tmpdir()'s /var as /private/var
+  const git = (cwd, ...a) => spawnSync("git", a, { cwd, encoding: "utf8" });
+  mkdirSync(join(dir, "main/sub"), { recursive: true });
+  git(join(dir, "main"), "init", "-q", "-b", "main", "--separate-git-dir", join(dir, "gitdir"));
+  git(join(dir, "main"), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
+  git(join(dir, "main"), "worktree", "add", "-q", join(dir, "wt"), "-b", "wt");
+  mkdirSync(join(dir, "wt/sub"));
+  assert.equal(mainCheckout(join(dir, "main/sub")), join(dir, "main"));
+  // Git records no path back to the main checkout here, so a linked worktree reads its own checkout's config.
+  assert.equal(mainCheckout(join(dir, "wt/sub")), join(dir, "wt"));
+});

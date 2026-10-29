@@ -671,6 +671,18 @@ notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-fe
   ! grep -q 'solve-feature:notes\|Notes for a person' "$STATE/pr-body" || false
 }
 
+@test "describe keeps a note whose ### heading a person deleted, since the item under it still needs them" {
+  fix_ready '{"spec":"met","gaps":["a gap"],"findings":[]}'
+  echo '- rotate the CI token after merge' > .coding-crew/solve-feature/pr-10.notes.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ]
+  sed -i.bak '/^### /d' "$STATE/pr-body"
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -qx -- '- rotate the CI token after merge' "$STATE/pr-body"
+  [ "$(grep -c '^<!-- solve-feature:notes:begin -->$' "$STATE/pr-body")" = 1 ]
+}
+
 @test "a body GitHub returns with CRLF line endings, as after a web edit, keeps its notes through a fix and a describe" {
   fix_ready '{"spec":"met","gaps":[],"findings":[]}'
   echo '- first note' > .coding-crew/solve-feature/pr-10.notes.md

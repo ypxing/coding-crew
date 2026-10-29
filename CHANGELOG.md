@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: a `Notes for a person` section keeps its notes through `describe` when a person deleted a note's
+  `### ` heading but left the item under it; before, the whole section was dropped (#PR).
+- tracker: in a checkout whose git dir is not named `.git` (`git init --separate-git-dir`), the CLI and `pr-comments`
+  read `.coding-crew/config.json` from the checkout's top level, not the directory they ran in, so a run from a
+  subdirectory no longer misses the project's config (`github.trustedBots` included) (#PR).
+
 ## [2.3.5]
 
 - solve-feature: a coder's or fixer's notes for a person go into one `## Notes for a person` section of the PR body

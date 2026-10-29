@@ -482,7 +482,7 @@ describe() {
   local view notes
   view=$(gh pr view "$PR" --json body,isDraft) || die "gh pr view $PR failed"
   notes=$(jq -r '.body' <<<"$view" | tr -d '\r' | sed -n "\|^$NOTES_BEGIN\$|,\|^$NOTES_END\$|p")
-  grep -q '^### ' <<<"$notes" || notes=""
+  grep -vxE "$NOTES_BEGIN|$NOTES_END|## Notes for a person|Delete a note here once it is handled\.|[[:space:]]*" <<<"$notes" | grep -q . || notes=""
   {
     echo "$BEGIN"
     # Written here, not by the writer subagent, so a reviewer always sees that agents wrote this PR.
