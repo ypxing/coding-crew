@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: with `publish: false`, a fix you commit after `sync`'s checks failed is checked again on a whole
+  `/solve-feature` re-run, instead of going to review unchecked (#678).
+
 - solve-feature: with `publish: false`, a local PR body saved with CRLF line endings keeps its notes section, and a
   failed first write of that file reopens the issue and says to fix the cause and re-run instead of leaving it
   closed with no body (#676).

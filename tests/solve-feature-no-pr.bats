@@ -191,6 +191,25 @@ EOF
   ! on_origin feature/feat || false
 }
 
+@test "sync with publish false gates a fix committed after its checks failed, when the re-run starts over with start" {
+  no_publish
+  loop
+  git checkout -q main && echo "main's" > main.txt && git add main.txt && git commit -q -m "main: moves" && git push -q origin main
+  git checkout -q feature/feat
+  CHECKS_RC=1 run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 1 ]
+  # The person's fix, then a whole /solve-feature re-run: start clears the last outcome, next finds nothing to do.
+  echo fixed > fixed.txt && git add fixed.txt && git commit -q -m "fix the checks"
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 3 ]
+  rm -f "$STATE/checks.head"
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat "$STATE/checks.head" 2>/dev/null)" = "$(git rev-parse HEAD)" ] || { echo "fix reached review unchecked"; return 1; }
+}
+
 @test "a checks failure at land with publish false reopens the issue and stops without saying the work was pushed" {
   no_publish
   land_ready

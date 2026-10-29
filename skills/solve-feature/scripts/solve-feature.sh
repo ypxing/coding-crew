@@ -332,6 +332,7 @@ land() {
   rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
   [ "$rc" != 3 ] || hand_back "no check commands known (DISCOVER): the coder discovered none" "run /setup-coding-crew, then re-run" "$clog"
   [ "$rc" = 0 ] || hand_back "run-checks.sh exit $rc" "fix the cause, then re-run" "$clog"
+  [ "$PUBLISH" = yes ] || git rev-parse HEAD >"$LOGS/checked.head"
   # Any failed push reopens the issue, unretried: an Actions runner's commits go with its job, so a closed issue
   # would count as landed work that exists nowhere. Here a re-run finds the commits, since start never resets a branch.
   if [ "$PUBLISH" = yes ] && ! push -u origin "$BRANCH"; then
@@ -369,9 +370,7 @@ land() {
 # conflicts=<files>; once someone finishes it, a re-run gates and pushes it. Success is judged here, never from
 # whoever resolved it: no merge in progress, a clean tree, the default branch in HEAD.
 sync() {
-  local default clog="$LOGS/sync.checks.log" rc=0 files before prev
-  # Read before any stop below rewrites it: a sync that stopped left a merge, or a fix for its checks, ungated.
-  prev=$(cat "$LOGS/outcome" 2>/dev/null || true)
+  local default clog="$LOGS/sync.checks.log" rc=0 files
   [ "$(git branch --show-current)" = "$BRANCH" ] || die "branch changed to '$(git branch --show-current)'"
   # Ahead of the clean-tree check, which would otherwise read an unfinished merge as a dirty tree.
   files=$(git diff --name-only --diff-filter=U | paste -sd' ' -)
@@ -382,7 +381,6 @@ sync() {
   [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || die "working tree is not clean: commit or stash first"
   git fetch -q origin || die "git fetch origin failed (see above)"
   default=$(default_branch)
-  before=$(git rev-parse HEAD)
   if ! merge_in --keep "origin/$default"; then
     [ -n "$MERGE_CONFLICTS" ] || die_setup_clash "$default"
     [ -n "$MERGE_CONFLICTS" ] || die "merging origin/$default into $BRANCH failed (see above)"
@@ -400,9 +398,10 @@ sync() {
     [ -n "$MERGE_CONFLICTS" ] || die "merging origin/$BRANCH into $BRANCH failed (see above)"
     die "merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS: merge it by hand, commit, then re-run"
   fi
-  # Ungated work is what origin lacks; with nothing pushed, what these merges brought in, or what an earlier sync left.
+  # Ungated work is what origin lacks; with nothing pushed, anything since the head the checks last passed on, which
+  # land and sync record in checked.head and start leaves, so a whole re-run still gates a fix committed after a stop.
   local gate=no
-  if [ "$PUBLISH" = no ]; then [ "$(git rev-parse HEAD)" = "$before" ] && [[ "$prev" != "stopped: sync failed:"* ]] || gate=yes
+  if [ "$PUBLISH" = no ]; then [ "$(cat "$LOGS/checked.head" 2>/dev/null)" = "$(git rev-parse HEAD)" ] || gate=yes
   elif ! git merge-base --is-ancestor HEAD "origin/$BRANCH" 2>/dev/null; then gate=yes
   fi
   if [ "$gate" = yes ]; then
@@ -410,7 +409,9 @@ sync() {
     bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
     [ "$rc" != 3 ] || die "no check commands known (DISCOVER): run /setup-coding-crew, then re-run"
     [ "$rc" = 0 ] || die "run-checks.sh exit $rc on $BRANCH merged with origin/$default — log: $clog; once fixed and committed, re-run"
-    [ "$PUBLISH" = no ] || push -u origin "$BRANCH" || die "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, re-run"
+    if [ "$PUBLISH" = no ]; then git rev-parse HEAD >"$LOGS/checked.head"
+    else push -u origin "$BRANCH" || die "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, re-run"
+    fi
   fi
   git rev-parse HEAD >"$LOGS/review.base"
 }
