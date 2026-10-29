@@ -486,7 +486,8 @@ Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it files th
 ### solve-feature on GitHub Actions (optional)
 
 `/solve-feature` runs one feature from a terminal or a worktree pane. To run it on a GitHub runner
-instead, run `/setup-coding-crew` with the github tracker and answer yes to its Actions step: it copies the caller
+instead, run `/setup-coding-crew redo actions` with the github tracker (a plain run only says the workflow is not
+installed) and answer yes: it copies the caller
 file [`hosts/github-actions.yml`](../skills/setup-coding-crew/hosts/github-actions.yml) to
 `.github/workflows/solve-feature.yml` (once it has checked that the coding-crew release the file names is tagged), creates the `run-agent` label, sets the repo variable
 `CREW_AGENT` to the agent you pick and prints the commit line for it. `copilot` (the default) is billed

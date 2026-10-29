@@ -77,7 +77,7 @@ flowchart LR
 | 🌫️ **Start from a fuzzy idea**              | `/crew-brainstorm <idea>` → `/crew-afk <slug>`                                                                                           |
 | 🐛 **Burn down a bug backlog**              | `/to-issues <the bugs>` → `/crew-afk <slug>`                                                                                             |
 | 🔀 **Build several features in parallel**   | one `/crew-afk <slug>` per feature, then `/crew-afk status`                                                                              |
-| ☁️ **Let the crew build on GitHub Actions** | `/setup-coding-crew` (yes to Actions), then label an issue `run-agent` ([setup](docs/guide.md#solve-feature-on-github-actions-optional)) |
+| ☁️ **Let the crew build on GitHub Actions** | `/setup-coding-crew redo actions`, then label an issue `run-agent` ([setup](docs/guide.md#solve-feature-on-github-actions-optional)) |
 | 💬 **Clear a PR's review comments**         | `/address-pr-comments`                                                                                                                   |
 | 🎯 **Pair on a single issue yourself**      | `/solve-issue <issue>`                                                                                                                   |
 | ✏️ **Make one small change**                | ask your agent directly; for a crew-built, reviewed PR: `/to-issues <change>` → `/crew-afk <slug>`                                       |
