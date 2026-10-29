@@ -9,6 +9,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - crew-afk: `--to local` and `--to herdr` put a feature's worktree under `~/.coding-crew/worktrees/<repo>-<hash>/<slug>`
   instead of a `<repo>-worktrees` directory beside the checkout; a feature that already has a worktree at the old path
   keeps using it. `--to orca` keeps orca's own path (#673).
+- checks: when `run-checks.sh` cannot create its log directory (a full disk, say), it stops before running any check
+  and says so; before, every check failed writing to `/<check>.log`, and solve-issue and solve-feature reported the
+  project's checks as failing (#670).
+
 - solve-feature: a `Notes for a person` section keeps its notes through `describe` when a person deleted a note's
   `### ` heading but left the item under it; before, the whole section was dropped (#669).
 - tracker: in a checkout whose git dir is not named `.git` (`git init --separate-git-dir`), the CLI and `pr-comments`
