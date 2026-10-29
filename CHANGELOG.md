@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- crew-afk: `--to local` and `--to herdr` put a feature's worktree under `~/.coding-crew/worktrees/<repo>-<hash>/<slug>`
+  instead of a `<repo>-worktrees` directory beside the checkout; a feature that already has a worktree at the old path
+  keeps using it. `--to orca` keeps orca's own path (#673).
 - setup-coding-crew: a plain run no longer asks whether to install the GitHub Actions workflow, which it re-asked on
   every run after a no; it shows one line instead, and `/setup-coding-crew redo actions` asks (#674).
 - checks: when `run-checks.sh` cannot create its log directory (a full disk, say), it stops before running any check

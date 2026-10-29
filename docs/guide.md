@@ -453,7 +453,8 @@ Only a check that rewrites files on every run needs a non-mutating command in th
 
 **Unattended, in its own worktree.** `/crew-afk <feature>` starts that `/solve-feature` run for you
 and returns at once. It resolves the feature from a likely name, then prepares (or reuses) one
-worktree per feature beside your checkout, at `<repo>/../<repo-name>-worktrees/<slug>`, linking each
+worktree per feature outside your checkout, at `~/.coding-crew/worktrees/<repo-name>-<hash>/<slug>` (orca
+picks its own path), linking each
 `.worktreeinclude` entry and copying `.env` into it. The agent you ran `/crew-afk` in writes the
 command that starts a session of its own CLI there, and crew-afk runs it as given.
 

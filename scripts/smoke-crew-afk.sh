@@ -71,13 +71,13 @@ if [[ -e "$DIR" ]]; then
   for _ in 1 2 3 4 5; do rm -rf "$DIR" 2>/dev/null && break; sleep 1; done
   [[ ! -e "$DIR" ]] || fail "cannot remove the previous smoke repo at $DIR"
 fi
-# The run's worktree, as crew-afk lays it out beside the checkout: the last run's belonged to the repo just removed.
-rm -rf "$DIR-worktrees/$SLUG"
 
 git clone -q "$DEMO_REPO" "$DIR" || fail "cannot clone $DEMO_REPO"
 # The marker first: a run that fails below still leaves a repo the next run may delete.
 mkdir -p "$DIR/.git/crew-smoke"
 cd "$DIR" || exit 1
+# The run's worktree, as crew-afk lays it out under ~/.coding-crew: the last run's belonged to the repo just removed.
+rm -rf "$HOME/.coding-crew/worktrees/$(basename "$PWD")-$(printf '%s' "$(pwd -P)" | git hash-object --stdin | cut -c1-8)/$SLUG"
 git config user.email crew-smoke@example.invalid
 git config user.name crew-smoke
 

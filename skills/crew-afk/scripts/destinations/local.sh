@@ -1,8 +1,8 @@
-# local — a detached git worktree beside the main checkout, and a detached headless run capped at 1h.
+# local — a detached git worktree under ~/.coding-crew/worktrees, and a detached headless run capped at 1h.
 # Sourced by crew-afk.sh, which sets MAIN, WORKTREES and die.
 prepare() { # <slug> <base-branch>
   local wt="$WORKTREES/$1"
-  if ! git -C "$MAIN" worktree list --porcelain | grep -qxF "worktree $wt"; then
+  if ! git -C "$MAIN" worktree list --porcelain | grep -xF "worktree $wt" >/dev/null; then
     [ ! -e "$wt" ] || die "$wt exists but is not a worktree of $MAIN: move it away, then re-run"
     git -C "$MAIN" fetch -q origin || die "git fetch origin failed"
     # Detached: git refuses a branch checked out in another worktree, and solve-feature picks the branch.

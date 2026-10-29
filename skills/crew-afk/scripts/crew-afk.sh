@@ -100,6 +100,11 @@ dispatch() {
       2) die "could not tell whether $slug's $(cat "$prev/run.dest") run is still going: $id" ;;
     esac
   done < <(slug_worktrees "$slug")
+  # A slug dispatched before worktrees moved under ~/.coding-crew keeps its worktree beside the checkout: a second
+  # one would stop on git's refusal to check out the feature branch it holds.
+  local legacy; legacy="$(dirname "$MAIN")/$(basename "$MAIN")-worktrees"
+  # No -q: grep quitting at a match would fail the pipeline under pipefail, reading as no match.
+  ! worktrees | grep -xF "$legacy/$slug" >/dev/null || WORKTREES=$legacy
   base=$(git -C "$MAIN" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
   wt=$(prepare "$slug" "${base:-main}")
   include "$wt"
@@ -183,6 +188,7 @@ CMD="${1:-}"; [ $# -eq 0 ] || shift
 case "$CMD" in dispatch | status | wait) ;; *) usage ;; esac
 COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a git repository"
 MAIN=$(dirname "$COMMON")
-# One worktree per slug, beside the main checkout: never inside it, where the user's own tools would scan it.
-WORKTREES="$(dirname "$MAIN")/$(basename "$MAIN")-worktrees"
+# One worktree per slug, under the user's ~/.coding-crew: never inside the checkout, where the user's own tools would
+# scan it. The path's hash keeps apart two repos with one name.
+WORKTREES="$HOME/.coding-crew/worktrees/$(basename "$MAIN")-$(printf '%s' "$MAIN" | git hash-object --stdin | cut -c1-8)"
 if [ "$CMD" = wait ]; then wait_for "$@"; else "$CMD" "$@"; fi
