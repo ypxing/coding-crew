@@ -218,7 +218,7 @@ EOF
   coder_notes
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$output" = pr=local ] || { echo "$output"; return 1; }
-  sed -i 's/$/\r/' "$LOCAL"
+  perl -pi -e 's/\n/\r\n/' "$LOCAL"
   : > .coding-crew/solve-feature/pr-local.attention.md
   printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n' > .coding-crew/solve-feature/pr-local.summary.md
   run bash "$SCRIPT" describe feat local
