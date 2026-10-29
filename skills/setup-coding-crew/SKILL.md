@@ -18,7 +18,8 @@ setup files from there, committed or not. It is the parent of `git rev-parse --p
 started in (`git rev-parse --show-toplevel`): Step 4's commit line is for the user's shell there.
 
 A re-run acts only on what is missing: a configured tracker, commands already in the dev commands file and a
-workflow identical to the template are shown, not redone, and no file changes. When the user names a step ("change the tracker", "redo
+workflow identical to the template are shown, not redone, and no file changes; a missing workflow is only named,
+since "redo actions" installs it. When the user names a step ("change the tracker", "redo
 commands", "redo actions"), that step runs again. Every run ends with Step 4.
 
 This skill does not commit or push: it prints the command, and the user runs it.
