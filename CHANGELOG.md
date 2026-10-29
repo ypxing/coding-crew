@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- checks: when `run-checks.sh` cannot create its log directory (a full disk, say), it stops before running any check
+  and says so; before, every check failed writing to `/<check>.log`, and solve-issue and solve-feature reported the
+  project's checks as failing (#670).
+
 - solve-feature: a `Notes for a person` section keeps its notes through `describe` when a person deleted a note's
   `### ` heading but left the item under it; before, the whole section was dropped (#669).
 - tracker: in a checkout whose git dir is not named `.git` (`git init --separate-git-dir`), the CLI and `pr-comments`

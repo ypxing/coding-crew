@@ -57,7 +57,12 @@ _changed_files() {
     | awk 'NF && !seen[$0]++ { printf "%s%s", (n++ ? ", " : ""), $0 }'
 }
 
-LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/solve-issue-checks.XXXXXX")"
+# Without a log dir every check would write to /<key>.log and fail, blaming the project for a full disk.
+if ! LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/solve-issue-checks.XXXXXX")"; then
+  echo "checks: cannot create a log dir under ${TMPDIR:-/tmp} (is the disk full?) — no check ran"
+  echo "CHECKS: fail"
+  exit 1
+fi
 
 # One install up front: run.sh would otherwise retry a failing install once per check.
 _gitdir="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
