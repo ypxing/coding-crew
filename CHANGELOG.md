@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: `{"solveFeature":{"publish":false}}` in the user-level `~/.coding-crew/config.json` builds, reviews
+  and fixes the feature without pushing or opening a PR: the body goes to `.coding-crew/solve-feature/local-pr-<branch>.md`
+  and the outcome is `ready branch=<b>` or `needs-attention branch=<b>`, for you to push and open the PR later. The
+  project's config.json cannot set it, so an Actions run always pushes (#671).
+
 - checks: when `run-checks.sh` cannot create its log directory (a full disk, say), it stops before running any check
   and says so; before, every check failed writing to `/<check>.log`, and solve-issue and solve-feature reported the
   project's checks as failing (#670).
