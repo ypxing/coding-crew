@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.3.5]
+
 - solve-feature: a coder's or fixer's notes for a person go into one `## Notes for a person` section of the PR body
   instead of one PR comment each; delete a note there once it is handled, and later runs keep it deleted. A
   `Needs attention` line that already starts with `- ` is no longer bulleted twice (#666).
