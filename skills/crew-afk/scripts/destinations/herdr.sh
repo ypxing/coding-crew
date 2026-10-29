@@ -3,7 +3,7 @@
 prepare() { # <slug> <base-branch>
   command -v herdr >/dev/null || die "herdr not found on PATH"
   local wt="$WORKTREES/$1"
-  if ! git -C "$MAIN" worktree list --porcelain | grep -qxF "worktree $wt"; then
+  if ! git -C "$MAIN" worktree list --porcelain | grep -xF "worktree $wt" >/dev/null; then
     # Its own branch: solve-feature checks out the feature's, which may be checked out nowhere else.
     herdr worktree create --cwd "$MAIN" --branch "crew-afk/$1" --base "$2" --path "$wt" --label "$1" --no-focus >/dev/null ||
       die "herdr worktree create failed"
