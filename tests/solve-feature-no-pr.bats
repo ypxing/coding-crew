@@ -201,6 +201,32 @@ EOF
   ! on_origin feature/feat || false
 }
 
+@test "land with publish false that cannot write the local body reopens the issue and says how to retry" {
+  no_publish
+  land_ready
+  mkdir "$LOCAL.tmp"
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 pr failed: cannot write $WORK/$LOCAL; 2 is ready again with its work committed on feature/feat: fix the cause, then re-run" ]
+  [ "$(node "$LIB/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
+  ! on_origin feature/feat || false
+}
+
+@test "describe with publish false keeps the notes of a local body a person saved with CRLF line endings" {
+  no_publish
+  land_ready
+  coder_notes
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$output" = pr=local ] || { echo "$output"; return 1; }
+  sed -i 's/$/\r/' "$LOCAL"
+  : > .coding-crew/solve-feature/pr-local.attention.md
+  printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n' > .coding-crew/solve-feature/pr-local.summary.md
+  run bash "$SCRIPT" describe feat local
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -qxF -- "- tag a release once this merges" "$LOCAL"
+  ! grep -q $'\r' "$LOCAL" || false
+}
+
 @test "land with publish false whose merge of a person-pushed origin branch conflicts says to merge by hand, not to re-run in a fresh clone" {
   no_publish
   land_ready
