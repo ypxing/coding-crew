@@ -11,7 +11,7 @@ REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 setup() {
   # Physical path: git prints worktree paths resolved (macOS /var → /private/var).
   T=$(cd "$(mktemp -d)" && pwd -P)
-  export T
+  export T HOME="$T/home"
   SCRIPT="$REPO_ROOT/skills/crew-afk/scripts/crew-afk.sh"
 
   SEED="$T/seed"
@@ -26,7 +26,8 @@ setup() {
   echo 'SECRET=1' > "$MAIN/.env"
   mkdir -p "$MAIN/node_modules/pkg"
   printf '# deps\nnode_modules\n' > "$MAIN/.worktreeinclude"
-  WT="$T/app-worktrees/report-cli"
+  WORKTREES="$HOME/.coding-crew/worktrees/app-$(printf '%s' "$MAIN" | git hash-object --stdin | cut -c1-8)"
+  WT="$WORKTREES/report-cli"
 
   STUB="$T/stub"
   mkdir -p "$STUB"
@@ -52,7 +53,7 @@ SH
 teardown() {
   touch "$T/release"
   local pid
-  for pid in $(cat "$T"/*/*/.coding-crew/solve-feature/run.pid 2>/dev/null); do
+  for pid in $(cat "$WORKTREES"/*/.coding-crew/solve-feature/run.pid 2>/dev/null); do
     for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
   done
   rm -rf "$T"
@@ -141,7 +142,7 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
     [ "$status" -eq 2 ] || { echo "$args: $output"; return 1; }
     [[ "$output" == *crew-afk:* ]]
   done
-  [ ! -e "$T/app-worktrees" ]
+  [ ! -e "$HOME/.coding-crew/worktrees" ]
   [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 1 ]
 }
 
@@ -152,7 +153,7 @@ wait_run() { # <worktree> — release the stub, then wait for the run's pid to e
     [ "$status" -eq 2 ] || { echo "$args: $output"; return 1; }
     [[ "$output" == *"crew-afk: the launch command is missing"* ]] || { echo "$args: $output"; return 1; }
   done
-  [ ! -e "$T/app-worktrees" ]
+  [ ! -e "$HOME/.coding-crew/worktrees" ]
   [ "$(git -C "$MAIN" worktree list | wc -l)" -eq 1 ]
 }
 

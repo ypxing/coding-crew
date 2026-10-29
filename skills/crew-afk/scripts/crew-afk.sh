@@ -183,6 +183,7 @@ CMD="${1:-}"; [ $# -eq 0 ] || shift
 case "$CMD" in dispatch | status | wait) ;; *) usage ;; esac
 COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "not inside a git repository"
 MAIN=$(dirname "$COMMON")
-# One worktree per slug, beside the main checkout: never inside it, where the user's own tools would scan it.
-WORKTREES="$(dirname "$MAIN")/$(basename "$MAIN")-worktrees"
+# One worktree per slug, under the user's ~/.coding-crew: never inside the checkout, where the user's own tools would
+# scan it. The path's hash keeps apart two repos with one name.
+WORKTREES="$HOME/.coding-crew/worktrees/$(basename "$MAIN")-$(printf '%s' "$MAIN" | git hash-object --stdin | cut -c1-8)"
 if [ "$CMD" = wait ]; then wait_for "$@"; else "$CMD" "$@"; fi

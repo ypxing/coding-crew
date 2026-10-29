@@ -1,4 +1,4 @@
-# local — a detached git worktree beside the main checkout, and a detached headless run capped at 1h.
+# local — a detached git worktree under ~/.coding-crew/worktrees, and a detached headless run capped at 1h.
 # Sourced by crew-afk.sh, which sets MAIN, WORKTREES and die.
 prepare() { # <slug> <base-branch>
   local wt="$WORKTREES/$1"
