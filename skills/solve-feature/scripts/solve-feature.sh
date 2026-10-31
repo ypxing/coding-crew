@@ -60,6 +60,8 @@ PUBLISH=yes
 [ "$(jq -r '.solveFeature.publish' "$HOME/.coding-crew/config.json" 2>/dev/null || true)" != false ] || PUBLISH=no
 # Keyed by branch as `gh pr view "$BRANCH"` is; not pr-body.md, land's draft body in publish mode.
 local_body() { echo "$LOGS/local-pr-${BRANCH//\//_}.md"; }
+# The issue next handed out for this feature until its land records it: per feature, as runs share this directory.
+landing() { echo "$LOGS/landing-$SLUG"; }
 # The tracker and checks libraries, in the coding-crew-lib skill installed beside this one.
 CLI="$SELF/../../coding-crew-lib/scripts/tracker/cli.mjs" CHECKS="$SELF/../../coding-crew-lib/scripts/checks"
 [ -f "$CLI" ] || die "tracker CLI not found ($CLI): install the coding-crew-lib skill beside solve-feature (npx skills add ypxing/coding-crew -s coding-crew-lib, adding -g at user level) or re-run install.sh"
@@ -214,10 +216,14 @@ next() {
   local rc=0 ref
   ref=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
-  # The issue handed out last, cleared by its land: one still named here and no longer ready was closed by its
-  # coder, but no land gated or recorded it, so the run would skip it as landed.
-  if [ -s "$LOGS/landing" ] && REF=$(cat "$LOGS/landing") && { [ "$rc" = 3 ] || [ "$ref" != "$REF" ]; }; then
-    stop land "its coder closed it but land never finished: run land $SLUG $REF $(git branch --show-current), then re-run"
+  # The issue handed out last, cleared by its land unless the coder closed it: one still named here and no longer
+  # ready was closed by its coder, but no land gated or recorded it, so the run would skip it as landed.
+  if [ -s "$(landing)" ] && REF=$(cat "$(landing)") && { [ "$rc" = 3 ] || [ "$ref" != "$REF" ]; }; then
+    local cmds why="its coder closed it but land never finished" todo="land $SLUG $REF $(git branch --show-current)"
+    # shellcheck source=/dev/null
+    . "$CHECKS/commands-file.sh" 2>/dev/null && cmds=$(commands_file "$ROOT") && ! commands_field_present "$cmds" test &&
+      why="$why and no check commands are known" todo="/setup-coding-crew, then $todo"
+    stop land "$why: run $todo, then re-run"
   fi
   [ "$rc" = 0 ] || nothing_left
   # Saved now, not in land: the local tracker's close moves the file, and fetch then exits 3. fetch runs the
@@ -225,7 +231,7 @@ next() {
   node "$CLI" fetch "$ref" >"$LOGS/${ref//\//_}.issue.md" || die "fetch $ref failed (see above)"
   # One coder at a time writes its report here; an earlier one's would read as this coder's at land's solve stop.
   rm -f "$LOGS/coder.report.md" "$LOGS/coder.notes.md"
-  printf '%s\n' "$ref" >"$LOGS/landing"
+  printf '%s\n' "$ref" >"$(landing)"
   echo "$ref"
 }
 
@@ -279,6 +285,7 @@ reopen_ref() {
   local before changed
   before=$(git status --porcelain -uall)
   node "$CLI" reopen "$REF" >/dev/null || stop "$1" "$2; reopen $REF failed (see above): $4" "${5:-}"
+  rm -f "$(landing)"
   # A file tracker's reopen moves a tracked issue file; only that is committed, never what the checks left.
   changed=$(comm -13 <(sort <<<"$before") <(git status --porcelain -uall | sort) | cut -c4-)
   if [ -n "$changed" ]; then
@@ -322,6 +329,7 @@ land() {
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
   if [ "$again" = "$REF" ]; then
+    rm -f "$(landing)" # still open: a re-run hands it out again, or a person decides it
     [ -s "$LOGS/coder.report.md" ] || stop solve "coder ran but did not close $REF and left no report at $LOGS/coder.report.md"
     stop solve "coder ran but did not close $REF; why: $LOGS/coder.report.md"
   fi
@@ -368,7 +376,7 @@ land() {
     PR_N="${url##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $url"
   fi
   # Pushed and on a PR, the issue has landed; a notes stop after this says how to add them by hand.
-  rm -f "$LOGS/landing"
+  rm -f "$(landing)"
   post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)"
   echo "pr=$PR_N"
 }
