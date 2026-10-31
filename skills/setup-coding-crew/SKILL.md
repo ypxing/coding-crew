@@ -108,13 +108,20 @@ issues are not in the runner's checkout".
 
 The workflow a repo gets is a short caller, `<skill-dir>/hosts/github-actions.yml`: its triggers, permissions and
 the secrets it passes, and one job that runs coding-crew's reusable workflow
-`ypxing/coding-crew/.github/workflows/crew-solve-feature.yml` at the release tag on its `uses:` line. The runner
-installs that release's skills, so the repo variable `CODING_CREW_REF` is no longer read.
+`ypxing/coding-crew/.github/workflows/crew-solve-feature.yml` at the release tag on its `uses:` line. The repo gets
+it pinned to that tag's commit SHA, the tag kept as a trailing comment (`@<sha>  # vX.Y.Z`): a tag can be moved, and
+the job holds the repo's write token and the user's secrets. The runner installs that release's skills, so the repo
+variable `CODING_CREW_REF` is no longer read.
+
+The check below needs no network: a caller is `identical` when it is SHA-pinned and, with the pin read back as
+its tag, matches the template; a tag-pinned one `differs`, so it is offered the pin:
 
 ```bash
 WF=.github/workflows/solve-feature.yml
+PIN='^( *uses: ypxing/coding-crew/\.github/workflows/crew-solve-feature\.yml@)[0-9a-f]{40}  # ([^ ]+)$'
 if [ ! -f "$WF" ]; then echo absent
-elif cmp -s "<skill-dir>/hosts/github-actions.yml" "$WF"; then echo identical
+elif grep -qE "$PIN" "$WF" && sed -E "s%$PIN%\\1\\2%" "$WF" | cmp -s "<skill-dir>/hosts/github-actions.yml" -; then
+  echo identical
 else echo differs; fi
 ```
 
@@ -135,23 +142,26 @@ On yes, ask which agent CLI the runner uses, and keep the answer as `<agent>`:
   on AWS Bedrock with no secret, through repo variables and an IAM role coding-crew's `docs/guide.md` describes.
 
 The caller's tag must be released (coding-crew installs from `main`, which can be ahead of its last release), so
-the block checks it before writing anything:
+the block resolves it to its commit SHA before writing anything, and writes the template with only that `uses:` ref
+replaced:
 
 ```bash
-TAG=$(sed -nE 's#^ *uses: ypxing/coding-crew/\.github/workflows/crew-solve-feature\.yml@([^ ]+)$#\1#p' "<skill-dir>/hosts/github-actions.yml")
-if ! ERR=$(gh api "repos/ypxing/coding-crew/git/ref/tags/$TAG" 2>&1 >/dev/null); then
-  if grep -q 'HTTP 404' <<<"$ERR"; then
+TPL="<skill-dir>/hosts/github-actions.yml"
+TAG=$(sed -nE 's#^ *uses: ypxing/coding-crew/\.github/workflows/crew-solve-feature\.yml@([^ ]+)$#\1#p' "$TPL")
+if ! OUT=$(gh api "repos/ypxing/coding-crew/commits/$TAG" --jq .sha 2>&1) || ! grep -qxE '[0-9a-f]{40}' <<<"$OUT"; then
+  if grep -q 'HTTP 422' <<<"$OUT"; then
     echo "coding-crew's workflow tag $TAG is not released yet: re-run after the release, or install from a release tag"
-  else echo "$ERR"; fi
+  else echo "$OUT"; fi
 else
   mkdir -p .github/workflows
-  cp "<skill-dir>/hosts/github-actions.yml" .github/workflows/solve-feature.yml
+  sed -E "s|^( *uses: ypxing/coding-crew/\.github/workflows/crew-solve-feature\.yml@)[^ ]+\$|\1$OUT  # $TAG|" "$TPL" \
+    > .github/workflows/solve-feature.yml
   gh label create run-agent --force
   gh variable set CREW_AGENT --body <agent>
 fi
 ```
 
-When it prints the not-released line or the tag check's error, nothing was written: say so and go to Step 4.
+When it prints the not-released line or the SHA lookup's error, nothing was written: say so and go to Step 4.
 
 Once it wrote the caller, check the default branch: the workflow's token has `contents: write`, so on a branch with
 no protection and no ruleset requiring a PR it can push there directly. Both reads need only read access; a failed

@@ -632,47 +632,92 @@ SH
   grep -q '^### solve-feature feat:' "$GITHUB_STEP_SUMMARY"
 }
 
-# actions_write — Step 3's bash block that checks the caller's tag and writes the workflow, <agent> as copilot.
+# actions_write — Step 3's bash block that resolves the caller's tag to a commit SHA and writes the workflow, <agent> as copilot.
 actions_write() {
-  awk '/^```bash/ { c = 1; b = ""; next } c && /^```/ { c = 0; if (b ~ /hosts\/github-actions.yml" .github\/workflows/) { printf "%s", b; exit } next } c { b = b $0 "\n" }' \
+  awk '/^```bash/ { c = 1; b = ""; next } c && /^```/ { c = 0; if (b ~ /coding-crew\/commits\//) { printf "%s", b; exit } next } c { b = b $0 "\n" }' \
     "$REPO_ROOT/skills/setup-coding-crew/SKILL.md" | sed -e "s#<skill-dir>#$REPO_ROOT/skills/setup-coding-crew#g" -e 's#<agent>#copilot#g'
 }
 
-@test "Step 3 writes the caller only once coding-crew's tag on it exists: a 404 says it is not released yet, another failure prints gh's error, and neither writes a file" {
-  local repo="$TEMP_DIR/repo" stub="$TEMP_DIR/stub"
-  actions_write > "$TEMP_DIR/write.sh"
-  grep -q 'git/ref/tags' "$TEMP_DIR/write.sh"
-  mkdir -p "$stub" "$repo" && cd "$repo" && git init -q -b main
-  cat > "$stub/gh" <<'SH'
+# actions_check — Step 3's bash block that compares an existing caller with the template.
+actions_check() {
+  awk '/^```bash/ { c = 1; b = ""; next } c && /^```/ { c = 0; if (b ~ /echo absent/) { printf "%s", b; exit } next } c { b = b $0 "\n" }' \
+    "$REPO_ROOT/skills/setup-coding-crew/SKILL.md" | sed -e "s#<skill-dir>#$REPO_ROOT/skills/setup-coding-crew#g"
+}
+
+# actions_stub <dir> — a gh that logs its calls; GH_TAG=missing answers with gh's 422 for an unknown commit, down with a
+# network error, anything else with the SHA (the stub applies no --jq).
+actions_stub() {
+  mkdir -p "$1"
+  cat > "$1/gh" <<'SH'
 #!/usr/bin/env bash
 echo "gh $*" >> "$TEMP_DIR/gh.log"
 case "$GH_TAG" in
-  missing) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;
+  missing) echo "gh: No commit found for SHA: ${2##*/} (HTTP 422)" >&2; exit 1 ;;
   down) echo 'error connecting to api.github.com' >&2; exit 1 ;;
 esac
-[ "$1" = api ] && echo '{"ref":"refs/tags/x"}'
+[ "$1" = api ] && echo 62d24629354401612c4189f26321102558b5da9b
 exit 0
 SH
-  chmod +x "$stub/gh"
+  chmod +x "$1/gh"
+}
+
+@test "Step 3 writes the caller pinned to the commit SHA its tag resolves to: a 422 says the tag is not released yet, another failure prints gh's error, and neither writes anything" {
+  local repo="$TEMP_DIR/repo" stub="$TEMP_DIR/stub" tpl="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml"
+  local sha=62d24629354401612c4189f26321102558b5da9b
+  actions_write > "$TEMP_DIR/write.sh"
+  [ -s "$TEMP_DIR/write.sh" ]
+  actions_stub "$stub"
+  mkdir -p "$repo" && cd "$repo" && git init -q -b main
   export PATH="$stub:$PATH" TEMP_DIR
-  local tag; tag=$(sed -nE 's#^ *uses: ypxing/coding-crew/\.github/workflows/crew-solve-feature\.yml@([^ ]+)$#\1#p' "$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml")
+  local tag; tag=$(sed -nE 's#^ *uses: ypxing/coding-crew/\.github/workflows/crew-solve-feature\.yml@([^ ]+)$#\1#p' "$tpl")
   [ -n "$tag" ]
+  local call="gh api repos/ypxing/coding-crew/commits/$tag --jq .sha"
 
   GH_TAG=missing run bash "$TEMP_DIR/write.sh"
   [ "$status" -eq 0 ]
   [ "$output" = "coding-crew's workflow tag $tag is not released yet: re-run after the release, or install from a release tag" ]
   [ ! -e .github ]
-  [ "$(cat "$TEMP_DIR/gh.log")" = "gh api repos/ypxing/coding-crew/git/ref/tags/$tag" ]
+  [ "$(cat "$TEMP_DIR/gh.log")" = "$call" ]
 
+  rm -f "$TEMP_DIR/gh.log"
   GH_TAG=down run bash "$TEMP_DIR/write.sh"
   [ "$output" = 'error connecting to api.github.com' ]
   [ ! -e .github ]
+  [ "$(cat "$TEMP_DIR/gh.log")" = "$call" ]
 
   rm -f "$TEMP_DIR/gh.log"
   GH_TAG=found run bash "$TEMP_DIR/write.sh"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  cmp "$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml" .github/workflows/solve-feature.yml
-  [ "$(cat "$TEMP_DIR/gh.log")" = "$(printf '%s\n' "gh api repos/ypxing/coding-crew/git/ref/tags/$tag" 'gh label create run-agent --force' 'gh variable set CREW_AGENT --body copilot')" ]
+  local wf=.github/workflows/solve-feature.yml
+  # The template but for its uses: line, which names the SHA with the tag in a trailing comment.
+  [ "$(grep -vF 'uses: ypxing/coding-crew/.github/workflows/' "$wf")" = "$(grep -vF 'uses: ypxing/coding-crew/.github/workflows/' "$tpl")" ]
+  [ "$(wc -l < "$wf")" -eq "$(wc -l < "$tpl")" ]
+  grep -qxF "    uses: ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@$sha  # $tag" "$wf"
+  [ "$(cat "$TEMP_DIR/gh.log")" = "$(printf '%s\n' "$call" 'gh label create run-agent --force' 'gh variable set CREW_AGENT --body copilot')" ]
+}
+
+@test "Step 3's existing-file check needs no gh: identical for the caller the write block wrote, differs for the tag-pinned template, absent with no file" {
+  local repo="$TEMP_DIR/repo" stub="$TEMP_DIR/stub" tpl="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml"
+  actions_check > "$TEMP_DIR/check.sh"
+  actions_write > "$TEMP_DIR/write.sh"
+  [ -s "$TEMP_DIR/check.sh" ] && [ -s "$TEMP_DIR/write.sh" ]
+  actions_stub "$stub"
+  mkdir -p "$repo" && cd "$repo" && git init -q -b main
+  export TEMP_DIR
+  # A PATH with no gh on it: only the tools the check may use.
+  local nogh="$TEMP_DIR/nogh" t; mkdir -p "$nogh"
+  for t in bash grep sed cmp; do ln -s "$(command -v "$t")" "$nogh/$t"; done
+  chk() { PATH="$nogh" run "$nogh/bash" "$TEMP_DIR/check.sh"; }
+
+  chk
+  [ "$output" = absent ] || { echo "$output"; return 1; }
+  PATH="$stub:$PATH" run bash "$TEMP_DIR/write.sh"
+  [ "$status" -eq 0 ] && [ -f .github/workflows/solve-feature.yml ]
+  chk
+  [ "$output" = identical ] || { echo "$output"; return 1; }
+  cp "$tpl" .github/workflows/solve-feature.yml
+  chk
+  [ "$output" = differs ]
 }
 
 # protection_check — Step 3's bash block that reads the default branch's protection and rulesets.
