@@ -511,11 +511,16 @@ the issue, only those neither the code, the docs nor the issue answers, each nam
 is written on this path; the draft PR and its review are the check.
 
 The caller file is short: the triggers, the permissions (with `id-token: write`), and one job, `run`, that calls
-coding-crew's reusable workflow [`crew-solve-feature.yml`](../.github/workflows/crew-solve-feature.yml) at a release
-tag (`uses: ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@vX.Y.Z`), passing `ANTHROPIC_API_KEY`,
-`CLAUDE_CODE_OAUTH_TOKEN`, `COPILOT_GITHUB_TOKEN` and `NPM_TOKEN` by name. Everything the job does lives in the
-reusable workflow, whose header explains billing and the rest. To pick up a newer coding-crew, bump the tag on that
-`uses:` line; Dependabot's `github-actions` ecosystem opens those PRs:
+coding-crew's reusable workflow [`crew-solve-feature.yml`](../.github/workflows/crew-solve-feature.yml) pinned to a
+release's full commit SHA with the version in a trailing comment
+(`uses: ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@<sha>  # vX.Y.Z`; a tag can be moved, and the job
+holds the repo's write token and your secrets), passing `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`,
+`COPILOT_GITHUB_TOKEN` and `NPM_TOKEN` by name. Everything the job does lives in the reusable workflow, whose header
+explains billing and the rest. The pin fixes that file, not the `ypxing/coding-crew/actions/install@<tag>` it runs,
+which is resolved when the job runs (protected by coding-crew's release-tag ruleset, which admins can bypass, and
+locked by Immutable releases for releases published after it is enabled). To pick up a newer coding-crew, run
+`/setup-coding-crew redo actions` or take Dependabot's `github-actions` PR, which bumps the SHA and its comment
+together:
 
 ```yaml
 # .github/dependabot.yml
@@ -638,9 +643,11 @@ workflow:
    trust policies are updated to the new shape.
 2. Trust policy: the GitHub OIDC provider as `Federated`, `token.actions.githubusercontent.com:aud` equal to
    `sts.amazonaws.com`, and `token.actions.githubusercontent.com:sub` matching (`StringLike`)
-   `repo:<org>/*:job_workflow_ref:<owner>/coding-crew/.github/workflows/crew-solve-feature.yml@<ref>`, `<owner>`
-   being the coding-crew copy the callers name and `<ref>` its full ref: `refs/tags/vX.Y.Z` for the tag they pin
-   (not the bare `vX.Y.Z`), or `refs/heads/stable`.
+   `repo:<org>/*:job_workflow_ref:<owner>/coding-crew/.github/workflows/crew-solve-feature.yml@*`, `<owner>` being
+   the coding-crew copy the callers name. A SHA-pinned caller's `job_workflow_ref` most likely ends in `@<sha>`, not
+   `@refs/tags/vX.Y.Z`, and `@*` matches either form, a `stable` branch's `@refs/heads/stable` too. It is safe: only
+   that copy's writers can create refs in it, and the `repo:<org>/*` prefix still limits which repos can assume the
+   role.
 3. Permissions policy: only `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`, on the named
    foundation-model and inference-profile ARNs the runs use.
 4. The role's maximum session duration at least the job's `timeout-minutes` (360 by default, so 6 hours).
