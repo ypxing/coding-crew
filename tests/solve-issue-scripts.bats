@@ -118,7 +118,7 @@ _preflight() {
   _preflight
   [ "$status" -eq 1 ]
   [[ "$output" == "BLOCKED: checks library missing from the coding-crew-lib skill"* ]] || { echo "$output"; return 1; }
-  [[ "$output" == *"npx skills add ypxing/coding-crew -s coding-crew-lib"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"npx skills add <that source> -s coding-crew-lib"* ]] || { echo "$output"; return 1; }
 }
 
 # ─── run-checks.sh ───────────────────────────────────────────────────────────

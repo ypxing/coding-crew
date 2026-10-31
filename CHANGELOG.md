@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- All skills using coding-crew-lib: the stop for a missing `coding-crew-lib` (and solve-feature's and solve-issue's
+  missing-library errors) now says to install it from the source this skill was installed from, instead of naming
+  the `ypxing/coding-crew` repo, which skills.sh's Snyk audit flagged as an unverifiable external dependency (#683).
 - solve-feature: a re-run after an interrupted `land` (the issue done in the tracker, but nothing checked or
   recorded it) now stops naming the `land <slug> <ref> <branch>` to run (after `/setup-coding-crew` when no check
   commands are known) or the issue to reopen, instead of `nothing landed` or skipping that issue as landed. The
