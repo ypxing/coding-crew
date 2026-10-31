@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: a re-run after an interrupted `land` (the issue done in the tracker, but nothing checked or
+  recorded it) now stops naming the `land <slug> <ref> <branch>` to run (after `/setup-coding-crew` when no check
+  commands are known) or the issue to reopen, instead of `nothing landed` or skipping that issue as landed. The
+  tracker CLI gains a `status <ref>` op that prints an issue's status (#679).
 - solve-feature: with `publish: false`, a local PR body saved with CRLF line endings keeps its notes section, and a
   failed first write of that file reopens the issue and says to fix the cause and re-run instead of leaving it
   closed with no body (#676).

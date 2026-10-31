@@ -94,6 +94,7 @@ case "\$2" in
       [ "\$ok" = 1 ] && { echo "\$c"; exit 0; }
     done; exit 3 ;;
   fetch) [ -f "\$STATE/\${3//\//_}.md" ] || exit 3; cat "\$STATE/\${3//\//_}.md" ;;
+  status) jq -er --arg r "\$3" '.[] | select((.ref // (.number | tostring)) == \$r) | if .state == "CLOSED" or any(.labels[]; .name == "awaiting-merge") then "done" else ([.labels[].name | select(. == "ready-for-agent")][0] // "") end' "\$STATE/issues.json" || exit 3 ;;
   reopen) [ -z "\${REOPEN_RC:-}" ] || { echo "gh: boom" >&2; exit "\$REOPEN_RC"; }
     [ -z "\${REOPEN_TOUCHES:-}" ] || echo reopened > "\$REOPEN_TOUCHES"
     jq --arg r "\$3" 'map(if (.ref // (.number | tostring)) == \$r then .labels = [{"name":"ready-for-agent"}] else . end)' "\$STATE/issues.json" > "\$STATE/i.tmp"

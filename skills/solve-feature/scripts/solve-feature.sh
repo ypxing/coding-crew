@@ -60,6 +60,8 @@ PUBLISH=yes
 [ "$(jq -r '.solveFeature.publish' "$HOME/.coding-crew/config.json" 2>/dev/null || true)" != false ] || PUBLISH=no
 # Keyed by branch as `gh pr view "$BRANCH"` is; not pr-body.md, land's draft body in publish mode.
 local_body() { echo "$LOGS/local-pr-${BRANCH//\//_}.md"; }
+# The issue next handed out for this feature until its land records it: per feature, as runs share this directory.
+landing() { echo "$LOGS/landing-$SLUG"; }
 # The tracker and checks libraries, in the coding-crew-lib skill installed beside this one.
 CLI="$SELF/../../coding-crew-lib/scripts/tracker/cli.mjs" CHECKS="$SELF/../../coding-crew-lib/scripts/checks"
 [ -f "$CLI" ] || die "tracker CLI not found ($CLI): install the coding-crew-lib skill beside solve-feature (npx skills add ypxing/coding-crew -s coding-crew-lib, adding -g at user level) or re-run install.sh"
@@ -213,12 +215,26 @@ nothing_left() { # exit 3; with no open PR on the branch, the run has nothing to
 next() {
   local rc=0 ref
   ref=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
-  case $rc in 0) ;; 3) nothing_left ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
+  case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
+  # The issue handed out last, cleared once its land records it. Done in the tracker but still named here, it was
+  # closed with no land to gate or record it, and the run would skip it as landed.
+  if [ -s "$(landing)" ] && REF=$(cat "$(landing)") && { [ "$rc" = 3 ] || [ "$ref" != "$REF" ]; }; then
+    local st cmds why="$REF is done but its land never finished" todo="land $SLUG $REF $(git branch --show-current)"
+    st=$(node "$CLI" status "$REF") || die "status $REF failed (see above)"
+    if [ "$st" = done ]; then
+      # shellcheck source=/dev/null
+      . "$CHECKS/commands-file.sh" 2>/dev/null && cmds=$(commands_file "$ROOT") && ! commands_field_present "$cmds" test &&
+        why="$why and no check commands are known" todo="/setup-coding-crew, then $todo"
+      stop land "$why: if its coder finished it, run $todo; otherwise reopen $REF; then re-run"
+    fi
+  fi
+  [ "$rc" = 0 ] || nothing_left
   # Saved now, not in land: the local tracker's close moves the file, and fetch then exits 3. fetch runs the
   # backend's validateRef, so a ref it rejects stops here, before it reaches the coder's prompt.
   node "$CLI" fetch "$ref" >"$LOGS/${ref//\//_}.issue.md" || die "fetch $ref failed (see above)"
   # One coder at a time writes its report here; an earlier one's would read as this coder's at land's solve stop.
   rm -f "$LOGS/coder.report.md" "$LOGS/coder.notes.md"
+  printf '%s\n' "$ref" >"$(landing)"
   echo "$ref"
 }
 
@@ -360,6 +376,8 @@ land() {
     [ "$rc" = 0 ] || pr_create_failed
     PR_N="${url##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $url"
   fi
+  # Pushed and on a PR, the issue has landed; a notes stop after this says how to add them by hand.
+  rm -f "$(landing)"
   post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)"
   echo "pr=$PR_N"
 }

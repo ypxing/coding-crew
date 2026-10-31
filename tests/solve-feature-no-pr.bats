@@ -149,6 +149,27 @@ EOF
   no_pr_calls
 }
 
+@test "with publish false, a re-run after an interrupted first land names land; land writes the local body and the run reaches review" {
+  no_publish
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat; [ "$output" = 2 ]
+  coder 2
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"run land feat 2 feature/feat; otherwise reopen 2; then re-run"* ]] || { echo "$output"; return 1; }
+  [ ! -e "$LOCAL" ]
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$output" = pr=local ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" next feat; [ "$output" = 3 ]
+  coder 3
+  run bash "$SCRIPT" land feat 3 feature/feat; [ "$output" = pr=local ]
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 3 ]
+  [ "$output" = "reviewer-model=" ]
+  no_pr_calls
+}
+
 @test "sync with publish false on a branch origin lacks merges the default branch, gating only a merge that moved HEAD" {
   no_publish
   loop

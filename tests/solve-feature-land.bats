@@ -63,6 +63,107 @@ stops_at() {
   stops_at solve "coder ran but did not close 2; why: $WORK/.coding-crew/solve-feature/coder.report.md"
 }
 
+# --- land never finished: the coder closed the issue, nothing gated it ----------------
+
+@test "a re-run after an interrupted land stops at next naming land instead of nothing landed; land then lets the run go on" {
+  land_ready
+  # The land call is killed: the issue is closed, its commit unpushed, no PR.
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"solve-feature: 2 land failed: 2 is done but its land never finished: if its coder finished it, run land feat 2 feature/feat; otherwise reopen 2; then re-run"* ]] || { echo "$output"; return 1; }
+  [[ "$output" != *"nothing landed"* ]]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 land failed: 2 is done but its land never finished: if its coder finished it, run land feat 2 feature/feat; otherwise reopen 2; then re-run" ]
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = pr=10 ]
+  run bash "$SCRIPT" next feat
+  [ "$output" = 3 ]
+}
+
+@test "with a PR open, a re-run after a later issue's interrupted land names that land too, not the review" {
+  land_ready
+  run bash "$SCRIPT" land feat 2 feature/feat; [ "$output" = pr=10 ]
+  run bash "$SCRIPT" next feat; [ "$output" = 3 ]
+  coder 3
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"solve-feature: 3 land failed: 3 is done but its land never finished: if its coder finished it, run land feat 3 feature/feat; otherwise reopen 3; then re-run"* ]] || { echo "$output"; return 1; }
+  [[ "$output" != *reviewer-model=* ]]
+  run bash "$SCRIPT" land feat 3 feature/feat; [ "$status" -eq 0 ]
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 3 ]
+  [ "$output" = "reviewer-model=" ]
+}
+
+@test "a re-run after a land stop that left the issue open hands the same issue out again" {
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat; [ "$output" = 2 ]
+  echo half > half.txt && git add half.txt && git commit -q -m "[2][WIP] half the work"
+  run bash "$SCRIPT" land feat 2 feature/feat; [ "$status" -eq 1 ]
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 0 ]
+  [ "$output" = 2 ]
+  # A land checks stop reopens the issue: the re-run hands it out again too.
+  coder 2
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat; [ "$status" -eq 1 ]
+  run bash "$SCRIPT" next feat
+  [ "$output" = 2 ]
+}
+
+@test "an interrupted land with no dev commands file names /setup-coding-crew before the land" {
+  # Pushed too: start branches from origin's default branch.
+  git rm -q .coding-crew/dev-commands.json && git commit -q -m "no commands" && git push -q origin HEAD
+  land_ready
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"2 is done but its land never finished and no check commands are known: if its coder finished it, run /setup-coding-crew, then land feat 2 feature/feat; otherwise reopen 2; then re-run"* ]] || { echo "$output"; return 1; }
+}
+
+@test "another feature's run in the same checkout is not stopped by this feature's interrupted land" {
+  land_ready
+  # A second feature with no ready issue: its own nothing-landed, not this feature's land.
+  run bash "$SCRIPT" next other
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"nothing landed: no ready issue for other"* ]] || { echo "$output"; return 1; }
+  [[ "$output" != *"land failed"* ]]
+  # This feature's own re-run still names its land.
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"run land feat 2 feature/feat"* ]] || { echo "$output"; return 1; }
+}
+
+@test "after a 'did not close' stop, an issue a person took out of ready is not claimed closed by its coder" {
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat; [ "$output" = 2 ]
+  echo half > half.txt && git add half.txt && git commit -q -m "[2][WIP] blocked"
+  run bash "$SCRIPT" land feat 2 feature/feat; [ "$status" -eq 1 ]
+  jq 'map(if .number == 2 then .labels = [] else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = 3 ]
+}
+
+@test "a coder killed before closing its issue, which then drops out of ready, is no land to finish: next goes on" {
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat; [ "$output" = 2 ]
+  jq 'map(if .number == 2 then .labels = [] else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = 3 ]
+}
+
+@test "an issue a checks stop reopened, then a person took out of ready, is no land to finish either" {
+  land_ready
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat; [ "$status" -eq 1 ]
+  jq 'map(if .number == 2 then .labels = [] else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = 3 ]
+}
+
 # handed_back <reason> — land just stopped at checks with the issue reopened and its work on origin, no PR opened.
 handed_back() {
   [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
@@ -195,10 +296,11 @@ EOF
   ! grep -q '^config' "$STATE/node.log" || false
 }
 
-@test "start, next and land reach the tracker through features, spec, next, fetch and reopen only, and name no tracker kind" {
+@test "start, next and land reach the tracker through features, spec, next, fetch, status and reopen only, and name no tracker kind" {
   loop
   [ "$(cut -d' ' -f1 "$STATE/node.log" | sort -u | paste -sd' ' -)" = "features fetch next spec" ]
   grep -q '"$CLI" reopen' "$SCRIPT"
+  grep -q '"$CLI" status' "$SCRIPT"
   ! grep -nE 'KIND|github|scratch|"\$CLI" config|\$REF" =~' "$SCRIPT" || false
 }
 

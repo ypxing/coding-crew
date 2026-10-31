@@ -393,6 +393,8 @@ main_moves() {
   [ "$status" -eq 0 ]
   [ "$output" = 2 ]
   [ "$(cat .coding-crew/solve-feature/2.issue.md)" = "$(cat "$STATE/2.md")" ]
+  # As a finished land leaves it: otherwise a closed issue it handed out reads as a land that never finished.
+  rm .coding-crew/solve-feature/landing-feat
   jq 'map(.state = "CLOSED")' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
   echo extra > extra.txt && git add extra.txt && git commit -q -m extra
   PR_EXISTS=1 run bash "$SCRIPT" next feat
