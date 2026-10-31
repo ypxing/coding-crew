@@ -5,8 +5,14 @@ name: solve-feature
 # .github/workflows/crew-solve-feature.yml. /setup-coding-crew writes this file; it holds only the triggers, the
 # permissions and the secrets passed.
 #
-# Update by bumping the tag on `uses:` to a newer coding-crew release; Dependabot's `github-actions` ecosystem
-# opens those PRs. Pass `timeout-minutes:` under `with:` to change the solve job's timeout (360 by default). The
+# /setup-coding-crew writes the `uses:` ref below as that release's full commit SHA with the version in a trailing
+# comment (`@<sha>  # vX.Y.Z`), since a tag can be moved. Update it with a Dependabot `github-actions` PR (which bumps
+# the SHA and the comment together), or update the installed coding-crew skills to the new release first (re-run
+# install.sh, or the `npx skills add` command you installed with) and then run `/setup-coding-crew redo actions`, which writes the installed
+# skills' release. A Bedrock role's trust policy pins this SHA too: update it with each bump. The SHA fixes the
+# reusable workflow file, not its inner `ypxing/coding-crew/actions/install@<tag>`, which is resolved when the job runs: that tag is
+# protected by coding-crew's release-tag ruleset, which admins can bypass, and GitHub's Immutable releases locks it
+# for releases published after that setting is enabled. Pass `timeout-minutes:` under `with:` to change the solve job's timeout (360 by default). The
 # checks this workflow adds to a PR are named `run / <job>`.
 on:
   issues:

@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- setup-coding-crew: the Actions caller it writes now pins coding-crew's reusable workflow to the release's full
+  commit SHA (`@<sha>  # vX.Y.Z`) instead of the movable tag; an existing tag-pinned caller is offered the pinned one
+  on the next setup run. The guide's Bedrock trust policy now matches `job_workflow_ref:…crew-solve-feature.yml@<sha>`
+  for the exact pinned release, updated on each upgrade, and the upgrade notes say `redo actions` needs the
+  installed skills updated first (#682, #686).
 - All skills using coding-crew-lib: the stop for a missing `coding-crew-lib` (and solve-feature's and solve-issue's
   missing-library errors) now says to install it from the source this skill was installed from, instead of naming
   the `ypxing/coding-crew` repo, which skills.sh's Snyk audit flagged as an unverifiable external dependency (#683).

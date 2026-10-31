@@ -488,9 +488,10 @@ Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it files th
 
 `/solve-feature` runs one feature from a terminal or a worktree pane. To run it on a GitHub runner
 instead, run `/setup-coding-crew redo actions` with the github tracker (a plain run only says the workflow is not
-installed) and answer yes: it copies the caller
+installed) and answer yes: it writes the caller
 file [`hosts/github-actions.yml`](../skills/setup-coding-crew/hosts/github-actions.yml) to
-`.github/workflows/solve-feature.yml` (once it has checked that the coding-crew release the file names is tagged), creates the `run-agent` label, sets the repo variable
+`.github/workflows/solve-feature.yml` pinned to the commit SHA of the coding-crew release the file names (it writes
+nothing when that release is not tagged yet), creates the `run-agent` label, sets the repo variable
 `CREW_AGENT` to the agent you pick and prints the commit line for it. `copilot` (the default) is billed
 to GitHub Copilot with no API key; `claude` runs Claude Code on an `ANTHROPIC_API_KEY` or
 `CLAUDE_CODE_OAUTH_TOKEN` repo secret. The run opens its PR with the workflow's token, so a repo admin enables
@@ -511,11 +512,18 @@ the issue, only those neither the code, the docs nor the issue answers, each nam
 is written on this path; the draft PR and its review are the check.
 
 The caller file is short: the triggers, the permissions (with `id-token: write`), and one job, `run`, that calls
-coding-crew's reusable workflow [`crew-solve-feature.yml`](../.github/workflows/crew-solve-feature.yml) at a release
-tag (`uses: ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@vX.Y.Z`), passing `ANTHROPIC_API_KEY`,
-`CLAUDE_CODE_OAUTH_TOKEN`, `COPILOT_GITHUB_TOKEN` and `NPM_TOKEN` by name. Everything the job does lives in the
-reusable workflow, whose header explains billing and the rest. To pick up a newer coding-crew, bump the tag on that
-`uses:` line; Dependabot's `github-actions` ecosystem opens those PRs:
+coding-crew's reusable workflow [`crew-solve-feature.yml`](../.github/workflows/crew-solve-feature.yml) pinned to a
+release's full commit SHA with the version in a trailing comment
+(`uses: ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@<sha>  # vX.Y.Z`; a tag can be moved, and the job
+holds the repo's write token and your secrets), passing `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`,
+`COPILOT_GITHUB_TOKEN` and `NPM_TOKEN` by name. Everything the job does lives in the reusable workflow, whose header
+explains billing and the rest. The pin fixes that file, not the `ypxing/coding-crew/actions/install@<tag>` it runs,
+which is resolved when the job runs (protected by coding-crew's release-tag ruleset, which admins can bypass, and
+locked by Immutable releases for releases published after it is enabled). To pick up a newer coding-crew, take
+Dependabot's `github-actions` PR, which bumps the SHA and its comment together, or run `/setup-coding-crew redo
+actions` after updating the installed coding-crew skills to the new release (re-run `install.sh`, or the
+`npx skills add` command you installed with): `redo actions` writes the release of the installed skills, so on old
+skills it re-writes the same pin:
 
 ```yaml
 # .github/dependabot.yml
@@ -638,9 +646,13 @@ workflow:
    trust policies are updated to the new shape.
 2. Trust policy: the GitHub OIDC provider as `Federated`, `token.actions.githubusercontent.com:aud` equal to
    `sts.amazonaws.com`, and `token.actions.githubusercontent.com:sub` matching (`StringLike`)
-   `repo:<org>/*:job_workflow_ref:<owner>/coding-crew/.github/workflows/crew-solve-feature.yml@<ref>`, `<owner>`
-   being the coding-crew copy the callers name and `<ref>` its full ref: `refs/tags/vX.Y.Z` for the tag they pin
-   (not the bare `vX.Y.Z`), or `refs/heads/stable`.
+   `repo:<org>/*:job_workflow_ref:<owner>/coding-crew/.github/workflows/crew-solve-feature.yml@<sha>`, `<owner>`
+   being the coding-crew copy the callers name and `<sha>` the full commit SHA their `uses:` line pins (a SHA-pinned
+   caller's `job_workflow_ref` ends in the bare SHA, not `@refs/tags/vX.Y.Z`, as in GitHub's
+   [OIDC with reusable workflows](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-with-reusable-workflows)
+   example); for an internal copy's callers that name `@stable`, use `refs/heads/stable` in place of `<sha>`. Update it to the new SHA on each upgrade, together with the caller's bump, or the role refuses the
+   upgraded runs (a list holding both SHAs covers the switch-over). Do not match `@*`: anyone who can push a branch to that copy and add a workflow to an `<org>/*`
+   repo could then assume the role through that branch.
 3. Permissions policy: only `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`, on the named
    foundation-model and inference-profile ARNs the runs use.
 4. The role's maximum session duration at least the job's `timeout-minutes` (360 by default, so 6 hours).
