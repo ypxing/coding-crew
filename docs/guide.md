@@ -519,9 +519,11 @@ holds the repo's write token and your secrets), passing `ANTHROPIC_API_KEY`, `CL
 `COPILOT_GITHUB_TOKEN` and `NPM_TOKEN` by name. Everything the job does lives in the reusable workflow, whose header
 explains billing and the rest. The pin fixes that file, not the `ypxing/coding-crew/actions/install@<tag>` it runs,
 which is resolved when the job runs (protected by coding-crew's release-tag ruleset, which admins can bypass, and
-locked by Immutable releases for releases published after it is enabled). To pick up a newer coding-crew, run
-`/setup-coding-crew redo actions` or take Dependabot's `github-actions` PR, which bumps the SHA and its comment
-together:
+locked by Immutable releases for releases published after it is enabled). To pick up a newer coding-crew, take
+Dependabot's `github-actions` PR, which bumps the SHA and its comment together, or run `/setup-coding-crew redo
+actions` after updating the installed coding-crew skills to the new release (re-run `install.sh`, or the
+`npx skills add` command you installed with): `redo actions` writes the release of the installed skills, so on old
+skills it re-writes the same pin:
 
 ```yaml
 # .github/dependabot.yml
@@ -644,11 +646,13 @@ workflow:
    trust policies are updated to the new shape.
 2. Trust policy: the GitHub OIDC provider as `Federated`, `token.actions.githubusercontent.com:aud` equal to
    `sts.amazonaws.com`, and `token.actions.githubusercontent.com:sub` matching (`StringLike`)
-   `repo:<org>/*:job_workflow_ref:<owner>/coding-crew/.github/workflows/crew-solve-feature.yml@*`, `<owner>` being
-   the coding-crew copy the callers name. A SHA-pinned caller's `job_workflow_ref` most likely ends in `@<sha>`, not
-   `@refs/tags/vX.Y.Z`, and `@*` matches either form, a `stable` branch's `@refs/heads/stable` too. It is safe: only
-   that copy's writers can create refs in it, and the `repo:<org>/*` prefix still limits which repos can assume the
-   role.
+   `repo:<org>/*:job_workflow_ref:<owner>/coding-crew/.github/workflows/crew-solve-feature.yml@<sha>`, `<owner>`
+   being the coding-crew copy the callers name and `<sha>` the full commit SHA their `uses:` line pins (a SHA-pinned
+   caller's `job_workflow_ref` ends in the bare SHA, not `@refs/tags/vX.Y.Z`, as in GitHub's
+   [OIDC with reusable workflows](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-with-reusable-workflows)
+   example). Update it to the new SHA on each upgrade, together with the caller's bump, or the role refuses the
+   upgraded runs (a list holding both SHAs covers the switch-over). Do not match `@*`: anyone who can push a branch to that copy and add a workflow to an `<org>/*`
+   repo could then assume the role through that branch.
 3. Permissions policy: only `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`, on the named
    foundation-model and inference-profile ARNs the runs use.
 4. The role's maximum session duration at least the job's `timeout-minutes` (360 by default, so 6 hours).
