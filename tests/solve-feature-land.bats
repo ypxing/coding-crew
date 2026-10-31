@@ -63,6 +63,55 @@ stops_at() {
   stops_at solve "coder ran but did not close 2; why: $WORK/.coding-crew/solve-feature/coder.report.md"
 }
 
+# --- land never finished: the coder closed the issue, nothing gated it ----------------
+
+@test "a re-run after an interrupted land stops at next naming land instead of nothing landed; land then lets the run go on" {
+  land_ready
+  # The land call is killed: the issue is closed, its commit unpushed, no PR.
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"solve-feature: 2 land failed: its coder closed it but land never finished: run land feat 2 feature/feat, then re-run"* ]] || { echo "$output"; return 1; }
+  [[ "$output" != *"nothing landed"* ]]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 land failed: its coder closed it but land never finished: run land feat 2 feature/feat, then re-run" ]
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = pr=10 ]
+  run bash "$SCRIPT" next feat
+  [ "$output" = 3 ]
+}
+
+@test "with a PR open, a re-run after a later issue's interrupted land names that land too, not the review" {
+  land_ready
+  run bash "$SCRIPT" land feat 2 feature/feat; [ "$output" = pr=10 ]
+  run bash "$SCRIPT" next feat; [ "$output" = 3 ]
+  coder 3
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"solve-feature: 3 land failed: its coder closed it but land never finished: run land feat 3 feature/feat, then re-run"* ]] || { echo "$output"; return 1; }
+  [[ "$output" != *reviewer-model=* ]]
+  run bash "$SCRIPT" land feat 3 feature/feat; [ "$status" -eq 0 ]
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 3 ]
+  [ "$output" = "reviewer-model=" ]
+}
+
+@test "a re-run after a land stop that left the issue open hands the same issue out again" {
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat; [ "$output" = 2 ]
+  echo half > half.txt && git add half.txt && git commit -q -m "[2][WIP] half the work"
+  run bash "$SCRIPT" land feat 2 feature/feat; [ "$status" -eq 1 ]
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 0 ]
+  [ "$output" = 2 ]
+  # A land checks stop reopens the issue: the re-run hands it out again too.
+  coder 2
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat; [ "$status" -eq 1 ]
+  run bash "$SCRIPT" next feat
+  [ "$output" = 2 ]
+}
+
 # handed_back <reason> — land just stopped at checks with the issue reopened and its work on origin, no PR opened.
 handed_back() {
   [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }

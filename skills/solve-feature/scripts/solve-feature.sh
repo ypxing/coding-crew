@@ -213,12 +213,19 @@ nothing_left() { # exit 3; with no open PR on the branch, the run has nothing to
 next() {
   local rc=0 ref
   ref=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
-  case $rc in 0) ;; 3) nothing_left ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
+  case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
+  # The issue handed out last, cleared by its land: one still named here and no longer ready was closed by its
+  # coder, but no land gated or recorded it, so the run would skip it as landed.
+  if [ -s "$LOGS/landing" ] && REF=$(cat "$LOGS/landing") && { [ "$rc" = 3 ] || [ "$ref" != "$REF" ]; }; then
+    stop land "its coder closed it but land never finished: run land $SLUG $REF $(git branch --show-current), then re-run"
+  fi
+  [ "$rc" = 0 ] || nothing_left
   # Saved now, not in land: the local tracker's close moves the file, and fetch then exits 3. fetch runs the
   # backend's validateRef, so a ref it rejects stops here, before it reaches the coder's prompt.
   node "$CLI" fetch "$ref" >"$LOGS/${ref//\//_}.issue.md" || die "fetch $ref failed (see above)"
   # One coder at a time writes its report here; an earlier one's would read as this coder's at land's solve stop.
   rm -f "$LOGS/coder.report.md" "$LOGS/coder.notes.md"
+  printf '%s\n' "$ref" >"$LOGS/landing"
   echo "$ref"
 }
 
@@ -361,6 +368,7 @@ land() {
     PR_N="${url##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $url"
   fi
   post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)"
+  rm -f "$LOGS/landing"
   echo "pr=$PR_N"
 }
 
