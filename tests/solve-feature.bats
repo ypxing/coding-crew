@@ -41,7 +41,7 @@ bats_require_minimum_version 1.5.0
   mv "$LIB/tracker/cli.mjs" "$TEMP_DIR/cli.mjs"
   run bash "$SCRIPT" start feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"tracker CLI not found"*"the coding-crew-lib skill"*"npx skills add ypxing/coding-crew -s coding-crew-lib"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"tracker CLI not found"*"the coding-crew-lib skill"*"npx skills add <that source> -s coding-crew-lib"* ]] || { echo "$output"; return 1; }
   mv "$TEMP_DIR/cli.mjs" "$LIB/tracker/cli.mjs"
 
   echo dirt > dirt.txt

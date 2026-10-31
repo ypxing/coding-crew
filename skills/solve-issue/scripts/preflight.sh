@@ -97,7 +97,7 @@ fi
 # The checks library, in the coding-crew-lib skill installed beside this one: Steps 2, 4 and 5 run through it.
 CHECKS_DIR="$SELF_DIR/../../coding-crew-lib/scripts/checks"
 if [ ! -f "$CHECKS_DIR/run-checks.sh" ] || [ ! -f "$CHECKS_DIR/run.sh" ]; then
-  echo "BLOCKED: checks library missing from the coding-crew-lib skill ($CHECKS_DIR) — install the coding-crew-lib skill beside solve-issue (npx skills add ypxing/coding-crew -s coding-crew-lib, adding -g at user level) or re-run install.sh"
+  echo "BLOCKED: checks library missing from the coding-crew-lib skill ($CHECKS_DIR) — install the coding-crew-lib skill beside solve-issue, from the source you installed solve-issue from (npx skills add <that source> -s coding-crew-lib, adding -g at user level) or re-run install.sh"
   exit 1
 fi
 

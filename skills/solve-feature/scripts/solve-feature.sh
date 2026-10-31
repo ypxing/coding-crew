@@ -64,7 +64,7 @@ local_body() { echo "$LOGS/local-pr-${BRANCH//\//_}.md"; }
 landing() { echo "$LOGS/landing-$SLUG"; }
 # The tracker and checks libraries, in the coding-crew-lib skill installed beside this one.
 CLI="$SELF/../../coding-crew-lib/scripts/tracker/cli.mjs" CHECKS="$SELF/../../coding-crew-lib/scripts/checks"
-[ -f "$CLI" ] || die "tracker CLI not found ($CLI): install the coding-crew-lib skill beside solve-feature (npx skills add ypxing/coding-crew -s coding-crew-lib, adding -g at user level) or re-run install.sh"
+[ -f "$CLI" ] || die "tracker CLI not found ($CLI): install the coding-crew-lib skill beside solve-feature, from the source you installed solve-feature from (npx skills add <that source> -s coding-crew-lib, adding -g at user level) or re-run install.sh"
 
 # push <git push args> — `git push -q`; on failure sets PUSH_WHY to git's reason and returns 1. git's stderr still
 # reaches the terminal. The reason: a rejected ref's parenthesised one (GitHub's workflow-permission refusal arrives
@@ -280,7 +280,7 @@ pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the spec
   [ -n "$t" ] || t=$(grep -m1 '^# ' "$LOGS/$1.issue.md" | sed 's/^# //')
   printf '%s' "$t"
 }
-checks_lib() { [ -f "$CHECKS/run-checks.sh" ] || die "checks library not found ($CHECKS): install the coding-crew-lib skill beside solve-feature (npx skills add ypxing/coding-crew -s coding-crew-lib, adding -g at user level) or re-run install.sh"; }
+checks_lib() { [ -f "$CHECKS/run-checks.sh" ] || die "checks library not found ($CHECKS): install the coding-crew-lib skill beside solve-feature, from the source you installed solve-feature from (npx skills add <that source> -s coding-crew-lib, adding -g at user level) or re-run install.sh"; }
 
 # reopen_ref <step> <reason> <commit message> <recovery when reopen fails> [<log>] — make the closed $REF ready
 # again, so a plain re-run's coder takes it up instead of the tracker counting it landed; a failure stops at <step>.
