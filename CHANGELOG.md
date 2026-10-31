@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: a re-run after an interrupted `land` (the coder closed its issue, but nothing checked or recorded
+  it) now stops naming the `land <slug> <ref> <branch>` to run, instead of `nothing landed` or skipping that issue
+  as landed (#679).
 - solve-feature: with `publish: false`, a local PR body saved with CRLF line endings keeps its notes section, and a
   failed first write of that file reopens the issue and says to fix the cause and re-run instead of leaving it
   closed with no body (#676).

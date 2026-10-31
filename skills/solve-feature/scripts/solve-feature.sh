@@ -367,8 +367,9 @@ land() {
     [ "$rc" = 0 ] || pr_create_failed
     PR_N="${url##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $url"
   fi
-  post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)"
+  # Pushed and on a PR, the issue has landed; a notes stop after this says how to add them by hand.
   rm -f "$LOGS/landing"
+  post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)"
   echo "pr=$PR_N"
 }
 
