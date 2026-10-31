@@ -72,9 +72,9 @@ stops_at() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" next feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"solve-feature: 2 land failed: its coder closed it but land never finished: run land feat 2 feature/feat, then re-run"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"solve-feature: 2 land failed: 2 is done but its land never finished: if its coder finished it, run land feat 2 feature/feat; otherwise reopen 2; then re-run"* ]] || { echo "$output"; return 1; }
   [[ "$output" != *"nothing landed"* ]]
-  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 land failed: its coder closed it but land never finished: run land feat 2 feature/feat, then re-run" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 land failed: 2 is done but its land never finished: if its coder finished it, run land feat 2 feature/feat; otherwise reopen 2; then re-run" ]
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$output" = pr=10 ]
@@ -89,7 +89,7 @@ stops_at() {
   coder 3
   run bash "$SCRIPT" next feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"solve-feature: 3 land failed: its coder closed it but land never finished: run land feat 3 feature/feat, then re-run"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"solve-feature: 3 land failed: 3 is done but its land never finished: if its coder finished it, run land feat 3 feature/feat; otherwise reopen 3; then re-run"* ]] || { echo "$output"; return 1; }
   [[ "$output" != *reviewer-model=* ]]
   run bash "$SCRIPT" land feat 3 feature/feat; [ "$status" -eq 0 ]
   run bash "$SCRIPT" next feat
@@ -118,7 +118,7 @@ stops_at() {
   land_ready
   run bash "$SCRIPT" next feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"its coder closed it but land never finished and no check commands are known: run /setup-coding-crew, then land feat 2 feature/feat, then re-run"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"2 is done but its land never finished and no check commands are known: if its coder finished it, run /setup-coding-crew, then land feat 2 feature/feat; otherwise reopen 2; then re-run"* ]] || { echo "$output"; return 1; }
 }
 
 @test "another feature's run in the same checkout is not stopped by this feature's interrupted land" {
@@ -139,6 +139,25 @@ stops_at() {
   run bash "$SCRIPT" next feat; [ "$output" = 2 ]
   echo half > half.txt && git add half.txt && git commit -q -m "[2][WIP] blocked"
   run bash "$SCRIPT" land feat 2 feature/feat; [ "$status" -eq 1 ]
+  jq 'map(if .number == 2 then .labels = [] else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = 3 ]
+}
+
+@test "a coder killed before closing its issue, which then drops out of ready, is no land to finish: next goes on" {
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat; [ "$output" = 2 ]
+  jq 'map(if .number == 2 then .labels = [] else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = 3 ]
+}
+
+@test "an issue a checks stop reopened, then a person took out of ready, is no land to finish either" {
+  land_ready
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat; [ "$status" -eq 1 ]
   jq 'map(if .number == 2 then .labels = [] else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
   run bash "$SCRIPT" next feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
@@ -277,10 +296,11 @@ EOF
   ! grep -q '^config' "$STATE/node.log" || false
 }
 
-@test "start, next and land reach the tracker through features, spec, next, fetch and reopen only, and name no tracker kind" {
+@test "start, next and land reach the tracker through features, spec, next, fetch, status and reopen only, and name no tracker kind" {
   loop
   [ "$(cut -d' ' -f1 "$STATE/node.log" | sort -u | paste -sd' ' -)" = "features fetch next spec" ]
   grep -q '"$CLI" reopen' "$SCRIPT"
+  grep -q '"$CLI" status' "$SCRIPT"
   ! grep -nE 'KIND|github|scratch|"\$CLI" config|\$REF" =~' "$SCRIPT" || false
 }
 

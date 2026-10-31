@@ -27,6 +27,7 @@ TRACKER="<skills-dir>/coding-crew-lib/scripts/tracker/cli.mjs"   # e.g. ~/.claud
 
 ```bash
 node "$TRACKER" fetch <ref> [--comments]                  # print one issue; <ref> is its path under .coding-crew/scratch/
+node "$TRACKER" status <ref>                              # its status: done, wontfix, a triage status, or empty
 node "$TRACKER" features                                  # list the features: <slug>, open|closed, count of issues that can start now
 node "$TRACKER" prd --feature-slug <slug>                 # print the feature's PRD.md
 node "$TRACKER" next --feature-slug <slug>                # the absolute path of the next issue to run, or exit 3

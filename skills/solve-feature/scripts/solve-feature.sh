@@ -216,14 +216,17 @@ next() {
   local rc=0 ref
   ref=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
-  # The issue handed out last, cleared by its land unless the coder closed it: one still named here and no longer
-  # ready was closed by its coder, but no land gated or recorded it, so the run would skip it as landed.
+  # The issue handed out last, cleared once its land records it. Done in the tracker but still named here, it was
+  # closed with no land to gate or record it, and the run would skip it as landed.
   if [ -s "$(landing)" ] && REF=$(cat "$(landing)") && { [ "$rc" = 3 ] || [ "$ref" != "$REF" ]; }; then
-    local cmds why="its coder closed it but land never finished" todo="land $SLUG $REF $(git branch --show-current)"
-    # shellcheck source=/dev/null
-    . "$CHECKS/commands-file.sh" 2>/dev/null && cmds=$(commands_file "$ROOT") && ! commands_field_present "$cmds" test &&
-      why="$why and no check commands are known" todo="/setup-coding-crew, then $todo"
-    stop land "$why: run $todo, then re-run"
+    local st cmds why="$REF is done but its land never finished" todo="land $SLUG $REF $(git branch --show-current)"
+    st=$(node "$CLI" status "$REF") || die "status $REF failed (see above)"
+    if [ "$st" = done ]; then
+      # shellcheck source=/dev/null
+      . "$CHECKS/commands-file.sh" 2>/dev/null && cmds=$(commands_file "$ROOT") && ! commands_field_present "$cmds" test &&
+        why="$why and no check commands are known" todo="/setup-coding-crew, then $todo"
+      stop land "$why: if its coder finished it, run $todo; otherwise reopen $REF; then re-run"
+    fi
   fi
   [ "$rc" = 0 ] || nothing_left
   # Saved now, not in land: the local tracker's close moves the file, and fetch then exits 3. fetch runs the
@@ -285,7 +288,6 @@ reopen_ref() {
   local before changed
   before=$(git status --porcelain -uall)
   node "$CLI" reopen "$REF" >/dev/null || stop "$1" "$2; reopen $REF failed (see above): $4" "${5:-}"
-  rm -f "$(landing)"
   # A file tracker's reopen moves a tracked issue file; only that is committed, never what the checks left.
   changed=$(comm -13 <(sort <<<"$before") <(git status --porcelain -uall | sort) | cut -c4-)
   if [ -n "$changed" ]; then
@@ -329,7 +331,6 @@ land() {
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
   if [ "$again" = "$REF" ]; then
-    rm -f "$(landing)" # still open: a re-run hands it out again, or a person decides it
     [ -s "$LOGS/coder.report.md" ] || stop solve "coder ran but did not close $REF and left no report at $LOGS/coder.report.md"
     stop solve "coder ran but did not close $REF; why: $LOGS/coder.report.md"
   fi

@@ -157,7 +157,7 @@ EOF
   run bash "$SCRIPT" start feat
   run bash "$SCRIPT" next feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"run land feat 2 feature/feat, then re-run"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"run land feat 2 feature/feat; otherwise reopen 2; then re-run"* ]] || { echo "$output"; return 1; }
   [ ! -e "$LOCAL" ]
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$output" = pr=local ] || { echo "$output"; return 1; }

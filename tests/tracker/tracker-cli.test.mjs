@@ -60,6 +60,44 @@ function writeIssue(dir, state, name, text) {
   return join(d, name);
 }
 
+// --- status ------------------------------------------------------------------------
+
+test("status (local) prints the issue's Status:, and done for a file in done/, by its open/ path too; exits 3 when neither exists", async () => {
+  const dir = root();
+  const path = writeIssue(dir, "open", "01-thing.md", "# T\n\nStatus: ready-for-agent\n");
+  assert.deepEqual(await cli(dir, ["status", path]), { code: 0, stdout: "ready-for-agent\n", stderr: "" });
+  // mark-done moves the file: a ref saved before the move still reads it.
+  mkdirSync(join(dirname(dirname(path)), "done"));
+  renameSync(path, join(dirname(dirname(path)), "done", "01-thing.md"));
+  assert.equal((await cli(dir, ["status", path])).stdout, "done\n");
+  assert.equal((await cli(dir, ["status", ".coding-crew/scratch/feat/issues/done/01-thing.md"])).stdout, "done\n");
+  assert.equal((await cli(dir, ["status", join(dir, ".coding-crew/scratch/feat/issues/open/99-none.md")])).code, 3);
+  assert.equal((await cli(dir, ["status"])).code, 2);
+  assert.equal((await cli(dir, ["status", "/etc/passwd"])).code, 2);
+});
+
+test("status (github) prints done for an awaiting-merge or a closed issue, wontfix for one closed as not planned, else its label; exits 3 for none", async () => {
+  const dir = root({ github: true });
+  const view = (json) => fakeGh({ "issue view 12 --json state,stateReason,labels": { stdout: JSON.stringify(json) } });
+  const cases = [
+    [{ state: "OPEN", stateReason: "", labels: [{ name: "ready-for-agent" }] }, "ready-for-agent"],
+    [{ state: "OPEN", stateReason: "REOPENED", labels: [{ name: "awaiting-merge" }] }, "done"],
+    [{ state: "CLOSED", stateReason: "COMPLETED", labels: [] }, "done"],
+    [{ state: "CLOSED", stateReason: "NOT_PLANNED", labels: [] }, "wontfix"],
+  ];
+  for (const [json, want] of cases) {
+    const r = await cli(dir, ["status", "12"], view(json));
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(r.stdout, `${want}\n`, JSON.stringify(json));
+  }
+  const gone = fakeGh({ "issue view 99": { code: 1, stderr: "GraphQL: Could not resolve to an issue or pull request with the number of 99." } });
+  assert.equal((await cli(dir, ["status", "99"], gone)).code, 3);
+  const down = fakeGh({ "issue view 12": { code: 1, stderr: "HTTP 502" } });
+  const r = await cli(dir, ["status", "12"], down);
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /HTTP 502/);
+});
+
 // --- prd ---------------------------------------------------------------------------
 
 test("prd (local) prints .coding-crew/scratch/S/PRD.md", async () => {

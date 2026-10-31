@@ -29,6 +29,7 @@ TRACKER="<skills-dir>/coding-crew-lib/scripts/tracker/cli.mjs"   # e.g. ~/.claud
 
 ```bash
 node "$TRACKER" fetch <number> [--comments]               # print one issue (title, body; + comments by users with write access or bots in github.trustedBots, on a private or internal repo)
+node "$TRACKER" status <number>                           # its status: done, wontfix, a triage status, or empty
 node "$TRACKER" features                                  # list the features: <slug>, open|closed, count of issues that can start now
 node "$TRACKER" prd --feature-slug <slug>                 # print the feature's PRD: issue
 node "$TRACKER" next --feature-slug <slug>                # the number of the next issue to run, or exit 3
