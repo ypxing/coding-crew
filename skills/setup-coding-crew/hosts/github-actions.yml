@@ -8,7 +8,7 @@ name: solve-feature
 # /setup-coding-crew writes the `uses:` ref below as that release's full commit SHA with the version in a trailing
 # comment (`@<sha>  # vX.Y.Z`), since a tag can be moved. Update it with a Dependabot `github-actions` PR (which bumps
 # the SHA and the comment together), or update the installed coding-crew skills to the new release first (re-run
-# install.sh, or `npx skills add`) and then run `/setup-coding-crew redo actions`, which writes the installed
+# install.sh, or the `npx skills add` command you installed with) and then run `/setup-coding-crew redo actions`, which writes the installed
 # skills' release. A Bedrock role's trust policy pins this SHA too: update it with each bump. The SHA fixes the
 # reusable workflow file, not its inner `ypxing/coding-crew/actions/install@<tag>`, which is resolved when the job runs: that tag is
 # protected by coding-crew's release-tag ruleset, which admins can bypass, and GitHub's Immutable releases locks it

@@ -10,7 +10,7 @@ name: crew-solve-feature
 # A called workflow sees the caller's event, so everything below reads `github.event` as if it were the
 # repo's own; `vars.*` are the caller repo's variables. To update, take Dependabot's `github-actions` PR (it bumps
 # the SHA and the comment together), or update the installed coding-crew skills to the new release first (re-run
-# install.sh, or `npx skills add`) and then run /setup-coding-crew redo actions, which writes the installed skills'
+# install.sh, or the `npx skills add` command you installed with) and then run /setup-coding-crew redo actions, which writes the installed skills'
 # release.
 #
 # Setup: run /setup-coding-crew, which writes the caller (setup-coding-crew's hosts/github-actions.yml, SHA-pinned) to

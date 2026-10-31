@@ -213,7 +213,7 @@ workflow's `GITHUB_TOKEN` never gets the `workflows` scope — so such an issue 
 `/solve-feature`; a run that hits one keeps its unpushed commits in the artifact's `unpushed.bundle`, and its
 summary page prints the commands that fetch them. Last, tell them the file pins a coding-crew release by commit SHA: to update, they take
 Dependabot's `github-actions` PR (it bumps the SHA and its version comment together), or update the installed
-coding-crew skills to the new release (re-run `install.sh`, or `npx skills add`) and then run
+coding-crew skills to the new release (re-run `install.sh`, or the `npx skills add` command you installed with) and then run
 `/setup-coding-crew redo actions`. The file's checks show on a PR as
 `run / <job>`, so a branch rule that requires the old `solve` check needs the new name. An organisation that allows
 only its own actions runs an internal copy of coding-crew instead: a mirror whose `stable` branch carries one
