@@ -132,7 +132,8 @@ else echo differs; fi
   on. On any other run, ask nothing: show "Actions workflow: not installed (`/setup-coding-crew redo actions` adds
   it)" and move on.
 - `differs`: show `diff -u "$WF" "<skill-dir>/hosts/github-actions.yml"` and ask whether to replace the file
-  with the template. Overwrite only on yes; on no, move on.
+  with the template, its `uses:` ref pinned to the release's commit SHA (the diff shows the tag there; when the diff
+  is empty, that pin is the only change). Overwrite only on yes; on no, move on.
 
 On yes, ask which agent CLI the runner uses, and keep the answer as `<agent>`:
 
@@ -148,9 +149,11 @@ replaced:
 ```bash
 TPL="<skill-dir>/hosts/github-actions.yml"
 TAG=$(sed -nE 's#^ *uses: ypxing/coding-crew/\.github/workflows/crew-solve-feature\.yml@([^ ]+)$#\1#p' "$TPL")
-if ! OUT=$(gh api "repos/ypxing/coding-crew/commits/$TAG" --jq .sha 2>&1) || ! grep -qxE '[0-9a-f]{40}' <<<"$OUT"; then
-  if grep -q 'HTTP 422' <<<"$OUT"; then
+ERR=$(mktemp)
+if ! OUT=$(gh api "repos/ypxing/coding-crew/commits/$TAG" --jq .sha 2>"$ERR") || ! grep -qxE '[0-9a-f]{40}' <<<"$OUT"; then
+  if grep -q 'HTTP 422' "$ERR"; then
     echo "coding-crew's workflow tag $TAG is not released yet: re-run after the release, or install from a release tag"
+  elif [ -s "$ERR" ]; then cat "$ERR"
   else echo "$OUT"; fi
 else
   mkdir -p .github/workflows
@@ -159,6 +162,7 @@ else
   gh label create run-agent --force
   gh variable set CREW_AGENT --body <agent>
 fi
+rm -f "$ERR"
 ```
 
 When it prints the not-released line or the SHA lookup's error, nothing was written: say so and go to Step 4.

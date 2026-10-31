@@ -644,15 +644,18 @@ actions_check() {
     "$REPO_ROOT/skills/setup-coding-crew/SKILL.md" | sed -e "s#<skill-dir>#$REPO_ROOT/skills/setup-coding-crew#g"
 }
 
-# actions_stub <dir> — a gh that logs its calls; GH_TAG=missing answers with gh's 422 for an unknown commit, down with a
-# network error, anything else with the SHA (the stub applies no --jq).
+# actions_stub <dir> — a gh that logs its calls; GH_TAG=missing answers with gh's 422 for an unknown commit, denied with
+# a 401, down with a network error, anything else with the SHA (the stub applies no --jq). Like gh, an HTTP error writes
+# the API's JSON body to stdout and gh's line to stderr.
 actions_stub() {
   mkdir -p "$1"
   cat > "$1/gh" <<'SH'
 #!/usr/bin/env bash
 echo "gh $*" >> "$TEMP_DIR/gh.log"
 case "$GH_TAG" in
-  missing) echo "gh: No commit found for SHA: ${2##*/} (HTTP 422)" >&2; exit 1 ;;
+  missing) echo '{"message":"No commit found for SHA","status":"422"}'
+    echo "gh: No commit found for SHA: ${2##*/} (HTTP 422)" >&2; exit 1 ;;
+  denied) echo '{"message":"Bad credentials","status":"401"}'; echo 'gh: Bad credentials (HTTP 401)' >&2; exit 1 ;;
   down) echo 'error connecting to api.github.com' >&2; exit 1 ;;
 esac
 [ "$1" = api ] && echo 62d24629354401612c4189f26321102558b5da9b
@@ -678,6 +681,11 @@ SH
   [ "$output" = "coding-crew's workflow tag $tag is not released yet: re-run after the release, or install from a release tag" ]
   [ ! -e .github ]
   [ "$(cat "$TEMP_DIR/gh.log")" = "$call" ]
+
+  rm -f "$TEMP_DIR/gh.log"
+  GH_TAG=denied run bash "$TEMP_DIR/write.sh"
+  [ "$output" = 'gh: Bad credentials (HTTP 401)' ] || { echo "$output"; return 1; }
+  [ ! -e .github ]
 
   rm -f "$TEMP_DIR/gh.log"
   GH_TAG=down run bash "$TEMP_DIR/write.sh"
