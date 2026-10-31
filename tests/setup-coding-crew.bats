@@ -696,7 +696,7 @@ SH
   [ "$(cat "$TEMP_DIR/gh.log")" = "$(printf '%s\n' "$call" 'gh label create run-agent --force' 'gh variable set CREW_AGENT --body copilot')" ]
 }
 
-@test "Step 3's existing-file check needs no gh: identical for the caller the write block wrote, differs for the tag-pinned template, absent with no file" {
+@test "Step 3's existing-file check needs no gh: identical for the caller the write block wrote, differs for the tag-pinned template or another release's pin, absent with no file" {
   local repo="$TEMP_DIR/repo" stub="$TEMP_DIR/stub" tpl="$REPO_ROOT/skills/setup-coding-crew/hosts/github-actions.yml"
   actions_check > "$TEMP_DIR/check.sh"
   actions_write > "$TEMP_DIR/write.sh"
@@ -715,6 +715,10 @@ SH
   [ "$status" -eq 0 ] && [ -f .github/workflows/solve-feature.yml ]
   chk
   [ "$output" = identical ] || { echo "$output"; return 1; }
+  # SHA-pinned to another release: the pin reads back as a tag the template does not name.
+  sed -i.bak -E 's/  # [^ ]+$/  # v0.0.1/' .github/workflows/solve-feature.yml
+  chk
+  [ "$output" = differs ] || { echo "$output"; return 1; }
   cp "$tpl" .github/workflows/solve-feature.yml
   chk
   [ "$output" = differs ]

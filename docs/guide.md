@@ -488,9 +488,10 @@ Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it files th
 
 `/solve-feature` runs one feature from a terminal or a worktree pane. To run it on a GitHub runner
 instead, run `/setup-coding-crew redo actions` with the github tracker (a plain run only says the workflow is not
-installed) and answer yes: it copies the caller
+installed) and answer yes: it writes the caller
 file [`hosts/github-actions.yml`](../skills/setup-coding-crew/hosts/github-actions.yml) to
-`.github/workflows/solve-feature.yml` (once it has checked that the coding-crew release the file names is tagged), creates the `run-agent` label, sets the repo variable
+`.github/workflows/solve-feature.yml` pinned to the commit SHA of the coding-crew release the file names (it writes
+nothing when that release is not tagged yet), creates the `run-agent` label, sets the repo variable
 `CREW_AGENT` to the agent you pick and prints the commit line for it. `copilot` (the default) is billed
 to GitHub Copilot with no API key; `claude` runs Claude Code on an `ANTHROPIC_API_KEY` or
 `CLAUDE_CODE_OAUTH_TOKEN` repo secret. The run opens its PR with the workflow's token, so a repo admin enables

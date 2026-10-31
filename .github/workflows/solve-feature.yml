@@ -6,9 +6,8 @@ name: solve-feature
 # permissions and the secrets passed.
 #
 # coding-crew's own caller: the same as the template, but its `uses:` is the reusable workflow in this commit,
-# which installs the skills of the release its install action names, not this branch's. Elsewhere, update by
-# bumping the tag on `uses:` to a newer coding-crew release; Dependabot's `github-actions` ecosystem
-# opens those PRs. Pass `timeout-minutes:` under `with:` to change the solve job's timeout (360 by default). The
+# which installs the skills of the release its install action names, not this branch's. Elsewhere, the `uses:` ref
+# is a commit SHA, updated as the template's header says. Pass `timeout-minutes:` under `with:` to change the solve job's timeout (360 by default). The
 # checks this workflow adds to a PR are named `run / <job>`.
 on:
   issues:
