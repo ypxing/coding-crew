@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.3.7]
+
 - setup-coding-crew: the Actions caller it writes now pins coding-crew's reusable workflow to the release's full
   commit SHA (`@<sha>  # vX.Y.Z`) instead of the movable tag; an existing tag-pinned caller is offered the pinned one
   on the next setup run. The guide's Bedrock trust policy now matches `job_workflow_ref:…crew-solve-feature.yml@<sha>`

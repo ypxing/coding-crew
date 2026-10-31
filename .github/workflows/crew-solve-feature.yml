@@ -322,7 +322,7 @@ jobs:
       # when the job runs: coding-crew's release-tag ruleset protects it (admins can bypass), and Immutable releases
       # locks it for releases published after that setting is enabled.
       - name: Install coding-crew (user-level)
-        uses: ypxing/coding-crew/actions/install@v2.3.6
+        uses: ypxing/coding-crew/actions/install@v2.3.7
         with:
           agent: ${{ env.CREW_AGENT }}
 
