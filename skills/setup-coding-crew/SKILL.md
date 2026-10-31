@@ -211,8 +211,10 @@ for the runs, and say how a run starts: label any issue of a feature `run-agent`
 the slug; and that a finished `ready-for-human` issue of a `run-agent` feature re-runs it. Tell them too that an issue whose change touches `.github/workflows/` cannot land from a runner — the
 workflow's `GITHUB_TOKEN` never gets the `workflows` scope — so such an issue is run locally, for example with
 `/solve-feature`; a run that hits one keeps its unpushed commits in the artifact's `unpushed.bundle`, and its
-summary page prints the commands that fetch them. Last, tell them the file names a coding-crew release: to update, they bump the
-tag on its `uses:` line (Dependabot's `github-actions` ecosystem opens those PRs), and its checks show on a PR as
+summary page prints the commands that fetch them. Last, tell them the file pins a coding-crew release by commit SHA: to update, they take
+Dependabot's `github-actions` PR (it bumps the SHA and its version comment together), or update the installed
+coding-crew skills to the new release (re-run `install.sh`, or `npx skills add`) and then run
+`/setup-coding-crew redo actions`. The file's checks show on a PR as
 `run / <job>`, so a branch rule that requires the old `solve` check needs the new name. An organisation that allows
 only its own actions runs an internal copy of coding-crew instead: a mirror whose `stable` branch carries one
 commit pointing the install line at the copy, which the callers name; coding-crew's `docs/guide.md` (solve-feature

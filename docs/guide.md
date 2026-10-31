@@ -650,7 +650,7 @@ workflow:
    being the coding-crew copy the callers name and `<sha>` the full commit SHA their `uses:` line pins (a SHA-pinned
    caller's `job_workflow_ref` ends in the bare SHA, not `@refs/tags/vX.Y.Z`, as in GitHub's
    [OIDC with reusable workflows](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-with-reusable-workflows)
-   example). Update it to the new SHA on each upgrade, together with the caller's bump, or the role refuses the
+   example); for an internal copy's callers that name `@stable`, use `refs/heads/stable` in place of `<sha>`. Update it to the new SHA on each upgrade, together with the caller's bump, or the role refuses the
    upgraded runs (a list holding both SHAs covers the switch-over). Do not match `@*`: anyone who can push a branch to that copy and add a workflow to an `<org>/*`
    repo could then assume the role through that branch.
 3. Permissions policy: only `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`, on the named
