@@ -62,7 +62,7 @@ Determine the **feature slug** (the root issue or directory the issues are filed
 
 Never guess the slug silently — confirm with the user if there's any ambiguity. **Before using a slug `features` lists, ask the user** whether to extend that feature or choose a new slug; a closed feature is still a taken slug. `to-prd` relies on this question and does not ask it again.
 
-With more than one repo, one slug serves every repo: run `features` in each named repo, from its root, before the slug is confirmed and before any PRD is written, so the slug is free — or extended, with the user's yes — in all of them. When the repos first appear in step 2's PRD, run it there, before step 3.
+With more than one repo, one slug serves every repo: in each named repo, from its root, run `config` — on `configured=no` on an interactive run, invoke `configure-tracker` there first, or `features` reads a `local` tracker that repo will not publish to — then `features`, before the slug is confirmed and before any PRD is written, so the slug is free — or extended, with the user's yes — in all of them. When the repos first appear in step 2's PRD, run both there, before step 3.
 
 **One slice and at most one origin issue, no PRD:** the slug needs no question. Use, in order: a github issue ref's own `Feature: <slug>` line, when its body has one; a local issue ref's feature (`rewrite` writes in place); otherwise one derived from the title (kebab-case, short). Step 5's quiz shows it for the user to override. With two or more slices, or two or more origin issues, the slug is confirmed as above.
 
