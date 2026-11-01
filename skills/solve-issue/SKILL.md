@@ -32,8 +32,7 @@ the words, not the wire format:
   commits them with a `[WIP]` marker too (Step 6).
 
 Every outcome but `complete` commits your own changes and leaves the issue open: what a caller checks next
-is the branch's commits and the tracker, not your working directory. The one exception is files a check
-rewrote that this change didn't touch (Step 5), left uncommitted for a human.
+is the branch's commits and the tracker, not your working directory.
 
 When you stop on a blocker, always output:
 
@@ -241,13 +240,14 @@ It runs every check in the dev commands file (`coding-crew-lib/scripts/checks/co
 `coverage` and `integration` when the file has them — each through `run.sh`, and reports each. `NOT RUN: no
 command found` means no local command exists: report it, do not re-check CLAUDE.md/Makefile.
 
-- `CHECKS: pass` — continue.
+- `CHECKS: pass` — continue. A `<key>: rewrote: <files>` line is still a pass: the check fixed those
+  files and its second run left them as they were. Keep every file any `rewrote:` line names this
+  session for Step 6's rewrites commit.
 - `CHECKS: fail` — fix the code and re-run. When the same check still fails after 2 distinct fix
   attempts, whether or not its error changed, stop: the run is `partial`, naming the check and its
-  output. Except `<key>: modified files:` — the check rewrote files this change didn't touch, which a
-  human commits — and a failure naming what no repo file can provide (§ Outcome): report
-  `blocked` with that output. The modified-files line's "run it, commit the result, and re-run" is
-  for that person, not for you.
+  output. A `<key>: modified files:` fail is a check that rewrites files on every run, or creates
+  ones git does not ignore: fixing it is the line's own fix, in the dev commands file. A failure
+  naming what no repo file can provide (§ Outcome) is `blocked`: report it with that output.
 - `DISCOVER` — no dev commands file yet. Run `(cd "$PROJECT_ROOT" && bash "<skill-dir>/../coding-crew-lib/scripts/checks/discover-commands.sh")`,
   follow its prompt, then re-run `run-checks.sh`.
 
@@ -275,6 +275,11 @@ $DETAILS}" \
 ```
 
 Example: `[01-auth-logout] Add user logout endpoint`. Do not push.
+
+Then, when Step 5's `rewrote:` lines named files, commit those still changed as their own commit, so a
+reviewer sees formatting churn apart from the work: the same command with the same prefix, the message
+`Apply the checks' rewrites` and those files as `--files`, on every outcome. A file both your work and
+a check changed goes in the work commit.
 
 ### 6.5. The dev commands file
 

@@ -95,7 +95,8 @@ then, from the main checkout:
 bash "<skill-dir>/../coding-crew-lib/scripts/checks/run-checks.sh" --project-root "$PWD"
 ```
 
-- `CHECKS: pass`: say so, and go on.
+- `CHECKS: pass`: say so, and go on. Its `<key>: rewrote: <files>` lines are a check that fixed those files (a
+  `lint --fix`): name them to the user, and carry them to Step 4's commit line.
 - `CHECKS: fail`: show each failing check's output, then ask the user, per failing check: **fix** the command
   (edit it in `$DEV` with them, then run `run-checks.sh` again), **keep** it as it is (Step 4 labels it
   unverified), or **stop**. On stop, end the run here, without Step 4's commit line.
@@ -226,14 +227,16 @@ Always, even after a step failed or was skipped, except after a stop in Step 2. 
 before they are committed; committing them shares them with the team and with an Actions runner, whose fresh
 checkout has only what is committed. List every setup file git shows as changed or untracked in the main
 checkout, whether or not this run wrote it. Set `START` to the top level you were started in, and `UNVERIFIED` to
-the checks the user kept failing in Step 2, space-separated (empty when none):
+the checks the user kept failing in Step 2, and `REWROTE` to the files Step 2's `rewrote:` lines named, each
+space-separated (empty when none):
 
 ```bash
 START="<the top level setup was started in>"
 UNVERIFIED=""
+REWROTE=""
 MAIN=$(git rev-parse --path-format=absolute --git-common-dir)
 [ "$(basename "$MAIN")" = .git ] && MAIN=$(dirname "$MAIN") || MAIN=$(git rev-parse --show-toplevel)
-FILES=$(git -C "$MAIN" status --porcelain --untracked-files=all -- .coding-crew/config.json .coding-crew/dev-commands.json .github/workflows/solve-feature.yml | cut -c4- | LC_ALL=C sort | paste -sd' ' -)
+FILES=$(git -C "$MAIN" status --porcelain --untracked-files=all -- .coding-crew/config.json .coding-crew/dev-commands.json .github/workflows/solve-feature.yml $REWROTE | cut -c4- | LC_ALL=C sort | paste -sd' ' -)
 for c in $UNVERIFIED; do echo "unverified: $c fails"; done
 CD=""; [ "$MAIN" = "$START" ] || CD="cd $(printf '%q' "$MAIN") && "
 if [ -n "$FILES" ]; then echo "To finish, run: ${CD}git add $FILES && git commit -m \"Set up coding-crew\""

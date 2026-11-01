@@ -447,10 +447,11 @@ subagent, and the run stops on it only when the resolver leaves it unresolved; t
 | `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model name, a family with an optional version (`opus`, `claude-opus-5-5`, `opus 5.5`): the host runs the subagent on the matching model in its own list, the closest of the same family when it lacks that version, its own model when it lacks the family. Read from `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` when set and non-empty (a name for the one host where you set it: your shell, your agent CLI's settings `env`, or the workflow's repo variables), then the project's file, then `~/.coding-crew/config.json` for each key it lacks (an Actions runner sees only the project's committed file), then the default (your own) |
 | `~/.coding-crew/config.json` `solveFeature.publish` | `false` keeps the run on this machine: no `git push` and no PR; the branch is reviewed and fixed locally and the PR body, its title on the first line, is left in `.coding-crew/solve-feature/local-pr-<branch, / as _>.md` for you to push and open yourself. Read from the user-level file only, never the project's, so an Actions run always pushes |
 
-**Checks that modify files.** A check that leaves the tree modified fails. An auto-fixing lint
-(`make lint` running `--write`) can stay configured: run it once, commit what it rewrote, and re-run.
-Only a check that rewrites files on every run needs a non-mutating command in the dev commands file
-(below).
+**Checks that modify files.** An auto-fixing lint (`make lint` running `--write`) can stay configured:
+when a check rewrites tracked files, every check runs a second time, and if that pass changes nothing the
+checks pass and the rewrites land as their own `Apply the checks' rewrites` commit. A check that rewrites
+files on every run, or creates files git does not ignore, fails, and needs a non-mutating command in the
+dev commands file (below).
 
 **Unattended, in its own worktree.** `/crew-afk <feature>` starts that `/solve-feature` run for you
 and returns at once. It resolves the feature from a likely name, then prepares (or reuses) one
