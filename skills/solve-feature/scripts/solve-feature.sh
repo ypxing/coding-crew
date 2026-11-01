@@ -500,7 +500,9 @@ fix() {
   # crew-review's own severity field; a missing or unknown one is not severe.
   severe=$(jq '[.findings // [] | .[]? | select(.severity? | IN("CRITICAL", "HIGH", "MEDIUM"))] | length' "$report")
   # Committed before the checks, so what they leave is their own rewrites, committed apart.
-  git add -A -- "${BRANCH_WORK[@]}"
+  # Listed by ls-files, not passed to git add: git add exits 1 on any pathspec naming an ignored path, an exclude too.
+  git ls-files -z -m -o --exclude-standard -- "${BRANCH_WORK[@]}" | xargs -0 -r git add -A -- ||
+    stop fix "git add failed (see above): stage and commit the fixer's edits by hand, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings$([ "$PUBLISH" = no ] || echo " on PR #$PR")"
   # A failed fetch skips the merge: the push owns that failure.
   if fetch_branch && ! merge_in "origin/$BRANCH"; then
