@@ -176,6 +176,8 @@ light_path() {
   local f="$REPO_ROOT/skills/_shared/fragments/other-repos.md"
   grep -qF 'plan and issues (the **home repo**)' "$f"
   grep -qF 'cd <repo> && node' "$f"
+  grep -qF '`--main-root` alone does not do it' "$f"
+  grep -qF 'for a ref with no repo, ask which repo first' "$f"
   grep -qxF '<!-- fragment:other-repos -->' "$REPO_ROOT/skills/to-issues/SKILL.md"
   grep -qF 'cd <repo> && node' "$REPO_ROOT/skills/_shared/fragments/light-path.md"
 }
