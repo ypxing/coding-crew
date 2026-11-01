@@ -61,8 +61,9 @@ plan with us to get them:
 /crew-brainstorm <idea>     # or shape a fuzzy idea together → issues
 ```
 
-`/to-issues` takes a plan already in the conversation, a spec or design doc in the repo, a list of bugs, or an
-issue already on your tracker (`/to-issues 42`), and files issues an implementer can pick up cold. When a plan is
+`/to-issues` takes whatever you planned with: the conversation you just had with your agent, your agent's own
+plan mode, a spec or design doc in the repo, a list of bugs, or an issue already on your tracker (`/to-issues 42`).
+Run it with no argument to use the conversation. It files issues an implementer can pick up cold. When a plan is
 already one complete, testable change, `/crew-grill` skips its questions and writes the issue.
 
 ## Choose how much to hand over
