@@ -72,6 +72,10 @@ Any check fails: the light path does not apply. Print nothing about it, and cont
 - Ground to cover — territory, not a script; never read these out as questions: purpose, constraints, success criteria, and anti-goals (what would make this a failure even if it technically works)
 - Size the problem before any solution: how often it happens, what the manual workaround costs today, and what goes wrong if nothing is done. Look these up (git history, the tracker, the code) before asking; never ask the user for a count the history holds. Solutions the user arrives with are inputs, not the menu.
 
+<!-- fragment:other-repos -->
+**Other repos.** When the plan changes code outside the repo you run in, ask the user for each other repo's local checkout path: where it lives on this machine is a fact only they hold. Explore each checkout read-only, as you explore this repo — read, grep, run read-only commands; never edit, install or commit there — and cite its facts as `<checkout>/<file>:<line>`. Your summary of the design then lists every repo, this one first, one line each: its remote (`owner/repo`, from `git -C <checkout> remote get-url origin`; omitted when it has none), its checkout path, and what changes there.
+<!-- /fragment:other-repos -->
+
 ### Exploring approaches
 
 Propose 2-3 different approaches with trade-offs, conversationally, leading with your recommended option and why. One of them is always the do-least option:
@@ -121,6 +125,6 @@ Report every change as "said X → actually Y (source)". Fix each decision built
 
 ## After the Design
 
-Once the user approves the design, invoke `to-issues`, passing the agreed decisions, the `(auto)` lines, facts and cut list. `to-issues` alone decides whether a PRD is written and what the slug is; do not ask the user for either.
+Once the user approves the design, invoke `to-issues`, passing the agreed decisions, the `(auto)` lines, facts, cut list and, when there is more than one, the repos. `to-issues` alone decides whether a PRD is written and what the slug is; do not ask the user for either.
 
 - Do NOT invoke any other skill. `to-issues` is the only path forward.

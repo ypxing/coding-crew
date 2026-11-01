@@ -155,3 +155,15 @@ light_path() {
     grep -qxF '<!-- /fragment:worth-asking -->' "$REPO_ROOT/skills/$skill/SKILL.md"
   done
 }
+
+@test "crew-grill and crew-brainstorm both render the other-repos fragment, which names no consumer and no downstream tool" {
+  local f="$REPO_ROOT/skills/_shared/fragments/other-repos.md" skill
+  grep -qF 'checkout path' "$f"
+  grep -qF 'read-only' "$f"
+  grep -qF '`owner/repo`' "$f"
+  ! grep -qiE 'crew-|grill|brainstorm|to-issues|to-prd|solve-|PRD' "$f" || false
+  for skill in crew-grill crew-brainstorm; do
+    grep -qxF '<!-- fragment:other-repos -->' "$REPO_ROOT/skills/$skill/SKILL.md"
+    grep -qxF '<!-- /fragment:other-repos -->' "$REPO_ROOT/skills/$skill/SKILL.md"
+  done
+}

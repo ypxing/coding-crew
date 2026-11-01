@@ -44,6 +44,10 @@ Any check fails: the light path does not apply. Print nothing about it, and cont
 
 The tree's root is the problem, not the solutions on offer. Before any solution node, establish the **problem size**: how often it happens, what the manual workaround costs today, and what goes wrong if nothing is done. These are mostly facts (git history, the tracker, the code), so Gate 1 applies — look them up (`git log`, merged PRs, the issue list), cite them, and ask only what no source holds. Never ask the user how often something happens when the history can count it. Candidate solutions the user brings with them are inputs to this tree, not its frontier: the smallest change that removes the cost you measured is the baseline every larger option has to beat.
 
+<!-- fragment:other-repos -->
+**Other repos.** When the plan changes code outside the repo you run in, ask the user for each other repo's local checkout path: where it lives on this machine is a fact only they hold. Explore each checkout read-only, as you explore this repo — read, grep, run read-only commands; never edit, install or commit there — and cite its facts as `<checkout>/<file>:<line>`. Your summary of the design then lists every repo, this one first, one line each: its remote (`owner/repo`, from `git -C <checkout> remote get-url origin`; omitted when it has none), its checkout path, and what changes there.
+<!-- /fragment:other-repos -->
+
 ### Rounds and gates
 
 Work in **rounds**. The **frontier** is every decision whose prerequisites are already settled — what you can ask now without guessing at answers you haven't heard. A question that depends on another still-open question belongs to a later round, not this one.
@@ -160,4 +164,4 @@ Then go straight to Phase 2; do not ask the user for the next step.
 
 ## Phase 2 — Issues
 
-Run the `to-issues` skill with the Phase 1 summary as its source: decisions, `(auto)` lines, facts and cut list. `to-issues` alone decides whether a PRD is written, and carries each part of the summary into its issues or PRD (its step 1). Complete its issue quiz and let it publish the approved issues.
+Run the `to-issues` skill with the Phase 1 summary as its source: decisions, `(auto)` lines, facts, cut list and, when there is more than one, the repos. `to-issues` alone decides whether a PRD is written, and carries each part of the summary into its issues or PRD (its step 1). Complete its issue quiz and let it publish the approved issues.
