@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- checks: a check that rewrites a file already dirty (the coder's own uncommitted edits) is now seen as a rewrite:
+  it is named on a `rewrote:` line and run a second time, so one that rewrites on every run fails instead of passing.
+- to-prd: a PRD's `Origin:` line names only the home repo's issues, so a design started from another repo's issue no
+  longer closes the home repo's issue of the same number; from a plain folder, to-prd asks which repo holds the PRD
+  when none was chosen.
+
 ## [2.3.8]
 
 - crew-grill, crew-brainstorm, to-prd, to-issues: a design session can start in a plain folder outside any repo.

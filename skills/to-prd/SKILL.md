@@ -37,7 +37,7 @@ stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, 
 own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
 <!-- /fragment:tracker-configuration -->
 
-**From a folder that is no git repo,** the home repo the user chose stands for the current repo below, and every tracker op runs as `cd <home repo> && node "$TRACKER" …`; on `configured=no`, invoke `configure-tracker` after that `cd`.
+**From a folder that is no git repo,** the home repo stands for the current repo below: the one this session's design summary or calling skill names, else the only repo the user named, else ask the user in one line which repo holds the PRD before the first tracker op. Every tracker op runs as `cd <home repo> && node "$TRACKER" …`; on `configured=no`, invoke `configure-tracker` after that `cd`.
 
 ## Process
 
@@ -87,7 +87,7 @@ Report every change as "said X → actually Y (source)". Fix each decision built
 
 ## Problem Statement
 
-The problem from the user's perspective. Open with one actor line: `Actor: <who has the problem>`. If the design started from tracker issues, put `Origin: #<n>[, #<n>…]` on the next line (column 0); otherwise omit it. On the github tracker, those issues close together with this PRD; the local tracker closes nothing from it.
+The problem from the user's perspective. Open with one actor line: `Actor: <who has the problem>`. If the design started from tracker issues, put `Origin: #<n>[, #<n>…]` on the next line (column 0), naming only the home repo's issues; otherwise omit it. On the github tracker, those issues close together with this PRD; the local tracker closes nothing from it. A source issue in another repo goes in the text below by its full URL, never on that line: its number would be read as the home repo's issue and closed.
 
 ## Solution
 

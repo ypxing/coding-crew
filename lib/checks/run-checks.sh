@@ -57,8 +57,8 @@ KEYS=(typecheck lint test coverage integration)
 _tree_state() {
   git -C "$PROJECT_ROOT" status --porcelain -z --no-renames 2>/dev/null | tr '\0' '\n' | LC_ALL=C sort
 }
-# "<blob> <path>" per dirty or untracked file: the second pass's own check, as a second rewrite of a file
-# the first pass already dirtied leaves its porcelain line as it was.
+# "<blob> <path>" per dirty or untracked file: a rewrite of a file already dirty (the caller's own edits, or
+# the first pass's rewrite) leaves its porcelain line as it was.
 _content_state() {
   local top paths
   top=$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null) || return 0
@@ -77,6 +77,13 @@ _changed_files() {
 _changed_content() {
   LC_ALL=C comm -3 <(printf '%s\n' "$1") <(printf '%s\n' "$2") | sed -E 's/^\t//' | cut -d' ' -f2- |
     awk 'NF && !seen[$0]++ { printf "%s%s", (n++ ? ", " : ""), $0 }'
+}
+# _join <exclude> <list>… — the comma-separated lists as one, each path once, leaving out those in <exclude>.
+_join() {
+  local exclude=$1; shift
+  printf '%s, ' "$@" | tr ',' '\n' | sed 's/^ *//' |
+    awk -v ex="$exclude" 'BEGIN { n = split(ex, e, /, /); for (i = 1; i <= n; i++) skip[e[i]] = 1 }
+      NF && !skip[$0] && !seen[$0]++ { printf "%s%s", (k++ ? ", " : ""), $0 }'
 }
 
 # Without a log dir every check would write to /<key>.log and fail, blaming the project for a full disk.
@@ -102,7 +109,7 @@ REWROTE=() PASS_FAIL=0 CREATED_FAIL=0
 # run_pass <1|2> — every check once. Pass 1 counts a rewrite of tracked files apart from a fail; pass 2 fails
 # on any change at all.
 run_pass() {
-  local pass=$1 key cmd log before after cbefore="" cafter="" rc changed created
+  local pass=$1 key cmd log before after cbefore cafter content rc changed created
   PASS_FAIL=0
   for key in "${KEYS[@]}"; do
     case "$key" in coverage|integration) commands_field_present "$CACHE" "$key" || continue ;; esac
@@ -115,7 +122,7 @@ run_pass() {
     [ "$pass" = 1 ] || log="$LOG_DIR/$key.pass2.log"
     echo "=== $key$([ "$pass" = 1 ] || echo " (second pass)"): $cmd"
     before="$(_tree_state)"
-    [ "$pass" = 1 ] || cbefore="$(_content_state)"
+    cbefore="$(_content_state)"
     # stdin from /dev/null: a `docker compose run` would otherwise read the rest of this loop. Logged
     # through a pipe: on overlayfs a check writing straight to a file under /tmp can hang forever.
     bash "$RUN_SCRIPT" --project-root "$PROJECT_ROOT" -- "$cmd" \
@@ -123,17 +130,16 @@ run_pass() {
     rc=${PIPESTATUS[0]}
     after="$(_tree_state)"
     tail -n 80 "$log"
-    changed="" created=""
+    cafter="$(_content_state)" changed="" created=""
+    content=""
+    [ "$cbefore" = "$cafter" ] || content="$(_changed_content "$cbefore" "$cafter")"
     if [ "$pass" = 1 ]; then
       created="$(_changed_files "$before" "$after" untracked)"
-      changed="$(_changed_files "$before" "$after" tracked)"
+      changed="$(_join "$created" "$(_changed_files "$before" "$after" tracked)" "$content")"
       [ -z "$changed" ] || REWROTE+=("$key: rewrote: $changed")
       changed=""
     else
-      cafter="$(_content_state)"
-      changed="$(_changed_files "$before" "$after" all)"
-      [ "$cbefore" = "$cafter" ] || changed="$(printf '%s, %s' "$changed" "$(_changed_content "$cbefore" "$cafter")" |
-        tr ',' '\n' | sed 's/^ *//' | awk 'NF && !seen[$0]++ { printf "%s%s", (n++ ? ", " : ""), $0 }')"
+      changed="$(_join "" "$(_changed_files "$before" "$after" all)" "$content")"
     fi
     if [ -n "$created" ]; then
       echo "$key: modified files: $created — the check created or removed files git does not ignore: ignore them, or name a command for it in $CACHE that leaves none"

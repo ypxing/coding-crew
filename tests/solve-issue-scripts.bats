@@ -236,6 +236,20 @@ _committed_src() {
   [[ "$output" == *"lint: rewrote: src/app.py"*"CHECKS: fail" ]] || { echo "$output"; return 1; }
 }
 
+@test "run-checks: a rewrite of a file already dirty is still a rewrite: named when it settles, failed when it never does" {
+  _committed_src
+  printf 'b = 2\n' >> "$WORK/src/app.py"
+  _cache '{"test": "true", "lint": "echo fixed >> src/app.py", "typecheck": null}'
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"lint: modified files: src/app.py — the check rewrote them again"* ]] || { echo "$output"; return 1; }
+
+  _cache "{\"test\": \"true\", \"lint\": \"printf 'a=1\\\\n' > src/app.py\", \"typecheck\": null}"
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"lint: rewrote: src/app.py"$'\n'"CHECKS: pass" ]] || { echo "$output"; return 1; }
+}
+
 @test "run-checks: a file whose name has a space or a non-ASCII character is named as written and still gated in the second pass" {
   _committed_src
   printf 'a\n' > "$WORK/src/é b.py"
