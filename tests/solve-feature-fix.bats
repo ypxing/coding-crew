@@ -43,11 +43,11 @@ fix_stops() {
   [ "$(wc -l < "$STATE/checks.log")" -eq "$checks" ]
 }
 
-@test "fix with failing checks stops naming the log, leaving the tree and commits, or with none known sends the user to /setup-coding-crew; a second fix once committed completes" {
+@test "fix with failing checks stops naming the log, keeping the fixer's commit and discarding what the checks left, or with none known sends the user to /setup-coding-crew; a second fix once committed completes" {
   fix_ready
   TIP=$(git rev-parse HEAD)
   : > "$STATE/checks.log"
-  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  CHECK_LEAVES="$WORK/artefact.out" CHECK_REWRITES=fixed.txt CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
   fix_stops "run-checks.sh exit 1; once fixed and committed, run fix feat 10 feature/feat, then describe feat 10"
   [[ "$output" == *"log: $WORK/.coding-crew/solve-feature/pr-10.checks.log"* ]]
   [ "$(cat "$STATE/checks.log")" = "--project-root $WORK" ]

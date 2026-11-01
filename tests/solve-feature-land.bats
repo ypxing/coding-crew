@@ -245,16 +245,27 @@ handed_back() {
   [ "$(git branch --show-current)" = feature/feat ]
 }
 
-@test "a reopen that changes a tracked file is committed alone; one that fails stops naming land, nothing pushed" {
+@test "a reopen that changes a tracked file is committed alone, what the failed checks left discarded; a failed discard is noted and still hands back; a reopen that fails stops naming land, nothing pushed" {
   land_ready
-  # artefact.out is what a check left behind: never committed.
-  CHECK_LEAVES="$WORK/artefact.out" REOPEN_TOUCHES="$WORK/issue-state.md" CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  echo '{"tracker":{"kind":"github"},"x":1}' > .coding-crew/config.json
+  # What a failed check left (a file it made, a rewrite): never committed, and gone so a re-run starts on a clean tree.
+  CHECK_LEAVES="$WORK/artefact.out" CHECK_REWRITES=work-2.txt REOPEN_TOUCHES="$WORK/issue-state.md" CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 1 ]
   [ "$(git log -1 --format=%s)" = "Reopen 2: its checks failed" ]
   [ "$(git show --name-only --format= HEAD)" = issue-state.md ]
-  [ "$(git status --porcelain)" = "?? artefact.out" ]
+  [ "$(git status --porcelain)" = " M .coding-crew/config.json" ]
+  [ "$(sed -n '/discarded what the failed checks left/,$p' .coding-crew/solve-feature/2.checks.log | tail -n +2 | sort | tr '\n' ' ')" = "artefact.out work-2.txt " ]
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
-  rm artefact.out
+  git checkout -q -- .coding-crew/config.json
+
+  coder 2
+  # A discard that fails is noted in the log; the issue is still handed back.
+  printf '#!/usr/bin/env bash\nif [ "$1" = clean ]; then echo "fatal: no" >&2; exit 1; fi\nexec "%s" "$@"\n' "$(command -v git)" > "$STUB/git"
+  chmod +x "$STUB/git"
+  CHECK_LEAVES="$WORK/artefact.out" CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  handed_back "run-checks.sh exit 1"
+  grep -qx "solve-feature: discarding them failed (see above): clean the tree by hand before a re-run" .coding-crew/solve-feature/2.checks.log
+  rm "$STUB/git" artefact.out
 
   coder 2
   REOPEN_RC=1 CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
