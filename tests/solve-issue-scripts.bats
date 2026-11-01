@@ -236,6 +236,22 @@ _committed_src() {
   [[ "$output" == *"lint: rewrote: src/app.py"*"CHECKS: fail" ]] || { echo "$output"; return 1; }
 }
 
+@test "run-checks: a file whose name has a space or a non-ASCII character is named as written and still gated in the second pass" {
+  _committed_src
+  printf 'a\n' > "$WORK/src/é b.py"
+  git -C "$WORK" add -A && git -C "$WORK" commit -q -m names
+  _cache '{"test": "true", "lint": "echo fixed >> \"src/é b.py\"", "typecheck": null}'
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"lint: modified files: src/é b.py — the check rewrote them again"* ]] || { echo "$output"; return 1; }
+
+  git -C "$WORK" checkout -q -- .
+  _cache '{"test": "true", "lint": "printf \"b\\\\n\" > \"src/é b.py\"", "typecheck": null}'
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"lint: rewrote: src/é b.py"$'\n'"CHECKS: pass" ]] || { echo "$output"; return 1; }
+}
+
 @test "run-checks: a check that fails in the second pass fails the run, whatever it rewrote" {
   _committed_src
   _cache "{\"typecheck\": null, \"lint\": \"printf 'a=1\\\\n' > src/app.py\", \"test\": \"[ ! -f $TEMP_DIR/ran ] && touch $TEMP_DIR/ran\"}"

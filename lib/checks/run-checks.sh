@@ -52,17 +52,18 @@ fi
 
 KEYS=(typecheck lint test coverage integration)
 
-# Prior dirt is in the before snapshot, so only what the check itself changed counts.
+# Prior dirt is in the before snapshot, so only what the check itself changed counts. -z: git quotes a
+# path with a space or a non-ASCII byte otherwise, and the `rewrote:` names go to `git add` as written.
 _tree_state() {
-  git -C "$PROJECT_ROOT" status --porcelain 2>/dev/null | LC_ALL=C sort
+  git -C "$PROJECT_ROOT" status --porcelain -z --no-renames 2>/dev/null | tr '\0' '\n' | LC_ALL=C sort
 }
 # "<blob> <path>" per dirty or untracked file: the second pass's own check, as a second rewrite of a file
 # the first pass already dirtied leaves its porcelain line as it was.
 _content_state() {
   local top paths
   top=$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null) || return 0
-  paths=$(cd "$top" && { git diff --name-only HEAD 2>/dev/null; git ls-files -o --exclude-standard; } |
-    LC_ALL=C sort -u | while IFS= read -r p; do [ ! -f "$p" ] || printf '%s\n' "$p"; done)
+  paths=$(cd "$top" && { git diff --name-only -z HEAD 2>/dev/null; git ls-files -o -z --exclude-standard; } |
+    tr '\0' '\n' | LC_ALL=C sort -u | while IFS= read -r p; do [ ! -f "$p" ] || printf '%s\n' "$p"; done)
   [ -n "$paths" ] || return 0
   paste -d' ' <(cd "$top" && git hash-object --stdin-paths <<<"$paths") <(printf '%s\n' "$paths")
 }
