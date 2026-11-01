@@ -480,15 +480,16 @@ synced_branch() {
   [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
 }
 
-@test "sync whose checks fail on the merged tree exits 1 with an outcome naming their log, pushing nothing" {
+@test "sync whose checks fail on the merged tree exits 1 with an outcome naming their log, pushing nothing, what they left discarded" {
   synced_branch
   main_moves fix.txt "a fix on main" && git checkout -q feature/feat
-  CHECKS_RC=1 run bash "$SCRIPT" sync feat feature/feat
+  CHECK_LEAVES="$WORK/artefact.out" CHECK_REWRITES=fix.txt CHECKS_RC=1 run bash "$SCRIPT" sync feat feature/feat
   [ "$status" -eq 1 ]
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: run-checks.sh exit 1 on feature/feat merged with origin/main — log: $WORK/.coding-crew/solve-feature/sync.checks.log; once fixed and committed, re-run" ]
   [ -s .coding-crew/solve-feature/sync.checks.log ]
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$TIP" ]
   [ ! -e .coding-crew/solve-feature/review.base ]
+  [ -z "$(git status --porcelain)" ]
 }
 
 @test "sync whose merge conflicts exits 4 printing conflicts= with the merge in progress; resolved and committed, sync again pushes it" {
