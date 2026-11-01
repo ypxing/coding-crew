@@ -218,14 +218,20 @@ next() {
   case $rc in 0|3) ;; *) die "next failed for '$SLUG' (exit $rc, see above)" ;; esac
   # The issue handed out last, cleared once its land records it. Done in the tracker but still named here, it was
   # closed with no land to gate or record it, and the run would skip it as landed.
-  if [ -s "$(landing)" ] && REF=$(cat "$(landing)") && { [ "$rc" = 3 ] || [ "$ref" != "$REF" ]; }; then
-    local st cmds why="$REF is done but its land never finished" todo="land $SLUG $REF $(git branch --show-current)"
-    st=$(node "$CLI" status "$REF") || die "status $REF failed (see above)"
+  local on
+  if [ -s "$(landing)" ] && IFS=$'\t' read -r REF on <"$(landing)" && { [ "$rc" = 3 ] || [ "$ref" != "$REF" ]; }; then
+    # Landed on the branch its coder committed to: a re-run on another branch would gate a tree without the work.
+    on=${on:-$(git branch --show-current)}
+    local st src=0 cmds why="$REF is done but its land never finished" todo="land $SLUG $REF $on" go=""
+    [ "$on" = "$(git branch --show-current)" ] || go="check out $on and "
+    st=$(node "$CLI" status "$REF") || src=$?
+    # Exit 3: the issue is gone (deleted, its file renamed), so there is nothing left to land for it.
+    case $src in 0) ;; 3) rm -f "$(landing)" ;; *) die "status $REF failed (see above)" ;; esac
     if [ "$st" = done ]; then
       # shellcheck source=/dev/null
       . "$CHECKS/commands-file.sh" 2>/dev/null && cmds=$(commands_file "$ROOT") && ! commands_field_present "$cmds" test &&
         why="$why and no check commands are known" todo="/setup-coding-crew, then $todo"
-      stop land "$why: if its coder finished it, run $todo; otherwise reopen $REF; then re-run"
+      stop land "$why: if its coder finished it, ${go}run $todo; otherwise reopen $REF; then re-run"
     fi
   fi
   [ "$rc" = 0 ] || nothing_left
@@ -234,7 +240,7 @@ next() {
   node "$CLI" fetch "$ref" >"$LOGS/${ref//\//_}.issue.md" || die "fetch $ref failed (see above)"
   # One coder at a time writes its report here; an earlier one's would read as this coder's at land's solve stop.
   rm -f "$LOGS/coder.report.md" "$LOGS/coder.notes.md"
-  printf '%s\n' "$ref" >"$(landing)"
+  printf '%s\t%s\n' "$ref" "$(git branch --show-current)" >"$(landing)"
   echo "$ref"
 }
 
