@@ -165,6 +165,8 @@ printf '%s\n' "$*" >> "$STATE/checks.log"
 git status --porcelain > "$STATE/checks.status"
 git rev-parse HEAD > "$STATE/checks.head"
 [ -z "${CHECK_LEAVES:-}" ] || echo build > "$CHECK_LEAVES"
+# A check that rewrites a tracked file and settles, as run-checks.sh leaves it on a pass.
+[ -z "${CHECK_REWRITES:-}" ] || { echo rewritten > "$CHECK_REWRITES"; echo "lint: rewrote: $CHECK_REWRITES"; }
 for i in $(seq 1 30); do echo "check line $i"; done
 echo "test: ${CHECK_RESULT:-pass}"
 [ "${CHECKS_RC:-0}" != 3 ] || { echo DISCOVER; exit 3; }

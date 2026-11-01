@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- checks: a check that fixes what it finds (`eslint --fix`, a `make lint` running a formatter) no longer stops
+  solve-feature or solve-issue: when a second run of every check changes nothing, the checks pass, print
+  `<key>: rewrote: <files>`, and the rewrites land as their own `Apply the checks' rewrites` commit (setup-coding-crew
+  adds them to its commit line). A check that rewrites files on every run, or creates files git does not ignore,
+  still fails (#692).
 - solve-feature: the review fix step no longer stops in a repo that gitignores `.coding-crew/`; it commits the
   fixer's edits and still leaves `config.json` and an untracked dev commands file out (#691).
 - solve-feature: a re-run after an interrupted land names the branch its coder committed to (`check out <branch>

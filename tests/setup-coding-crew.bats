@@ -102,6 +102,38 @@ repo_with_worktree() {
   [[ "${lines[2]}" == "To finish, run: git add .coding-crew/dev-commands.json && git commit"* ]]
 }
 
+@test "the commit hint includes the files the checks rewrote in Step 2, and setup itself never commits" {
+  local repo="$TEMP_DIR/repo"
+  step4 | sed 's/^REWROTE=()/REWROTE=("src\/app.py")/' > "$TEMP_DIR/hint.sh"
+  grep -q '^REWROTE=("src/app.py")' "$TEMP_DIR/hint.sh"
+  mkdir -p "$repo/src" && cd "$repo" && git init -q -b main
+  echo 'a = 1' > src/app.py && git add src/app.py && git -c user.name=t -c user.email=t@t commit -q -m init
+  echo 'a=1' > src/app.py
+  mkdir -p .coding-crew && echo '{"test": "make test"}' > .coding-crew/dev-commands.json
+  run bash "$TEMP_DIR/hint.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "To finish, run: git add .coding-crew/dev-commands.json src/app.py && git commit"* ]] || { echo "$output"; return 1; }
+  [ "$(git rev-list --count HEAD)" = 1 ]
+  grep -qF '`rewrote:`' "$REPO_ROOT/skills/setup-coding-crew/SKILL.md"
+}
+
+@test "the commit hint keeps a rewritten path with a space as one pathspec, shell-escaped in the git add line" {
+  local repo="$TEMP_DIR/repo"
+  step4 | sed 's/^REWROTE=()/REWROTE=("src\/My App\/main.py" "src\/app.py")/' > "$TEMP_DIR/hint.sh"
+  grep -qF 'REWROTE=("src/My App/main.py" "src/app.py")' "$TEMP_DIR/hint.sh"
+  mkdir -p "$repo/src/My App" && cd "$repo" && git init -q -b main
+  echo 'a = 1' > "src/My App/main.py" && echo 'b = 1' > src/app.py
+  git add src && git -c user.name=t -c user.email=t@t commit -q -m init
+  echo 'a=1' > "src/My App/main.py" && echo 'b=1' > src/app.py
+  run bash "$TEMP_DIR/hint.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == 'To finish, run: git add src/My\ App/main.py src/app.py && git commit'* ]] || { echo "$output"; return 1; }
+  # The printed command, run as it is, stages both files.
+  GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+    bash -c "${output#To finish, run: }" >/dev/null
+  [ -z "$(git status --porcelain)" ] || { git status --porcelain; return 1; }
+}
+
 @test "the commit hint lists each setup file git shows as changed or untracked, and says when all are committed" {
   local repo="$TEMP_DIR/repo"
   step4 > "$TEMP_DIR/hint.sh"

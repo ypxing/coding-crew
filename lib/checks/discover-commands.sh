@@ -151,9 +151,8 @@ _in_ask test && cat <<'PROMPT'
   it needs goes inside the command, e.g. `CI=true pnpm test` when `pnpm-lock.yaml` exists)
 PROMPT
 _in_ask lint && cat <<'PROMPT'
-- lint (one that reports, not one that rewrites files: every check fails when it leaves the
-  tree modified, so when the documented lint auto-fixes and the source also documents a
-  non-fixing form — a `lint:check` script, a `make lint-check` target — report that one)
+- lint (the documented one; one that fixes what it finds, such as `eslint --fix` or a
+  `make lint` that runs a formatter, is fine: its fixes are committed once they settle)
 PROMPT
 _in_ask typecheck && cat <<'PROMPT'
 - typecheck (a static/type-checking pass — not the test suite)
