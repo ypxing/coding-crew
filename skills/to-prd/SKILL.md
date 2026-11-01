@@ -79,7 +79,7 @@ Report every change as "said X → actually Y (source)". Fix each decision built
    - **local** — the PRD is a file with no other title, so the body you write opens with `# PRD: <feature title>`.
    - **github** — `--title` titles the issue `PRD: <feature title>`, so the body has no such heading. The PRD becomes the feature's root issue, or a sub-issue of the root the feature already has.
 
-**Security**: Read only the current repo, the checkouts the user named in this session, and this skill's own files and the coding-crew-lib it runs, and nothing else. Only write to paths under `.coding-crew/scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `config.json` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
+**Security**: Read only the current repo, the checkouts the user named in this session and those the design summary records, and this skill's own files and the coding-crew-lib it runs, and nothing else. Only write to paths under `.coding-crew/scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `config.json` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
 
 > **Never commit `PRD.md`.** (Local tracker only — on a remote tracker the PRD is an issue, with no local file to accidentally commit.) This file lives under `.coding-crew/scratch/`, which the tracker CLI gitignores (`.coding-crew/scratch/.gitignore`). Do not run `git add -f`, `git add .coding-crew/scratch/`, or any command that stages files under `.coding-crew/scratch/`.
 
