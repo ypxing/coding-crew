@@ -44,7 +44,11 @@ Then, inside your coding agent:
 ```
 
 That's the whole loop. You get a branch and one PR, marked ready or listing what needs you; nothing is merged
-for you, and the agent runs on your own model and billing.
+for you, and the agent runs on your own model and billing. [Here is one](https://github.com/ypxing/coding-crew-demo/pull/29)
+from a release smoke run.
+
+This loop hands over the most: the crew builds unattended. To keep your hands on it, start with `/solve-issue`
+([by hand](#1-by-hand-you-drive)) and move up from there.
 
 Any agent that loads `SKILL.md` can run the skills ([which agents](docs/guide.md#which-agents)); releases are
 smoke-tested on Claude Code. Commands are shown as `/name`: call them however your agent calls skills (`$name` on
@@ -62,7 +66,7 @@ plan with us to get them:
 ```
 
 `/to-issues` takes whatever you planned with: the conversation you just had with your agent, your agent's own
-plan mode, a spec or design doc in the repo, a list of bugs, or an issue already on your tracker (`/to-issues 42`).
+plan mode, a spec or design doc in the repo, a list of bugs, or an issue already on your tracker (`/to-issues 42` with the GitHub tracker).
 Run it with no argument to use the conversation. It files issues an implementer can pick up cold. When a plan is
 already one complete, testable change, `/crew-grill` skips its questions and writes the issue.
 
@@ -74,8 +78,8 @@ use your own tool for any part.
 ### 1. By hand: you drive
 
 ```bash
-/solve-issue <issue>     # build one issue test-first, run your checks, commit, mark it done
-                         #   (a tracker ref, an issue file, or the issue pasted inline)
+/solve-issue [issue]     # build one issue test-first, run your checks, commit, mark it done
+                         #   (optional: a tracker ref, an issue file, or the issue pasted inline)
 /crew-review             # review the branch or PR against its issue; report only
 /write-pr                # write a PR description a reviewer can act on
 /address-pr-comments     # work through the PR's review comments
@@ -105,9 +109,9 @@ flowchart LR
     review -- "something does" --> needs(["🙋 <b>PR lists what needs you</b>"])
 ```
 
-It is deliberately minimal: it works in the checkout it was started in and picks no worktree, machine or schedule.
-So start it in a worktree or a container, not the checkout you are working in, or let a host below do that.
-([Running a feature](docs/guide.md#running-a-feature) covers re-runs, settings and the outcome line a host reads.)
+It runs right where you start it, in the checkout you start it in, and changes files and commits there. So start
+it in a separate worktree or a container, not the checkout you are working in, or let a host below set one up.
+([Running a feature](docs/guide.md#running-a-feature) covers re-runs and settings.)
 
 ### 3. While you're away: a host runs it
 
@@ -118,7 +122,12 @@ A host decides where and when solve-feature runs. Two come built in:
   build several in parallel; `/crew-afk status` shows how each ended.
 - **GitHub Actions** runs it when you label an issue `run-agent`
   ([setup](docs/guide.md#solve-feature-on-github-actions-optional): `/setup-coding-crew redo actions`).
+
 Anything else that can start your agent in a checkout can host it too: a cron job, your CI, another orchestrator.
+
+Nobody is there to approve tool calls, so an unattended run starts your agent with its permission prompts off.
+Run it only where you are happy for the agent to change files and run commands: crew-afk's own worktree, a
+container, or a CI runner.
 
 For an issue nobody has planned, `/crew-triage <issue>` takes it as far as it can alone: if it is complete enough it
 files the issues and runs solve-feature on them (so start it where solve-feature may run), otherwise it posts its
@@ -131,11 +140,10 @@ The process is the product, not the model:
 - 🚦 **Your checks decide what lands.** No issue counts as done until the checks you set up (tests, lint, types,
   whatever you run) pass, not when the model says it is finished. Every coder works test-first.
 - 🔍 **Plan, build, then review the whole feature.** Issues with testable criteria go in; a reviewer reads the
-  whole feature against the plan, the crew fixes what it found within bounds, and one PR comes out.
+  whole feature against the plan, the crew fixes what it found (two review rounds at most), and one PR comes out.
 - 🙋 **Only what needs you.** A PR it finished is marked ready; one it could not lists what needs a person.
 - 🧩 **No new platform.** Plain Agent Skills, run by the agent, model and billing you already have, against your
-  own tracker (local markdown or GitHub Issues), CI and machines. Hosted coding agents ask you to move into their
-  service; this brings the process into yours.
+  own tracker (local markdown or GitHub Issues), CI and machines.
 - 🪜 **Adopt it a step at a time.** One skill by hand today, whole features unattended later, with your own tool
   for any step.
 
@@ -156,7 +164,7 @@ The process is the product, not the model:
 |            | `/write-pr`            | Write a PR description a reviewer can act on                |
 |            | `/address-pr-comments` | Fix PR review comments                                      |
 |            | `/tdd`                 | Red, green, refactor on any change                          |
-| 2. Engine  | `/solve-feature`       | Run one feature's issues on one branch, reviewed, in one PR |
+| 2. Feature | `/solve-feature`       | Run one feature's issues on one branch, reviewed, in one PR |
 | 3. Hosts   | `/crew-afk`            | Run a feature in its own worktree; see how it ended         |
 | Setup      | `/setup-coding-crew`   | Set up tracker, checks and the optional Actions workflow    |
 
