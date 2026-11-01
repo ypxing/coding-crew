@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- README: organised around how much you hand over (by hand, `/solve-feature`, a host that runs it), with
+  `/to-issues` as the way in for a plan made your own way, and "Why not just ask your agent?" (#688).
+
 ## [2.3.7]
 
 - setup-coding-crew: the Actions caller it writes now pins coding-crew's reusable workflow to the release's full
