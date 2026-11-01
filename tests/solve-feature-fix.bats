@@ -260,6 +260,18 @@ push_says() {
   [ "$(git status --porcelain -uall)" = " M .coding-crew/config.json" ]
 }
 
+@test "fix in a repo that gitignores .coding-crew/ commits the fixer's edits and leaves a tracked config.json's edit out" {
+  fix_ready
+  echo .coding-crew/ >> .gitignore
+  git add .gitignore && git rm -q --cached .coding-crew/dev-commands.json && git commit -q -m "ignore setup"
+  echo '{"tracker":{"kind":"github"},"x":1}' > .coding-crew/config.json
+  echo more > more.txt
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git diff --name-only HEAD~1 HEAD | sort | tr '\n' ' ')" = "fixed.txt more.txt " ]
+  [ "$(git status --porcelain -uall)" = " M .coding-crew/config.json" ]
+}
+
 @test "fix with no findings on a clean tree commits nothing" {
   loop
   report '{"spec":"met","gaps":[],"findings":[]}'
