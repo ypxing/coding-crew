@@ -260,6 +260,38 @@ push_says() {
   [ "$(git status --porcelain -uall)" = " M .coding-crew/config.json" ]
 }
 
+@test "fix in a repo that gitignores .coding-crew/ commits the fixer's edits and leaves a tracked config.json's edit out" {
+  fix_ready
+  echo .coding-crew/ >> .gitignore
+  git add .gitignore && git rm -q --cached .coding-crew/dev-commands.json && git commit -q -m "ignore setup"
+  echo '{"tracker":{"kind":"github"},"x":1}' > .coding-crew/config.json
+  echo more > more.txt
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git diff --name-only HEAD~1 HEAD | sort | tr '\n' ' ')" = "fixed.txt more.txt " ]
+  [ "$(git status --porcelain -uall)" = " M .coding-crew/config.json" ]
+}
+
+@test "fix commits the fixer's removal of a dev commands file the branch tracks" {
+  fix_ready
+  rm .coding-crew/dev-commands.json
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git diff --name-status HEAD~1 HEAD | tr '\t\n' '  ')" = "D .coding-crew/dev-commands.json A fixed.txt " ]
+  [ -z "$(git status --porcelain -uall)" ]
+}
+
+@test "fix stops, committing nothing, when staging the fixer's edits fails" {
+  fix_ready
+  git config filter.boom.clean false && git config filter.boom.required true
+  echo 'fixed.txt filter=boom' > .git/info/attributes
+  local head; head=$(git rev-parse HEAD)
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fix failed: git add failed"* ]]
+  [ "$(git rev-parse HEAD)" = "$head" ]
+}
+
 @test "fix with no findings on a clean tree commits nothing" {
   loop
   report '{"spec":"met","gaps":[],"findings":[]}'
