@@ -4,14 +4,12 @@
 
 ### Describe a feature. Go to lunch. Come back to a reviewed PR.
 
-**Turn the AI coding tool you already use into a whole dev team: a planner, a coder per issue, and a reviewer.**
+**One standard set of [Agent Skills](https://agentskills.io) that turns the coding agent you already use into a dev
+team: a planner, a coder per issue, and a reviewer.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Agent Skills](https://img.shields.io/badge/Agent_Skills-any_capable_agent-555555)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-smoke--tested-D97757)
-![Copilot CLI](https://img.shields.io/badge/Copilot_CLI-supported-24292e)
-![Codex CLI](https://img.shields.io/badge/Codex_CLI-supported-10a37f)
-![pi](https://img.shields.io/badge/pi-supported-6f42c1)
 
 </div>
 
@@ -20,7 +18,7 @@
 A coding agent pairs with you one prompt at a time. Coding Crew works more like a team: you agree the
 plan together, then it builds the feature **test-first, one issue at a time, each by a fresh coder**.
 It lands only what passes your checks, reviews the whole feature, fixes what the review found, and you
-get one PR at the end.
+get one PR at the end. Use as much of it as you like, from one skill by hand to whole features unattended.
 
 ## Get going
 
@@ -40,79 +38,120 @@ Then, inside your coding agent:
 
 ```bash
 /setup-coding-crew                                # once per repo: tracker + your dev commands
-/crew-grill add rate limiting to the public API   # 👤 plan it together → issues
+/crew-grill add rate limiting to the public API   # 👤 plan it together → issues under a feature slug
 /crew-afk rate-limit                              # 🤖 the crew builds it in its own worktree while you're away
 /crew-afk status                                  # which PRs are ready for you
 ```
 
-That's the whole workflow. On Codex the form is `$crew-grill`, on pi `/skill:crew-grill`.
-[Which agents run the skills](docs/guide.md#which-agents).
+That's the whole loop. You get a branch and one PR, marked ready or listing what needs you; nothing is merged
+for you, and the agent runs on your own model and billing.
 
-## How it works
+Any agent that loads `SKILL.md` can run the skills ([which agents](docs/guide.md#which-agents)); releases are
+smoke-tested on Claude Code. Commands are shown as `/name`: call them however your agent calls skills (`$name` on
+Codex, `/skill:name` on pi).
+
+## Plan first
+
+Everything is built from issues with testable acceptance criteria, grouped under a feature slug you agree while
+planning:
+
+```bash
+/crew-grill <plan>                     # stress-test a plan you bring → issues
+/crew-brainstorm <idea>                # shape a fuzzy idea together → issues
+/to-issues <plan, or a list of bugs>   # split a plan you already trust
+```
+
+When a plan is already one complete, testable change, `/crew-grill` skips its questions and writes the issue.
+
+## Choose how much to hand over
+
+Start by hand, and move up as you come to trust the result. Each step up runs the one below it, and you can use
+your own tool for any part.
+
+### 1. By hand: you drive
+
+```bash
+/solve-issue <issue>     # build one issue test-first, run your checks, commit, mark it done
+/crew-review             # review the branch or PR against its issue; report only
+/write-pr                # write a PR description a reviewer can act on
+/address-pr-comments     # work through the PR's review comments
+```
+
+Each skill does one job in your checkout and stops; you decide what comes next. Swap in your own for any step: a
+human reviewer or your usual review tool, your PR template, another agent's fixes. The skills hand off through git
+and the tracker, nothing else.
+
+### 2. A whole feature: `/solve-feature`
+
+```bash
+/solve-feature rate-limit
+```
+
+It runs those steps for every issue of the feature on one branch, with nobody watching:
 
 ```mermaid
 flowchart LR
-    plan["👤 <b>Plan together</b><br/>/crew-grill → issues"] --> coder
-    subgraph away ["🤖 /crew-afk · while you're away"]
-        coder["🧪 <b>Fresh coder per issue</b><br/>test-first"] --> gate{"🚦 <b>Your checks</b>"}
-        gate -- "next issue" --> coder
-        gate -- "all issues pass" --> review["🔍 <b>Review the whole feature</b><br/>at most two fix rounds"]
-    end
+    issues["📋 <b>Feature's issues</b>"] --> coder
+    coder["🧪 <b>Fresh coder per issue</b><br/>/solve-issue, test-first"] --> gate{"🚦 <b>Your checks</b>"}
+    gate -- "next issue" --> coder
+    gate -- "all issues pass" --> review["🔍 <b>Review the whole feature</b><br/>at most two fix rounds"]
     review -- "nothing needs you" --> ready(["✅ <b>PR marked ready</b>"])
     review -- "something does" --> needs(["🙋 <b>PR lists what needs you</b>"])
 ```
 
-1. **Plan.** `/crew-grill` (or `/crew-brainstorm` for a fuzzy idea) settles the edge cases and splits the work
-   into small issues with testable acceptance criteria.
-2. **Build.** `/crew-afk` hands each issue to a fresh coder in the feature's own worktree; an issue lands only
-   when it passes your checks.
-3. **Review.** A reviewer reads the whole feature against the plan; the crew fixes what it found, then stops.
-4. **Ship.** You get one PR: marked ready, or listing what needs you.
+It is deliberately minimal: it works in the checkout it was started in and picks no worktree, machine or schedule.
+So start it in a worktree or a container, not the checkout you are working in, or let a host below do that.
+([Running a feature](docs/guide.md#running-a-feature) covers re-runs, settings and the outcome line a host reads.)
 
-## What people use it for
+### 3. While you're away: a host runs it
 
-| You want to…                               | Run                                                                                                                                      |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| 🚀 **Ship a feature while you're away**     | `/crew-grill <idea>` → `/crew-afk <slug>`                                                                                                |
-| 🌫️ **Start from a fuzzy idea**              | `/crew-brainstorm <idea>` → `/crew-afk <slug>`                                                                                           |
-| 🐛 **Burn down a bug backlog**              | `/to-issues <the bugs>` → `/crew-afk <slug>`                                                                                             |
-| 🔀 **Build several features in parallel**   | one `/crew-afk <slug>` per feature, then `/crew-afk status`                                                                              |
-| ☁️ **Let the crew build on GitHub Actions** | `/setup-coding-crew redo actions`, then label an issue `run-agent` ([setup](docs/guide.md#solve-feature-on-github-actions-optional)) |
-| 💬 **Clear a PR's review comments**         | `/address-pr-comments`                                                                                                                   |
-| 🎯 **Pair on a single issue yourself**      | `/solve-issue <issue>`                                                                                                                   |
-| ✏️ **Make one small change**                | ask your agent directly; for a crew-built, reviewed PR: `/to-issues <change>` → `/crew-afk <slug>`                                       |
+A host decides where and when solve-feature runs. Three come built in:
 
-When a plan is already one complete, testable change, `/crew-grill` skips its questions and writes the issue.
+- **`/crew-afk <slug>`** starts it in the feature's own worktree and returns at once: a detached session capped at
+  an hour, or an [orca or herdr](docs/guide.md#running-a-feature) terminal you can watch. Run one per feature to
+  build several in parallel; `/crew-afk status` shows how each ended.
+- **GitHub Actions** runs it when you label an issue `run-agent`
+  ([setup](docs/guide.md#solve-feature-on-github-actions-optional): `/setup-coding-crew redo actions`).
+- **`/crew-triage <issue>`** takes an untriaged issue as far as it can alone: builds it, or posts its open questions
+  on the issue.
 
-## Why teams use it
+Anything else that can start your agent in a checkout can host it too: a cron job, your CI, another orchestrator.
 
-- ✅ **Test-first.** Every coder works red, green, refactor.
-- 🚦 **Nothing red lands.** Your own checks are the gate, not the model's opinion of its own work.
-- 🔍 **A reviewer that sees the whole feature.** It reviews against the plan, not one diff at a time.
-- 🔁 **Fixes itself, within bounds.** It fixes what the review found, each fix gated by your checks, then stops.
-- 🙋 **Only what needs you.** A PR it could not finish lists what needs a person; one it could is marked ready.
-- ☁️ **Runs where you want.** In its own worktree on your machine, or on GitHub Actions from an issue label.
-- 🧩 **Agent-agnostic.** Plain [Agent Skills](https://agentskills.io) that any agent loading `SKILL.md` can run. Issues stay as local markdown or in GitHub Issues.
+## Why not just ask your agent?
+
+The process is the product, not the model:
+
+- 🚦 **Your checks decide what lands.** No issue counts as done until your tests, lint and types pass, not when the
+  model says it is finished. Every coder works test-first.
+- 🔍 **Plan, build, then review the whole feature.** Issues with testable criteria go in; a reviewer reads the
+  whole feature against the plan, the crew fixes what it found within bounds, and one PR comes out.
+- 🙋 **Only what needs you.** A PR it finished is marked ready; one it could not lists what needs a person.
+- 🧩 **No new platform.** Plain Agent Skills, run by the agent, model and billing you already have, against your
+  own tracker (local markdown or GitHub Issues), CI and machines. Hosted coding agents ask you to move into their
+  service; this brings the process into yours.
+- 🪜 **Adopt it a step at a time.** One skill by hand today, whole features unattended later, with your own tool
+  for any step.
 
 ## The toolkit
 
 <details>
 <summary>All commands</summary>
 
-| Command                  | What it does                                               |
-| ------------------------ | ---------------------------------------------------------- |
-| `/crew-grill`            | Stress-test a plan and turn it into issues                 |
-| `/crew-brainstorm`       | Shape a fuzzy idea into a design, then issues              |
-| `/to-issues`             | Split a plan into issues, or sharpen an existing one       |
-| `/crew-triage`           | Triage an issue unattended: build it, or ask its questions |
-| `/crew-afk`              | Run a feature in its own worktree; see how it ended        |
-| `/solve-feature`         | Run one feature's issues on one branch, each one verified  |
-| `/crew-review`           | Review a branch or PR against its spec; report only        |
-| `/address-pr-comments`   | Fix PR review comments                                     |
-| `/solve-issue`           | Build one issue end to end, yourself                       |
-| `/write-pr`              | Write a PR description a reviewer can act on               |
-| `/setup-coding-crew`     | Set up tracker, checks and the optional Actions workflow   |
-| `/configure-tracker`     | Choose local markdown or GitHub Issues                     |
+| Layer      | Command                | What it does                                                |
+| ---------- | ---------------------- | ----------------------------------------------------------- |
+| Plan       | `/crew-grill`          | Stress-test a plan and turn it into issues                  |
+|            | `/crew-brainstorm`     | Shape a fuzzy idea into a design, then issues               |
+|            | `/to-issues`           | Split a plan into issues, or sharpen an existing one        |
+|            | `/to-prd`              | Turn the conversation into a PRD on the tracker             |
+| 1. By hand | `/solve-issue`         | Build one issue end to end                                  |
+|            | `/crew-review`         | Review a branch or PR against its spec; report only         |
+|            | `/write-pr`            | Write a PR description a reviewer can act on                |
+|            | `/address-pr-comments` | Fix PR review comments                                      |
+|            | `/tdd`                 | Red, green, refactor on any change                          |
+| 2. Engine  | `/solve-feature`       | Run one feature's issues on one branch, reviewed, in one PR |
+| 3. Hosts   | `/crew-afk`            | Run a feature in its own worktree; see how it ended         |
+|            | `/crew-triage`         | Triage an issue unattended: build it, or ask its questions  |
+| Setup      | `/setup-coding-crew`   | Set up tracker, checks and the optional Actions workflow    |
 
 </details>
 

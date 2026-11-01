@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- README: reorganised around three ways to build: by hand (solve-issue, crew-review, write-pr,
+  address-pr-comments), solve-feature as the engine, and hosts that run it (crew-afk, GitHub Actions, crew-triage,
+  or your own). It presents the skills as one standard Agent Skills set for any agent, not four named ones, and
+  leaves skills users rarely call directly (domain-modeling, add-tests, upgrade-deps, configure-tracker,
+  dep-install) out of its command list. "Why teams use it" becomes "Why not just ask your agent?".
+
 ## [2.3.7]
 
 - setup-coding-crew: the Actions caller it writes now pins coding-crew's reusable workflow to the release's full
