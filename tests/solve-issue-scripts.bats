@@ -206,13 +206,52 @@ _committed_src() {
   git -C "$WORK" add -A && git -C "$WORK" commit -q -m src
 }
 
-@test "run-checks: a check that edits a tracked file fails, naming the file" {
+@test "run-checks: a rewrite that settles passes: every check runs a second time on the rewritten tree, the rewrite stays and is named" {
+  _committed_src
+  _cache "{\"typecheck\": \"echo Y >> $TEMP_DIR/runs\", \"lint\": \"printf 'a=1\\\\n' > src/app.py\", \"test\": \"echo T >> $TEMP_DIR/runs\"}"
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(printf '%s\n' "$output" | grep -c '^lint: rewrote: ')" -eq 1 ]
+  [[ "$output" == *"lint: rewrote: src/app.py"*"CHECKS: pass" ]] || { echo "$output"; return 1; }
+  [[ "$output" != *"modified files"* ]]
+  [ "$(cat "$WORK/src/app.py")" = "a=1" ]
+  [ "$(tr '\n' ' ' < "$TEMP_DIR/runs")" = "Y T Y T " ]
+}
+
+@test "run-checks: no rewrite, no second pass" {
+  _committed_src
+  _cache "{\"typecheck\": null, \"lint\": \"true\", \"test\": \"echo T >> $TEMP_DIR/runs\"}"
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$TEMP_DIR/runs")" = T ]
+  [[ "$output" != *"rewrote"* ]]
+}
+
+@test "run-checks: a check that rewrites a file differently on every run fails in the second pass, naming a non-mutating command as the fix" {
   _committed_src
   _cache '{"test": "true", "lint": "echo fixed >> src/app.py", "typecheck": null}'
   run bash "$RUN_CHECKS" --project-root "$WORK"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"lint: modified files: src/app.py — the check rewrote them: run it, commit the result, and re-run"* ]]
+  [[ "$output" == *"lint: modified files: src/app.py — the check rewrote them again on a second run: name a non-mutating command for it in $WORK/.coding-crew/dev-commands.json"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"lint: rewrote: src/app.py"*"CHECKS: fail" ]] || { echo "$output"; return 1; }
+}
+
+@test "run-checks: a check that fails in the second pass fails the run, whatever it rewrote" {
+  _committed_src
+  _cache "{\"typecheck\": null, \"lint\": \"printf 'a=1\\\\n' > src/app.py\", \"test\": \"[ ! -f $TEMP_DIR/ran ] && touch $TEMP_DIR/ran\"}"
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"test: fail (exit 1)"*"lint: rewrote: src/app.py"*"CHECKS: fail" ]] || { echo "$output"; return 1; }
+}
+
+@test "run-checks: a file a check creates that git does not ignore fails as modified files, never as a rewrite" {
+  _committed_src
+  _cache '{"test": "true", "lint": "echo report > report.txt", "typecheck": null}'
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"lint: modified files: report.txt"* ]] || { echo "$output"; return 1; }
   [[ "$output" == *"lint: fail"*"test: pass"*"CHECKS: fail" ]]
+  [[ "$output" != *"rewrote:"* ]]
 }
 
 @test "run-checks: an ignored file written by a check, or dirt already there, is not a modification" {
