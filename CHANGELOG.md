@@ -8,7 +8,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 - solve-feature: a re-run after an interrupted land names the branch its coder committed to (`check out <branch>
   and run land …`), not the branch the re-run is on; and an interrupted land whose issue was since deleted no
-  longer stops every re-run, the next ready issue is handed out instead (amaysim-au/coding-crew#12 review).
+  longer stops every re-run, the next ready issue is handed out instead (#689).
 - README: organised around how much you hand over (by hand, `/solve-feature`, a host that runs it), with
   `/to-issues` as the way in for a plan made your own way, and "Why not just ask your agent?" (#688).
 
