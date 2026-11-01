@@ -50,9 +50,8 @@ MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 [ "$(basename "$MAIN_ROOT")" = .git ] && MAIN_ROOT=$(dirname "$MAIN_ROOT") || MAIN_ROOT="$ROOT"
 # The setup files a user commits once satisfied: no tree check counts them, and no run commits them. A dev commands
 # file this tree tracks is not one: it is the branch's own copy, the one its checks read, counted and committed.
-SETUP_FILES=(.coding-crew/config.json)
-git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 || SETUP_FILES+=(.coding-crew/dev-commands.json)
-BRANCH_WORK=(. "${SETUP_FILES[@]/#/:!}")
+BRANCH_WORK=(. ':!.coding-crew/config.json')
+git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 || BRANCH_WORK+=(':!.coding-crew/dev-commands.json')
 [ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head \
   "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base"
 # solveFeature.publish: false keeps the run on this machine: no push, no PR, the body in local_body's file. Read from
@@ -491,8 +490,9 @@ fix() {
   # crew-review's own severity field; a missing or unknown one is not severe.
   severe=$(jq '[.findings // [] | .[]? | select(.severity? | IN("CRITICAL", "HIGH", "MEDIUM"))] | length' "$report")
   # Committed before the checks, so run-checks.sh's modified-files test also sees a check rewrite a file the fixer changed.
-  # Unstaged after, not excluded by pathspec: git add exits 1 on any pathspec naming an ignored path, an exclude too.
-  git add -A -- . && git reset -q -- "${SETUP_FILES[@]}"
+  # Listed by ls-files, not passed to git add: git add exits 1 on any pathspec naming an ignored path, an exclude too.
+  git ls-files -z -m -o -d --exclude-standard -- "${BRANCH_WORK[@]}" | xargs -0 -r git add -A -- ||
+    stop fix "git add failed (see above): stage and commit the fixer's edits by hand, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings$([ "$PUBLISH" = no ] || echo " on PR #$PR")"
   # A failed fetch skips the merge: the push owns that failure.
   if fetch_branch && ! merge_in "origin/$BRANCH"; then
