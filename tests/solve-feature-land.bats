@@ -105,7 +105,7 @@ stops_at() {
   run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
   run bash "$SCRIPT" next feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"2 is done but its land never finished: if its coder finished it, check out task/feat and run land feat 2 task/feat; otherwise reopen 2; then re-run"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"2 is done but its land never finished: if its coder finished it, check out task/feat and run land feat 2 task/feat; otherwise reopen 2; then re-run with --branch task/feat"* ]] || { echo "$output"; return 1; }
 }
 
 @test "a re-run whose interrupted land's issue no longer exists forgets it and hands out the next ready issue" {

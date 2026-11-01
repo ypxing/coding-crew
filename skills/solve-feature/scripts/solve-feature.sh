@@ -222,8 +222,8 @@ next() {
   if [ -s "$(landing)" ] && IFS=$'\t' read -r REF on <"$(landing)" && { [ "$rc" = 3 ] || [ "$ref" != "$REF" ]; }; then
     # Landed on the branch its coder committed to: a re-run on another branch would gate a tree without the work.
     on=${on:-$(git branch --show-current)}
-    local st src=0 cmds why="$REF is done but its land never finished" todo="land $SLUG $REF $on" go=""
-    [ "$on" = "$(git branch --show-current)" ] || go="check out $on and "
+    local st src=0 cmds why="$REF is done but its land never finished" todo="land $SLUG $REF $on" go="" rerun="re-run"
+    [ "$on" = "$(git branch --show-current)" ] || go="check out $on and " rerun="re-run with --branch $on"
     st=$(node "$CLI" status "$REF") || src=$?
     # Exit 3: the issue is gone (deleted, its file renamed), so there is nothing left to land for it.
     case $src in 0) ;; 3) rm -f "$(landing)" ;; *) die "status $REF failed (see above)" ;; esac
@@ -231,7 +231,7 @@ next() {
       # shellcheck source=/dev/null
       . "$CHECKS/commands-file.sh" 2>/dev/null && cmds=$(commands_file "$ROOT") && ! commands_field_present "$cmds" test &&
         why="$why and no check commands are known" todo="/setup-coding-crew, then $todo"
-      stop land "$why: if its coder finished it, ${go}run $todo; otherwise reopen $REF; then re-run"
+      stop land "$why: if its coder finished it, ${go}run $todo; otherwise reopen $REF; then $rerun"
     fi
   fi
   [ "$rc" = 0 ] || nothing_left
