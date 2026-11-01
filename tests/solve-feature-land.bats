@@ -97,6 +97,26 @@ stops_at() {
   [ "$output" = "reviewer-model=" ]
 }
 
+@test "a re-run on another branch after an interrupted land names the branch the coder worked on, not the current one" {
+  run bash "$SCRIPT" start feat --branch task/feat; [ "$status" -eq 0 ]
+  run bash "$SCRIPT" next feat; [ "$output" = 2 ]
+  coder 2
+  # Resumed without --branch: start checks out feature/feat, which lacks the coder's commit.
+  run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"2 is done but its land never finished: if its coder finished it, check out task/feat and run land feat 2 task/feat; otherwise reopen 2; then re-run with --branch task/feat"* ]] || { echo "$output"; return 1; }
+}
+
+@test "a re-run whose interrupted land's issue no longer exists forgets it and hands out the next ready issue" {
+  land_ready
+  # Issue 2 deleted (local: its file renamed) after its coder closed it; 3 is ready.
+  jq 'map(select(.number != 2))' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = 3 ]
+}
+
 @test "a re-run after a land stop that left the issue open hands the same issue out again" {
   run bash "$SCRIPT" start feat
   run bash "$SCRIPT" next feat; [ "$output" = 2 ]
