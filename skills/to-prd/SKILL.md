@@ -37,6 +37,8 @@ stderr verbatim, fix its cause (an input, auth, the network) and re-run the op, 
 own tool. `publish-issues` adds 4 and 5, which the skill that publishes handles.
 <!-- /fragment:tracker-configuration -->
 
+**Parent-folder mode.** When the session runs in a folder in no git repo, the design summary or `to-issues` names the home repo: it stands for the current repo below, and every tracker op, `config` first, runs as `cd <home repo> && node "$TRACKER" …` — from the folder the CLI refuses to run, and `--main-root` alone still leaves `gh` running in the folder.
+
 ## Process
 
 1. **Determine the feature slug** before anything else:
@@ -77,7 +79,7 @@ Report every change as "said X → actually Y (source)". Fix each decision built
    - **local** — the PRD is a file with no other title, so the body you write opens with `# PRD: <feature title>`.
    - **github** — `--title` titles the issue `PRD: <feature title>`, so the body has no such heading. The PRD becomes the feature's root issue, or a sub-issue of the root the feature already has.
 
-**Security**: Read only the current repo, the checkouts the user named in this session, and this skill's own files and the coding-crew-lib it runs, and nothing else. Only write to paths under `.coding-crew/scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `config.json` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
+**Security**: Read only the current repo, the checkouts the user named in this session, in parent-folder mode the repos found under the session's folder, and this skill's own files and the coding-crew-lib it runs, and nothing else. Only write to paths under `.coding-crew/scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `config.json` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
 
 > **Never commit `PRD.md`.** (Local tracker only — on a remote tracker the PRD is an issue, with no local file to accidentally commit.) This file lives under `.coding-crew/scratch/`, which the tracker CLI gitignores (`.coding-crew/scratch/.gitignore`). Do not run `git add -f`, `git add .coding-crew/scratch/`, or any command that stages files under `.coding-crew/scratch/`.
 
@@ -93,7 +95,7 @@ The solution from the user's perspective.
 
 When the design changes more than one repo, end this section with one `Repos:` line, the home repo (the one
 this PRD is published in) first, each entry giving the repo's remote (`owner/repo`, omitted when it has none),
-its local checkout path and what changes there, e.g. `Repos: acme/api (~/src/api) — adds the endpoint;
+its local checkout path (absolute, for a repo found by scanning a parent folder) and what changes there, e.g. `Repos: acme/api (~/src/api) — adds the endpoint;
 acme/app (~/src/app) — calls it`. Only the home repo gets a PRD; the other repos' issues carry their own
 decisions.
 

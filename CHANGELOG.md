@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- crew-grill, crew-brainstorm, to-prd, to-issues: a design session can start in a plain folder holding several
+  repos. The skills find the git repos up to two levels below it instead of asking for checkout paths, propose the
+  home repo (confirmed with the feature slug), and run every tracker op from inside its repo (#699).
 - crew-grill, crew-brainstorm, to-prd, to-issues: one design session can cover a feature that changes several
   repos. The design skills ask for each other repo's local checkout and explore it, the PRD records the repos on a
   `Repos:` line, and to-issues gives each slice one repo and publishes each repo's issues into that repo's own

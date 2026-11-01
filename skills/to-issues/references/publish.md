@@ -1,6 +1,6 @@
 # Step 6: from approved slices to published issues
 
-Read this when step 5's quiz has approved the breakdown. Every command runs from the project root; `$TRACKER` is the tracker CLI path the Tracker Configuration section gives. With more than one repo, read **More than one repo** at the end first: it runs each section below per repo.
+Read this when step 5's quiz has approved the breakdown. Every command runs from the project root (in parent-folder mode, `cd <repo> &&` first: the home repo's root, or each repo's in **More than one repo**); `$TRACKER` is the tracker CLI path the Tracker Configuration section gives. With more than one repo, read **More than one repo** at the end first: it runs each section below per repo.
 
 ## Drafts
 
