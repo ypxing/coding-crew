@@ -250,6 +250,29 @@ _committed_src() {
   [[ "$output" == *"lint: rewrote: src/app.py"$'\n'"CHECKS: pass" ]] || { echo "$output"; return 1; }
 }
 
+@test "run-checks: among many dirty files, only the one a check rewrites on every run is named in the second pass" {
+  _committed_src
+  for i in 1 2 3 4 5 6 7 8; do printf 'x\n' > "$WORK/src/f$i.py"; done
+  git -C "$WORK" add -A && git -C "$WORK" commit -q -m more
+  for i in 1 2 3 4 5 6 7 8; do printf 'edit %s\n' "$i" >> "$WORK/src/f$i.py"; done
+  printf 'b = 2\n' >> "$WORK/src/app.py"
+  _cache '{"test": "true", "lint": "echo fixed >> src/app.py", "typecheck": null}'
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"lint: modified files: src/app.py — the check rewrote them again"* ]] || { echo "$output"; return 1; }
+}
+
+@test "run-checks: a file whose name has a comma is named whole on its rewrote: line" {
+  _committed_src
+  printf 'a\n' > "$WORK/src/a,b.py"
+  git -C "$WORK" add -A && git -C "$WORK" commit -q -m comma
+  printf 'b\n' >> "$WORK/src/a,b.py"
+  _cache '{"test": "true", "lint": "printf \"c\\\\n\" > \"src/a,b.py\"", "typecheck": null}'
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"lint: rewrote: src/a,b.py"$'\n'"CHECKS: pass" ]] || { echo "$output"; return 1; }
+}
+
 @test "run-checks: a file whose name has a space or a non-ASCII character is named as written and still gated in the second pass" {
   _committed_src
   printf 'a\n' > "$WORK/src/é b.py"

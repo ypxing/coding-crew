@@ -75,7 +75,7 @@ _changed_files() {
       if (want == "all" || (want == "untracked") == u) { p = substr($0, 4); if (!seen[p]++) printf "%s%s", (n++ ? ", " : ""), p } }'
 }
 _changed_content() {
-  LC_ALL=C comm -3 <(printf '%s\n' "$1") <(printf '%s\n' "$2") | sed -E 's/^\t//' | cut -d' ' -f2- |
+  LC_ALL=C comm -3 <(printf '%s\n' "$1" | LC_ALL=C sort) <(printf '%s\n' "$2" | LC_ALL=C sort) | sed -E 's/^\t//' | cut -d' ' -f2- |
     awk 'NF && !seen[$0]++ { printf "%s%s", (n++ ? ", " : ""), $0 }'
 }
 # _rewritten_content <before> <after> — the files in both content snapshots whose blob changed, comma-separated:
@@ -89,9 +89,9 @@ _rewritten_content() {
 # _join <exclude> <list>… — the comma-separated lists as one, each path once, leaving out those in <exclude>.
 _join() {
   local exclude=$1; shift
-  printf '%s, ' "$@" | tr ',' '\n' | sed 's/^ *//' |
+  printf '%s\n' "$@" |
     awk -v ex="$exclude" 'BEGIN { n = split(ex, e, /, /); for (i = 1; i <= n; i++) skip[e[i]] = 1 }
-      NF && !skip[$0] && !seen[$0]++ { printf "%s%s", (k++ ? ", " : ""), $0 }'
+      { m = split($0, p, /, /); for (i = 1; i <= m; i++) if (p[i] != "" && !skip[p[i]] && !seen[p[i]]++) printf "%s%s", (k++ ? ", " : ""), p[i] }'
 }
 
 # Without a log dir every check would write to /<key>.log and fail, blaming the project for a full disk.
