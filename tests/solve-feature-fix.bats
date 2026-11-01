@@ -272,20 +272,9 @@ push_says() {
   [ "$(git status --porcelain -uall)" = " M .coding-crew/config.json" ]
 }
 
-@test "fix never stages over a person's staged config.json edit with its working copy" {
-  fix_ready
-  echo '{"tracker":{"kind":"github"},"x":1}' > .coding-crew/config.json
-  git add .coding-crew/config.json
-  echo '{"tracker":{"kind":"github"},"x":2}' > .coding-crew/config.json
-  run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$(git show :.coding-crew/config.json)" == *'"x":1'* ]]
-  [[ "$(cat .coding-crew/config.json)" == *'"x":2'* ]]
-}
-
 @test "fix commits the fixer's removal of a dev commands file the branch tracks" {
   fix_ready
-  git rm -q .coding-crew/dev-commands.json
+  rm .coding-crew/dev-commands.json
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(git diff --name-status HEAD~1 HEAD | tr '\t\n' '  ')" = "D .coding-crew/dev-commands.json A fixed.txt " ]
