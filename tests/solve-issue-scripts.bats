@@ -232,7 +232,7 @@ _committed_src() {
   _cache '{"test": "true", "lint": "echo fixed >> src/app.py", "typecheck": null}'
   run bash "$RUN_CHECKS" --project-root "$WORK"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"lint: modified files: src/app.py — the check rewrote them again on a second run: name a non-mutating command for it in $WORK/.coding-crew/dev-commands.json"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"lint: modified files: src/app.py — the check rewrote them again on a second run: name a non-mutating command for it in $(cd "$WORK" && pwd -P)/.coding-crew/dev-commands.json"* ]] || { echo "$output"; return 1; }
   [[ "$output" == *"lint: rewrote: src/app.py"*"CHECKS: fail" ]] || { echo "$output"; return 1; }
 }
 
