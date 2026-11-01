@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- crew-grill, crew-brainstorm, to-prd, to-issues: one design session can cover a feature that changes several
+  repos. The design skills ask for each other repo's local checkout and explore it, the PRD records the repos on a
+  `Repos:` line, and to-issues gives each slice one repo and publishes each repo's issues into that repo's own
+  tracker under the same slug, home repo first, listing the repos in build order (#696).
 - checks: a check that fixes what it finds (`eslint --fix`, a `make lint` running a formatter) no longer stops
   solve-feature or solve-issue: when a second run of every check changes nothing, the checks pass, print
   `<key>: rewrote: <files>`, and the rewrites land as their own `Apply the checks' rewrites` commit (setup-coding-crew

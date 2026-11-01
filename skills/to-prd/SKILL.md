@@ -77,7 +77,7 @@ Report every change as "said X → actually Y (source)". Fix each decision built
    - **local** — the PRD is a file with no other title, so the body you write opens with `# PRD: <feature title>`.
    - **github** — `--title` titles the issue `PRD: <feature title>`, so the body has no such heading. The PRD becomes the feature's root issue, or a sub-issue of the root the feature already has.
 
-**Security**: Only write to paths under `.coding-crew/scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `config.json` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
+**Security**: Read only the current repo and the checkouts the user named in this session, and nothing else. Only write to paths under `.coding-crew/scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `config.json` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
 
 > **Never commit `PRD.md`.** (Local tracker only — on a remote tracker the PRD is an issue, with no local file to accidentally commit.) This file lives under `.coding-crew/scratch/`, which the tracker CLI gitignores (`.coding-crew/scratch/.gitignore`). Do not run `git add -f`, `git add .coding-crew/scratch/`, or any command that stages files under `.coding-crew/scratch/`.
 
@@ -90,6 +90,12 @@ The problem from the user's perspective. Open with one actor line: `Actor: <who 
 ## Solution
 
 The solution from the user's perspective.
+
+When the design changes more than one repo, end this section with one `Repos:` line, the home repo (the one
+this PRD is published in) first, each entry giving the repo's remote (`owner/repo`, omitted when it has none),
+its local checkout path and what changes there, e.g. `Repos: acme/api (~/src/api) — adds the endpoint;
+acme/app (~/src/app) — calls it`. Only the home repo gets a PRD; the other repos' issues carry their own
+decisions.
 
 ## Behaviours
 
