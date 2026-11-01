@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.3.9]
+
 - solve-feature: when the checks fail at land, sync or fix, what they left in the tree is discarded (and listed in
   the checks' log), so a re-run after the fix no longer stops first on "working tree is not clean" (#701).
 - checks: a check that rewrites a file already dirty (the coder's own uncommitted edits) is now seen as a rewrite:
