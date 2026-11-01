@@ -246,7 +246,7 @@ command found` means no local command exists: report it, do not re-check CLAUDE.
 - `CHECKS: fail` — fix the code and re-run. When the same check still fails after 2 distinct fix
   attempts, whether or not its error changed, stop: the run is `partial`, naming the check and its
   output. A `<key>: modified files:` fail is a check that rewrites files on every run, or creates
-  ones git does not ignore: fixing it is the line's own fix, in the dev commands file. A failure
+  or removes ones git does not ignore: a fail like any other, its line naming the fix for a person. A failure
   naming what no repo file can provide (§ Outcome) is `blocked`: report it with that output.
 - `DISCOVER` — no dev commands file yet. Run `(cd "$PROJECT_ROOT" && bash "<skill-dir>/../coding-crew-lib/scripts/checks/discover-commands.sh")`,
   follow its prompt, then re-run `run-checks.sh`.

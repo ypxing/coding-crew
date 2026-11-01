@@ -95,8 +95,10 @@ then, from the main checkout:
 bash "<skill-dir>/../coding-crew-lib/scripts/checks/run-checks.sh" --project-root "$PWD"
 ```
 
-- `CHECKS: pass`: say so, and go on. Its `<key>: rewrote: <files>` lines are a check that fixed those files (a
-  `lint --fix`): name them to the user, and carry them to Step 4's commit line.
+On every run, pass or fail, its `<key>: rewrote: <files>` lines are a check that fixed those files (a
+`lint --fix`): name them to the user, and carry every file any run named to Step 4's commit line.
+
+- `CHECKS: pass`: say so, and go on.
 - `CHECKS: fail`: show each failing check's output, then ask the user, per failing check: **fix** the command
   (edit it in `$DEV` with them, then run `run-checks.sh` again), **keep** it as it is (Step 4 labels it
   unverified), or **stop**. On stop, end the run here, without Step 4's commit line.

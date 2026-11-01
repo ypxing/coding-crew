@@ -67,9 +67,10 @@ _content_state() {
   paste -d' ' <(cd "$top" && git hash-object --stdin-paths <<<"$paths") <(printf '%s\n' "$paths")
 }
 # _changed_files <before> <after> <tracked|untracked|all> — the paths whose porcelain line differs, comma-separated.
+# A deleted tracked file counts as untracked: removing a file is not a rewrite.
 _changed_files() {
   LC_ALL=C comm -3 <(printf '%s\n' "$1") <(printf '%s\n' "$2") | sed -E 's/^\t//' |
-    awk -v want="$3" 'NF { u = substr($0, 1, 2) == "??"
+    awk -v want="$3" 'NF { u = substr($0, 1, 2) == "??" || substr($0, 1, 2) ~ /D/
       if (want == "all" || (want == "untracked") == u) { p = substr($0, 4); if (!seen[p]++) printf "%s%s", (n++ ? ", " : ""), p } }'
 }
 _changed_content() {

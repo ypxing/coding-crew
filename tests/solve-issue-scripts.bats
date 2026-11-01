@@ -254,6 +254,15 @@ _committed_src() {
   [[ "$output" != *"rewrote:"* ]]
 }
 
+@test "run-checks: a tracked file a check deletes fails as modified files, never as a rewrite" {
+  _committed_src
+  _cache '{"test": "true", "lint": "rm -f src/app.py", "typecheck": null}'
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"lint: modified files: src/app.py"* ]] || { echo "$output"; return 1; }
+  [[ "$output" != *"rewrote:"* ]]
+}
+
 @test "run-checks: an ignored file written by a check, or dirt already there, is not a modification" {
   _committed_src
   printf 'b = 2\n' >> "$WORK/src/app.py"
