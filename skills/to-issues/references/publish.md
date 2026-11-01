@@ -1,6 +1,6 @@
 # Step 6: from approved slices to published issues
 
-Read this when step 5's quiz has approved the breakdown. Every command runs from the project root (in parent-folder mode, `cd <repo> &&` first: the home repo's root, or each repo's in **More than one repo**); `$TRACKER` is the tracker CLI path the Tracker Configuration section gives. With more than one repo, read **More than one repo** at the end first: it runs each section below per repo.
+Read this when step 5's quiz has approved the breakdown. Every command runs from the project root (from a folder that is no git repo, `cd <repo> &&` first); `$TRACKER` is the tracker CLI path the Tracker Configuration section gives. With more than one repo, read **More than one repo** at the end first: it runs each section below per repo.
 
 ## Drafts
 
@@ -83,7 +83,7 @@ Do NOT close or modify any parent issue. A single-slice source rewritten in plac
 
 Each slice is published into the tracker of the repo it changes, under the same feature slug in every repo. In this order:
 
-1. **In every repo, from that repo's root** (`cd <checkout> && …`): `node "$TRACKER" config` — step 1 configured every repo before its slug check, so it prints `configured=yes`; on `configured=no` on an interactive run, invoke `configure-tracker` there, so the repo's issues do not silently land in a `local` tracker; then that repo's drafts, `known/` and `deps.json` under its own `.coding-crew/scratch/<feature-slug>/.drafts/`, holding only its own slices, numbered from `01`. The home repo's `.drafts/` also holds `PRD.md`.
+1. **In every repo, from that repo's root** (`cd <checkout> && …`): `node "$TRACKER" config` — step 1 configured every repo before its slug check, so it prints `configured=yes`; on `configured=no` on an interactive run, invoke `configure-tracker` after `cd <checkout>`, so the repo's issues do not silently land in a `local` tracker; then that repo's drafts, `known/` and `deps.json` under its own `.coding-crew/scratch/<feature-slug>/.drafts/`, holding only its own slices, numbered from `01`. The home repo's `.drafts/` also holds `PRD.md`.
 2. **One builder check** over every repo's drafts (above), not one per repo.
 3. **`publish-issues` in each repo**, from its root, home repo first, then in the build order the cross-repo prerequisites give (the order each `## What to build` names).
 

@@ -168,30 +168,14 @@ light_path() {
   done
 }
 
-@test "light-path-checks: a plan that changes code in another repo is not one slice" {
-  grep -qE '^2\. \*\*One slice\*\* — .*another repo is not one slice' "$REPO_ROOT/skills/_shared/fragments/light-path-checks.md"
+@test "light-path-checks: a plan that changes more than one repo is not one slice" {
+  grep -qE '^2\. \*\*One slice\*\* — .*more than one repo is not one slice' "$REPO_ROOT/skills/_shared/fragments/light-path-checks.md"
 }
 
-@test "other-repos: parent-folder mode scans main checkouts two levels down and runs tracker ops from inside each repo" {
+@test "other-repos: from a folder that is no git repo, the user names the repos and the home repo, and tracker ops run inside each repo" {
   local f="$REPO_ROOT/skills/_shared/fragments/other-repos.md"
-  grep -qF 'parent-folder mode' "$f"
-  grep -qF 'in no git repo' "$f"
-  grep -qF 'two levels below' "$f"
-  grep -qF 'absolute path' "$f"
-  grep -qF 'home repo' "$f"
-  grep -qF -- '--main-root' "$f"
+  grep -qF 'plan and issues (the **home repo**)' "$f"
   grep -qF 'cd <repo> && node' "$f"
-  grep -qF 'bare ref' "$f"
   grep -qxF '<!-- fragment:other-repos -->' "$REPO_ROOT/skills/to-issues/SKILL.md"
-}
-
-@test "parent-folder mode: light-path fetch, to-issues, to-prd and their Security lines cover it" {
-  grep -qF 'bare ref' "$REPO_ROOT/skills/_shared/fragments/light-path.md"
   grep -qF 'cd <repo> && node' "$REPO_ROOT/skills/_shared/fragments/light-path.md"
-  grep -qF 'scan only when it has neither' "$REPO_ROOT/skills/to-issues/SKILL.md"
-  grep -qE 'In parent-folder mode the message that confirms the slug .*home repo' "$REPO_ROOT/skills/to-issues/SKILL.md"
-  grep -qF 'parent-folder mode' "$REPO_ROOT/skills/to-issues/references/publish.md"
-  grep -qF 'parent-folder mode' "$REPO_ROOT/skills/to-prd/SKILL.md"
-  grep -E '^\*\*Security\*\*' "$REPO_ROOT/skills/to-issues/SKILL.md" | grep -qF 'repos found under the session'"'"'s folder'
-  grep -E '^\*\*Security\*\*' "$REPO_ROOT/skills/to-prd/SKILL.md" | grep -qF 'repos found under the session'"'"'s folder'
 }

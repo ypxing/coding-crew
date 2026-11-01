@@ -45,12 +45,12 @@ source and at the scope they installed this skill from (`npx skills add <that so
 <!-- fragment:light-path -->
 ### Light path: is the source already one complete change?
 
-Before any question, judge the source — the issue (`node "<skill-dir>/../coding-crew-lib/scripts/tracker/cli.mjs" fetch <ref> --comments`, `<skill-dir>` being the directory you read this skill from; in a folder in no git repo, run it from inside the repo the user names with the ref (`cd <repo> && node …`), asking which repo for a bare ref; if it fails, show its stderr and judge the user's message) or the user's message. Four checks; answer each with evidence, a quote from the source or a `file:line`:
+Before any question, judge the source — the issue (`node "<skill-dir>/../coding-crew-lib/scripts/tracker/cli.mjs" fetch <ref> --comments`, `<skill-dir>` being the directory you read this skill from; in a folder that is no git repo, run it inside the repo the user names (`cd <repo> && node …`); if it fails, show its stderr and judge the user's message) or the user's message. Four checks; answer each with evidence, a quote from the source or a `file:line`:
 <!-- /fragment:light-path -->
 
 <!-- fragment:light-path-checks -->
 1. **Problem** — the source states the problem with its cost or evidence.
-2. **One slice** — one vertical slice in the repo you run in looks likely; a plan that changes code in another repo is not one slice.
+2. **One slice** — one vertical slice in one repo looks likely; a plan that changes more than one repo is not one slice.
 3. **Criteria** — acceptance criteria are testable, or derivable from the code.
 4. **No fork** — no open fork in the "annoyed" lane remains: a decision the user would be annoyed to learn you made without asking — schema, migrations or data model; auth, permissions or PII; anything that costs money or moves scope; user-visible behaviour; breaking an external contract already shipped; conflicting in-repo precedent.
 <!-- /fragment:light-path-checks -->
@@ -75,7 +75,7 @@ Any check fails: the light path does not apply. Print nothing about it, and cont
 <!-- fragment:other-repos -->
 **Other repos.** When the plan changes code outside the repo you run in, ask the user for each other repo's local checkout path: where it lives on this machine is a fact only they hold. Explore each checkout read-only, as you explore this repo — read, grep, run read-only commands; never edit, install or commit there — and cite its facts as `<checkout>/<file>:<line>`. Your summary of the design then lists every repo, this one first, one line each: its remote (`owner/repo`, from `git -C <checkout> remote get-url origin`; omitted when it has none), its checkout path, and what changes there.
 
-**A folder of repos (parent-folder mode).** When the folder you run in is in no git repo (`git rev-parse --show-toplevel` fails there) and holds git repos up to two levels below it, list them without asking for paths: main checkouts only, a directory whose `.git` is itself a directory (`find . -mindepth 2 -maxdepth 3 -name .git -type d`), so linked worktrees and submodules, whose `.git` is a file, are skipped. Record each by its absolute path, so a later run from inside one of them still finds the others. Explore, as above, those the plan touches; the user may still name a checkout the scan did not find. There is no repo you run in, so propose as the **home repo** the one the others depend on, else the one changing most, and name it first in your summary. Every tracker op, `config` first, runs with its repo as working directory (`cd <repo> && node <tracker CLI> <op> …`): from a folder in no repo the CLI refuses to run, and `--main-root` alone does not do it — it picks that repo's config, but `gh` still runs in the working directory, which is no repo or another one. A tracker ref is fetched in the repo the user names with it; for a bare ref, ask which repo. A session inside a git repo never enters this mode: the paragraph above holds as written.
+**From a folder that is no git repo.** Every repo is a checkout the user names by path; ask in one line which one holds the feature's plan and issues (the **home repo**) and list it first. Run every tracker op inside its repo (`cd <repo> && node <tracker CLI> <op> …`): the CLI refuses to run outside one. Fetch a tracker ref in the repo the user names with it.
 <!-- /fragment:other-repos -->
 
 ### Exploring approaches
