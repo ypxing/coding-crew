@@ -335,12 +335,13 @@ commit_rewrites() {
 
 # discard_rewrites — after a failed run-checks.sh on the same clean tree, what is left is the checks' own output,
 # which a re-run makes again: dropped, so the stop leaves the clean tree a re-run starts from. Named in the checks'
-# log ($clog, the caller's), which the stop names.
+# log ($clog, the caller's), which the stop names. A failed discard is noted there and never skips that stop.
 discard_rewrites() {
   local left; left=$(git status --porcelain -uall -- "${BRANCH_WORK[@]}" | cut -c4-)
   [ -n "$left" ] || return 0
   printf "solve-feature: discarded what the failed checks left, which a re-run makes again:\n%s\n" "$left" >>"$clog"
-  git checkout -q -- "${BRANCH_WORK[@]}" && git clean -fdq -- "${BRANCH_WORK[@]}"
+  git checkout -q -- "${BRANCH_WORK[@]}" && git clean -fdq -- "${BRANCH_WORK[@]}" ||
+    echo "solve-feature: discarding them failed (see above): clean the tree by hand before a re-run" >>"$clog"
 }
 
 # land — the coder left <branch> clean with <ref> closed: merge in origin's branch, gate with the checks, push,

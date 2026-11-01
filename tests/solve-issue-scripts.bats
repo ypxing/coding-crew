@@ -274,12 +274,12 @@ _committed_src() {
   [[ "$output" == *"test: fail (exit 1)"*"lint: rewrote: src/app.py"*"CHECKS: fail" ]] || { echo "$output"; return 1; }
 }
 
-@test "run-checks: a file a check creates that git does not ignore fails as modified files, never as a rewrite" {
+@test "run-checks: a file a check creates that git does not ignore, in a new directory too, fails as modified files, never as a rewrite" {
   _committed_src
-  _cache '{"test": "true", "lint": "echo report > report.txt", "typecheck": null}'
+  _cache '{"test": "true", "lint": "echo report > report.txt && mkdir -p build && echo x > build/out.js", "typecheck": null}'
   run bash "$RUN_CHECKS" --project-root "$WORK"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"lint: modified files: report.txt"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"lint: modified files: build/, report.txt"* ]] || { echo "$output"; return 1; }
   [[ "$output" == *"lint: fail"*"test: pass"*"CHECKS: fail" ]]
   [[ "$output" != *"rewrote:"* ]]
 }

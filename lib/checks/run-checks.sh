@@ -78,6 +78,14 @@ _changed_content() {
   LC_ALL=C comm -3 <(printf '%s\n' "$1") <(printf '%s\n' "$2") | sed -E 's/^\t//' | cut -d' ' -f2- |
     awk 'NF && !seen[$0]++ { printf "%s%s", (n++ ? ", " : ""), $0 }'
 }
+# _rewritten_content <before> <after> — the files in both content snapshots whose blob changed, comma-separated:
+# a rewrite of a file already dirty. A file new in <after> is one the check created (git status may name only its
+# new directory), never a rewrite.
+_rewritten_content() {
+  awk 'NR == FNR { b[substr($0, index($0, " ") + 1)] = $1; next }
+    { p = substr($0, index($0, " ") + 1) } NF && (p in b) && b[p] != $1 && !seen[p]++ { printf "%s%s", (n++ ? ", " : ""), p }' \
+    <(printf '%s\n' "$1") <(printf '%s\n' "$2")
+}
 # _join <exclude> <list>… — the comma-separated lists as one, each path once, leaving out those in <exclude>.
 _join() {
   local exclude=$1; shift
@@ -132,13 +140,14 @@ run_pass() {
     tail -n 80 "$log"
     cafter="$(_content_state)" changed="" created=""
     content=""
-    [ "$cbefore" = "$cafter" ] || content="$(_changed_content "$cbefore" "$cafter")"
     if [ "$pass" = 1 ]; then
+      [ "$cbefore" = "$cafter" ] || content="$(_rewritten_content "$cbefore" "$cafter")"
       created="$(_changed_files "$before" "$after" untracked)"
       changed="$(_join "$created" "$(_changed_files "$before" "$after" tracked)" "$content")"
       [ -z "$changed" ] || REWROTE+=("$key: rewrote: $changed")
       changed=""
     else
+      [ "$cbefore" = "$cafter" ] || content="$(_changed_content "$cbefore" "$cafter")"
       changed="$(_join "" "$(_changed_files "$before" "$after" all)" "$content")"
     fi
     if [ -n "$created" ]; then
