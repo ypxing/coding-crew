@@ -210,7 +210,7 @@ test("exits 1 with gh's stderr when a read fails", async () => {
 
 // github.trustedBots: a repo's own allowlist of bot logins, read from the main checkout's config.json.
 
-const WIZ = "wiz-security-bot-22793c4344";
+const WIZ = "wiz-security-bot-0123456789";
 
 /** A temp git repo whose `.coding-crew/config.json` is `config` (absent when null). */
 function gitRepo(config) {
@@ -286,10 +286,10 @@ test("with no github section, the output is what it was before the allowlist", a
 
 test("given a PR URL, the list applies to the current repo in any letter case, not to another repo, nor when gh repo view fails", async () => {
   const dir = gitRepo(trusting(WIZ));
-  const url = "https://github.com/Amaysim-AU/smpp-gateway/pull/114";
+  const url = "https://github.com/Acme-Corp/api-gateway/pull/114";
   const cases = [
-    [repoAs("PRIVATE", "amaysim-au/SMPP-gateway"), 1],
-    [repoAs("PRIVATE", "amaysim-au/other-repo"), 0],
+    [repoAs("PRIVATE", "acme-corp/API-gateway"), 1],
+    [repoAs("PRIVATE", "acme-corp/other-repo"), 0],
     [{ code: 1, stdout: "", stderr: "no git remotes found\n" }, 0],
   ];
   for (const [repoView, kept] of cases) {

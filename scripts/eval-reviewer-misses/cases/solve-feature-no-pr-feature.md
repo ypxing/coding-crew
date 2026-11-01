@@ -10,7 +10,7 @@ It reported two other real findings (land's fresh-clone advice in local mode, th
 aeecc7cb. Escaped: `2026-10-29 skills/solve-feature/scripts/solve-feature.sh:118 — the local body file is read without
 the CRLF strip the gh path has, so describe drops the notes section — d4099dfc` and `2026-10-29
 skills/solve-feature/scripts/solve-feature.sh:347 — a failed first local body write dies with the issue already closed
-— d4099dfc`. Both found by Copilot code review on the amaysim mirror PR (amaysim-au/coding-crew#10).
+— d4099dfc`. Both found by Copilot code review on an internal mirror's PR.
 
 ## Expected misses
 

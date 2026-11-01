@@ -126,7 +126,7 @@ The per-branch review report keeps its schema (`findings` is present, always `[]
 
 - **Dropping the later report-only feature reviews:** they're the only findings review Phase 2 code and later commits get.
 - **A linter heuristic for criteria a coder can't meet unattended:** it's a judgement call, so a regex would misfire (D7).
-- **product-services or any private repo as the demo:** it's internal, and coding-crew is public.
+- **A private field repo as the demo:** it's internal, and coding-crew is public.
 - **A scheduled recurring smoke run:** crew-afk changes only through releases, which the gate already covers.
 - **A smoke run of the design skills:** they're interactive, and `eval-design-skills.mjs` covers them.
 - **A cheaper model or a separate role for the criteria check:** `afk.models` already allows a cheaper model.

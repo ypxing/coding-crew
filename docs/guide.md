@@ -596,7 +596,7 @@ request Copilot by hand.
 Which comments reach the agent: only those by Copilot's reviewer, by the identity the agent posts as (on Actions `github-actions`, only for a comment GitHub reports a Bot wrote), by a bot the
 repo lists under `github.trustedBots` in `.coding-crew/config.json`, or by a user with write, maintain or admin
 permission on the repo. GitHub reports no permission for a bot, so a GitHub App's comments (Wiz's, say) reach the
-agent only when listed: `{"github": {"trustedBots": ["wiz-security-bot-22793c4344"]}}`, its login with or without
+agent only when listed: `{"github": {"trustedBots": ["wiz-security-bot-0123456789"]}}`, its login with or without
 `[bot]`, matched exactly, and only for a comment GitHub's GraphQL reports a Bot wrote (a user who takes the bot's name is checked like any user). The key is read from the project's file only, never `~/.coding-crew/config.json`, applies
 to this repo's PRs only and only while the repo is private or internal (on a public one anyone could make a listed
 bot quote their text to the agent), and a listed bot's reviews start no rounds: the agent reads its comments when a round

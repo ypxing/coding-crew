@@ -4,8 +4,8 @@
 #
 # In the main checkout the override's `name:` is the one compose itself would have picked, or the
 # project's own `docker compose up` (run without our override) creates `<name>_default` while our
-# invocations create a second network — e.g. a checkout named product-services got
-# `product_services_default` alongside compose's own `product-services_default`. A linked worktree
+# invocations create a second network — e.g. a checkout named shop-api got
+# `shop_api_default` alongside compose's own `shop-api_default`. A linked worktree
 # appends its <owner4>, so each worktree is a compose project of its own.
 
 SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
@@ -44,9 +44,9 @@ project_name() {
 }
 
 @test "a dashed directory name keeps its dashes, as compose's own default does" {
-  fixture "$PARENT/product-services"
-  project_name "$PARENT/product-services"
-  [ "$output" = "product-services" ]
+  fixture "$PARENT/shop-api"
+  project_name "$PARENT/shop-api"
+  [ "$output" = "shop-api" ]
 }
 
 @test "the directory name is normalised the way compose does: lowercased, invalid chars dropped" {
@@ -62,19 +62,19 @@ project_name() {
 }
 
 @test "the project's own top-level name: wins over its directory name" {
-  fixture "$PARENT/checkout" "name: product-services"
+  fixture "$PARENT/checkout" "name: shop-api"
   project_name "$PARENT/checkout"
-  [ "$output" = "product-services" ]
+  [ "$output" = "shop-api" ]
 }
 
 @test "a quoted top-level name: is unquoted" {
-  fixture "$PARENT/checkout" 'name: "product-services"'
+  fixture "$PARENT/checkout" 'name: "shop-api"'
   project_name "$PARENT/checkout"
-  [ "$output" = "product-services" ]
+  [ "$output" = "shop-api" ]
 }
 
 @test "an interpolated top-level name: falls back to the directory name" {
-  fixture "$PARENT/checkout" 'name: ${STACK:-product-services}'
+  fixture "$PARENT/checkout" 'name: ${STACK:-shop-api}'
   project_name "$PARENT/checkout"
   [ "$output" = "checkout" ]
 }
@@ -87,10 +87,10 @@ project_name() {
 }
 
 @test "the generated override carries the same name" {
-  fixture "$PARENT/product-services"
-  git init -q "$PARENT/product-services"
-  bash "$SCRIPT" --project-root "$PARENT/product-services" >/dev/null
-  [ "$(head -1 "$PARENT/product-services/.git/crew-compose.override.yml")" = "name: product-services" ]
+  fixture "$PARENT/shop-api"
+  git init -q "$PARENT/shop-api"
+  bash "$SCRIPT" --project-root "$PARENT/shop-api" >/dev/null
+  [ "$(head -1 "$PARENT/shop-api/.git/crew-compose.override.yml")" = "name: shop-api" ]
 }
 
 @test "each linked worktree is a compose project of its own; the main checkout keeps compose's name" {

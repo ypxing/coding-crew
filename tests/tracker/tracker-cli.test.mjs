@@ -338,7 +338,7 @@ test("fetch (github) --comments with only untrusted comments prints the omitted 
   assert.equal(permissionCalls(exec).length, 1);
 });
 
-const WIZ = "wiz-security-bot-22793c4344";
+const WIZ = "wiz-security-bot-0123456789";
 const PRIVATE_REPO = { stdout: "acme/widgets PRIVATE\n" };
 
 /** Writes the main root's `.coding-crew/config.json` (a string as is). */
