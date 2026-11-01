@@ -32,3 +32,21 @@ teardown() { rm -rf "$WORK"; }
   [[ "$output" == *"nothing to commit"* ]]
   [ "$(git -C "$WORK" log -1 --format=%s)" = "a" ]
 }
+
+@test "a --files value naming one path with a space stages that path, not its words" {
+  mkdir -p "$WORK/src/My App"
+  echo a > "$WORK/src/My App/main.py"
+  echo b > "$WORK/b.txt"
+  PROJECT_ROOT="$WORK" run bash "$COMMIT" --message "Rewrites" --files "src/My App/main.py" --files "b.txt"
+  [ "$status" -eq 0 ]
+  [ -z "$(git -C "$WORK" status --porcelain)" ]
+  [ "$(git -C "$WORK" show --name-only --format= HEAD | sort)" = "$(printf 'b.txt\nsrc/My App/main.py')" ]
+}
+
+@test "a space-separated --files list still stages each path" {
+  echo a > "$WORK/a.txt"
+  echo b > "$WORK/b.txt"
+  PROJECT_ROOT="$WORK" run bash "$COMMIT" --message "Both" --files "a.txt b.txt"
+  [ "$status" -eq 0 ]
+  [ -z "$(git -C "$WORK" status --porcelain)" ]
+}

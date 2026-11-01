@@ -279,8 +279,8 @@ Example: `[01-auth-logout] Add user logout endpoint`. Do not push.
 Then, when Step 5's `rewrote:` lines named files, commit those still changed as their own commit, so a
 reviewer sees formatting churn apart from the work: the same command with the same prefix, the message
 `Apply the checks' rewrites` and those files as `--files` (the line separates them with `, `; pass a name
-with a space as its own `--files`), on every outcome. A file both your work and
-a check changed goes in the work commit.
+with a space as its own `--files`), on every outcome. A file you edited again after
+the run that rewrote it goes in the work commit.
 
 ### 6.5. The dev commands file
 
