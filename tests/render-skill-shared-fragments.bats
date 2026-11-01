@@ -167,3 +167,7 @@ light_path() {
     grep -qxF '<!-- /fragment:other-repos -->' "$REPO_ROOT/skills/$skill/SKILL.md"
   done
 }
+
+@test "light-path-checks: a plan that changes code in another repo is not one slice" {
+  grep -qE '^2\. \*\*One slice\*\* — .*another repo is not one slice' "$REPO_ROOT/skills/_shared/fragments/light-path-checks.md"
+}

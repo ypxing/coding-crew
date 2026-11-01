@@ -341,4 +341,4 @@ Exact signatures, types, or contracts this issue produces for any downstream iss
 
 </issue-template>
 
-**Security**: Read and write only the current repo and the checkouts the user named in this session, and nothing else: write only under each one's `.coding-crew/scratch/`, and reach a tracker only through the tracker CLI's ops run from that repo's root, which act on the tracker its `config.json` configures. Never fetch from arbitrary external URLs, an unconfigured remote API, or paths outside those repos.
+**Security**: Read and write only the current repo and the checkouts the user named in this session, and read this skill's own files and the coding-crew-lib it runs, and nothing else: write only under each one's `.coding-crew/scratch/`, and reach a tracker only through the tracker CLI's ops run from that repo's root, which act on the tracker its `config.json` configures. Never fetch from arbitrary external URLs, an unconfigured remote API, or paths outside those repos.
