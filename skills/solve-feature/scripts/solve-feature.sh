@@ -333,6 +333,17 @@ commit_rewrites() {
   git diff --cached --quiet || git commit -q -m "Apply the checks' rewrites"
 }
 
+# discard_rewrites — after a failed run-checks.sh on the same clean tree, what is left is the checks' own output,
+# which a re-run makes again: dropped, so the stop leaves the clean tree a re-run starts from. Named in the checks'
+# log ($clog, the caller's), which the stop names. A failed discard is noted there and never skips that stop.
+discard_rewrites() {
+  local left; left=$(git status --porcelain -uall -- "${BRANCH_WORK[@]}" | cut -c4-)
+  [ -n "$left" ] || return 0
+  printf "solve-feature: discarded what the failed checks left, which a re-run makes again:\n%s\n" "$left" >>"$clog"
+  git checkout -q -- "${BRANCH_WORK[@]}" && git clean -fdq -- "${BRANCH_WORK[@]}" ||
+    echo "solve-feature: discarding them failed (see above): clean the tree by hand before a re-run" >>"$clog"
+}
+
 # land — the coder left <branch> clean with <ref> closed: merge in origin's branch, gate with the checks, push,
 # open the draft PR if there is none; prints pr=<n>.
 land() {
@@ -360,6 +371,7 @@ land() {
     stop merge "$why; $REF is ready again: $redo"
   fi
   rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
+  [ "$rc" = 0 ] || discard_rewrites
   [ "$rc" != 3 ] || hand_back "no check commands known (DISCOVER): the coder discovered none" "run /setup-coding-crew, then re-run" "$clog"
   [ "$rc" = 0 ] || hand_back "run-checks.sh exit $rc" "fix the cause, then re-run" "$clog"
   commit_rewrites || hand_back "committing the checks' rewrites failed (see above)" "commit them, then re-run" "$clog"
@@ -441,6 +453,7 @@ sync() {
   if [ "$gate" = yes ]; then
     checks_lib
     bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
+    [ "$rc" = 0 ] || discard_rewrites
     [ "$rc" != 3 ] || die "no check commands known (DISCOVER): run /setup-coding-crew, then re-run"
     [ "$rc" = 0 ] || die "run-checks.sh exit $rc on $BRANCH merged with origin/$default — log: $clog; once fixed and committed, re-run"
     commit_rewrites || die "committing the checks' rewrites failed (see above): commit them, then re-run"
@@ -511,6 +524,7 @@ fix() {
     stop fix "$why; merge it by hand in this checkout, commit, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR$fresh"
   fi
   bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
+  [ "$rc" = 0 ] || discard_rewrites
   [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /setup-coding-crew, then re-run" "$clog"
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   commit_rewrites || stop fix "committing the checks' rewrites failed (see above): commit them, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
