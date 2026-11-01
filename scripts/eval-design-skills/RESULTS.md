@@ -62,9 +62,9 @@ Higher is better: count_ok, splits_justified, hitl_placed. Lower is better: over
 
 **Where head fell below base:** brainstorm asked_well 6/10 vs 8/10 (brainstorm-new-platform 0/2 vs 1/2, both head runs re-asking a stated requirement; brainstorm-merge-conflicts 1/2 vs 2/2), and grill-close-heavy chain_priced 0/2 vs 1/2. None of these outputs involves another repo, and the multi-repo text applies only when one is named.
 
-**Two-repo runs (#697 step 3):** pending.
+**Two-repo runs (#697 step 3):** run by the maintainer on two real repos (field-repo-a, field-repo-b), installed from the branch. Both passed: inside field-repo-a naming the other by folder name, and from their parent folder naming both.
 
-**Verdict (#697):** pending the maintainer.
+**Verdict (#697):** ship.
 
 ## to-issues — #546
 
