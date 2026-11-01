@@ -50,28 +50,31 @@ Any agent that loads `SKILL.md` can run the skills ([which agents](docs/guide.md
 smoke-tested on Claude Code. Commands are shown as `/name`: call them however your agent calls skills (`$name` on
 Codex, `/skill:name` on pi).
 
-## Plan first
+## Plan first, your way or ours
 
-Everything is built from issues with testable acceptance criteria, grouped under a feature slug you agree while
-planning:
+Everything is built from issues with testable acceptance criteria, grouped under a feature slug. You don't have to
+plan with us to get them:
 
 ```bash
-/crew-grill <plan>                     # stress-test a plan you bring → issues
-/crew-brainstorm <idea>                # shape a fuzzy idea together → issues
-/to-issues <plan, or a list of bugs>   # split a plan you already trust
+/to-issues <your plan>      # bring what you already have → issues
+/crew-grill <plan>          # or stress-test a plan with us first → issues
+/crew-brainstorm <idea>     # or shape a fuzzy idea together → issues
 ```
 
-When a plan is already one complete, testable change, `/crew-grill` skips its questions and writes the issue.
+`/to-issues` takes a plan already in the conversation, a spec or design doc in the repo, a list of bugs, or an
+issue already on your tracker (`/to-issues 42`), and files issues an implementer can pick up cold. When a plan is
+already one complete, testable change, `/crew-grill` skips its questions and writes the issue.
 
 ## Choose how much to hand over
 
-Start by hand, and move up as you come to trust the result. Each step up runs the one below it, and you can use
-your own tool for any part.
+Start by hand, and move up as you come to trust the result. Each step up builds on the one below it, and you can
+use your own tool for any part.
 
 ### 1. By hand: you drive
 
 ```bash
 /solve-issue <issue>     # build one issue test-first, run your checks, commit, mark it done
+                         #   (a tracker ref, an issue file, or the issue pasted inline)
 /crew-review             # review the branch or PR against its issue; report only
 /write-pr                # write a PR description a reviewer can act on
 /address-pr-comments     # work through the PR's review comments
@@ -79,7 +82,8 @@ your own tool for any part.
 
 Each skill does one job in your checkout and stops; you decide what comes next. Swap in your own for any step: a
 human reviewer or your usual review tool, your PR template, another agent's fixes. The skills hand off through git
-and the tracker, nothing else.
+and the tracker. For one small change, just ask your agent; reach for these when you want it test-first, checked
+and reviewed.
 
 ### 2. A whole feature: `/solve-feature`
 
@@ -87,7 +91,8 @@ and the tracker, nothing else.
 /solve-feature rate-limit
 ```
 
-It runs those steps for every issue of the feature on one branch, with nobody watching:
+It runs `/solve-issue` for every issue of the feature on one branch, then reviews, fixes and describes the whole
+feature in one PR, with nobody watching:
 
 ```mermaid
 flowchart LR
@@ -105,24 +110,25 @@ So start it in a worktree or a container, not the checkout you are working in, o
 
 ### 3. While you're away: a host runs it
 
-A host decides where and when solve-feature runs. Three come built in:
+A host decides where and when solve-feature runs. Two come built in:
 
 - **`/crew-afk <slug>`** starts it in the feature's own worktree and returns at once: a detached session capped at
   an hour, or an [orca or herdr](docs/guide.md#running-a-feature) terminal you can watch. Run one per feature to
   build several in parallel; `/crew-afk status` shows how each ended.
 - **GitHub Actions** runs it when you label an issue `run-agent`
   ([setup](docs/guide.md#solve-feature-on-github-actions-optional): `/setup-coding-crew redo actions`).
-- **`/crew-triage <issue>`** takes an untriaged issue as far as it can alone: builds it, or posts its open questions
-  on the issue.
-
 Anything else that can start your agent in a checkout can host it too: a cron job, your CI, another orchestrator.
+
+For an issue nobody has planned, `/crew-triage <issue>` takes it as far as it can alone: if it is complete enough it
+files the issues and runs solve-feature on them (so start it where solve-feature may run), otherwise it posts its
+open questions on the issue.
 
 ## Why not just ask your agent?
 
 The process is the product, not the model:
 
-- 🚦 **Your checks decide what lands.** No issue counts as done until your tests, lint and types pass, not when the
-  model says it is finished. Every coder works test-first.
+- 🚦 **Your checks decide what lands.** No issue counts as done until the checks you set up (tests, lint, types,
+  whatever you run) pass, not when the model says it is finished. Every coder works test-first.
 - 🔍 **Plan, build, then review the whole feature.** Issues with testable criteria go in; a reviewer reads the
   whole feature against the plan, the crew fixes what it found within bounds, and one PR comes out.
 - 🙋 **Only what needs you.** A PR it finished is marked ready; one it could not lists what needs a person.
@@ -139,10 +145,11 @@ The process is the product, not the model:
 
 | Layer      | Command                | What it does                                                |
 | ---------- | ---------------------- | ----------------------------------------------------------- |
-| Plan       | `/crew-grill`          | Stress-test a plan and turn it into issues                  |
+| Plan       | `/to-issues`           | Turn your own plan, doc or issue into issues                |
+|            | `/crew-grill`          | Stress-test a plan and turn it into issues                  |
 |            | `/crew-brainstorm`     | Shape a fuzzy idea into a design, then issues               |
-|            | `/to-issues`           | Split a plan into issues, or sharpen an existing one        |
 |            | `/to-prd`              | Turn the conversation into a PRD on the tracker             |
+|            | `/crew-triage`         | Triage an issue unattended: build it, or ask its questions  |
 | 1. By hand | `/solve-issue`         | Build one issue end to end                                  |
 |            | `/crew-review`         | Review a branch or PR against its spec; report only         |
 |            | `/write-pr`            | Write a PR description a reviewer can act on                |
@@ -150,7 +157,6 @@ The process is the product, not the model:
 |            | `/tdd`                 | Red, green, refactor on any change                          |
 | 2. Engine  | `/solve-feature`       | Run one feature's issues on one branch, reviewed, in one PR |
 | 3. Hosts   | `/crew-afk`            | Run a feature in its own worktree; see how it ended         |
-|            | `/crew-triage`         | Triage an issue unattended: build it, or ask its questions  |
 | Setup      | `/setup-coding-crew`   | Set up tracker, checks and the optional Actions workflow    |
 
 </details>

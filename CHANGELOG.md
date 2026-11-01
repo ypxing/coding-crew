@@ -6,11 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
-- README: reorganised around three ways to build: by hand (solve-issue, crew-review, write-pr,
-  address-pr-comments), solve-feature as the engine, and hosts that run it (crew-afk, GitHub Actions, crew-triage,
-  or your own). It presents the skills as one standard Agent Skills set for any agent, not four named ones, and
-  leaves skills users rarely call directly (domain-modeling, add-tests, upgrade-deps, configure-tracker,
-  dep-install) out of its command list. "Why teams use it" becomes "Why not just ask your agent?".
+- README: organised around how much you hand over (by hand, `/solve-feature`, a host that runs it), with
+  `/to-issues` as the way in for a plan made your own way, and "Why not just ask your agent?" (#688).
 
 ## [2.3.7]
 
