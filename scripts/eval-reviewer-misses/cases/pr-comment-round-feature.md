@@ -34,7 +34,7 @@ Feature: pr-comment-round
 
 Actor: the owner of a solve-feature PR (the person who started the feature).
 
-A solve-feature PR is marked ready by `describe` (`skills/solve-feature/scripts/solve-feature.sh:376`) and its run ends there. Review comments that arrive afterwards — Copilot's, or a code owner's — have no one to act on them: the owner reads them, and so far has closed the PR and re-run the whole feature (amaysim-au/dpg-balance-management #330, #334, #336 closed; #343 is the fourth run). On #336 Copilot's four threads held three real bugs the in-run reviewer missed; on #343 one low-severity docs thread. Worse, Copilot never reviews these PRs on its own: on every PR `github-actions[bot]` opened (#330, #334, #336, #343) no automatic review ran, while every person-opened PR (#335, #337–#340, #342) and Copilot's own agent PR (#341) got one within 1–7 minutes; the owner requested it by hand 2–5 hours after ready (#336 at 04:33 after ready at 23:51; #343 at 04:52 after ready at 02:45). Meanwhile marking ready already asks the code owners to review.
+A solve-feature PR is marked ready by `describe` (`skills/solve-feature/scripts/solve-feature.sh:376`) and its run ends there. Review comments that arrive afterwards — Copilot's, or a code owner's — have no one to act on them: the owner reads them, and so far has closed the PR and re-run the whole feature (on a field repo: #330, #334, #336 closed; #343 is the fourth run). On #336 Copilot's four threads held three real bugs the in-run reviewer missed; on #343 one low-severity docs thread. Worse, Copilot never reviews these PRs on its own: on every PR `github-actions[bot]` opened (#330, #334, #336, #343) no automatic review ran, while every person-opened PR (#335, #337–#340, #342) and Copilot's own agent PR (#341) got one within 1–7 minutes; the owner requested it by hand 2–5 hours after ready (#336 at 04:33 after ready at 23:51; #343 at 04:52 after ready at 02:45). Meanwhile marking ready already asks the code owners to review.
 
 The goal: a solve-feature PR ends ready for a human, its review comments handled, unless something genuinely needs a person — and then the person is told where, and answers there.
 
@@ -91,7 +91,7 @@ On a solve-feature PR, `address-pr-comments` triages every unresolved thread and
 ### Further Notes
 
 - History: an unattended `address-pr-comments --auto` with a crew-rework workflow (#43) was removed after zero uses (#554). The difference now is the trigger: Copilot's requested review (D3) and the owner's thread replies start rounds without anyone remembering to.
-- Outside this repo (dpg-balance-management): set `.coding-crew/dev-commands.json` `lint` to `make lint prettier`; approve the four held `action_required` runs on #343's head; confirm the PAT in `COPILOT_GITHUB_TOKEN` can add a reviewer (it likely needs Pull requests: write besides Copilot Requests), e.g. `GH_TOKEN=<pat> gh pr edit 344 --add-reviewer @copilot`; then `/setup-coding-crew redo actions` there to take the new host file.
+- Outside this repo (the field repo): set `.coding-crew/dev-commands.json` `lint` to `make lint prettier`; approve the four held `action_required` runs on #343's head; confirm the PAT in `COPILOT_GITHUB_TOKEN` can add a reviewer (it likely needs Pull requests: write besides Copilot Requests), e.g. `GH_TOKEN=<pat> gh pr edit 344 --add-reviewer @copilot`; then `/setup-coding-crew redo actions` there to take the new host file.
 - Merging still needs one code-owner approval (ruleset 23910713; `required_review_thread_resolution: false`).
 
 

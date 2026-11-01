@@ -40,20 +40,20 @@ names() {
 }
 
 @test "every dependency volume is named wt_<proj>_<owner4>_<eco>_<dir>_<lock8>, as an explicit name:" {
-  fixture "$PARENT/product-services"
-  mkdir -p "$PARENT/product-services/packages/web"
-  echo '{"name":"web"}' > "$PARENT/product-services/packages/web/package.json"
+  fixture "$PARENT/shop-api"
+  mkdir -p "$PARENT/shop-api/packages/web"
+  echo '{"name":"web"}' > "$PARENT/shop-api/packages/web/package.json"
 
-  run names "$PARENT/product-services"
+  run names "$PARENT/shop-api"
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 2 ]
   root="${lines[0]}"
-  [[ "$root" =~ ^wt_product_services_[0-9a-f]{4}_nm_root_[0-9a-f]{8}$ ]]
-  [[ "${lines[1]}" =~ ^wt_product_services_[0-9a-f]{4}_nm_packages_web_[0-9a-f]{8}$ ]]
+  [[ "$root" =~ ^wt_shop_api_[0-9a-f]{4}_nm_root_[0-9a-f]{8}$ ]]
+  [[ "${lines[1]}" =~ ^wt_shop_api_[0-9a-f]{4}_nm_packages_web_[0-9a-f]{8}$ ]]
   # one install writes every volume, so every name carries the same lock hash
   [ "${root##*_}" = "${lines[1]##*_}" ]
   # the services mount the same name
-  run override "$PARENT/product-services"
+  run override "$PARENT/shop-api"
   grep -qx "      - $root:/opt/app/node_modules" <<<"$output"
 }
 
