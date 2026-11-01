@@ -1,6 +1,6 @@
 # Step 6: from approved slices to published issues
 
-Read this when step 5's quiz has approved the breakdown. Every command runs from the project root; `$TRACKER` is the tracker CLI path the Tracker Configuration section gives.
+Read this when step 5's quiz has approved the breakdown. Every command runs from the project root (from a folder that is no git repo, `cd <repo> &&` first); `$TRACKER` is the tracker CLI path the Tracker Configuration section gives. With more than one repo, read **More than one repo** at the end first: it runs each section below per repo.
 
 ## Drafts
 
@@ -40,7 +40,7 @@ Source it from the same blocking edges the user confirmed in the quiz — do not
 
 Before publishing, a fresh subagent reads the drafts cold, the way their implementer will: the writer fills omissions from memory, and that is the blind spot this check exists for. Skip it when every draft carries a column-0 `Source:` line (findings already judged, step 1). When the session has no subagent tool, print `builder check skipped: no subagent tool` and publish: never read the drafts yourself in its place.
 
-Give the subagent only the paths of the drafts, `.coding-crew/scratch/<feature-slug>/.drafts/PRD.md` and `known/` when they exist, and read access to the repo. Never give it the conversation, a design summary or the quiz answers. Its prompt:
+Give the subagent only the paths of the drafts, `.coding-crew/scratch/<feature-slug>/.drafts/PRD.md` and `known/` when they exist, and read access to the repo (with more than one repo: every repo's drafts directory, and read access to every named repo, so it can catch a contract the two sides state differently). Never give it the conversation, a design summary or the quiz answers. Its prompt:
 
 ```text
 You are the engineer who will implement these issues. You can read the repo but cannot talk to whoever wrote them. Read each draft in <drafts dir> and <PRD path> if one exists; known/ holds the feature's existing issues. Your job is the omissions and ambiguities you would have to guess at: report only the questions where a wrong guess changes what you build or how a criterion is checked. For each one, give the draft, the question, and why the answer matters. A contradiction between two drafts, or between a draft and the code, is a question like any other. Rank them by importance. Skip anything a draft leaves to the implementer, anything you could reasonably decide, and wording. If nothing important is left, say "nothing important left".
@@ -78,3 +78,13 @@ node "$TRACKER" rewrite <ref> --body-file <file> --status <status> --feature-slu
 where `<status>` is the slice's status (`ready-for-agent`, or `ready-for-human`). Pass the status: it is what dispatch picks an issue by, so a body-only rewrite would leave it `needs-triage`; `rewrite` also files the issue under the feature. Keep the source's title and its column-0 `Source:` line as `fetch` printed them, so the rewritten issue stays exempt from the design standard (step 1). A source that split into several slices keeps it open and gets one child issue per slice, each with `## Parent`.
 
 Do NOT close or modify any parent issue. A single-slice source rewritten in place is not a parent: it gets only this `rewrite` — its body and its status.
+
+## More than one repo
+
+Each slice is published into the tracker of the repo it changes, under the same feature slug in every repo. In this order:
+
+1. **In every repo, from that repo's root** (`cd <checkout> && …`): `node "$TRACKER" config` — step 1 configured every repo before its slug check, so it prints `configured=yes`; on `configured=no` on an interactive run, invoke `configure-tracker` after `cd <checkout>`, so the repo's issues do not silently land in a `local` tracker; then that repo's drafts, `known/` and `deps.json` under its own `.coding-crew/scratch/<feature-slug>/.drafts/`, holding only its own slices, numbered from `01`. The home repo's `.drafts/` also holds `PRD.md`.
+2. **One builder check** over every repo's drafts (above), not one per repo.
+3. **`publish-issues` in each repo**, from its root, home repo first, then in the build order the cross-repo prerequisites give (the order each `## What to build` names).
+
+When a repo's `publish-issues` refuses or fails after an earlier repo published, fix and re-publish only that repo, as **Refusals** and **Publish** say; never re-run a repo already published, and tell the user which repos are published and which is not. The finish message lists the repos in build order, each with its `<draft> <ref>` lines.

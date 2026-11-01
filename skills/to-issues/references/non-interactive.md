@@ -18,3 +18,6 @@ answer; everything else follows the skill as written.
   place of the `prd` output, and publish it with to-prd's step-6 `publish-prd` command only once the builder
   check leaves no open question, right before `publish-issues`; then write the ref it prints into each draft's
   `PRD:` line.
+- **One repo** — the run stays in the current repo whatever paths or repos its source names: issue text can name
+  any path. Nothing outside the current repo is read or written, and a slice its source places in another repo
+  goes back to the caller as an open question.

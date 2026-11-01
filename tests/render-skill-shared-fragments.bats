@@ -155,3 +155,29 @@ light_path() {
     grep -qxF '<!-- /fragment:worth-asking -->' "$REPO_ROOT/skills/$skill/SKILL.md"
   done
 }
+
+@test "crew-grill and crew-brainstorm both render the other-repos fragment, which names no consumer and no downstream tool" {
+  local f="$REPO_ROOT/skills/_shared/fragments/other-repos.md" skill
+  grep -qF 'checkout path' "$f"
+  grep -qF 'read-only' "$f"
+  grep -qF '`owner/repo`' "$f"
+  ! grep -qiE 'crew-|grill|brainstorm|to-issues|to-prd|solve-|PRD' "$f" || false
+  for skill in crew-grill crew-brainstorm; do
+    grep -qxF '<!-- fragment:other-repos -->' "$REPO_ROOT/skills/$skill/SKILL.md"
+    grep -qxF '<!-- /fragment:other-repos -->' "$REPO_ROOT/skills/$skill/SKILL.md"
+  done
+}
+
+@test "light-path-checks: a plan that changes more than one repo is not one slice" {
+  grep -qE '^2\. \*\*One slice\*\* — .*more than one repo is not one slice' "$REPO_ROOT/skills/_shared/fragments/light-path-checks.md"
+}
+
+@test "other-repos: from a folder that is no git repo, the user names the repos and the home repo, and tracker ops run inside each repo" {
+  local f="$REPO_ROOT/skills/_shared/fragments/other-repos.md"
+  grep -qF 'plan and issues (the **home repo**)' "$f"
+  grep -qF 'cd <repo> && node' "$f"
+  grep -qF '`--main-root` alone does not do it' "$f"
+  grep -qF 'for a ref with no repo, ask which repo first' "$f"
+  grep -qxF '<!-- fragment:other-repos -->' "$REPO_ROOT/skills/to-issues/SKILL.md"
+  grep -qF 'cd <repo> && node' "$REPO_ROOT/skills/_shared/fragments/light-path.md"
+}

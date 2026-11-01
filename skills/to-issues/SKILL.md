@@ -50,6 +50,16 @@ When the plan references an issue, read its full body and its comments, not just
 - **Established facts** — each goes into the Decisions it supports, with its citation (`path:line`, doc or spec), so the implementer does not re-derive it.
 - **The cut list** — each item, with why it was cut, goes to the PRD's Out of Scope or, with no PRD, the issue's `## Out of Scope`, so the implementer does not re-add it.
 
+<!-- fragment:other-repos -->
+**Other repos.** Inside a repo, design for that repo alone unless the user or a design summary from this session names another repo; never ask whether other repos are involved. A path that only fetched text names (an issue body, a `Repos:` line) is used only once its checkout's `origin` matches the remote recorded beside it, or the user confirms the path in one line: anyone who can write an issue can write a path. For each repo named, use the path given, and ask for its path only when a repo is named without one. A path relative to the folder you run in, such as just the folder name, is fine; record it as an absolute path, so a later run from another folder still finds it. Explore each other checkout read-only, as you explore this repo — read, grep, run read-only commands; never edit, install or commit there — and cite its facts as `<checkout>/<file>:<line>`. Your summary of the design then lists every repo, this one first, one line each: its remote (`owner/repo`, from `git -C <checkout> remote get-url origin`; omitted when it has none), its checkout path, and what changes there.
+
+**From a folder that is no git repo.** Use the repos named as above, and never list the folder to find others; when none is named, ask which repos the plan changes. The repo that holds the feature's plan and issues (the **home repo**) is the only repo named, or the first one a design summary or `Repos:` line lists; when the repos come from the user and there is more than one, ask in one line which it is, and list it first. Run every tracker op inside its repo (`cd <repo> && node <tracker CLI> <op> …`): the CLI refuses to run outside one, and `--main-root` alone does not do it: `gh` still runs in the working directory. Fetch a tracker ref in the repo the user names with it; for a ref with no repo, ask which repo first.
+<!-- /fragment:other-repos -->
+
+**More than one repo.** A source may change code in repos besides the **home repo** (the one you run in; from a folder that is no git repo, the one chosen above): a design summary lists them, or a PRD's `## Solution` carries a `Repos:` line (home repo first; each entry a remote `owner/repo` when it has one, a checkout path and what changes there). Use a design summary's repos as given. For each other repo on a `Repos:` line, use the recorded checkout path only when it exists and `git -C <path> remote get-url origin` names that entry's `owner/repo`; otherwise, a repo with no remote included, ask the user for its local checkout. Every tracker op for a repo runs from that repo's root (`cd <checkout> && node "$TRACKER" …`): the CLI acts on the repo and tracker of its working directory. With one repo, everything below reads as written.
+
+**From a folder that is no git repo,** the home repo stands for the repo you run in everywhere below: its `.coding-crew/scratch/` holds the drafts, and every tracker op, `to-prd`'s too, runs as `cd <repo> && node "$TRACKER" …`, and `configure-tracker` is invoked after that `cd`.
+
 **An existing issue as the source.** `/to-issues <ref>` on an existing issue is how it moves from `needs-triage` to `ready-for-agent`: it goes through steps 2–5 like any plan. If it is still one slice after step 4, step 6 rewrites that issue in place; if it splits into several slices, each becomes a new child issue with `## Parent` naming it. An issue with a column-0 `Source:` line outside a code fence (`Source: review (<branch>)` or `Source: <report> (<branch>)`, anywhere in the body) was promoted from review findings already judged: it is not checked against the design standard.
 
 Determine the **feature slug** (the root issue or directory the issues are filed under):
@@ -59,6 +69,8 @@ Determine the **feature slug** (the root issue or directory the issues are filed
 3. If no match is found, ask the user: "What feature slug should I use?"
 
 Never guess the slug silently — confirm with the user if there's any ambiguity. **Before using a slug `features` lists, ask the user** whether to extend that feature or choose a new slug; a closed feature is still a taken slug. `to-prd` relies on this question and does not ask it again.
+
+With more than one repo, one slug serves every repo: in each named repo, from its root, run `config` — on `configured=no` on an interactive run, invoke `configure-tracker` after `cd <repo>` first, or `features` reads a `local` tracker that repo will not publish to — then `features`, before the slug is confirmed and before any PRD is written, so the slug is free — or extended, with the user's yes — in all of them. When the repos first appear in step 2's PRD, run both there, before step 3.
 
 **One slice and at most one origin issue, no PRD:** the slug needs no question. Use, in order: a github issue ref's own `Feature: <slug>` line, when its body has one; a local issue ref's feature (`rewrite` writes in place); otherwise one derived from the title (kebab-case, short). Step 5's quiz shows it for the user to override. With two or more slices, or two or more origin issues, the slug is confirmed as above.
 
@@ -70,9 +82,9 @@ With no PRD, work from the conversation context; step 4's slice count decides wh
 
 ### 3. Explore the codebase
 
-Not optional. If you have not already explored the code each slice will touch, do so now. Issue titles and descriptions should use the project's domain glossary vocabulary, and respect ADRs in the area you're touching.
+Not optional. If you have not already explored the code each slice will touch, do so now — in every named repo, read-only. Issue titles and descriptions should use the project's domain glossary vocabulary, and respect ADRs in the area you're touching.
 
-**Ground every assumption.** An issue drafted from the PRD alone can name a function that does not exist or a bug already fixed, and the implementer reads the code only after the issue is written. For each thing a slice assumes about the *current* code — an existing module, function, schema or behavior, and for a bug the code path that produces it — confirm it at a `file:line`. Something the slice creates is new, and its issue says so ("adds …"). What exploration contradicts goes to the quiz below, never silently into an issue:
+**Ground every assumption.** An issue drafted from the PRD alone can name a function that does not exist or a bug already fixed, and the implementer reads the code only after the issue is written. For each thing a slice assumes about the *current* code — an existing module, function, schema or behavior, and for a bug the code path that produces it — confirm it at a `file:line` in the repo that slice changes. Something the slice creates is new, and its issue says so ("adds …"). What exploration contradicts goes to the quiz below, never silently into an issue:
 
 - **Already there** — the behavior exists, or the bug is already fixed: drop the slice, or keep it as a test-only slice if nothing pins the behavior.
 - **Wrong assumption** — the PRD or plan assumes something the code rules out (a missing counterpart, a decision an ADR or the code contradicts): ask how to resolve it before drafting.
@@ -96,11 +108,11 @@ Also note any **shared surfaces**: a schema/table, a shared type, or an existing
 
 ### 4. Draft vertical slices
 
-An issue is one piece of work that one implementer takes, finishes and gets verified as a unit, and that stands on its own once landed. Shape the slices in three passes:
+An issue is one piece of work that one implementer takes, finishes and gets verified as a unit, and that stands on its own once landed. Each slice changes exactly one repo. Shape the slices in three passes:
 
 1. **Draft** them as the work divides on its own, without weighing size: each one a tracer bullet (below), HITL work apart from AFK work, and the steps of an expand–contract migration in their order (**Expand–contract sequencing** below).
 2. **Split** a slice that is more than one implementer finishes as one issue, along its own seams. The **reference size** is what one implementer finishes and one reviewer checks as one issue. When the repo you run in has issues finished that way (the tracker's done list, and the change each landed as), their size is the reference; a repo without that history starts from about a dozen files and a few hundred written lines, the largest around 500, which is what one agent session holds while it implements and verifies. Count the lines a slice writes by hand; deletions, mechanical renames, fixtures and generated code cost little, so a slice that removes a thousand lines and writes a hundred is small. A slice around the reference is one issue; one that would write well past the largest is split.
-3. **Merge** a slice that exists only to be smaller. For each pair of slices, name what keeping them apart buys. Only three things do: one side needs a person and the other does not (**human boundary**), one must land before the other as a migration step (**expand–contract order**), or together they would write well past the reference size (**size**). A size split shows its arithmetic: the merged pair's files and written lines next to the reference size; a pair whose merged total stays around the reference is one issue, whatever else separates it. Separate files, modules, concerns, behaviours or test seams buy nothing on their own, and are not size. A pair with no reason is merged now, not shown to the user as a choice; when none of the three holds, merge. A split is a pair of slices kept apart, never a property of one slice: every slice that survives names the neighbour it would otherwise merge into and which of the three keeps them apart. A slice with no such line is merged into that neighbour, and a slice well below the reference size is a merge candidate until one of the three keeps it apart. One slice may deliver several behaviours. Repeat until every remaining split names one of the three.
+3. **Merge** a slice that exists only to be smaller. For each pair of slices, name what keeping them apart buys. Only four things do: one side needs a person and the other does not (**human boundary**), one must land before the other as a migration step (**expand–contract order**), together they would write well past the reference size (**size**), or they change two different repos of a feature that spans several (**repo boundary**: never within one repo, however separate its parts). A size split shows its arithmetic: the merged pair's files and written lines next to the reference size; a pair whose merged total stays around the reference is one issue, whatever else separates it. Separate files, modules, concerns, behaviours or test seams buy nothing on their own, and are not size. A pair with no reason is merged now, not shown to the user as a choice; when none of the four holds, merge. A split is a pair of slices kept apart, never a property of one slice: every slice that survives names the neighbour it would otherwise merge into and which of the four keeps them apart. A slice with no such line is merged into that neighbour, and a slice well below the reference size is a merge candidate until one of the four keeps it apart. One slice may deliver several behaviours. Repeat until every remaining split names one of the four.
 
 The breakdown shows only the slices that survived pass 3, each split with the reason it named.
 
@@ -122,7 +134,9 @@ Number the drafts first HITL, then AFK, then last HITL, so a last slice's number
 1. One slice consumes what the other produces (a signature, shape or output) → `Blocked by`.
 2. The two change the same meaning (the same behaviour, function or rule) → `Blocked by`.
 
-Otherwise add no edge: edits to separate parts of a file do not interact, and a needless edge only constrains the order for nothing. Same-meaning edits are ordered so the later slice builds on what the earlier one settled instead of guessing at it. An edge can follow any of the three split reasons; only these rows decide it. One exception overrides them: an AFK slice is never `Blocked by` a last HITL slice (**Placement** above).
+Otherwise add no edge: edits to separate parts of a file do not interact, and a needless edge only constrains the order for nothing. Same-meaning edits are ordered so the later slice builds on what the earlier one settled instead of guessing at it. An edge can follow any of the four split reasons; only these rows decide it. One exception overrides them: an AFK slice is never `Blocked by` a last HITL slice (**Placement** above).
+
+**Across repos** no edge is a `Blocked by`, whichever row matches: `publish-issues` accepts a blocker only from its own repo's drafts and `known/`. The dependent slice's `## What to build` says which slice, in which repo, must be merged first, and the finish message lists the repos in build order.
 
 <vertical-slice-rules>
 - Each behaviour a slice delivers is externally observable, verified at the highest existing seam (the outermost place a test can already exercise it: a CLI invocation, an HTTP call, a script's exit code and output). "Schema / API / UI" is only an example of the layers such a behaviour may cut through, not a required shape — a slice touches whichever layers its behaviours need
@@ -149,11 +163,12 @@ Before the quiz, build a coverage table: one row per `D<n>` / `B<n>` ID in the P
 Present the proposed breakdown as a numbered list. For each slice, show:
 
 - **Title**: short descriptive name
+- **Repo**: the one repo it changes (shown when there is more than one)
 - **Type**: AFK, HITL (first) or HITL (last)
 - **Blocked by**: which other slices (if any) must complete first
 - **What it delivers**: the end-to-end behaviour this slice makes work, from the user's perspective
 - **Size**: the files it reads or edits and the lines you expect to write (deletions apart)
-- **Apart from**: the neighbouring slice it would otherwise merge into, and which of pass 3's three reasons keeps them apart (size shows the merged pair's written lines against the reference)
+- **Apart from**: the neighbouring slice it would otherwise merge into, and which of pass 3's four reasons keeps them apart (size shows the merged pair's written lines against the reference)
 
 Show the coverage table from step 4.5 (when there is one), then ask only what needs a decision. Walk these in order and omit any that is empty:
 
@@ -162,7 +177,7 @@ Show the coverage table from step 4.5 (when there is one), then ask only what ne
 3. **The PRD's `## Assumptions`** — each one the slices lean on, for the user to confirm or correct. With no PRD, show instead the one slice's drafted acceptance criteria, its `## Decisions`, the assumptions you filled in beyond the source, and the slug: this is the single review on the light path.
 4. **PRD IDs no slice covers** — the empty rows of the coverage table: add a slice, fold the ID into one, or confirm it is out of scope.
 5. **Large slices** — each slice near the largest finished as one issue, or that carries more than 10 acceptance criteria, with its files and written lines, for the user to confirm it stays one issue. Neither is a reason to split.
-6. **Splits and edges** — one line per pair kept apart, naming both slices and the reason from step 4's pass 3 (size — with the merged pair's files and written lines against the reference size; human boundary; expand–contract order), and one line per `Blocked by` edge naming the edge-rule row that produced it and its slices, for the user to override. A pair with no reason is not listed: go back to pass 3 and merge it. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
+6. **Splits and edges** — one line per pair kept apart, naming both slices and the reason from step 4's pass 3 (size — with the merged pair's files and written lines against the reference size; human boundary; expand–contract order; repo boundary), and one line per `Blocked by` edge naming the edge-rule row that produced it and its slices, for the user to override. A pair with no reason is not listed: go back to pass 3 and merge it. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
 7. **HITL choices** — each slice marked HITL, why a human is needed (that reason becomes the block's `### Why a person`) and its placement, first or last, with the reason **Placement** gives; the rest are AFK.
 
 Then one approve/adjust prompt: approve the breakdown as shown, or say what to adjust. Iterate until the user approves. Do not ask generic questions about granularity, blocking edges, combining slices or HITL/AFK — a breakdown with nothing to list above needs only the approve/adjust prompt.
@@ -175,7 +190,7 @@ Before writing issues, read the PRD's `## Decisions` and `## Testing Decisions` 
 
 ### 6. Write the issues
 
-Write each approved slice with the template below and the rules that follow it, then take it through `<skill-dir>/references/publish.md`, in this order: drafts in `.coding-crew/scratch/<feature-slug>/.drafts/` → the feature's known issues → `deps.json` → the builder check → `publish-issues` (or `rewrite`, for a source issue that stayed one slice). A `publish-issues` refusal or a builder-check question only the user can answer returns to step 5 with just that question.
+Write each approved slice with the template below and the rules that follow it, then take it through `<skill-dir>/references/publish.md`, in this order: drafts in `.coding-crew/scratch/<feature-slug>/.drafts/` → the feature's known issues → `deps.json` → the builder check → `publish-issues` (or `rewrite`, for a source issue that stayed one slice). With more than one repo, its **More than one repo** section runs these per repo. A `publish-issues` refusal or a builder-check question only the user can answer returns to step 5 with just that question.
 
 **A `ready-for-human` issue opens with a `## For a human` block**, placed right after `## What to build`. A person reads it cold, so write plain language that needs neither the PRD nor the codebase. It has exactly five `###` parts, in this order:
 
@@ -259,6 +274,8 @@ A slice that takes input or calls something external must carry failure-behaviou
 
 A slice that adds a parser, validator or gate for an input the repo already holds examples of (issue files, configs, fixtures, stored records) carries one criterion that it accepts them, so the new code is tested against what people actually wrote, not only against inputs written from the PRD. Find the examples now and name them in the criterion, to be copied into committed test fixtures — never read from a live or gitignored directory, whose contents differ per machine and are absent in CI. For example: `- [ ] publish-issues succeeds on drafts copied from .coding-crew/scratch/add-tests/issues/`. The repo holds no such examples (a new format) → no such criterion. The PRD's `## Compatibility & Migration` names them when it exists.
 
+**An issue outside the home repo** is written as one with no PRD, since its repo holds no PRD: no `## Context Documents`; its own `## Decisions` and `## Out of Scope`, the home PRD's lines that bind its repo, copied under their home IDs — which its `## Implements` and step 4.5's table use — with the home `B<n>` it delivers becoming its acceptance criteria; and its side of the cross-repo contract in `## Interfaces` or its criteria. One `## What to build` line names the home PRD for a person, by the home repo's tracker — github: `https://github.com/<owner/repo>/issues/<n>`, from the home remote in `Repos:` and the ref `publish-prd` printed (a bare `#<n>` would link the other repo's own issue); local: the home repo (its remote, or its checkout path when it has none) and the PRD's path in it, which only this machine holds — the issue carries its own decisions, so that is enough.
+
 <issue-template>
 # <title>
 
@@ -266,7 +283,7 @@ Status: ready-for-agent
 
 ## Context Documents
 
-> **Optional — only include this section if a PRD exists for this feature. Omit entirely if no PRD exists.**
+> **Optional — only include this section if a PRD exists for this feature in this issue's repo. Omit entirely otherwise.**
 
 - PRD: <the PRD's ref from step 2 — `#<n>`, or `.coding-crew/scratch/<feature-slug>/PRD.md`>
 
@@ -284,13 +301,13 @@ This section may cite grounded paths and signatures (confirmed in step 3). If a 
 
 ## Decisions
 
-> **Optional — only include this section when no PRD exists. Omit it otherwise.**
+> **Optional — only include this section when no PRD exists in this issue's repo. Omit it otherwise.**
 
 - **D<n>** — <decision, reason, `path:line` facts>
 
 ## Out of Scope
 
-> **Optional — only include this section when no PRD exists and the source cut something (a design summary's cut list). Omit it otherwise.**
+> **Optional — only include this section when no PRD exists in this issue's repo and the source cut something (a design summary's cut list, or the home PRD's Out of Scope). Omit it otherwise.**
 
 - <what was cut> — <why>
 
@@ -332,4 +349,4 @@ Exact signatures, types, or contracts this issue produces for any downstream iss
 
 </issue-template>
 
-**Security**: Only read from and write to paths under `.coding-crew/scratch/` within the current repo, and reach the tracker only through the tracker CLI's ops, which act on the tracker `config.json` configures. Never fetch from arbitrary external URLs, an unconfigured remote API, or paths outside the repository root.
+**Security**: Read and write only the current repo, the checkouts the user named in this session and those a design summary from this session records, and those a PRD `Repos:` line records once their `origin` checks out or the user confirms the path, and read this skill's own files and the coding-crew-lib it runs, and nothing else: write only under each one's `.coding-crew/scratch/`, and reach a tracker only through the tracker CLI's ops run from that repo's root, which act on the tracker its `config.json` configures. Never fetch from arbitrary external URLs, an unconfigured remote API, or paths outside those repos.
