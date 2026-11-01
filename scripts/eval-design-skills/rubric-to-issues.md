@@ -13,7 +13,7 @@ one of four reasons:
    deletions and mechanical renames cost little);
 2. **human boundary** — part is HITL, the rest AFK;
 3. **expand–contract order** — migration steps that must land in sequence;
-4. **repo boundary** — the parts change different repos.
+4. **repo boundary** — the parts change different repos of a multi-repo feature; never within one repo.
 
 "Unrelated modules", "separate test seams" or "parallelism" is not a reason on its own.
 
