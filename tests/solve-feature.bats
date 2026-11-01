@@ -468,6 +468,18 @@ synced_branch() {
   [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
 }
 
+@test "sync commits the checks' rewrites of the merged tree as their own commit, then pushes it" {
+  synced_branch
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  CHECK_REWRITES=fix.txt run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git log -1 --format=%s)" = "Apply the checks' rewrites" ]
+  [ "$(git show --name-only --format= HEAD)" = fix.txt ]
+  [ -z "$(git status --porcelain)" ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+}
+
 @test "sync whose checks fail on the merged tree exits 1 with an outcome naming their log, pushing nothing" {
   synced_branch
   main_moves fix.txt "a fix on main" && git checkout -q feature/feat

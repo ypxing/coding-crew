@@ -25,8 +25,7 @@ stops_at() {
   run bash "$SCRIPT" land feat 2 feature/feat
   stops_at solve "working tree left dirty"
   [ ! -f "$STATE/checks.log" ]
-  # solve-issue's blocked on a check that rewrote untouched files leaves them for a human, and says why.
-  echo "blocked: lint: modified files: dirt.txt" > .coding-crew/solve-feature/coder.report.md
+  echo "blocked: the coder stopped mid-edit" > .coding-crew/solve-feature/coder.report.md
   run bash "$SCRIPT" land feat 2 feature/feat
   stops_at solve "working tree left dirty; why: $WORK/.coding-crew/solve-feature/coder.report.md"
 }
@@ -47,6 +46,30 @@ stops_at() {
   echo '{"test":"make check"}' > .coding-crew/dev-commands.json
   run bash "$SCRIPT" land feat 2 feature/feat
   stops_at solve "working tree left dirty"
+}
+
+@test "land commits the checks' rewrites as their own commit before the push, leaving config.json and an untracked dev commands file out" {
+  land_ready
+  local coder; coder=$(git rev-parse HEAD)
+  git rm -q --cached .coding-crew/dev-commands.json && git commit -q -m "commands untracked"
+  coder=$(git rev-parse HEAD)
+  echo '{"test":"make check"}' > .coding-crew/dev-commands.json
+  echo '{"tracker":{"kind":"github"},"x":1}' > .coding-crew/config.json
+  CHECK_REWRITES=work-2.txt run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git log -1 --format=%s)" = "Apply the checks' rewrites" ]
+  [ "$(git rev-parse HEAD~1)" = "$coder" ]
+  [ "$(git show --name-only --format= HEAD)" = work-2.txt ]
+  [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
+  [ "$(git status --porcelain -uall | sort | tr '\n' ' ')" = " M .coding-crew/config.json ?? .coding-crew/dev-commands.json " ]
+}
+
+@test "land whose checks leave nothing changed makes no rewrite commit" {
+  land_ready
+  local coder; coder=$(git rev-parse HEAD)
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git rev-parse HEAD)" = "$coder" ]
 }
 
 @test "land after a coder committed [WIP] and left its issue open exits 1 'did not close' naming the coder's report, before the checks" {

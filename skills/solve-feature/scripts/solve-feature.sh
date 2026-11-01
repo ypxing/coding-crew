@@ -50,8 +50,9 @@ MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 [ "$(basename "$MAIN_ROOT")" = .git ] && MAIN_ROOT=$(dirname "$MAIN_ROOT") || MAIN_ROOT="$ROOT"
 # The setup files a user commits once satisfied: no tree check counts them, and no run commits them. A dev commands
 # file this tree tracks is not one: it is the branch's own copy, the one its checks read, counted and committed.
-BRANCH_WORK=(. ':!.coding-crew/config.json')
-git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 || BRANCH_WORK+=(':!.coding-crew/dev-commands.json')
+BRANCH_WORK=(. ':!.coding-crew/config.json') SETUP_FILES=(.coding-crew/config.json)
+git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 ||
+  { BRANCH_WORK+=(':!.coding-crew/dev-commands.json'); SETUP_FILES+=(.coding-crew/dev-commands.json); }
 [ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head \
   "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base"
 # solveFeature.publish: false keeps the run on this machine: no push, no PR, the body in local_body's file. Read from
@@ -324,6 +325,14 @@ pr_create_failed() {
   stop pr "$why; $REF is ready again with its work pushed to $BRANCH: $redo"
 }
 
+# commit_rewrites — after a passing run-checks.sh on a tree clean outside SETUP_FILES, what is left is exactly the
+# checks' rewrites (a `lint --fix`): one commit of its own. Tracked files only, as run-checks.sh fails a check that
+# creates one. Staged over `.`, then unstaged: git add refuses any pathspec naming an ignored path, an exclude too.
+commit_rewrites() {
+  git add -u -- . && git reset -q -- "${SETUP_FILES[@]}" || return 1
+  git diff --cached --quiet || git commit -q -m "Apply the checks' rewrites"
+}
+
 # land — the coder left <branch> clean with <ref> closed: merge in origin's branch, gate with the checks, push,
 # open the draft PR if there is none; prints pr=<n>.
 land() {
@@ -331,7 +340,6 @@ land() {
   [ -f "$LOGS/$rs.issue.md" ] || die "no saved issue for $REF: run next first"
   checks_lib
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop solve "branch changed to '$(git branch --show-current)'"
-  # solve-issue's blocked leaves files a check rewrote for a human to commit, and its report says so.
   [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || stop solve "working tree left dirty$([ ! -s "$LOGS/coder.report.md" ] || echo "; why: $LOGS/coder.report.md")"
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
@@ -354,6 +362,7 @@ land() {
   rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
   [ "$rc" != 3 ] || hand_back "no check commands known (DISCOVER): the coder discovered none" "run /setup-coding-crew, then re-run" "$clog"
   [ "$rc" = 0 ] || hand_back "run-checks.sh exit $rc" "fix the cause, then re-run" "$clog"
+  commit_rewrites || hand_back "committing the checks' rewrites failed (see above)" "commit them, then re-run" "$clog"
   # Any failed push reopens the issue, unretried: an Actions runner's commits go with its job, so a closed issue
   # would count as landed work that exists nowhere. Here a re-run finds the commits, since start never resets a branch.
   if [ "$PUBLISH" = yes ] && ! push -u origin "$BRANCH"; then
@@ -434,6 +443,7 @@ sync() {
     bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
     [ "$rc" != 3 ] || die "no check commands known (DISCOVER): run /setup-coding-crew, then re-run"
     [ "$rc" = 0 ] || die "run-checks.sh exit $rc on $BRANCH merged with origin/$default — log: $clog; once fixed and committed, re-run"
+    commit_rewrites || die "committing the checks' rewrites failed (see above): commit them, then re-run"
     [ "$PUBLISH" = no ] || push -u origin "$BRANCH" || die "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, re-run"
   fi
   git rev-parse HEAD >"$LOGS/review.base"
@@ -489,7 +499,7 @@ fix() {
   total=$(jq '.findings // [] | length' "$report")
   # crew-review's own severity field; a missing or unknown one is not severe.
   severe=$(jq '[.findings // [] | .[]? | select(.severity? | IN("CRITICAL", "HIGH", "MEDIUM"))] | length' "$report")
-  # Committed before the checks, so run-checks.sh's modified-files test also sees a check rewrite a file the fixer changed.
+  # Committed before the checks, so what they leave is their own rewrites, committed apart.
   git add -A -- "${BRANCH_WORK[@]}"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings$([ "$PUBLISH" = no ] || echo " on PR #$PR")"
   # A failed fetch skips the merge: the push owns that failure.
@@ -501,13 +511,15 @@ fix() {
   bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
   [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /setup-coding-crew, then re-run" "$clog"
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
+  commit_rewrites || stop fix "committing the checks' rewrites failed (see above): commit them, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   [ "$PUBLISH" = no ] || push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   git rev-parse HEAD >"$LOGS/review.base"
   post_notes "$PR" "$LOGS/pr-$PR.notes.md" "the fixer of $pr_name's review · $(date +%F)"
 
   # "Changed nothing" is no commit on the branch's own line past the round's head: what merge_in brought in sits
-  # behind a merge's second parent, and a fix committed here and pushed by hand still counts.
-  [ -z "$(git rev-list --first-parent --no-merges -n1 HEAD "^$head_oid")" ] || moved=yes
+  # behind a merge's second parent, and a fix committed here and pushed by hand still counts. The checks' rewrites are
+  # not the fixer's.
+  [ -z "$(git rev-list --first-parent --no-merges --invert-grep --grep="^Apply the checks' rewrites\$" -n1 HEAD "^$head_oid")" ] || moved=yes
   # Needs a person: the reviewer's gaps, an unmet spec, each line the fixer left in unfixed.md, and a fixer that
   # changed nothing without saying why (it crashed or gave up).
   attention=$(jq -r '.gaps // [] | .[] | tostring' "$report")

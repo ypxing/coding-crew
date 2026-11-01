@@ -66,13 +66,36 @@ fix_stops() {
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
 }
 
-@test "the checks run with the fixer's edits committed and the tree clean, so run-checks.sh's own modified-files test catches a check that rewrites one" {
+@test "the checks run with the fixer's edits committed and the tree clean, so what they leave is only their own rewrites" {
   fix_ready
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]
   [ -z "$(cat "$STATE/checks.status")" ]
   [ "$(cat "$STATE/checks.head")" = "$(git rev-parse HEAD)" ]
   [ "$(git show --name-only --format= HEAD)" = fixed.txt ]
+}
+
+@test "fix commits the checks' rewrites apart from the fixer's commit, before the push" {
+  fix_ready
+  local tip; tip=$(git rev-parse HEAD)
+  CHECK_REWRITES=work-2.txt run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  pushed
+  [ "$(git log -1 --format=%s)" = "Apply the checks' rewrites" ]
+  [ "$(git show --name-only --format= HEAD)" = work-2.txt ]
+  [ "$(git log -1 --format=%s HEAD~1)" = "Fix the review's findings on PR #10" ]
+  [ "$(git rev-parse HEAD~2)" = "$tip" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
+}
+
+@test "a fixer that changed nothing is still flagged when only the checks' rewrites were committed" {
+  fix_ready
+  rm fixed.txt
+  CHECK_REWRITES=work-2.txt run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(git log -1 --format=%s)" = "Apply the checks' rewrites" ]
+  [ "$(attention)" = "the fixer changed nothing" ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
 }
 
 @test "a rejected push stops fix quoting git's reason and naming the recovery" {
