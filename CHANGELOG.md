@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.3.8]
+
 - crew-grill, crew-brainstorm, to-prd, to-issues: a design session can start in a plain folder outside any repo.
   The skills use the repos the user names (a folder name is enough), ask for them only when none were named, and
   ask which one holds the PRD and issues; every tracker op runs from inside its repo (#699).
