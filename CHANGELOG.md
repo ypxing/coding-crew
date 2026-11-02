@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: what a failed check staged (a check that runs `git add`, such as lint-staged) is discarded too, so
+  the issue's reopen commit no longer pushes it to the feature branch (#703).
+
 ## [2.3.9]
 
 - solve-feature: when the checks fail at land, sync or fix, what they left in the tree is discarded (and listed in

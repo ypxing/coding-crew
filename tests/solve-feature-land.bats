@@ -248,8 +248,8 @@ handed_back() {
 @test "a reopen that changes a tracked file is committed alone, what the failed checks left discarded; a failed discard is noted and still hands back; a reopen that fails stops naming land, nothing pushed" {
   land_ready
   echo '{"tracker":{"kind":"github"},"x":1}' > .coding-crew/config.json
-  # What a failed check left (a file it made, a rewrite): never committed, and gone so a re-run starts on a clean tree.
-  CHECK_LEAVES="$WORK/artefact.out" CHECK_REWRITES=work-2.txt REOPEN_TOUCHES="$WORK/issue-state.md" CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  # What a failed check left (a file it made, a rewrite, staged or not): never committed, and gone so a re-run starts on a clean tree.
+  CHECK_LEAVES="$WORK/artefact.out" CHECK_REWRITES=work-2.txt CHECK_STAGES="artefact.out work-2.txt" REOPEN_TOUCHES="$WORK/issue-state.md" CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 1 ]
   [ "$(git log -1 --format=%s)" = "Reopen 2: its checks failed" ]
   [ "$(git show --name-only --format= HEAD)" = issue-state.md ]
