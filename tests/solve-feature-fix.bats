@@ -639,7 +639,7 @@ git_fails() {
 # notes_section — the body's notes section, its markers included.
 notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-feature:notes:end -->$/p' "$STATE/pr-body"; }
 
-@test "fix writes a non-empty pr-<n>.notes.md after its push into the PR body's notes section under the fixer, the PR and the date, deletes it, and a second round writes nothing" {
+@test "fix writes a non-empty pr-<n>.notes.md into the PR body's notes section under the fixer, the PR and the date, deletes it, and a second round writes nothing" {
   fix_ready
   TIP=$(git rev-parse HEAD)
   printf '%s\n' "- rotate the CI token after merge" > .coding-crew/solve-feature/pr-10.notes.md
@@ -659,27 +659,48 @@ notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-fe
   [ "$(grep -c '^pr edit 10' "$STATE/gh.log")" = 1 ]
 }
 
-@test "fix whose checks or push stop writes no notes; a failed gh pr edit stops naming the file, the by-hand way and the artifact" {
+@test "a fixer's note reaches the PR body before fix's merge, checks and push, so a stop at any of them and a re-run keep it" {
+  fix_ready '{"spec":"met","gaps":[],"findings":[]}'
+  local f="$WORK/.coding-crew/solve-feature/pr-10.notes.md" n=0
+  for stop in checks push merge; do
+    n=$((n + 1))
+    echo "- note before the $stop stop" > "$f"
+    case $stop in
+      checks) CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat ;;
+      push) refuse_pushes; run bash "$SCRIPT" fix feat 10 feature/feat; rm "$TEMP_DIR/origin.git/hooks/pre-receive" ;;
+      merge)
+        echo mine > clash.txt && git add clash.txt && git commit -q -m mine
+        branch_moves clash.txt theirs >/dev/null
+        run bash "$SCRIPT" fix feat 10 feature/feat
+        git reset -q --hard origin/feature/feat ;;
+    esac
+    [ "$status" -eq 1 ] || { echo "$stop: exit $status: $output"; return 1; }
+    [ ! -e "$f" ]
+    grep -qx -- "- note before the $stop stop" "$STATE/pr-body"
+    [ "$(grep -c '^### the fixer of PR #10' "$STATE/pr-body")" = "$n" ]
+  done
+  # A plain re-run's start wipes the run's files, and the next review comes back clean.
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  report '{"spec":"met","gaps":[],"findings":[]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  needs_person_for_notes
+}
+
+@test "a failed gh pr edit stops fix with the fixer's edits committed, naming the file, the by-hand way and the artifact" {
   fix_ready
-  TIP=$(git rev-parse HEAD)
   local f="$WORK/.coding-crew/solve-feature/pr-10.notes.md"
   echo '- a note' > "$f"
-  : > "$STATE/gh.log"
-  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 1 ]
-  ! grep -qE '^pr (comment|edit)' "$STATE/gh.log" || false
-  [ "$(cat "$f")" = '- a note' ]
-  refuse_pushes
-  run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"git push failed"* ]] || { echo "$output"; return 1; }
-  ! grep -qE '^pr (comment|edit)' "$STATE/gh.log" || false
-  [ "$(cat "$f")" = '- a note' ]
-  rm "$TEMP_DIR/origin.git/hooks/pre-receive"
+  echo fixed > fixed.txt
   GH_EDIT_FAIL=1 run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 1 ]
   [[ "$output" == *"solve-feature: "*"$f"*"Notes for a person"*"gh pr edit 10"*"rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
   [ "$(head -n1 "$f")" = "### the fixer of PR #10's review · $(date +%F)" ]
+  # A re-run's start refuses a dirty tree, so the stop leaves none.
+  [ -z "$(git status --porcelain)" ]
 }
 
 @test "describe carries the notes section from the current body verbatim after Needs attention" {

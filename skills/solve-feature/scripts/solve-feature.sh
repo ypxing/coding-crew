@@ -240,7 +240,9 @@ next() {
   # backend's validateRef, so a ref it rejects stops here, before it reaches the coder's prompt.
   node "$CLI" fetch "$ref" >"$LOGS/${ref//\//_}.issue.md" || die "fetch $ref failed (see above)"
   # One coder at a time writes its report here; an earlier one's would read as this coder's at land's solve stop.
-  rm -f "$LOGS/coder.report.md" "$LOGS/coder.notes.md"
+  # Its notes go with it, unless this is the same issue again: a land that stopped before there was a PR left them.
+  rm -f "$LOGS/coder.report.md"
+  [ "$ref" = "$REF" ] || rm -f "$LOGS/coder.notes.md"
   printf '%s\t%s\n' "$ref" "$(git branch --show-current)" >"$(landing)"
   echo "$ref"
 }
@@ -353,6 +355,11 @@ land() {
   [ -f "$LOGS/$rs.issue.md" ] || die "no saved issue for $REF: run next first"
   checks_lib
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop solve "branch changed to '$(git branch --show-current)'"
+  # With a PR open a note goes into its body now, so no stop below loses it; start and next delete only a local file.
+  if [ -s "$LOGS/coder.notes.md" ]; then
+    pr_view
+    [ -z "$PR_N" ] || post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)"
+  fi
   [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || stop solve "working tree left dirty$([ ! -s "$LOGS/coder.report.md" ] || echo "; why: $LOGS/coder.report.md")"
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
@@ -519,6 +526,9 @@ fix() {
   git ls-files -z -m -o --exclude-standard -- "${BRANCH_WORK[@]}" | xargs -0 -r git add -A -- ||
     stop fix "git add failed (see above): stage and commit the fixer's edits by hand, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings$([ "$PUBLISH" = no ] || echo " on PR #$PR")"
+  # Before any stop below: a re-run's start deletes the file, so only the body keeps the note. After the commit, so a
+  # failed write leaves the clean tree start needs.
+  post_notes "$PR" "$LOGS/pr-$PR.notes.md" "the fixer of $pr_name's review · $(date +%F)"
   # A failed fetch skips the merge: the push owns that failure.
   if fetch_branch && ! merge_in "origin/$BRANCH"; then
     local why="merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS"
@@ -532,7 +542,6 @@ fix() {
   commit_rewrites || stop fix "committing the checks' rewrites failed (see above): commit them, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   [ "$PUBLISH" = no ] || push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   git rev-parse HEAD >"$LOGS/review.base"
-  post_notes "$PR" "$LOGS/pr-$PR.notes.md" "the fixer of $pr_name's review · $(date +%F)"
 
   # "Changed nothing" is no commit on the branch's own line past the round's head: what merge_in brought in sits
   # behind a merge's second parent, and a fix committed here and pushed by hand still counts. The checks' rewrites are
