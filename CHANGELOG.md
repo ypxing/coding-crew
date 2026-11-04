@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- address-pr-comments: run non-interactively on a PR solve-feature did not open, it now pushes its commit to the PR's
+  head branch (never forcing), then replies `Fixed in <sha>` and resolves each fixed thread, and @mentions the PR's
+  author on a thread left for a person, so a host only has to start it. A refused push leaves those threads open and
+  the summary quotes git's reason. Interactive runs and solve-feature PRs are unchanged (#681).
 - solve-feature: a coder's or fixer's note for a person now keeps the PR a draft: the run ends `needs-attention`, and
   `Needs attention` names the notes section until a person deletes the notes. Before, the PR was marked ready with
   them still open (#662).
