@@ -593,7 +593,8 @@ describe() {
   notes=$(pr_body_read "$PR") || die "reading PR $PR's body failed"
   notes=$(sed -n "\|^$NOTES_BEGIN\$|,\|^$NOTES_END\$|p" <<<"$notes")
   # Not piped into grep -q: its early exit could fail the first grep under pipefail and drop the notes.
-  [ -n "$(grep -vxE "$NOTES_BEGIN|$NOTES_END|## Notes for a person|Delete a note here once it is handled\.|[[:space:]]*" <<<"$notes" || true)" ] || notes=""
+  # A tag post_notes wrote is no note: one left after its note's text was deleted must not hold the draft.
+  [ -n "$(grep -vxE "$NOTES_BEGIN|$NOTES_END|## Notes for a person|Delete a note here once it is handled\.|### the (coder|fixer) of .* · [0-9]{4}-[0-9]{2}-[0-9]{2}|[[:space:]]*" <<<"$notes" || true)" ] || notes=""
   # The notes are what a coder or fixer says a person must do or decide, so they hold the draft. Read from the body, so
   # a note survives a stop and a fresh runner, and one a person deleted no longer counts.
   [ -z "$notes" ] || need=$(printf '%s\n%s' "$need" "notes for a person, in the section below: delete each once it is handled" | grep -v '^[[:space:]]*$')

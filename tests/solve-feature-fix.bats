@@ -773,6 +773,30 @@ needs_person_for_notes() {
   grep -q '^pr ready 10' "$STATE/gh.log"
 }
 
+@test "a note's tag left behind holds no draft: the section goes and describe marks the PR ready" {
+  fix_ready '{"spec":"met","gaps":[],"findings":[]}'
+  echo '- rotate the CI token after merge' > .coding-crew/solve-feature/pr-10.notes.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -vxF -- '- rotate the CI token after merge' "$STATE/pr-body" > "$STATE/pr-body.new"
+  mv "$STATE/pr-body.new" "$STATE/pr-body"
+  grep -q "^### the fixer of PR #10's review" "$STATE/pr-body"
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "ready pr=10" ]
+  ! grep -q '^## Needs attention$\|solve-feature:notes' "$STATE/pr-body" || false
+}
+
+@test "a note that is only a heading of its own still holds the draft" {
+  fix_ready '{"spec":"met","gaps":[],"findings":[]}'
+  echo '### Rotate the CI token' > .coding-crew/solve-feature/pr-10.notes.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  needs_person_for_notes
+}
+
 @test "describe keeps a person's deletions: a deleted note is not restored, and a section with no note left is dropped" {
   fix_ready '{"spec":"met","gaps":["a gap"],"findings":[]}'
   echo '- first note' > .coding-crew/solve-feature/pr-10.notes.md

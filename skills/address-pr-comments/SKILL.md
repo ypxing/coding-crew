@@ -70,8 +70,11 @@ line) is solve-feature's. Its `<slug>` is the one the block's `<!-- solve-featur
 line names. The head branch alone never makes a PR solve-feature's: its name is the run's choice
 (`--branch`). On one, also keep the PR's `headRefName` and `isDraft` (`gh pr view <n> --json headRefName,isDraft`).
 
-**Any other PR, non-interactive.** Keep its `body`, `headRefName`, `isCrossRepository` and `author` (`gh pr view <n>
---json body,headRefName,isCrossRepository,author`).
+**Any other PR, non-interactive.** Keep its `body`, `headRefName`, `headRefOid`, `isCrossRepository` and `author`
+(`gh pr view <n> --json body,headRefName,headRefOid,isCrossRepository,author`). Stop here, naming both shas, unless
+`git rev-parse HEAD` equals `headRefOid`: Step 3 judges threads against this checkout and Step 5.5 pushes all of it.
+Say the checkout must be at the PR's head (`gh pr checkout <n>`) and that a commit a refused push left local must be
+dealt with first.
 
 ## Step 2 — Fetch all review comments
 
