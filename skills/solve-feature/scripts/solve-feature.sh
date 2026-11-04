@@ -594,6 +594,9 @@ describe() {
   notes=$(sed -n "\|^$NOTES_BEGIN\$|,\|^$NOTES_END\$|p" <<<"$notes")
   # Not piped into grep -q: its early exit could fail the first grep under pipefail and drop the notes.
   [ -n "$(grep -vxE "$NOTES_BEGIN|$NOTES_END|## Notes for a person|Delete a note here once it is handled\.|[[:space:]]*" <<<"$notes" || true)" ] || notes=""
+  # The notes are what a coder or fixer says a person must do or decide, so they hold the draft. Read from the body, so
+  # a note survives a stop and a fresh runner, and one a person deleted no longer counts.
+  [ -z "$notes" ] || need=$(printf '%s\n%s' "$need" "notes for a person, in the section below: delete each once it is handled" | grep -v '^[[:space:]]*$')
   {
     echo "$BEGIN"
     # Written here, not by the writer subagent, so a reviewer always sees that agents wrote this PR.

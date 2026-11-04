@@ -14,7 +14,7 @@ no_pr_calls() { ! grep -E '^(pr (create|view|edit|ready)|api graphql)' "$STATE/g
 on_origin() { git ls-remote --exit-code origin "$1" >/dev/null; }
 coder_notes() { printf '%s\n' "- tag a release once this merges" > .coding-crew/solve-feature/coder.notes.md; }
 
-@test "a full run with publish false pushes nothing, calls no gh PR command and ends ready branch=<b> with the body in the local file" {
+@test "a full run with publish false pushes nothing, calls no gh PR command and ends needs-attention branch=<b> on a note, ready branch=<b> with none, the body in the local file" {
   no_publish
   # A coder's note lands in the local body's notes section as post_notes adds it to a PR body.
   run bash "$SCRIPT" start feat
@@ -71,8 +71,8 @@ EOF
   printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n' > .coding-crew/solve-feature/pr-local.summary.md
   run bash "$SCRIPT" describe feat local
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$output" = "ready branch=feature/feat" ]
-  [ "$(cat .coding-crew/solve-feature/outcome)" = "ready branch=feature/feat" ]
+  [ "$output" = "needs-attention branch=feature/feat" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention branch=feature/feat" ]
   [ "$(cat "$LOCAL")" = "$(cat <<EOF
 # Let users log in
 
@@ -82,6 +82,10 @@ EOF
 ## Why
 
 Users need accounts.
+
+## Needs attention
+
+- notes for a person, in the section below: delete each once it is handled
 
 <!-- solve-feature:notes:begin -->
 ## Notes for a person
@@ -102,6 +106,12 @@ Closes #3
 <!-- solve-feature:end -->
 EOF
 )" ]
+  # The last note deleted, nothing needs a person any more.
+  perl -0pi -e 's/### the fixer of[^\n]*\n\n- rotate the key\n\n//' "$LOCAL"
+  run bash "$SCRIPT" describe feat local
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "ready branch=feature/feat" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "ready branch=feature/feat" ]
   ! on_origin feature/feat || false
   no_pr_calls
 }

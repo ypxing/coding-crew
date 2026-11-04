@@ -103,8 +103,9 @@ review had a CRITICAL, HIGH or MEDIUM finding and the fixer changed something, `
 `review-again=yes` and the run reviews and fixes once more; the second fix is not reviewed again. What
 the last round did not fix is listed under `Needs attention` in the PR body, which keeps the PR a draft.
 Anything else a coder or the fixer says a person must do or decide goes into the PR body's `Notes for a person`
-section as soon as its work is pushed; delete a note there once it is handled, and later runs keep it deleted. Such a
-note does not keep the PR a draft.
+section as soon as its work is pushed, and `Needs attention` names the section. A note keeps the PR a draft, as the run
+ends `needs-attention`, until a person handles it: delete a note there once it is handled, and later runs keep it
+deleted; then mark the PR ready yourself, or re-run and let the run do it.
 
 ---
 
