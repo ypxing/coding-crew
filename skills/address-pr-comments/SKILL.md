@@ -74,7 +74,9 @@ line names. The head branch alone never makes a PR solve-feature's: its name is 
 (`gh pr view <n> --json body,headRefName,headRefOid,isCrossRepository,author`). Stop here, naming both shas, unless
 `git rev-parse HEAD` equals `headRefOid`: Step 3 judges threads against this checkout and Step 5.5 pushes all of it.
 Say the checkout must be at the PR's head (`gh pr checkout <n>`) and that a commit a refused push left local must be
-dealt with first.
+dealt with first. Stop too when `git status --porcelain` lists any staged, modified or untracked path, naming those
+paths and leaving them as they are (no stash, no discard): Step 5's commit takes the whole index, so they would be
+pushed as the review fix.
 
 ## Step 2 — Fetch all review comments
 
@@ -221,6 +223,9 @@ git push origin HEAD:<headRefName>
 
 A PR from a fork (`isCrossRepository` true) has no head branch on `origin`: do not push, and treat it as refused,
 with that as the reason.
+
+Then confirm the push reached the PR: `gh pr view <n> --json headRefOid` must equal `git rev-parse HEAD`. When it
+does not (`origin` is a fork or another repo), the push counts as refused, with that as the reason.
 
 - **Pushed** — on each thread the commit fixes, reply `Fixed in <sha>` (`git rev-parse --short HEAD`) and resolve it
   through `resolveReviewThread` (Step 3's mutations). The reply follows the push because a resolved thread is skipped

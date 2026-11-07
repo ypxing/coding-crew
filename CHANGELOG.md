@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- address-pr-comments: a non-interactive run on a PR solve-feature did not open now stops when the checkout has
+  uncommitted or untracked changes, naming them, so they are never pushed as the review fix; and a push that did not
+  move the PR's head (an `origin` that is a fork or another repo) counts as refused, with no `Fixed` reply (#706).
 - address-pr-comments: run non-interactively on a PR solve-feature did not open, it now pushes its commit to the PR's
   head branch (never forcing), then replies `Fixed in <sha>` and resolves each fixed thread, and @mentions the PR's
   author on a thread left for a person, so a host only has to start it. A refused push leaves those threads open and
