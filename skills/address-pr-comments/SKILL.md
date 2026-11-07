@@ -142,6 +142,12 @@ starts the next round on GitHub Actions, resolving the thread alone does not.
 gets the reply above and no edit in Step 4, with the thread left open. Every reply that leaves a thread open for a
 person @mentions the PR's author, in place of the feature root's assignees, and says to answer by replying on the
 thread and to ask for another round: a reply starts a round by itself only on a solve-feature PR on GitHub Actions.
+When the PR's author is a bot (Step 1's `author.is_bot`), that mention reaches no one: @mention the thread's
+commenter instead, the author of the thread's first comment in Step 2's output (never a comment that script
+removed), unless that author is a bot too, in which case keep the PR's author. The commenter is a bot when the
+comment's GraphQL `author { __typename }` is `Bot`: read it from the thread's node (`gh api graphql` on the thread
+`id`, `... on PullRequestReviewThread { comments(first: 100) { nodes { url author { __typename login } } } }`),
+matching the comment by its `url`. Not by a `[bot]` login: a bot's bare login is free for any user to take.
 
 Every reply, resolve and unresolve goes through `gh api graphql` (`addPullRequestReviewThreadReply`,
 `resolveReviewThread`, `unresolveReviewThread`, each on the thread's node `id`).

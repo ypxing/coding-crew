@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- address-pr-comments: on a bot's PR (Dependabot, say), a thread left for a person @mentions the thread's commenter
+  instead of the bot, whose mention reached no one; when the commenter is a bot too, it still @mentions the PR's
+  author (#705).
 - address-pr-comments: a non-interactive run on a PR solve-feature did not open now stops when the checkout has
   uncommitted or untracked changes, naming them, so they are never pushed as the review fix; and a push that did not
   move the PR's head (an `origin` that is a fork or another repo) counts as refused, with no `Fixed` reply (#706).
