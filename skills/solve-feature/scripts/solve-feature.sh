@@ -247,15 +247,16 @@ next() {
   echo "$ref"
 }
 
-# post_notes <pr> <file> <tag> — a non-empty notes file a subagent left for a person goes into the PR body's notes
-# section as one block, verbatim under `### <tag>`, then is deleted: only the body keeps it across a stop and a fresh
-# runner. The tag is written into the file first, so the file a failed write leaves is ready to add by hand.
+# post_notes <pr> <file> <tag> [<then>] — a non-empty notes file a subagent left for a person goes into the PR body's
+# notes section as one block, verbatim under `### <tag>`, then is deleted: only the body keeps it across a stop and a
+# fresh runner. The tag is written into the file first, so the file a failed write leaves is ready to add by hand;
+# <then> is what the caller's stop says to run after that.
 post_notes() {
   local n="$1" f="$2" body new why
   [ -s "$f" ] || return 0
   { printf '### %s\n\n' "$3"; cat "$f"; } >"$f.tmp" && mv "$f.tmp" "$f"
-  why="adding $f to PR #$n's body failed: add its contents to the PR body's Notes for a person section by hand (gh pr edit $n), then rm $f before a re-run (on Actions the file is in the run's artifact)"
-  [ "$PUBLISH" = yes ] || why="adding $f to $(local_body) failed: add its contents to that file's Notes for a person section by hand, then rm $f before a re-run"
+  why="adding $f to PR #$n's body failed: add its contents to the PR body's Notes for a person section by hand (gh pr edit $n), then rm $f before a re-run (on Actions the file is in the run's artifact)${4:+; then $4}"
+  [ "$PUBLISH" = yes ] || why="adding $f to $(local_body) failed: add its contents to that file's Notes for a person section by hand, then rm $f before a re-run${4:+; then $4}"
   body=$(pr_body_read "$n") || die "$why"
   new="$LOGS/pr-$n.notes-body.md"
   if grep -qxF "$NOTES_END" <<<"$body"; then
@@ -528,7 +529,7 @@ fix() {
   git diff --cached --quiet || git commit -q -m "Fix the review's findings$([ "$PUBLISH" = no ] || echo " on PR #$PR")"
   # Before any stop below: a re-run's start deletes the file, so only the body keeps the note. After the commit, so a
   # failed write leaves the clean tree start needs.
-  post_notes "$PR" "$LOGS/pr-$PR.notes.md" "the fixer of $pr_name's review · $(date +%F)"
+  post_notes "$PR" "$LOGS/pr-$PR.notes.md" "the fixer of $pr_name's review · $(date +%F)" "run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   # A failed fetch skips the merge: the push owns that failure.
   if fetch_branch && ! merge_in "origin/$BRANCH"; then
     local why="merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS"

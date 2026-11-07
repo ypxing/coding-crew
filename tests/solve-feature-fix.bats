@@ -690,14 +690,14 @@ notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-fe
   needs_person_for_notes
 }
 
-@test "a failed gh pr edit stops fix with the fixer's edits committed, naming the file, the by-hand way and the artifact" {
+@test "a failed gh pr edit stops fix with the fixer's edits committed, naming the file, the by-hand way, the artifact and the fix to re-run" {
   fix_ready
   local f="$WORK/.coding-crew/solve-feature/pr-10.notes.md"
   echo '- a note' > "$f"
   echo fixed > fixed.txt
   GH_EDIT_FAIL=1 run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 1 ]
-  [[ "$output" == *"solve-feature: "*"$f"*"Notes for a person"*"gh pr edit 10"*"rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"solve-feature: "*"$f"*"Notes for a person"*"gh pr edit 10"*"rm $f"*"artifact"*"run fix feat 10 feature/feat, then describe feat 10"* ]] || { echo "$output"; return 1; }
   [ "$(head -n1 "$f")" = "### the fixer of PR #10's review · $(date +%F)" ]
   # A re-run's start refuses a dirty tree, so the stop leaves none.
   [ -z "$(git status --porcelain)" ]
