@@ -240,20 +240,23 @@ next() {
   # backend's validateRef, so a ref it rejects stops here, before it reaches the coder's prompt.
   node "$CLI" fetch "$ref" >"$LOGS/${ref//\//_}.issue.md" || die "fetch $ref failed (see above)"
   # One coder at a time writes its report here; an earlier one's would read as this coder's at land's solve stop.
-  rm -f "$LOGS/coder.report.md" "$LOGS/coder.notes.md"
+  # Its notes go with it, unless this is the same issue again: a land that stopped before there was a PR left them.
+  rm -f "$LOGS/coder.report.md"
+  [ "$ref" = "$REF" ] || rm -f "$LOGS/coder.notes.md"
   printf '%s\t%s\n' "$ref" "$(git branch --show-current)" >"$(landing)"
   echo "$ref"
 }
 
-# post_notes <pr> <file> <tag> — a non-empty notes file a subagent left for a person goes into the PR body's notes
-# section as one block, verbatim under `### <tag>`, then is deleted: only the body keeps it across a stop and a fresh
-# runner. The tag is written into the file first, so the file a failed write leaves is ready to add by hand.
+# post_notes <pr> <file> <tag> [<then>] — a non-empty notes file a subagent left for a person goes into the PR body's
+# notes section as one block, verbatim under `### <tag>`, then is deleted: only the body keeps it across a stop and a
+# fresh runner. The tag is written into the file first, so the file a failed write leaves is ready to add by hand;
+# <then> is what the caller's stop says to run after that.
 post_notes() {
   local n="$1" f="$2" body new why
   [ -s "$f" ] || return 0
   { printf '### %s\n\n' "$3"; cat "$f"; } >"$f.tmp" && mv "$f.tmp" "$f"
-  why="adding $f to PR #$n's body failed: add its contents to the PR body's Notes for a person section by hand (gh pr edit $n), then rm $f before a re-run (on Actions the file is in the run's artifact)"
-  [ "$PUBLISH" = yes ] || why="adding $f to $(local_body) failed: add its contents to that file's Notes for a person section by hand, then rm $f before a re-run"
+  why="adding $f to PR #$n's body failed: add its contents to the PR body's Notes for a person section by hand (gh pr edit $n), then rm $f before a re-run (on Actions the file is in the run's artifact)${4:+; then $4}"
+  [ "$PUBLISH" = yes ] || why="adding $f to $(local_body) failed: add its contents to that file's Notes for a person section by hand, then rm $f before a re-run${4:+; then $4}"
   body=$(pr_body_read "$n") || die "$why"
   new="$LOGS/pr-$n.notes-body.md"
   if grep -qxF "$NOTES_END" <<<"$body"; then
@@ -353,6 +356,11 @@ land() {
   [ -f "$LOGS/$rs.issue.md" ] || die "no saved issue for $REF: run next first"
   checks_lib
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop solve "branch changed to '$(git branch --show-current)'"
+  # With a PR open a note goes into its body now, so no stop below loses it; start and next delete only a local file.
+  if [ -s "$LOGS/coder.notes.md" ]; then
+    pr_view
+    [ -z "$PR_N" ] || post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)" "run land $SLUG $REF $BRANCH"
+  fi
   [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || stop solve "working tree left dirty$([ ! -s "$LOGS/coder.report.md" ] || echo "; why: $LOGS/coder.report.md")"
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
@@ -519,6 +527,9 @@ fix() {
   git ls-files -z -m -o --exclude-standard -- "${BRANCH_WORK[@]}" | xargs -0 -r git add -A -- ||
     stop fix "git add failed (see above): stage and commit the fixer's edits by hand, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings$([ "$PUBLISH" = no ] || echo " on PR #$PR")"
+  # Before any stop below: a re-run's start deletes the file, so only the body keeps the note. After the commit, so a
+  # failed write leaves the clean tree start needs.
+  post_notes "$PR" "$LOGS/pr-$PR.notes.md" "the fixer of $pr_name's review · $(date +%F)" "run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   # A failed fetch skips the merge: the push owns that failure.
   if fetch_branch && ! merge_in "origin/$BRANCH"; then
     local why="merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS"
@@ -532,7 +543,6 @@ fix() {
   commit_rewrites || stop fix "committing the checks' rewrites failed (see above): commit them, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   [ "$PUBLISH" = no ] || push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   git rev-parse HEAD >"$LOGS/review.base"
-  post_notes "$PR" "$LOGS/pr-$PR.notes.md" "the fixer of $pr_name's review · $(date +%F)"
 
   # "Changed nothing" is no commit on the branch's own line past the round's head: what merge_in brought in sits
   # behind a merge's second parent, and a fix committed here and pushed by hand still counts. The checks' rewrites are
@@ -593,7 +603,11 @@ describe() {
   notes=$(pr_body_read "$PR") || die "reading PR $PR's body failed"
   notes=$(sed -n "\|^$NOTES_BEGIN\$|,\|^$NOTES_END\$|p" <<<"$notes")
   # Not piped into grep -q: its early exit could fail the first grep under pipefail and drop the notes.
-  [ -n "$(grep -vxE "$NOTES_BEGIN|$NOTES_END|## Notes for a person|Delete a note here once it is handled\.|[[:space:]]*" <<<"$notes" || true)" ] || notes=""
+  # A tag post_notes wrote is no note: one left after its note's text was deleted must not hold the draft.
+  [ -n "$(grep -vxE "$NOTES_BEGIN|$NOTES_END|## Notes for a person|Delete a note here once it is handled\.|### the (coder|fixer) of .* · [0-9]{4}-[0-9]{2}-[0-9]{2}|[[:space:]]*" <<<"$notes" || true)" ] || notes=""
+  # The notes are what a coder or fixer says a person must do or decide, so they hold the draft. Read from the body, so
+  # a note survives a stop and a fresh runner, and one a person deleted no longer counts.
+  [ -z "$notes" ] || need=$(printf '%s\n%s' "$need" "notes for a person, in the section below: delete each once it is handled" | grep -v '^[[:space:]]*$')
   {
     echo "$BEGIN"
     # Written here, not by the writer subagent, so a reviewer always sees that agents wrote this PR.

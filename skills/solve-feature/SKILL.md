@@ -26,7 +26,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    2. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Use the solve-issue skill on <ref>; write your outcome and
      report to <repo>/.coding-crew/solve-feature/coder.report.md, and anything a person must do or decide to
-     <repo>/.coding-crew/solve-feature/coder.notes.md, leaving that file absent when there is none`. When `coder-model=`
+     <repo>/.coding-crew/solve-feature/coder.notes.md, keeping what that file already holds, leaving it absent when there is none`. When `coder-model=`
      is non-empty, run it on the model in your own list that matches that name (a family, with an optional
      version): a version you do not offer → the closest model of the same family; a family you do not offer → your
      own model. When it is empty, on your own. Wait for it to finish.
@@ -62,7 +62,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      <repo>/.coding-crew/solve-feature/pr-<n>.notes.md, left absent when there is none. This run is non-interactive; ask no questions`. Run it on `coder-model=` as for each issue's coder.
      Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" fix <slug> <n> <branch>` — always, whatever the subagents
-     reported. It gates the fixes with the checks, commits and pushes them, adds the fixer's notes to the PR body's notes section,
+     reported. It adds the fixer's notes to the PR body's notes section, gates the fixes with the checks, commits and pushes them,
      and records what needs a person.
      Report its last line, `FIX: findings=<k> needs-attention=<a> review-again=yes|no`. After the first review,
      `review-again=yes` means run 3.1–3.3 once more; after the second review, go on to 3.4 whatever it prints.

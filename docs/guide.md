@@ -103,8 +103,9 @@ review had a CRITICAL, HIGH or MEDIUM finding and the fixer changed something, `
 `review-again=yes` and the run reviews and fixes once more; the second fix is not reviewed again. What
 the last round did not fix is listed under `Needs attention` in the PR body, which keeps the PR a draft.
 Anything else a coder or the fixer says a person must do or decide goes into the PR body's `Notes for a person`
-section as soon as its work is pushed; delete a note there once it is handled, and later runs keep it deleted. Such a
-note does not keep the PR a draft.
+section before its work is gated (a first coder's once its land opens the PR), so a stop never loses it, and `Needs attention` names the section. A note keeps the PR a draft, as the run
+ends `needs-attention`, until a person handles it: delete a note there once it is handled, and later runs keep it
+deleted; then mark the PR ready yourself, or re-run and let the run do it.
 
 ---
 
@@ -481,7 +482,7 @@ Nothing removes a worktree: `git worktree remove <path>` once you are done with 
 
 ### PR rework
 
-Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it files the accepted comments as one `ready-for-agent` issue of the PR's feature and runs `/solve-feature` on the PR's branch, which fixes, checks and reviews it like any other issue and, in its describe step, marks the PR ready unless something needs a person (listed under `Needs attention` in the PR body); it then replies `Fixed in <sha>` on each accepted thread, or re-opens the threads when the run stopped. It never edits or pushes code itself there. On any other PR it fixes the comments and commits, but does not push.
+Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it files the accepted comments as one `ready-for-agent` issue of the PR's feature and runs `/solve-feature` on the PR's branch, which fixes, checks and reviews it like any other issue and, in its describe step, marks the PR ready unless something needs a person (listed under `Needs attention` in the PR body); it then replies `Fixed in <sha>` on each accepted thread, or re-opens the threads when the run stopped. It never edits or pushes code itself there. On any other PR it fixes the comments and commits, but does not push; run non-interactively by a host (`Use the address-pr-comments skill on PR #<n>; this run is non-interactive`), it first stops unless the checkout is at the PR's head, and it also pushes that commit to the PR's head branch, never forcing, then replies `Fixed in <sha>` and resolves each fixed thread. A refused push leaves those threads open and the commit local, and the summary quotes git's reason. A thread left for a person @mentions the PR's author. How such a run starts is the host's: this repo's workflow runs rounds only on solve-feature PRs.
 
 ---
 
@@ -571,8 +572,8 @@ exits the session without failing it, so the job's last step fails it unless the
 describe`) once it has marked the PR ready. It fails on `needs-attention pr=<n>`, on a stop a script
 recorded (`stopped: <what> failed: <reason>`), and when the file is absent because the session ended before the run
 finished. The same step writes the run's summary page: the outcome, the PR, the model, and what to read next
-(a stop's coder report and checks log tail, a needs-attention's list), so a failed run says why without the
-artifact. Tools the agent runs add nothing to it: the agent runs without `GITHUB_STEP_SUMMARY`, so test runners
+(a stop's coder report and checks log tail, the list of what a needs-attention's review left; notes and open threads
+are named in the PR body's `Needs attention`), so a failed run says why or where to read it, without the artifact. Tools the agent runs add nothing to it: the agent runs without `GITHUB_STEP_SUMMARY`, so test runners
 that write a job summary (Vitest) do not find it.
 
 The job pushes and opens the PR with the workflow's own `GITHUB_TOKEN`, so the PR's `pull_request` runs wait for

@@ -639,7 +639,7 @@ git_fails() {
 # notes_section — the body's notes section, its markers included.
 notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-feature:notes:end -->$/p' "$STATE/pr-body"; }
 
-@test "fix writes a non-empty pr-<n>.notes.md after its push into the PR body's notes section under the fixer, the PR and the date, deletes it, and a second round writes nothing" {
+@test "fix writes a non-empty pr-<n>.notes.md into the PR body's notes section under the fixer, the PR and the date, deletes it, and a second round writes nothing" {
   fix_ready
   TIP=$(git rev-parse HEAD)
   printf '%s\n' "- rotate the CI token after merge" > .coding-crew/solve-feature/pr-10.notes.md
@@ -659,30 +659,51 @@ notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-fe
   [ "$(grep -c '^pr edit 10' "$STATE/gh.log")" = 1 ]
 }
 
-@test "fix whose checks or push stop writes no notes; a failed gh pr edit stops naming the file, the by-hand way and the artifact" {
-  fix_ready
-  TIP=$(git rev-parse HEAD)
-  local f="$WORK/.coding-crew/solve-feature/pr-10.notes.md"
-  echo '- a note' > "$f"
-  : > "$STATE/gh.log"
-  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 1 ]
-  ! grep -qE '^pr (comment|edit)' "$STATE/gh.log" || false
-  [ "$(cat "$f")" = '- a note' ]
-  refuse_pushes
+@test "a fixer's note reaches the PR body before fix's merge, checks and push, so a stop at any of them and a re-run keep it" {
+  fix_ready '{"spec":"met","gaps":[],"findings":[]}'
+  local f="$WORK/.coding-crew/solve-feature/pr-10.notes.md" n=0
+  for stop in checks push merge; do
+    n=$((n + 1))
+    echo "- note before the $stop stop" > "$f"
+    case $stop in
+      checks) CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat ;;
+      push) refuse_pushes; run bash "$SCRIPT" fix feat 10 feature/feat; rm "$TEMP_DIR/origin.git/hooks/pre-receive" ;;
+      merge)
+        echo mine > clash.txt && git add clash.txt && git commit -q -m mine
+        branch_moves clash.txt theirs >/dev/null
+        run bash "$SCRIPT" fix feat 10 feature/feat
+        git reset -q --hard origin/feature/feat ;;
+    esac
+    [ "$status" -eq 1 ] || { echo "$stop: exit $status: $output"; return 1; }
+    [ ! -e "$f" ]
+    grep -qx -- "- note before the $stop stop" "$STATE/pr-body"
+    [ "$(grep -c '^### the fixer of PR #10' "$STATE/pr-body")" = "$n" ]
+  done
+  # A plain re-run's start wipes the run's files, and the next review comes back clean.
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  report '{"spec":"met","gaps":[],"findings":[]}'
   run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"git push failed"* ]] || { echo "$output"; return 1; }
-  ! grep -qE '^pr (comment|edit)' "$STATE/gh.log" || false
-  [ "$(cat "$f")" = '- a note' ]
-  rm "$TEMP_DIR/origin.git/hooks/pre-receive"
-  GH_EDIT_FAIL=1 run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"solve-feature: "*"$f"*"Notes for a person"*"gh pr edit 10"*"rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
-  [ "$(head -n1 "$f")" = "### the fixer of PR #10's review · $(date +%F)" ]
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  needs_person_for_notes
 }
 
-@test "describe carries the notes section from the current body verbatim after Needs attention, and its outcome stays the review's" {
+@test "a failed gh pr edit stops fix with the fixer's edits committed, naming the file, the by-hand way, the artifact and the fix to re-run" {
+  fix_ready
+  local f="$WORK/.coding-crew/solve-feature/pr-10.notes.md"
+  echo '- a note' > "$f"
+  echo fixed > fixed.txt
+  GH_EDIT_FAIL=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"solve-feature: "*"$f"*"Notes for a person"*"gh pr edit 10"*"rm $f"*"artifact"*"run fix feat 10 feature/feat, then describe feat 10"* ]] || { echo "$output"; return 1; }
+  [ "$(head -n1 "$f")" = "### the fixer of PR #10's review · $(date +%F)" ]
+  # A re-run's start refuses a dirty tree, so the stop leaves none.
+  [ -z "$(git status --porcelain)" ]
+}
+
+@test "describe carries the notes section from the current body verbatim after Needs attention" {
   fix_ready '{"spec":"met","gaps":[],"findings":[]}'
   echo '- tag a release after merge' > .coding-crew/solve-feature/pr-10.notes.md
   run bash "$SCRIPT" fix feat 10 feature/feat
@@ -690,12 +711,111 @@ notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-fe
   local section; section=$(notes_section)
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$output" = "ready pr=10" ]
   [ "$(notes_section)" = "$section" ]
   [ "$(grep -A2 '^<!-- solve-feature:notes:end -->$' "$STATE/pr-body")" = "$(printf '%s\n' '<!-- solve-feature:notes:end -->' '' 'Spec: PRD #1, feature `feat`')" ]
   # A second describe neither drops nor doubles it.
   run bash "$SCRIPT" describe feat 10
   [ "$(notes_section)" = "$section" ]
+}
+
+# needs_person_for_notes — describe's outcome, the draft and the body when notes are all that needs a person.
+needs_person_for_notes() {
+  [ "$output" = "needs-attention pr=10" ] || { echo "$output"; return 1; }
+  ! grep -q '^pr ready 10' "$STATE/gh.log" || false
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention pr=10" ]
+  [ "$(sed -n '/^## Needs attention$/,/^<!-- solve-feature:notes:begin -->$/p' "$STATE/pr-body")" = "$(printf '%s\n' '## Needs attention' '' '- notes for a person, in the section below: delete each once it is handled' '' '<!-- solve-feature:notes:begin -->')" ]
+}
+
+@test "a coder's note leaves the PR a draft, ends needs-attention and is named under Needs attention, whatever the review found" {
+  run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
+  run bash "$SCRIPT" next feat; [ "$output" = 2 ]
+  coder 2
+  echo '- set the CREW_X repo variable' > .coding-crew/solve-feature/coder.notes.md
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" next feat; [ "$output" = 3 ]
+  coder 3
+  run bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  report '{"spec":"met","gaps":[],"findings":[]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -z "$(attention)" ]
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  needs_person_for_notes
+  grep -qx -- '- set the CREW_X repo variable' "$STATE/pr-body"
+}
+
+@test "a note from the first round's fixer still holds the draft after a clean second round" {
+  fix_ready
+  echo '- decide whether to check each comment author' > .coding-crew/solve-feature/pr-10.notes.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  report '{"spec":"met","gaps":[],"findings":[]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -z "$(attention)" ]
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  needs_person_for_notes
+}
+
+@test "a re-run after a stop still counts a note written before the stop" {
+  fix_ready '{"spec":"met","gaps":[],"findings":[]}'
+  echo '- rotate the CI token after merge' > .coding-crew/solve-feature/pr-10.notes.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  # The run's own files are gone on a re-run: start wipes them, and a fresh runner never had them.
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  report '{"spec":"met","gaps":[],"findings":[]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  needs_person_for_notes
+  grep -qx -- '- rotate the CI token after merge' "$STATE/pr-body"
+}
+
+@test "once a person has deleted every note and nothing else needs one, a re-run's describe marks the PR ready" {
+  fix_ready '{"spec":"met","gaps":[],"findings":[]}'
+  echo '- rotate the CI token after merge' > .coding-crew/solve-feature/pr-10.notes.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  needs_person_for_notes
+  awk '/^### / { skip = 1; next } /^<!-- solve-feature:notes:end/ { skip = 0 } !skip' "$STATE/pr-body" > "$STATE/pr-body.new"
+  mv "$STATE/pr-body.new" "$STATE/pr-body"
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "ready pr=10" ]
+  ! grep -q '^## Needs attention$\|solve-feature:notes' "$STATE/pr-body" || false
+  grep -q '^pr ready 10' "$STATE/gh.log"
+}
+
+@test "a note's tag left behind holds no draft: the section goes and describe marks the PR ready" {
+  fix_ready '{"spec":"met","gaps":[],"findings":[]}'
+  echo '- rotate the CI token after merge' > .coding-crew/solve-feature/pr-10.notes.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -vxF -- '- rotate the CI token after merge' "$STATE/pr-body" > "$STATE/pr-body.new"
+  mv "$STATE/pr-body.new" "$STATE/pr-body"
+  grep -q "^### the fixer of PR #10's review" "$STATE/pr-body"
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "ready pr=10" ]
+  ! grep -q '^## Needs attention$\|solve-feature:notes' "$STATE/pr-body" || false
+}
+
+@test "a note that is only a heading of its own still holds the draft" {
+  fix_ready '{"spec":"met","gaps":[],"findings":[]}'
+  echo '### Rotate the CI token' > .coding-crew/solve-feature/pr-10.notes.md
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  needs_person_for_notes
 }
 
 @test "describe keeps a person's deletions: a deleted note is not restored, and a section with no note left is dropped" {

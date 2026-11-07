@@ -6,6 +6,18 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- address-pr-comments: a non-interactive run on a PR solve-feature did not open now stops when the checkout has
+  uncommitted or untracked changes, naming them, so they are never pushed as the review fix; and a push that did not
+  move the PR's head (an `origin` that is a fork or another repo) counts as refused, with no `Fixed` reply (#706).
+- address-pr-comments: run non-interactively on a PR solve-feature did not open, it now pushes its commit to the PR's
+  head branch (never forcing), then replies `Fixed in <sha>` and resolves each fixed thread, and @mentions the PR's
+  author on a thread left for a person, so a host only has to start it. A refused push leaves those threads open and
+  the summary quotes git's reason, and a checkout not at the PR's head stops the run before it touches a thread.
+  Interactive runs and solve-feature PRs are unchanged (#681).
+- solve-feature: a coder's or fixer's note for a person now keeps the PR a draft: the run ends `needs-attention`, and
+  `Needs attention` names the notes section until a person deletes the notes. Before, the PR was marked ready with
+  them still open. A note now reaches the PR body before the checks and the push once the PR is open, so a stop no
+  longer loses it (#662).
 - solve-feature: what a failed check staged (a check that runs `git add`, such as lint-staged) is discarded too, so
   the issue's reopen commit no longer pushes it to the feature branch (#703).
 

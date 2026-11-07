@@ -589,7 +589,65 @@ EOF
   ! grep -q 'solve-feature:notes' "$STATE/pr-body" || false
 }
 
-@test "land that stops at its checks or its push writes no notes and leaves coder.notes.md in place" {
+@test "with a PR open, a coder's note reaches the body before land's checks and push, so a stop and a fresh runner keep it" {
+  land_ready
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$output" = pr=10 ]
+  run bash "$SCRIPT" next feat
+  [ "$output" = 3 ]
+  coder 3
+  local f=.coding-crew/solve-feature/coder.notes.md
+  echo '- a note before the checks stop' > "$f"
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 1 ]
+  [ ! -e "$f" ]
+  grep -qx -- '- a note before the checks stop' "$STATE/pr-body"
+  run bash "$SCRIPT" next feat
+  [ "$output" = 3 ]
+  coder 3
+  echo '- a note before the push stop' > "$f"
+  refuse_pushes
+  run bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"3 push failed"* ]] || { echo "$output"; return 1; }
+  [ ! -e "$f" ]
+  grep -qx -- '- a note before the push stop' "$STATE/pr-body"
+  grep -qx -- '- a note before the checks stop' "$STATE/pr-body"
+}
+
+@test "with a PR open, a failed notes write before land's checks and push says to run land after adding the note, and doing so lands the issue" {
+  land_ready
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$output" = pr=10 ]
+  run bash "$SCRIPT" next feat
+  coder 3
+  local f="$WORK/.coding-crew/solve-feature/coder.notes.md"
+  echo '- a note whose write fails' > "$f"
+  GH_EDIT_FAIL=1 run bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"rm $f before a re-run"*"; then run land feat 3 feature/feat"* ]] || { echo "$output"; return 1; }
+  grep -q "then run land feat 3 feature/feat" .coding-crew/solve-feature/outcome
+  rm "$f"
+  run bash "$SCRIPT" land feat 3 feature/feat
+  [ "$output" = pr=10 ] || { echo "$output"; return 1; }
+  [ -z "$(git rev-list origin/feature/feat..feature/feat)" ]
+}
+
+@test "with no PR yet, a coder's note left by a land that stopped stays for the same issue's next land" {
+  land_ready
+  notes
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  run bash "$SCRIPT" next feat
+  [ "$output" = 2 ]
+  [ -s .coding-crew/solve-feature/coder.notes.md ]
+  coder 2
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$output" = pr=10 ] || { echo "$output"; return 1; }
+  grep -qx -- '- set the CREW_X repo variable' "$STATE/pr-body"
+}
+
+@test "with no PR yet, land that stops at its checks or its push writes no notes and leaves coder.notes.md in place" {
   land_ready
   notes
   CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
