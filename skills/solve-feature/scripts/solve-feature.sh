@@ -359,7 +359,7 @@ land() {
   # With a PR open a note goes into its body now, so no stop below loses it; start and next delete only a local file.
   if [ -s "$LOGS/coder.notes.md" ]; then
     pr_view
-    [ -z "$PR_N" ] || post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)"
+    [ -z "$PR_N" ] || post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)" "run land $SLUG $REF $BRANCH"
   fi
   [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || stop solve "working tree left dirty$([ ! -s "$LOGS/coder.report.md" ] || echo "; why: $LOGS/coder.report.md")"
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).

@@ -16,7 +16,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   Interactive runs and solve-feature PRs are unchanged (#681).
 - solve-feature: a coder's or fixer's note for a person now keeps the PR a draft: the run ends `needs-attention`, and
   `Needs attention` names the notes section until a person deletes the notes. Before, the PR was marked ready with
-  them still open. A note now reaches the PR body before the checks and the push, so a stop no longer loses it (#662).
+  them still open. A note now reaches the PR body before the checks and the push once the PR is open, so a stop no
+  longer loses it (#662).
 - solve-feature: what a failed check staged (a check that runs `git add`, such as lint-staged) is discarded too, so
   the issue's reopen commit no longer pushes it to the feature branch (#703).
 
