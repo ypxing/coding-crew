@@ -68,8 +68,8 @@ name: crew-solve-feature
 # so a label run it cancelled is not lost; a round a later run cancelled waits for the next review. Only
 # Copilot's reviewer (copilot-pull-request-reviewer[bot]) or a user with write, maintain or admin permission starts
 # one: anyone else's review, the agent's own replies included, ends the slug job with a notice and runs no session.
-# A round that started no solve-feature run, or ended needs-attention (the owner was @mentioned on the thread),
-# ends with a notice rather than a failed job; a stopped one still fails.
+# A round that started no solve-feature run, or ended needs-attention (the PR body's Needs attention says why: a
+# thread whose owner was @mentioned, or a note), ends with a notice rather than a failed job; a stopped one still fails.
 #
 # Copilot's review: GitHub never starts it on a PR the bot marks ready, so after a run that ends `ready pr=<n>`
 # on a PR Copilot has not reviewed yet, the request-copilot-review job (off the agent's runner) requests it with the
@@ -579,7 +579,9 @@ jobs:
                 ref=${ref%% checks failed: *}; files="$logs/coder.report.md $logs/${ref//\//_}.checks.log" ;;
               "stopped: "*" fix failed: "*) files=$(ls -t "$logs"/pr-*.checks.log 2>/dev/null | head -n 1) ;;
               "stopped: sync failed: run-checks.sh"*) files="$logs/sync.checks.log" ;;
-              needs-attention*) files="$logs/pr-$pr.attention.md" ;;
+              needs-attention*)
+                echo "- Needs attention: the PR body's \`Needs attention\` section lists every item, notes included"
+                files="$logs/pr-$pr.attention.md" ;;
               *) files="" ;;
             esac
             for f in $files; do
@@ -587,7 +589,7 @@ jobs:
               printf '\n<details open><summary>%s</summary>\n\n```text\n%s\n```\n\n</details>\n' "${f#"$logs"/}" "$(tail -n 60 "$f")"
             done
           } >> "$GITHUB_STEP_SUMMARY"
-          # A review round waiting on a person is not a failure: the PR's draft state and open threads show it.
+          # A review round waiting on a person is not a failure: the PR's draft state and its body's Needs attention show it.
           case "$line" in
             ready*) echo "solve-feature: $line" ;;
             "triaged #"*) echo "::notice::crew-triage: $line" ;;
