@@ -224,8 +224,9 @@ git push origin HEAD:<headRefName>
 A PR from a fork (`isCrossRepository` true) has no head branch on `origin`: do not push, and treat it as refused,
 with that as the reason.
 
-Then confirm the push reached the PR: `gh pr view <n> --json headRefOid` must equal `git rev-parse HEAD`. When it
-does not (`origin` is a fork or another repo), the push counts as refused, with that as the reason.
+Then confirm the push reached the PR: `gh pr view <n> --json headRefOid` must equal `git rev-parse HEAD`. GitHub
+updates a PR's head a few seconds after the push, so re-read it every 5 seconds for up to 30 seconds before deciding.
+When it still does not match (`origin` is a fork or another repo), the push counts as refused, with that as the reason.
 
 - **Pushed** — on each thread the commit fixes, reply `Fixed in <sha>` (`git rev-parse --short HEAD`) and resolve it
   through `resolveReviewThread` (Step 3's mutations). The reply follows the push because a resolved thread is skipped
