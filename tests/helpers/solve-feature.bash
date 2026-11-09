@@ -241,6 +241,12 @@ fix_ready() {
   report "${1:-$two}"
   echo fixed > fixed.txt
 }
+# rereview [<pr>] — the next round's reviewer writes the last kept round's report again (fix moves each round's away).
+rereview() {
+  local d=.coding-crew/solve-feature/pr-${1:-10} k=1
+  while [ -f "$d.r$((k + 1)).review.json" ]; do k=$((k + 1)); done
+  cp "$d.r$k.review.json" "$d.review.json"
+}
 # report <json> — the reviewer's report.
 report() { printf '%s\n' "$1" > .coding-crew/solve-feature/pr-10.review.json; }
 pushed() { [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]; }

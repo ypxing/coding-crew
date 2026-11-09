@@ -16,6 +16,11 @@ outcome() {
   [ -n "$LOGS" ] || return 0
   [ "$CMD" = next ] && grep -q '^stopped:' "$LOGS/outcome" 2>/dev/null && return 0
   printf '%s\n' "$1" >"$LOGS/outcome"
+  # result.json: the same ending with its evidence, for a host that writes the PR itself. Removed first, so a failed
+  # render leaves none rather than an earlier ending's; the failure never changes this ending.
+  rm -f "$LOGS/result.json"
+  node "$SELF/result.mjs" --logs "$LOGS" --cli "${CLI:-}" --default "$(default_branch)" --publish "${PUBLISH:-yes}" --pr "${PR:-${PR_N:-}}" ||
+    echo "solve-feature: writing $LOGS/result.json failed (see above)" >&2
 }
 die() { echo "solve-feature: $*" >&2; outcome "stopped: $CMD failed: $*"; exit 1; }
 usage() {
@@ -53,7 +58,7 @@ MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 BRANCH_WORK=(. ':!.coding-crew/config.json') SETUP_FILES=(.coding-crew/config.json)
 git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 ||
   { BRANCH_WORK+=(':!.coding-crew/dev-commands.json'); SETUP_FILES+=(.coding-crew/dev-commands.json); }
-[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head \
+[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS/result.json" "$LOGS"/pr-*.r[0-9]*.* "$LOGS"/*.checks.head "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head \
   "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base"
 # solveFeature.publish: false keeps the run on this machine: no push, no PR, the body in local_body's file. Read from
 # the user-level config only: an Actions runner has none, so it never keeps commits that vanish with the runner.
@@ -241,8 +246,10 @@ next() {
   node "$CLI" fetch "$ref" >"$LOGS/${ref//\//_}.issue.md" || die "fetch $ref failed (see above)"
   # One coder at a time writes its report here; an earlier one's would read as this coder's at land's solve stop.
   # Its notes go with it, unless this is the same issue again: a land that stopped before there was a PR left them.
-  rm -f "$LOGS/coder.report.md"
+  # Its red lines are this dispatch's coder's, and the ref is kept for result.json, which knows issues by spec id.
+  rm -f "$LOGS/coder.report.md" "$LOGS/${ref//\//_}.red.md"
   [ "$ref" = "$REF" ] || rm -f "$LOGS/coder.notes.md"
+  printf '%s\n' "$ref" >"$LOGS/${ref//\//_}.ref"
   printf '%s\t%s\n' "$ref" "$(git branch --show-current)" >"$(landing)"
   echo "$ref"
 }
@@ -385,6 +392,7 @@ land() {
   [ "$rc" != 3 ] || hand_back "no check commands known (DISCOVER): the coder discovered none" "run /setup-coding-crew, then re-run" "$clog"
   [ "$rc" = 0 ] || hand_back "run-checks.sh exit $rc" "fix the cause, then re-run" "$clog"
   commit_rewrites || hand_back "committing the checks' rewrites failed (see above)" "commit them, then re-run" "$clog"
+  git rev-parse HEAD >"$LOGS/$rs.checks.head"
   # Any failed push reopens the issue, unretried: an Actions runner's commits go with its job, so a closed issue
   # would count as landed work that exists nowhere. Here a re-run finds the commits, since start never resets a branch.
   if [ "$PUBLISH" = yes ] && ! push -u origin "$BRANCH"; then
@@ -448,7 +456,7 @@ sync() {
     echo "conflicts=$MERGE_CONFLICTS"
     exit 4
   fi
-  rm -f "$LOGS/outcome"
+  rm -f "$LOGS/outcome" "$LOGS/result.json"
   # As in land: a commit someone else pushed to the branch would refuse the push, on every re-run. A branch never
   # pushed (PUBLISH=no) has no origin copy to merge.
   if git rev-parse -q --verify "refs/remotes/origin/$BRANCH" >/dev/null && ! merge_in "origin/$BRANCH"; then
@@ -558,7 +566,18 @@ fix() {
   [ "$total" = 0 ] || [ "$moved" = yes ] || [ -s "$unfixed" ] || attention+=$'\n'"the fixer changed nothing"
   # Fixes to a CRITICAL/HIGH/MEDIUM finding are worth reviewing again; SKILL.md caps that at one re-review.
   [ "$severe" = 0 ] || [ "$moved" = no ] || again=yes
-  rm -f "$unfixed"
+  # The round is kept for result.json, and the live paths emptied, so the next round's reviewer and fixer start from
+  # none. The checks log is copied: the PR writer reads the live one.
+  local k=0 f n
+  for f in "$LOGS/pr-$PR".r[0-9]*.review.json; do
+    [[ "$f" =~ \.r([0-9]+)\.review\.json$ ]] && n=${BASH_REMATCH[1]} && [ "$n" -gt "$k" ] && k=$n || true
+  done
+  k="$LOGS/pr-$PR.r$((k + 1))"
+  jq -n --argjson c "$([ "$moved" = yes ] && echo true || echo false)" --arg h "$(cat "$LOGS/review.base")" \
+    '{fixer_changed_code: $c, checks_commit: $h}' >"$k.fix"
+  cp "$clog" "$k.checks.log"
+  [ ! -f "$unfixed" ] || mv "$unfixed" "$k.unfixed.md"
+  mv "$report" "$k.review.json"
   # describe reads it: an empty file is a review with nothing needing a person.
   grep -v '^[[:space:]]*$' <<<"$attention" >"$LOGS/pr-$PR.attention.md" || true
   # A second review round starts from the head its reviewer saw.

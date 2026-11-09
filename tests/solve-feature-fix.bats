@@ -129,6 +129,7 @@ fix_stops() {
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
   pushed
   # The bot pushes before fix records the round's head, which is then the bot's commit.
+  rereview
   PR_HEAD_OID=$(branch_moves bot2.txt "before") run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(attention)" = "the fixer changed nothing" ]
@@ -225,6 +226,7 @@ push_says() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
   [ ! -e .coding-crew/solve-feature/pr-10.head ]
+  rereview
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(attention)" = "the fixer changed nothing" ]
@@ -239,6 +241,7 @@ push_says() {
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
   # A fixer that said why it changed nothing is listed for what it said, as it wrote it, not twice.
   printf -- '- a:1 needs a design call\n\nb:2 too\n' > .coding-crew/solve-feature/pr-10.unfixed.md
+  rereview
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$(attention)" = "$(printf -- '- a:1 needs a design call\nb:2 too')" ]
 }
@@ -538,6 +541,7 @@ reviewed_stops() {
   [ "${lines[${#lines[@]}-1]}" = "needs-attention pr=10" ]
   # A second round that discards too lists both rounds' paths.
   echo z > other.txt
+  rereview
   run bash "$SCRIPT" reviewed feat 10 feature/feat
   [ "$status" -eq 0 ]
   [ "$(discarded)" = "$(printf 'new.txt\nother.txt')" ]
@@ -612,6 +616,7 @@ git_fails() {
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]
   [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+  rereview
   run bash "$SCRIPT" reviewed feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ ! -e .coding-crew/solve-feature/pr-10.discarded.md ]
@@ -654,6 +659,7 @@ notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-fe
   [ ! -e .coding-crew/solve-feature/pr-10.notes.md ]
   [ -z "$(attention)" ]
   # A second review round with no new notes writes nothing again.
+  rereview
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]
   [ "$(grep -c '^pr edit 10' "$STATE/gh.log")" = 1 ]
@@ -824,6 +830,7 @@ needs_person_for_notes() {
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]
   echo '- second note' > .coding-crew/solve-feature/pr-10.notes.md
+  rereview
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]
   [ "$(grep -c '^### ' "$STATE/pr-body")" = 2 ]
@@ -865,6 +872,7 @@ needs_person_for_notes() {
   [ "$status" -eq 0 ]
   sed 's/$/\r/' "$STATE/pr-body" > "$STATE/pr-body.new" && mv "$STATE/pr-body.new" "$STATE/pr-body"
   echo '- second note' > .coding-crew/solve-feature/pr-10.notes.md
+  rereview
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" describe feat 10

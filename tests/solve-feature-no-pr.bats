@@ -278,6 +278,7 @@ EOF
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=1 needs-attention=1 review-again=no" ]
   grep -qx "the fixer changed nothing" .coding-crew/solve-feature/pr-local.attention.md
   echo fixed > fixed.txt
+  rereview local
   run bash "$SCRIPT" fix feat local feature/feat
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=1 needs-attention=0 review-again=yes" ]
   run bash "$SCRIPT" describe feat local
