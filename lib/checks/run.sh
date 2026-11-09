@@ -83,11 +83,9 @@ fi
 
 if bash "$SELF_DIR/detect-docker-nesting.sh" --dir "$PROJECT_ROOT" --cmd "$CMD"; then _host; exit $?; fi
 
-COMPOSE_FILE=""
-for name in docker-compose.yml docker-compose.yaml compose.yml; do
-  if [ -f "$PROJECT_ROOT/$name" ]; then COMPOSE_FILE="$PROJECT_ROOT/$name"; break; fi
-done
-[ -n "$COMPOSE_FILE" ] || _stop "no compose file in $PROJECT_ROOT"
+# shellcheck source=/dev/null
+. "$SELF_DIR/compose-file.sh"
+COMPOSE_FILE="$PROJECT_ROOT/$(compose_file "$PROJECT_ROOT")" || _stop "no compose file in $PROJECT_ROOT"
 
 gen=(bash "$SELF_DIR/gen-override.sh" --project-root "$PROJECT_ROOT")
 [ -n "$SERVICE" ] || SERVICE="$("${gen[@]}" --query services 2>/dev/null | head -1)"

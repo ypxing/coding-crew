@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- checks: a repo whose compose file is `compose.yaml` keeps Docker mode, and with several compose files the
+  checks read the one `docker compose` runs (Docker's order: `compose.yaml`, `compose.yml`, `docker-compose.yaml`,
+  `docker-compose.yml`) (#723).
 - solve-feature: `result.json` no longer lists an earlier run's issues after a `start` that stops early, finds a
   local-tracker issue's status and feature from its `.coding-crew/scratch/<feature>/` path, and shows checks only for
   an issue that landed; the reviewer is named only this feature's red-evidence files (`next` prints `red-files=`), and

@@ -13,6 +13,7 @@ REPO/.claude/skills/coding-crew-lib/agents/openai.yaml exec=0
 REPO/.claude/skills/coding-crew-lib/scripts/ /
 REPO/.claude/skills/coding-crew-lib/scripts/checks/ /
 REPO/.claude/skills/coding-crew-lib/scripts/checks/commands-file.sh exec=1
+REPO/.claude/skills/coding-crew-lib/scripts/checks/compose-file.sh exec=1
 REPO/.claude/skills/coding-crew-lib/scripts/checks/detect-docker-nesting.sh exec=1
 REPO/.claude/skills/coding-crew-lib/scripts/checks/discover-commands.sh exec=1
 REPO/.claude/skills/coding-crew-lib/scripts/checks/discover-mode.sh exec=1

@@ -27,6 +27,21 @@ teardown() {
   [ "$output" = "Mode discovery: skipped (no compose file: host)" ]
 }
 
+@test "a compose.yaml, Docker's preferred name, is offered docker mode" {
+  mkdir "$TEMP_DIR/yaml"
+  printf 'services:\n  app:\n    build: .\n' > "$TEMP_DIR/yaml/compose.yaml"
+  run bash "$LIB/discover-mode.sh" --project-root "$TEMP_DIR/yaml"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"compose.yaml and no install mode recorded"* ]]
+}
+
+@test "with compose.yaml and docker-compose.yml both present, the prompt names compose.yaml, the one docker compose runs" {
+  printf 'services:\n  web:\n    build: .\n' > "$WT/compose.yaml"
+  run bash "$LIB/discover-mode.sh" --project-root "$WT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Mode discovery: compose.yaml and no install mode recorded"* ]]
+}
+
 @test "a compose file and no recorded mode: a prompt naming the compose file and the files to read" {
   run bash "$LIB/discover-mode.sh" --project-root "$WT"
   [ "$status" -eq 0 ]

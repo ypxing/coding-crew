@@ -24,11 +24,9 @@ if [ -z "$PROJECT_ROOT" ] || [ ! -d "$PROJECT_ROOT" ]; then
   exit 2
 fi
 
-COMPOSE=""
-for f in docker-compose.yml docker-compose.yaml compose.yml; do
-  [ -f "$PROJECT_ROOT/$f" ] && { COMPOSE="$f"; break; }
-done
-if [ -z "$COMPOSE" ]; then
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/compose-file.sh"
+if ! COMPOSE=$(compose_file "$PROJECT_ROOT"); then
   echo "Mode discovery: skipped (no compose file: host)"
   exit 0
 fi
