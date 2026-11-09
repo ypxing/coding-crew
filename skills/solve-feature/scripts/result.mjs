@@ -72,11 +72,14 @@ for (const l of lines("spec.md")) {
   const [, id, title] = m;
   const ref = pick(id, refs, slugOf);
   const slug = ref ? slugOf(ref) : pick(id, prefixes, (p) => p);
-  const target = ref ?? slug;
+  // An issue no next in this checkout handed out (an earlier runner's) is tried by its id, then the id's first
+  // `-` part, the ref of a tracker that names sections `<number>-<title slug>`; a ref the tracker rejects is unknown.
   let status = "unknown";
-  if (target) {
+  for (const target of new Set([ref, slug, id, id.split("-")[0]].filter(Boolean))) {
     const r = run("node", [args.cli, "status", target]);
-    if (r.status === 0) status = r.stdout.trim() === "done" ? "done" : "not done";
+    if (r.status !== 0) continue;
+    status = r.stdout.trim() === "done" ? "done" : "not done";
+    break;
   }
   const rs = (ref ?? slug ?? id).replace(/\//g, "_");
   const commits = slug ? subjects.filter((s) => s.startsWith(`[${slug}]`)) : [];

@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "solve-feature result.json",
+  "description": "One solve-feature run's ending and its evidence, written to .coding-crew/solve-feature/result.json whenever the run writes its outcome file. A run killed before then leaves none.",
+  "type": "object",
+  "required": ["outcome", "branch", "head", "issues", "rounds"],
+  "properties": {
+    "outcome": { "type": "string", "description": "The outcome file's line, verbatim." },
+    "branch": { "type": "string" },
+    "head": { "type": "string", "description": "HEAD when the file was written." },
+    "pr": { "type": "integer", "description": "The PR's number; absent with solveFeature.publish false, or before a PR exists." },
+    "pr_title": { "type": "string", "description": "With solveFeature.publish false: the local PR body file's title; absent until that file exists." },
+    "pr_body": { "type": "string", "description": "With solveFeature.publish false: the local PR body file's body; absent until that file exists." },
+    "issues": {
+      "type": "array",
+      "description": "One entry per issue section of this run's spec.md.",
+      "items": {
+        "type": "object",
+        "required": ["ref", "title", "status", "commits", "checks", "red"],
+        "properties": {
+          "ref": { "type": "string", "description": "The spec section's id." },
+          "title": { "type": "string" },
+          "status": { "type": "string", "enum": ["done", "not done", "unknown"] },
+          "commits": { "type": "array", "items": { "type": "string" }, "description": "Subjects of the branch's first-parent commits carrying the issue's [<slug>] prefix, oldest first." },
+          "checks": {
+            "type": ["object", "null"],
+            "description": "The checks land ran on the issue and the commit they passed on; null when this run did not land it.",
+            "required": ["commit", "results"],
+            "properties": {
+              "commit": { "type": "string" },
+              "results": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["key", "result"],
+                  "properties": { "key": { "type": "string" }, "result": { "type": "string" } }
+                }
+              }
+            }
+          },
+          "red": { "type": "array", "items": { "type": "string" }, "description": "The coder's `<file>: <test name> — <failing line>` lines, one per new test seen failing." }
+        }
+      }
+    },
+    "rounds": {
+      "type": "array",
+      "description": "One entry per review round, oldest first.",
+      "items": {
+        "type": "object",
+        "required": ["spec", "gaps", "findings", "criteria", "unfixed", "unmatched_red", "fixer_changed_code", "checks", "checks_commit", "re_reviewed"],
+        "properties": {
+          "spec": { "type": "string", "description": "The review's spec verdict: met, unmet or none." },
+          "gaps": { "type": "array", "items": { "type": "string" } },
+          "findings": { "type": "array", "items": { "type": "object" } },
+          "criteria": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["issue", "text", "met", "tests"],
+              "properties": {
+                "issue": { "type": "string" },
+                "text": { "type": "string" },
+                "met": { "type": "boolean" },
+                "tests": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["test", "red"],
+                    "properties": {
+                      "test": { "type": "string", "description": "`<file>: <test name>`, as the reviewer named it." },
+                      "red": { "type": ["string", "null"], "description": "The red line for exactly that test, else null." }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "unfixed": { "type": "array", "items": { "type": "string" }, "description": "The fixer's unfixed lines, verbatim." },
+          "unmatched_red": { "type": "array", "items": { "type": "string" }, "description": "Red lines no criterion of this round cites." },
+          "fixer_changed_code": { "type": ["boolean", "null"], "description": "null when the round's fix stopped first." },
+          "checks": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "object",
+              "required": ["key", "result"],
+              "properties": { "key": { "type": "string" }, "result": { "type": "string" } }
+            }
+          },
+          "checks_commit": { "type": ["string", "null"], "description": "The commit the round's checks passed on." },
+          "re_reviewed": { "type": "boolean", "description": "Whether a later round reviewed this round's fixes." }
+        }
+      }
+    }
+  }
+}
