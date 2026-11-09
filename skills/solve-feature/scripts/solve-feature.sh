@@ -19,7 +19,13 @@ outcome() {
   # result.json: the same ending with its evidence, for a host that writes the PR itself. Removed first, so a failed
   # render leaves none rather than an earlier ending's; the failure never changes this ending.
   rm -f "$LOGS/result.json"
-  node "$SELF/result.mjs" --logs "$LOGS" --cli "${CLI:-}" --default "$(default_branch)" --publish "${PUBLISH:-yes}" --pr "${PR:-${PR_N:-}}" ||
+  # A stop before its step looked the PR up (a re-run's land, say) still names the open PR; one on the default branch,
+  # before start's checkout, has none to look up.
+  if [ -z "${PR:-}${PR_N:-}" ] && [ "${PUBLISH:-}" = yes ] && declare -F pr_view >/dev/null; then
+    local b; b=$(git branch --show-current 2>/dev/null || true)
+    [ -z "$b" ] || [ "$b" = "$(default_branch)" ] || { BRANCH=${BRANCH:-$b}; pr_view; }
+  fi
+  node "$SELF/result.mjs" --logs "$LOGS" --slug "$SLUG" --cli "${CLI:-}" --default "$(default_branch)" --publish "${PUBLISH:-yes}" --pr "${PR:-${PR_N:-}}" ||
     echo "solve-feature: writing $LOGS/result.json failed (see above)" >&2
 }
 die() { echo "solve-feature: $*" >&2; outcome "stopped: $CMD failed: $*"; exit 1; }

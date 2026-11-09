@@ -107,13 +107,35 @@ fix_ready() {
   fix_ready
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]
-  echo 'not json' > "$D/pr-10.r1.review.json"
+  echo 'not json' > "$D/pr-10.r1.fix"
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ]
   [ "${lines[${#lines[@]}-1]}" = "ready pr=10" ]
   [[ "$output" == *"solve-feature: writing $WORK/$D/result.json failed (see above)"* ]]
   [ "$(cat "$D/outcome")" = "ready pr=10" ]
   [ ! -e "$D/result.json" ]
+}
+
+@test "a review report off the expected shape still leaves result.json: a ready end, reviewed's unreadable stop and fix's gaps stop" {
+  fix_ready '{"spec":"met","gaps":[],"findings":[],"criteria":[{"issue":"2-two","text":"t","met":true,"tests":"tests/a.bats: x"}]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  run bash "$SCRIPT" describe feat 10
+  [ "${lines[${#lines[@]}-1]}" = "ready pr=10" ] || { echo "$output"; return 1; }
+  result_ok
+  [ "$(r '.rounds[0].criteria[0].tests')" = '[]' ]
+
+  report 'not json'
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 1 ]
+  result_ok
+  [ "$(r '.rounds[-1] | [.spec, .gaps, .findings, .criteria]')" = '["",[],[],[]]' ]
+
+  report '{"spec":"unmet","gaps":"none","findings":"x"}'
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$(cat "$D/outcome")" == *"gaps is not a list"* ]]
+  result_ok
+  [ "$(r '.rounds[-1] | [.spec, .gaps, .findings]')" = '["unmet",[],[]]' ]
 }
 
 @test "start deletes an earlier run's result.json, round files and checks heads; sync deletes result.json with outcome; next deletes a re-dispatched issue's red file" {
@@ -191,6 +213,30 @@ fix_ready() {
   [ "$(r '[.issues[].ref]')" = '["3-three","2-two"]' ]
   [ "$(r '.issues[1].commits')" = '["[2] work","[2][WIP] more"]' ]
   [ "$(r '.issues[0].commits')" = '[]' ]
+}
+
+@test "an issue is matched to its own feature's ref, not another feature's issue file of the same name" {
+  # A local tracker's refs are paths under .coding-crew/scratch/<feature>/issues/; two features can both have a 3.md.
+  # This run never hands out its own 3, so only the other feature's ref has that name.
+  local other=/m/.coding-crew/scratch/other/issues/open/3.md
+  run bash "$SCRIPT" start feat
+  echo "$other" > "$D/${other//\//_}.ref" && echo 'x.bats: other — boom' > "$D/${other//\//_}.red.md"
+  run bash "$SCRIPT" next feat
+  coder 2
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  result_ok
+  [ "$(r '.issues[0] | [.ref, .red]')" = '["3-three",[]]' ]
+}
+
+@test "a stop before its step looked the PR up still names the open PR in result.json" {
+  export PR_EXISTS=1
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat
+  coder 2
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  result_ok
+  [ "$(r .pr)" = 9 ]
 }
 
 @test "with publish false result.json has pr_title and pr_body from the local body once it exists, and no pr" {

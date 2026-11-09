@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// result.mjs --logs <dir> --cli <tracker cli.mjs> --default <branch> --publish yes|no [--pr <n|local>] — writes
+// result.mjs --logs <dir> --slug <feature> --cli <tracker cli.mjs> --default <branch> --publish yes|no [--pr <n|local>] — writes
 // <dir>/result.json (result.schema.json beside SKILL.md) from the run's files and git. It reads what the script and
 // its subagents wrote, splitting prose only into lines; any error exits non-zero, leaving the earlier file untouched.
 import { spawnSync } from "node:child_process";
@@ -43,8 +43,7 @@ const result = { outcome, branch, head };
 
 const files = readdirSync(LOGS);
 const roundRe = /^pr-(\d+|local)\.r(\d+)\.review\.json$/;
-let pr = /^\d+$/.test(args.pr ?? "") ? args.pr : "";
-if (!pr) pr = files.map((f) => roundRe.exec(f)?.[1] ?? /^pr-(\d+)\.review\.json$/.exec(f)?.[1]).find((n) => n && n !== "local") ?? "";
+const pr = /^\d+$/.test(args.pr ?? "") ? args.pr : "";
 if (args.publish === "yes" && pr) result.pr = Number(pr);
 if (args.publish === "no") {
   const body = text(`local-pr-${branch.replace(/\//g, "_")}.md`);
@@ -62,8 +61,12 @@ const subjects = git("log", "--first-parent", "--reverse", "--format=%s", "HEAD"
   .split("\n")
   .filter(Boolean);
 const prefixes = [...new Set(subjects.map((s) => /^\[([^\]]+)\]/.exec(s)?.[1]).filter(Boolean))];
-// The refs next handed out: one <ref, / → _>.ref file each.
-const refs = files.filter((f) => f.endsWith(".ref")).map((f) => readFileSync(at(f), "utf8").split("\n")[0]).filter(Boolean);
+// The refs next handed out: one <ref, / → _>.ref file each. The directory is shared by every feature, and a local
+// tracker's ref is a path `…/<feature slug>/issues/…` whose basename another feature's issue can share: those go.
+const refs = files
+  .filter((f) => f.endsWith(".ref"))
+  .map((f) => readFileSync(at(f), "utf8").split("\n")[0])
+  .filter((r) => r && (/\/([^/]+)\/issues\//.exec(r)?.[1] ?? args.slug) === args.slug);
 
 const issues = [];
 for (const l of lines("spec.md")) {
@@ -103,20 +106,32 @@ const rounds = kept.map(({ stem }) => ({ review: `${stem}.review.json`, unfixed:
 const live = files.find((f) => /^pr-(\d+|local)\.review\.json$/.test(f) && (!pr || f === `pr-${pr}.review.json` || f === "pr-local.review.json"));
 if (live) rounds.push({ review: live, unfixed: live.replace(/\.review\.json$/, ".unfixed.md"), stem: null });
 
+// A reviewer's report is read leniently: one off the expected shape (the stops reviewed and fix make for it, too)
+// renders as a round with that field empty, never as no result.json.
+const list = (x) => (Array.isArray(x) ? x : []);
+const readReport = (name) => {
+  try {
+    const report = JSON.parse(text(name));
+    return report && typeof report === "object" && !Array.isArray(report) ? report : {};
+  } catch {
+    return {};
+  }
+};
+
 result.rounds = rounds.map((r, i) => {
-  const report = JSON.parse(text(r.review));
-  const criteria = (report.criteria ?? []).map((c) => ({
-    issue: String(c.issue ?? ""),
-    text: String(c.text ?? ""),
-    met: c.met === true,
-    tests: (c.tests ?? []).map((t) => ({ test: String(t), red: redFor(String(t)) })),
+  const report = readReport(r.review);
+  const criteria = list(report.criteria).map((c) => ({
+    issue: String(c?.issue ?? ""),
+    text: String(c?.text ?? ""),
+    met: c?.met === true,
+    tests: list(c?.tests).map((t) => ({ test: String(t), red: redFor(String(t)) })),
   }));
   const cited = new Set(criteria.flatMap((c) => c.tests.map((t) => t.red)).filter(Boolean));
   const fix = r.stem && text(`${r.stem}.fix`) !== null ? JSON.parse(text(`${r.stem}.fix`)) : null;
   return {
     spec: String(report.spec ?? ""),
-    gaps: (report.gaps ?? []).map(String),
-    findings: report.findings ?? [],
+    gaps: list(report.gaps).map(String),
+    findings: list(report.findings).filter((f) => f && typeof f === "object" && !Array.isArray(f)),
     criteria,
     unfixed: lines(r.unfixed),
     unmatched_red: red.filter((l) => !cited.has(l)),
