@@ -74,19 +74,15 @@ if [[ -z "$OVERRIDE_PATH" && -z "$QUERY" ]]; then
   exit 1
 fi
 
-COMPOSE_FILE=""
-for name in docker-compose.yml docker-compose.yaml compose.yml; do
-  if [[ -f "$PROJECT_ROOT/$name" ]]; then
-    COMPOSE_FILE="$PROJECT_ROOT/$name"
-    break
-  fi
-done
-
-if [[ -z "$COMPOSE_FILE" ]]; then
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/compose-file.sh"
+if ! COMPOSE_NAME=$(compose_file "$PROJECT_ROOT"); then
   echo "Error: no compose file found in $PROJECT_ROOT" >&2
-  echo "Expected one of: docker-compose.yml, docker-compose.yaml, compose.yml" >&2
+  names="${COMPOSE_FILE_NAMES[*]}"
+  echo "Expected one of: ${names// /, }" >&2
   exit 2
 fi
+COMPOSE_FILE="$PROJECT_ROOT/$COMPOSE_NAME"
 
 SERVICES=()
 in_services=0

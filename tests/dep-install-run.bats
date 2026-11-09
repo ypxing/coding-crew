@@ -150,6 +150,30 @@ _docker_ready() {
   [ ! -f "$OVERRIDE" ]
 }
 
+@test "docker mode runs in the service of a compose.yaml, Docker's preferred name" {
+  _docker_ready
+  mv "$WORK/docker-compose.yml" "$WORK/compose.yaml"
+  run bash "$SCRIPT" --project-root "$WORK" -- npm test
+  [ "$status" -eq 0 ]
+  mapfile -t args < "$DOCKER_LOG"
+  [ "${args[2]}" = "$WORK/compose.yaml" ]
+  [ "${args[7]}" = app ]
+  [ "${args[10]}" = 'cd "/opt/app" && npm test' ]
+}
+
+@test "with compose.yaml and docker-compose.yml both present, run.sh reads compose.yaml, the one docker compose runs" {
+  _docker_ready
+  # compose.yaml's only service is web, mounted at /srv; docker-compose.yml's are app and db at /opt/app
+  printf 'services:\n  web:\n    build: .\n    volumes:\n      - .:/srv\n' > "$WORK/compose.yaml"
+  printf '{"install_mode": "docker"}\n' > "$WORK/.coding-crew/dev-commands.json"
+  run bash "$SCRIPT" --project-root "$WORK" -- npm test
+  [ "$status" -eq 0 ]
+  mapfile -t args < "$DOCKER_LOG"
+  [ "${args[2]}" = "$WORK/compose.yaml" ]
+  [ "${args[7]}" = web ]
+  [ "${args[10]}" = 'cd "/srv" && npm test' ]
+}
+
 @test "docker mode with no compose file stops instead of running on the host" {
   _docker_ready
   rm "$WORK/docker-compose.yml"

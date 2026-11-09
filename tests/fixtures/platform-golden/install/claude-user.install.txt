@@ -13,6 +13,7 @@ HOME/.claude/skills/coding-crew-lib/agents/openai.yaml exec=0
 HOME/.claude/skills/coding-crew-lib/scripts/ /
 HOME/.claude/skills/coding-crew-lib/scripts/checks/ /
 HOME/.claude/skills/coding-crew-lib/scripts/checks/commands-file.sh exec=1
+HOME/.claude/skills/coding-crew-lib/scripts/checks/compose-file.sh exec=1
 HOME/.claude/skills/coding-crew-lib/scripts/checks/detect-docker-nesting.sh exec=1
 HOME/.claude/skills/coding-crew-lib/scripts/checks/discover-commands.sh exec=1
 HOME/.claude/skills/coding-crew-lib/scripts/checks/discover-mode.sh exec=1
