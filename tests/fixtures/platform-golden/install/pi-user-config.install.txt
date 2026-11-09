@@ -80,7 +80,9 @@ CONFIG/skills/setup-coding-crew/hosts/ /
 CONFIG/skills/setup-coding-crew/hosts/github-actions.yml exec=0
 CONFIG/skills/solve-feature/ /
 CONFIG/skills/solve-feature/SKILL.md exec=0 unrendered=0
+CONFIG/skills/solve-feature/result.schema.json exec=0
 CONFIG/skills/solve-feature/scripts/ /
+CONFIG/skills/solve-feature/scripts/result.mjs exec=0
 CONFIG/skills/solve-feature/scripts/solve-feature.sh exec=0
 CONFIG/skills/solve-issue/ /
 CONFIG/skills/solve-issue/SKILL.md exec=0 unrendered=0

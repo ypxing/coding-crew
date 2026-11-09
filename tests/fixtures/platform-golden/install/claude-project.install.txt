@@ -79,7 +79,9 @@ REPO/.claude/skills/setup-coding-crew/hosts/ /
 REPO/.claude/skills/setup-coding-crew/hosts/github-actions.yml exec=0
 REPO/.claude/skills/solve-feature/ /
 REPO/.claude/skills/solve-feature/SKILL.md exec=0 unrendered=0
+REPO/.claude/skills/solve-feature/result.schema.json exec=0
 REPO/.claude/skills/solve-feature/scripts/ /
+REPO/.claude/skills/solve-feature/scripts/result.mjs exec=0
 REPO/.claude/skills/solve-feature/scripts/solve-feature.sh exec=0
 REPO/.claude/skills/solve-issue/ /
 REPO/.claude/skills/solve-issue/SKILL.md exec=0 unrendered=0

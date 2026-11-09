@@ -27,7 +27,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      directory — with exactly this prompt: `Use the solve-issue skill on <ref>; write your outcome and
      report to <repo>/.coding-crew/solve-feature/coder.report.md, and anything a person must do or decide to
      <repo>/.coding-crew/solve-feature/coder.notes.md, keeping what that file already holds, leaving it absent when there is none;
-     your red-evidence file is <repo>/.coding-crew/solve-feature/<ref, / → _>.red.md`. When `coder-model=`
+     your red-evidence file is <ref, / → _>.red.md in <repo>/.coding-crew/solve-feature`. When `coder-model=`
      is non-empty, run it on the model in your own list that matches that name (a family, with an optional
      version): a version you do not offer → the closest model of the same family; a family you do not offer → your
      own model. When it is empty, on your own. Wait for it to finish.
