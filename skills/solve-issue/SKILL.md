@@ -197,6 +197,11 @@ such as `/tmp/<name>`; never kill a process you did not start.
 
 STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
 
+**Red evidence.** When your caller names a red-evidence file, each new test's red run appends one line to it:
+`<file>: <test name> — <failing line>`, the test file's repo-relative path, the test's name as its runner prints it,
+and the one line of the failure that says what was wrong, trimmed. A test never seen failing gets no line. With no
+file named, write none.
+
 **Comments.** A comment states a non-obvious *why* in 1–3 lines. History, PR and issue numbers,
 and incident counts go in the commit message or PR body, never in code; neither does a comment that
 restates the code.

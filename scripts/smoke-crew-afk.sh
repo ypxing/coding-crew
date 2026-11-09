@@ -26,13 +26,13 @@ if [[ $# -eq 3 && "$2" == --via ]]; then VIA="$3"; elif [[ $# -ne 1 ]]; then PLA
 
 RECORD=0 WT="" PR="" COST='?'
 # One results row once the run was dispatched: its cost from crew-afk.sh wait's line (`cost=$<n>`, when the
-# platform's command ends the log with a JSON result carrying it: claude's does), and its finding count from the last review solve-feature saved (a re-review after fixes overwrites
-# the first one's report).
+# platform's command ends the log with a JSON result carrying it: claude's does), and its finding count from the last
+# review round in solve-feature's result.json, `?` with no round.
 record() {
   [[ $RECORD -eq 1 ]] || return 0
   RECORD=0
   local findings
-  findings=$(jq '.findings // [] | length' "$WT/.coding-crew/solve-feature/pr-$PR.review.json" 2>/dev/null) || findings='?'
+  findings=$(jq -e '.rounds[-1] // empty | .findings // [] | length' "$WT/.coding-crew/solve-feature/result.json" 2>/dev/null) || findings='?'
   echo "| $SHORT | $(date -u +%Y-%m-%d) | $PLATFORM | $VIA | $1 | $COST | ${findings:-?} |" >>"$RESULTS" ||
     echo "SMOKE: warning: cannot append to $RESULTS" >&2
 }

@@ -6,6 +6,18 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: `result.json` no longer lists an earlier run's issues after a `start` that stops early, finds a
+  local-tracker issue's status and feature from its `.coding-crew/scratch/<feature>/` path, and shows checks only for
+  an issue that landed; the reviewer is named only this feature's red-evidence files (`next` prints `red-files=`), and
+  the smoke run records `?` findings for a run with no review round (#719).
+
+- solve-feature: every run that writes its `outcome` line now also writes `.coding-crew/solve-feature/result.json`,
+  which validates against `skills/solve-feature/result.schema.json`: the outcome, each issue's commits, checks and
+  red evidence (a line per new test its coder saw failing), and each review round's findings, gaps, per-criterion
+  tests, unfixed lines and whether it was re-reviewed. Review rounds are kept as `pr-<n>.r<k>.*` instead of round 2
+  overwriting round 1. crew-review's report adds `criteria` with the tests behind each one, and solve-issue appends a
+  red line per new test to a file its caller names. The files a host reads today keep their content (#716).
+
 - address-pr-comments: a non-interactive run on a PR solve-feature did not open now stops when the checkout has
   uncommitted or untracked changes, naming them, so they are never pushed as the review fix; and a push that did not
   move the PR's head (an `origin` that is a fork or another repo) counts as refused, with no `Fixed` reply (#706).

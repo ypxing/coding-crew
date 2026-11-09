@@ -440,7 +440,11 @@ default branch in again, so the PR it marks ready does not conflict with it: a c
 subagent, and the run stops on it only when the resolver leaves it unresolved; the merge is gated by the checks, so a check failing on the merged tree, or a refused push, stops the run too. Every run ends with one line in
 `.coding-crew/solve-feature/outcome` for a host to read: `ready pr=<n>`, `needs-attention pr=<n>` (`ready branch=<b>`,
 `needs-attention branch=<b>` when `solveFeature.publish` is `false`) or `stopped: <what> failed: <reason>`, `<what>` the subcommand that stopped (`start`, `next`, `sync`) or the issue ref or
-`review` and its step (`2 checks`, `review fix`); no file means the run never finished.
+`review` and its step (`2 checks`, `review fix`); no file means the run never finished. Beside it,
+`.coding-crew/solve-feature/result.json` (schema: `skills/solve-feature/result.schema.json`) holds the same line with
+its evidence, for a host that writes the PR itself: each issue's commits, checks and the lines its coder recorded for
+each new test seen failing, and each review round's findings, gaps, per-criterion tests, unfixed lines and whether a
+later round re-reviewed its fixes.
 
 | Setting | Effect |
 | --- | --- |

@@ -40,6 +40,8 @@ Your caller names them; a bare number is a PR, nothing at all is the current bra
     `spec --feature-slug <s>` output; else the whole body. Read the marker,
     never the body's `Spec:` line. A branch with no spec named has none.
 - **The report's path.** Write the report there; with none, print it.
+- **Files naming tests**, when your caller gives them: lines `<file>: <test name> — …`. Read them for the tests'
+  names only; whether a test covers a criterion is still yours to check.
 
 ## Run
 
@@ -143,8 +145,13 @@ Finish by writing the report as JSON to the path you were given, or printing it 
  "gaps": ["each spec requirement the code at HEAD lacks or does differently (question 1)"],
  "findings": [{"severity": "CRITICAL|HIGH|MEDIUM|LOW", "location": "<file:line>",
                "issue": "<trigger → bad outcome, or the rule broken, or the addition no requirement needs>",
-               "fix": "<the smallest change>"}]}
+               "fix": "<the smallest change>"}],
+ "criteria": [{"issue": "<the spec section's id>", "text": "<the criterion>", "met": true,
+               "tests": ["<file>: <test name>"]}]}
 ```
 
-`spec` is `met` when `gaps` is empty, and `none` with empty `gaps` when there was no spec. Close with a few lines
+`spec` is `met` when `gaps` is empty, and `none` with empty `gaps` when there was no spec. `criteria` lists each
+criterion of the spec once: `issue` is the id from its section's `### <id> — <title>` heading (empty when the spec
+has none), `met` whether the code at HEAD meets it, and `tests` the tests that show it. Name a test as
+`<file>: <test name>`, and one listed in a file your caller gave by copying that part of its line verbatim. Close with a few lines
 of prose explaining it.

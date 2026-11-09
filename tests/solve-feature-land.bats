@@ -117,7 +117,7 @@ stops_at() {
   run bash "$SCRIPT" land feat 3 feature/feat; [ "$status" -eq 0 ]
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "reviewer-model=" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
 }
 
 @test "a re-run on another branch after an interrupted land names the branch the coder worked on, not the current one" {
