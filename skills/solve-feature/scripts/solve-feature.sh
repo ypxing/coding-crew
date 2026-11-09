@@ -10,6 +10,11 @@
 set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGS=""
+# default_branch — origin's default branch, as origin/HEAD names it, else main.
+default_branch() {
+  local d; d=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
+  echo "${d:-main}"
+}
 # The run's one-line result, read by a host such as the Actions job; a missing file means it never finished.
 # next only reads the tracker, so a stop it writes after another stop is that stop's consequence: it keeps the first.
 outcome() {
@@ -110,12 +115,6 @@ merge_in() {
 
 # fetch_branch — fetch origin's copy of $BRANCH; with PUBLISH=no origin usually has none, which is no error to show.
 fetch_branch() { if [ "$PUBLISH" = yes ]; then git fetch -q origin "$BRANCH"; else git fetch -q origin "$BRANCH" 2>/dev/null; fi; }
-
-# default_branch — origin's default branch, as origin/HEAD names it, else main.
-default_branch() {
-  local d; d=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
-  echo "${d:-main}"
-}
 
 PR_N="" PR_IS_DRAFT=""
 pr_view() { # sets PR_N and PR_IS_DRAFT (true|false) when the branch has an OPEN PR, else clears them
