@@ -258,3 +258,84 @@ fix_ready() {
   result_ok
   [ "$(r '[.pr_title, .pr_body, has("pr")]')" = '["Feat title","line one\nline two\n",false]' ]
 }
+
+@test "a start that stops before writing the spec leaves a result.json with no earlier run's issues or red lines" {
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat
+  echo 'a.bats: old — boom' > "$D/2.red.md"
+  coder 2
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$(r '.issues | length')" = 2 ]
+  echo dirty > work-2.txt
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"working tree is not clean"* ]]
+  result_ok
+  [ ! -e "$D/spec.md" ]
+  [ "$(r .issues)" = '[]' ]
+}
+
+@test "next's exit 3 names this run's red files only, for the reviewer prompt" {
+  echo 99 > "$D/99.ref" && echo 'x: y — z' > "$D/99.red.md"
+  local other=/m/.coding-crew/scratch/other/issues/open/2.md
+  echo "$other" > "$D/${other//\//_}.ref" && echo 'x: o — z' > "$D/${other//\//_}.red.md"
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat
+  echo 'tests/a.bats: two — boom' > "$D/2.red.md"
+  coder 2
+  run bash "$SCRIPT" land feat 2 feature/feat
+  run bash "$SCRIPT" next feat
+  coder 3
+  run bash "$SCRIPT" land feat 3 feature/feat
+  run bash "$SCRIPT" next feat
+  [ "$status" -eq 3 ]
+  [ "$output" = "$(printf 'red-files=%s\nreviewer-model=' "$WORK/$D/2.red.md")" ]
+}
+
+@test "a local ref whose path has an ancestor directory named issues is still its own feature's" {
+  local mine=/work/issues/app/.coding-crew/scratch/feat/issues/open/3-three.md
+  run bash "$SCRIPT" start feat
+  echo "$mine" > "$D/${mine//\//_}.ref" && echo 'x.bats: three — boom' > "$D/${mine//\//_}.red.md"
+  run bash "$SCRIPT" next feat
+  coder 2
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  result_ok
+  [ "$(r '.issues[0] | [.ref, .red]')" = '["3-three",["x.bats: three — boom"]]' ]
+}
+
+@test "with the local tracker, a spec issue next never handed out here gets its status from its tracker path" {
+  export TRACKER_KIND=local
+  local three="$WORK/.coding-crew/scratch/feat/issues/open/3-three.md"
+  issues '[{"number":1,"title":"PRD: Feat","state":"OPEN","labels":[],"root":true},
+           {"number":3,"ref":"'"$three"'","title":"Three","state":"CLOSED","labels":[]},
+           {"number":2,"title":"Two","state":"OPEN","labels":[{"name":"ready-for-agent"}]}]'
+  issue_body "$three" Three "None - can start immediately"
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat
+  [ "$output" = 2 ]
+  coder 2
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  result_ok
+  [ "$(r '[.issues[] | [.ref, .status]]')" = '[["3-three","done"],["2-two","not done"]]' ]
+}
+
+@test "an issue whose land stopped after its checks passed, or whose retried land failed them, has checks null" {
+  land_ready
+  refuse_pushes
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"git push failed"* ]]
+  result_ok
+  [ "$(r '.issues[1] | [.ref, .checks]')" = '["2-two",null]' ]
+
+  # An earlier attempt's record, as a land before this fix wrote it, is not taken for a failed retry's.
+  git rev-parse HEAD > "$D/2.checks.head"
+  rm "$TEMP_DIR/origin.git/hooks/pre-receive"
+  run bash "$SCRIPT" next feat
+  [ "$output" = 2 ]
+  coder 2
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  result_ok
+  [ "$(r '.issues[1].checks')" = null ]
+}

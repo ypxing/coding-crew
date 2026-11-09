@@ -22,7 +22,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    `coder-model=`, `reviewer-model=` and `pr=`; keep them.
 2. **Per issue**, until `next` exits 3:
    1. `bash "<skill-dir>/scripts/solve-feature.sh" next <slug>` — prints the issue's ref. Exit 3: no ready issue is
-     left, go to step 3; it prints `reviewer-model=` again, for step 3.
+     left, go to step 3; it prints `red-files=` and `reviewer-model=` again, for step 3.
    2. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Use the solve-issue skill on <ref>; write your outcome and
      report to <repo>/.coding-crew/solve-feature/coder.report.md, and anything a person must do or decide to
@@ -45,7 +45,8 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    git commit --no-edit. This run is non-interactive; ask no questions`. Wait for it to finish, then run `sync`
    again, once: any non-zero exit of that run, 4 included, stops the run like any other.
    1. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working directory —
-     with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.coding-crew/solve-feature/spec.md; write the report to <repo>/.coding-crew/solve-feature/pr-<n>.review.json; the tests named in <repo>/.coding-crew/solve-feature/*.red.md are the coders' new tests`.
+     with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.coding-crew/solve-feature/spec.md; write the report to <repo>/.coding-crew/solve-feature/pr-<n>.review.json; the tests named in <red files> are the coders' new tests`,
+     `<red files>` being `next`'s last `red-files=` value; when that is empty, the prompt ends at `.review.json`.
      When `reviewer-model=` (as `next` last printed it) is non-empty, run it on the model in your own list that
      matches that name, as for `coder-model=`, naming that model in the call; when it is empty, on your own. Wait for it to finish.
    2. `bash "<skill-dir>/scripts/solve-feature.sh" reviewed <slug> <n> <branch>` — always: it discards what the

@@ -62,6 +62,12 @@ setup() {
   [[ "$(tail -n 1 "$RESULTS")" == *"| claude | install | PASS | ? | 2 |" ]]
 }
 
+@test "a result.json with no review round records ? in the findings column" {
+  RESULT_JSON='{"rounds":[]}' run "$SMOKE" claude
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$(tail -n 1 "$RESULTS")" == *"| claude | install | PASS | \$1.25 | ? |" ]]
+}
+
 @test "the smoke script reads no cost from run.log and has no wait loop of its own" {
   ! grep -nE 'run\.log.*jq|jq.*run\.log|kill -0' "$SMOKE" || false
   grep -qF '"${DISPATCH[@]}" wait "$SLUG"' "$SMOKE"

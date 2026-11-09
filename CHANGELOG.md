@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: `result.json` no longer lists an earlier run's issues after a `start` that stops early, finds a
+  local-tracker issue's status and feature from its `.coding-crew/scratch/<feature>/` path, and shows checks only for
+  an issue that landed; the reviewer is named only this feature's red-evidence files (`next` prints `red-files=`), and
+  the smoke run records `?` findings for a run with no review round (#719).
+
 - solve-feature: every run that writes its `outcome` line now also writes `.coding-crew/solve-feature/result.json`,
   which validates against `skills/solve-feature/result.schema.json`: the outcome, each issue's commits, checks and
   red evidence (a line per new test its coder saw failing), and each review round's findings, gaps, per-criterion

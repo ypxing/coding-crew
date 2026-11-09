@@ -30,7 +30,7 @@ outcome() {
     local b; b=$(git branch --show-current 2>/dev/null || true)
     [ -z "$b" ] || [ "$b" = "$(default_branch)" ] || { BRANCH=${BRANCH:-$b}; pr_view; }
   fi
-  node "$SELF/result.mjs" --logs "$LOGS" --slug "$SLUG" --cli "${CLI:-}" --default "$(default_branch)" --publish "${PUBLISH:-yes}" --pr "${PR:-${PR_N:-}}" ||
+  node "$SELF/result.mjs" --logs "$LOGS" --slug "$SLUG" --cli "${CLI:-}" --default "$(default_branch)" --publish "${PUBLISH:-yes}" --pr "${PR:-${PR_N:-}}" --main-root "$MAIN_ROOT" ||
     echo "solve-feature: writing $LOGS/result.json failed (see above)" >&2
 }
 die() { echo "solve-feature: $*" >&2; outcome "stopped: $CMD failed: $*"; exit 1; }
@@ -69,7 +69,7 @@ MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 BRANCH_WORK=(. ':!.coding-crew/config.json') SETUP_FILES=(.coding-crew/config.json)
 git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 ||
   { BRANCH_WORK+=(':!.coding-crew/dev-commands.json'); SETUP_FILES+=(.coding-crew/dev-commands.json); }
-[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS/result.json" "$LOGS"/pr-*.r[0-9]*.* "$LOGS"/*.checks.head "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head \
+[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS/result.json" "$LOGS/spec.md" "$LOGS"/pr-*.r[0-9]*.* "$LOGS"/*.checks.head "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head \
   "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base"
 # solveFeature.publish: false keeps the run on this machine: no push, no PR, the body in local_body's file. Read from
 # the user-level config only: an Actions runner has none, so it never keeps commits that vanish with the runner.
@@ -215,6 +215,10 @@ nothing_left() { # exit 3; with no open PR on the branch, the run has nothing to
     echo "solve-feature: nothing landed: no ready issue for $SLUG and no open PR" >&2
     outcome "stopped: next failed: nothing landed: no ready issue for $SLUG and no open PR"
   else
+    # For the reviewer's prompt: the red files of this feature's issues, never another feature's in this directory.
+    local red; red=$(node "$SELF/result.mjs" --logs "$LOGS" --slug "$SLUG" --main-root "$MAIN_ROOT" --red-files yes) ||
+      die "listing the red-evidence files failed (see above)"
+    echo "red-files=$(paste -sd, - <<<"$red" | sed 's/,/, /g')"
     # Again here, beside the review step: start's line is issues behind by now, and a run lost it once (PR 343).
     echo "reviewer-model=$(model reviewer)"
   fi
@@ -364,7 +368,7 @@ discard_rewrites() {
 # land — the coder left <branch> clean with <ref> closed: merge in origin's branch, gate with the checks, push,
 # open the draft PR if there is none; prints pr=<n>.
 land() {
-  local rs="${REF//\//_}" rc=0 again clog="$LOGS/${REF//\//_}.checks.log" f url
+  local rs="${REF//\//_}" rc=0 again clog="$LOGS/${REF//\//_}.checks.log" f url checked
   [ -f "$LOGS/$rs.issue.md" ] || die "no saved issue for $REF: run next first"
   checks_lib
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop solve "branch changed to '$(git branch --show-current)'"
@@ -392,12 +396,14 @@ land() {
     reopen_ref merge "$why" "Reopen $REF: its merge failed" "reopen $REF by hand, then $redo"
     stop merge "$why; $REF is ready again: $redo"
   fi
+  # The commit the checks passed on is recorded once the issue has landed: a stop below reopens it, unlanded.
+  rm -f "$LOGS/$rs.checks.head"
   rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
   [ "$rc" = 0 ] || discard_rewrites
   [ "$rc" != 3 ] || hand_back "no check commands known (DISCOVER): the coder discovered none" "run /setup-coding-crew, then re-run" "$clog"
   [ "$rc" = 0 ] || hand_back "run-checks.sh exit $rc" "fix the cause, then re-run" "$clog"
   commit_rewrites || hand_back "committing the checks' rewrites failed (see above)" "commit them, then re-run" "$clog"
-  git rev-parse HEAD >"$LOGS/$rs.checks.head"
+  checked=$(git rev-parse HEAD)
   # Any failed push reopens the issue, unretried: an Actions runner's commits go with its job, so a closed issue
   # would count as landed work that exists nowhere. Here a re-run finds the commits, since start never resets a branch.
   if [ "$PUBLISH" = yes ] && ! push -u origin "$BRANCH"; then
@@ -428,6 +434,7 @@ land() {
   fi
   # Pushed and on a PR, the issue has landed; a notes stop after this says how to add them by hand.
   rm -f "$(landing)"
+  printf '%s\n' "$checked" >"$LOGS/$rs.checks.head"
   post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)"
   echo "pr=$PR_N"
 }

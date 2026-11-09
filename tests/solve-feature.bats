@@ -389,7 +389,7 @@ main_moves() {
 
 # --- next ------------------------------------------------------------------------------
 
-@test "next prints the ready ref and saves its issue; exit 3 when none is left, with reviewer-model=; a ref fetch rejects exits 1" {
+@test "next prints the ready ref and saves its issue; exit 3 when none is left, with red-files= and reviewer-model=; a ref fetch rejects exits 1" {
   run bash "$SCRIPT" next feat
   [ "$status" -eq 0 ]
   [ "$output" = 2 ]
@@ -400,11 +400,11 @@ main_moves() {
   echo extra > extra.txt && git add extra.txt && git commit -q -m extra
   PR_EXISTS=1 run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "reviewer-model=" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
   # Printed again beside the review step, resolved as start resolves it.
   PR_EXISTS=1 CREW_REVIEWER_MODEL=opus run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "reviewer-model=opus" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=opus')" ]
   # sync saves the reviewer's starting head, not next.
   [ ! -e .coding-crew/solve-feature/review.base ]
   [ ! -e .coding-crew/solve-feature/outcome ]

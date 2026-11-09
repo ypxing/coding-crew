@@ -51,7 +51,7 @@ EOF
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "reviewer-model=" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
   run bash "$SCRIPT" sync feat feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '{"spec":"met","gaps":[],"findings":[{"severity":"LOW","location":"a:1","issue":"i","fix":"f"}]}\n' > .coding-crew/solve-feature/pr-local.review.json
@@ -155,7 +155,7 @@ EOF
   rm .coding-crew/solve-feature/outcome
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "reviewer-model=" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
   no_pr_calls
 }
 
@@ -176,7 +176,7 @@ EOF
   run bash "$SCRIPT" land feat 3 feature/feat; [ "$output" = pr=local ]
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "reviewer-model=" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
   no_pr_calls
 }
 
