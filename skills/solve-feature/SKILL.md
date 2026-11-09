@@ -26,7 +26,8 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    2. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Use the solve-issue skill on <ref>; write your outcome and
      report to <repo>/.coding-crew/solve-feature/coder.report.md, and anything a person must do or decide to
-     <repo>/.coding-crew/solve-feature/coder.notes.md, keeping what that file already holds, leaving it absent when there is none`. When `coder-model=`
+     <repo>/.coding-crew/solve-feature/coder.notes.md, keeping what that file already holds, leaving it absent when there is none;
+     your red-evidence file is <repo>/.coding-crew/solve-feature/<ref, / → _>.red.md`. When `coder-model=`
      is non-empty, run it on the model in your own list that matches that name (a family, with an optional
      version): a version you do not offer → the closest model of the same family; a family you do not offer → your
      own model. When it is empty, on your own. Wait for it to finish.
@@ -44,7 +45,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    git commit --no-edit. This run is non-interactive; ask no questions`. Wait for it to finish, then run `sync`
    again, once: any non-zero exit of that run, 4 included, stops the run like any other.
    1. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working directory —
-     with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.coding-crew/solve-feature/spec.md; write the report to <repo>/.coding-crew/solve-feature/pr-<n>.review.json`.
+     with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.coding-crew/solve-feature/spec.md; write the report to <repo>/.coding-crew/solve-feature/pr-<n>.review.json; the tests named in <repo>/.coding-crew/solve-feature/*.red.md are the coders' new tests`.
      When `reviewer-model=` (as `next` last printed it) is non-empty, run it on the model in your own list that
      matches that name, as for `coder-model=`, naming that model in the call; when it is empty, on your own. Wait for it to finish.
    2. `bash "<skill-dir>/scripts/solve-feature.sh" reviewed <slug> <n> <branch>` — always: it discards what the
