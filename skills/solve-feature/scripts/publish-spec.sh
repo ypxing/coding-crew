@@ -24,9 +24,10 @@ if [ -e "$dir" ]; then
 fi
 
 # The draft is the file with a Status line under its title and without its Blocked by section: the local tracker reads
-# blockers only from issues-deps.json, written empty, and publish-issues would refuse a name it does not know.
+# blockers only from issues-deps.json, written empty, and publish-issues would refuse a name it does not know. A
+# heading may end in \r: a spec written in a web UI has CRLF line endings.
 rm -rf "$DRAFTS" && mkdir -p "$DRAFTS" && echo '{}' >"$DRAFTS/deps.json" || stop "cannot write $DRAFTS (see above)"
-awk '/^##?#?#?#?#?[ \t]+/ { skip = tolower($0) ~ /^#+[ \t]+blocked by[ \t]*$/ }
+awk '/^##?#?#?#?#?[ \t]+/ { skip = tolower($0) ~ /^#+[ \t]+blocked by[ \t\r]*$/ }
   skip { next }
   !t && /^#[ \t]+[^ \t]/ { print; print ""; print "Status: ready-for-agent"; t = 1; next }
   { print }' "$SPEC" >"$DRAFTS/01-$SLUG.md" || stop "cannot write $DRAFTS (see above)"

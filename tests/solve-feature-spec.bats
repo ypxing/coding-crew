@@ -51,6 +51,17 @@ cli() { node "$LIB/tracker/cli.mjs" "$@"; }
   grep -qxF "A login form." "$output"
 }
 
+@test "start --spec drops the Blocked by section of a spec file with CRLF line endings too" {
+  spec_setup; no_tracker_config
+  printf '\n## Blocked by\n\n- 01-other.md\n' >> "$SPEC"
+  sed -i 's/$/\r/' "$SPEC"
+  run bash "$SCRIPT" start --spec "$SPEC" --issue 13 --branch b
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" next issue-13
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  ! grep -qi 'blocked by' "$output" || false
+}
+
 @test "a second start --spec for the same issue after the first was closed republishes the file's current text, and next hands it out" {
   spec_setup; no_tracker_config
   run bash "$SCRIPT" start --spec "$SPEC" --issue 13 --branch b
