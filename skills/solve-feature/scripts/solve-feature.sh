@@ -86,9 +86,11 @@ CLI="$SELF/../../coding-crew-lib/scripts/tracker/cli.mjs" CHECKS="$SELF/../../co
 
 # push <git push args> — `git push -q`; on failure sets PUSH_WHY to git's reason and returns 1. git's stderr still
 # reaches the terminal. The reason: a rejected ref's parenthesised one (GitHub's workflow-permission refusal arrives
-# there), else git's last fatal:/error: line, else its last non-empty one (a network failure ends in advice).
+# there), else git's last fatal:/error: line, else its last non-empty one (a network failure ends in advice). With
+# PUBLISH=no it pushes nothing and succeeds.
 PUSH_WHY=""
 push() {
+  [ "$PUBLISH" = yes ] || return 0
   local err="$LOGS/push.err" rc=0
   git push -q "$@" 2>"$err" || rc=$?
   cat "$err" >&2
@@ -140,6 +142,42 @@ pr_body_write() {
   f=$(local_body)
   [ -n "$t" ] || [ ! -f "$f" ] || t=$(sed -n '1s/^# //p' "$f" | tr -d '\r')
   { printf '# %s\n\n' "$t"; cat "$2"; } >"$f.tmp" && mv "$f.tmp" "$f"
+}
+
+# pr_open <rs> <body-file> — opens $REF's draft PR with <body-file>, or with PUBLISH=no writes the local body file;
+# sets PR_N to the PR's number or `local`. A failure reopens $REF, as the issue is closed and a re-run would skip it.
+pr_open() {
+  local rc=0 url
+  if [ "$PUBLISH" = no ]; then
+    if ! pr_body_write local "$2" "$(pr_title "$1")"; then
+      local why="cannot write $(local_body)"
+      reopen_ref pr "$why" "Reopen $REF: writing its local PR body failed" "reopen $REF by hand, then fix the cause and re-run"
+      stop pr "$why; $REF is ready again with its work committed on $BRANCH: fix the cause, then re-run"
+    fi
+    PR_N=local; return 0
+  fi
+  url=$(gh pr create --draft --title "$(pr_title "$1")" --body-file "$2" 2>"$LOGS/pr-create.err") || rc=$?
+  cat "$LOGS/pr-create.err" >&2
+  [ "$rc" = 0 ] || pr_create_failed
+  PR_N="${url##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $url"
+}
+
+# pr_head <pr> — sets PR_HEAD to the head a fix round starts from: the PR's head, or with PUBLISH=no the one sync saved.
+PR_HEAD=""
+pr_head() {
+  if [ "$PUBLISH" = no ]; then
+    PR_HEAD=$(cat "$LOGS/review.base" 2>/dev/null) || die "no saved head at $LOGS/review.base: run sync $SLUG $BRANCH first"
+  else
+    PR_HEAD=$(gh pr view "$1" --json headRefOid | jq -r '.headRefOid // empty') || die "gh pr view $1 failed"
+  fi
+}
+
+# pr_ready <pr> — marks the PR ready for review when it is a draft; with PUBLISH=no there is no PR, so nothing.
+pr_ready() {
+  [ "$PUBLISH" = yes ] || return 0
+  local draft
+  draft=$(gh pr view "$1" --json isDraft | jq -r '.isDraft') || die "gh pr view $1 failed"
+  [ "$draft" != true ] || gh pr ready "$1" >/dev/null || die "gh pr ready $1 failed; the body is written, so run gh pr ready $1 by hand"
 }
 
 # .coding-crew/solve-feature/spec.md, which the reviewer and the PR writer read: the tracker's spec op, the PRD then
@@ -194,7 +232,7 @@ start() {
   else git checkout -q -b "$BRANCH" "origin/$default"
   fi || { die_setup_clash "$default"; die "cannot check out $BRANCH (see above)"; }
   # A branch origin lacks is new, or one whose first push was refused: a re-run pushes it before any coder runs.
-  [ "$PUBLISH" = no ] || git show-ref --verify -q "refs/remotes/origin/$BRANCH" || push -u origin "$BRANCH" || die "cannot push $BRANCH: $PUSH_WHY"
+  git show-ref --verify -q "refs/remotes/origin/$BRANCH" || push -u origin "$BRANCH" || die "cannot push $BRANCH: $PUSH_WHY"
   # The checks run the branch's own files, so a branch an earlier run left takes the default branch's fixes first.
   local before; before=$(git rev-parse HEAD)
   if ! merge_in "origin/$default"; then
@@ -202,7 +240,7 @@ start() {
     [ -n "$MERGE_CONFLICTS" ] || die "merging origin/$default into $BRANCH failed (see above)"
     die "merging origin/$default into $BRANCH conflicts in $MERGE_CONFLICTS: merge it by hand, $([ "$PUBLISH" = no ] && echo commit || echo "push $BRANCH"), then re-run"
   fi
-  [ "$PUBLISH" = no ] || [ "$(git rev-parse HEAD)" = "$before" ] || push origin "$BRANCH" || die "cannot push $BRANCH after merging origin/$default into it: $PUSH_WHY"
+  [ "$(git rev-parse HEAD)" = "$before" ] || push origin "$BRANCH" || die "cannot push $BRANCH after merging origin/$default into it: $PUSH_WHY"
   write_spec
   pr_view
   # A ready PR would read as reviewed while coders and the review change it; describe marks it ready again.
@@ -373,7 +411,7 @@ discard_rewrites() {
 # land — the coder left <branch> clean with <ref> closed: merge in origin's branch, gate with the checks, push,
 # open the draft PR if there is none; prints pr=<n>.
 land() {
-  local rs="${REF//\//_}" rc=0 again clog="$LOGS/${REF//\//_}.checks.log" f url checked
+  local rs="${REF//\//_}" rc=0 again clog="$LOGS/${REF//\//_}.checks.log" f checked
   [ -f "$LOGS/$rs.issue.md" ] || die "no saved issue for $REF: run next first"
   checks_lib
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop solve "branch changed to '$(git branch --show-current)'"
@@ -411,7 +449,7 @@ land() {
   checked=$(git rev-parse HEAD)
   # Any failed push reopens the issue, unretried: an Actions runner's commits go with its job, so a closed issue
   # would count as landed work that exists nowhere. Here a re-run finds the commits, since start never resets a branch.
-  if [ "$PUBLISH" = yes ] && ! push -u origin "$BRANCH"; then
+  if ! push -u origin "$BRANCH"; then
     local why="git push failed: $PUSH_WHY"
     reopen_ref push "$why" "Reopen $REF: its push failed" "reopen $REF by hand, then re-run where git can push"
     stop push "$why; $REF is ready again: re-run where git can push (a re-run in this checkout starts from its unpushed commits)"
@@ -422,20 +460,7 @@ land() {
     # once a note lands, the notes section.
     f="$LOGS/pr-body.md"
     printf '%s\n' "$BEGIN" "Implemented by solve-feature (\`$SLUG\`) — in progress." "<!-- solve-feature:slug $SLUG -->" "$END" >"$f"
-  fi
-  if [ -z "$PR_N" ] && [ "$PUBLISH" = no ]; then
-    # Reopened like a failed gh pr create: the issue is closed, so a re-run would skip it and never open the body.
-    if ! pr_body_write local "$f" "$(pr_title "$rs")"; then
-      local why="cannot write $(local_body)"
-      reopen_ref pr "$why" "Reopen $REF: writing its local PR body failed" "reopen $REF by hand, then fix the cause and re-run"
-      stop pr "$why; $REF is ready again with its work committed on $BRANCH: fix the cause, then re-run"
-    fi
-    PR_N=local
-  elif [ -z "$PR_N" ]; then
-    rc=0; url=$(gh pr create --draft --title "$(pr_title "$rs")" --body-file "$f" 2>"$LOGS/pr-create.err") || rc=$?
-    cat "$LOGS/pr-create.err" >&2
-    [ "$rc" = 0 ] || pr_create_failed
-    PR_N="${url##*/}"; [[ "$PR_N" =~ ^[0-9]+$ ]] || die "gh pr create printed no PR URL: $url"
+    pr_open "$rs" "$f"
   fi
   # Pushed and on a PR, the issue has landed; a notes stop after this says how to add them by hand.
   rm -f "$(landing)"
@@ -494,7 +519,7 @@ sync() {
     [ "$rc" != 3 ] || die "no check commands known (DISCOVER): run /setup-coding-crew, then re-run"
     [ "$rc" = 0 ] || die "run-checks.sh exit $rc on $BRANCH merged with origin/$default — log: $clog; once fixed and committed, re-run"
     commit_rewrites || die "committing the checks' rewrites failed (see above): commit them, then re-run"
-    [ "$PUBLISH" = no ] || push -u origin "$BRANCH" || die "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, re-run"
+    push -u origin "$BRANCH" || die "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, re-run"
   fi
   git rev-parse HEAD >"$LOGS/review.base"
   local since; since=$(cat "$LOGS/review.since" 2>/dev/null || true)
@@ -540,11 +565,7 @@ fix() {
   # The round's first run keeps the PR's head, so a re-run after a person pushed the fix by hand still sees it moved.
   if [ -s "$headf" ]; then head_oid=$(head -n1 "$headf")
   else
-    if [ "$PUBLISH" = no ]; then
-      head_oid=$(cat "$LOGS/review.base" 2>/dev/null) || die "no saved head at $LOGS/review.base: run sync $SLUG $BRANCH first"
-    else
-      head_oid=$(gh pr view "$PR" --json headRefOid | jq -r '.headRefOid // empty') || die "gh pr view $PR failed"
-    fi
+    pr_head "$PR"; head_oid=$PR_HEAD
     printf '%s\n' "$head_oid" >"$headf"
   fi
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop fix "branch changed to '$(git branch --show-current)'"
@@ -573,7 +594,7 @@ fix() {
   [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /setup-coding-crew, then re-run" "$clog"
   [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
   commit_rewrites || stop fix "committing the checks' rewrites failed (see above): commit them, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
-  [ "$PUBLISH" = no ] || push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
+  push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   git rev-parse HEAD >"$LOGS/review.base"
 
   # "Changed nothing" is no commit on the branch's own line past the round's head: what merge_in brought in sits
@@ -622,9 +643,11 @@ fix() {
   echo "FIX: findings=$total needs-attention=$(jq length <<<"$items") review-again=$again"
 }
 
-# unresolved_threads — sets UNRESOLVED to the count of $PR's unresolved review threads, every page, and PR_URL.
+# unresolved_threads — sets UNRESOLVED to the count of $PR's unresolved review threads, every page, and PR_URL. With
+# PUBLISH=no there is no PR, so none.
 UNRESOLVED="" PR_URL=""
 unresolved_threads() {
+  UNRESOLVED=0; [ "$PUBLISH" = yes ] || return 0
   local pages
   pages=$(gh api graphql --paginate -F owner='{owner}' -F repo='{repo}' -F pr="$PR" -f query='
     query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
@@ -641,12 +664,12 @@ unresolved_threads() {
 # section, kept as the PR shows it.
 describe() {
   local f="$LOGS/pr-$PR.summary.md" att="$LOGS/pr-$PR.attention.json" datt="$LOGS/pr-$PR.describe-attention.json"
-  local body="$LOGS/pr-$PR.body.md" title="" refs draft result
+  local body="$LOGS/pr-$PR.body.md" title="" refs result
   [ -f "$att" ] || die "no review result at $att: run fix $SLUG $PR <branch> first"
   BRANCH=$(git branch --show-current)
   # A review thread still open needs a person as much as fix's list does. Counted on every run, never written into
-  # fix's file, so a re-run counts afresh. Without a PR there are none.
-  UNRESOLVED=0; [ "$PUBLISH" = no ] || unresolved_threads
+  # fix's file, so a re-run counts afresh.
+  unresolved_threads
   refs=$(node "$CLI" closing-refs --feature-slug "$SLUG") || die "closing-refs failed for '$SLUG' (see above)"
   # The spec is named, not copied: spec.md stays for the reviewer, and a person opens the PRD itself.
   local prd_head="" spec_line="Spec: feature \`$SLUG\`"
@@ -708,10 +731,7 @@ describe() {
   } >"$body"
   pr_body_write "$PR" "$body" "$title" || die "writing PR $PR's body failed"
   if [ "$(jq -s 'add | length' "$att" "$datt")" != 0 ]; then result=needs-attention
-  elif [ "$PUBLISH" = no ]; then result=ready
-  else
-    result=ready draft=$(gh pr view "$PR" --json isDraft | jq -r '.isDraft') || die "gh pr view $PR failed"
-    [ "$draft" != true ] || gh pr ready "$PR" >/dev/null || die "gh pr ready $PR failed; the body is written, so run gh pr ready $PR by hand"
+  else result=ready; pr_ready "$PR"
   fi
   # Without a PR the branch names the result: the person opens the PR from it, with the body in local_body's file.
   [ "$PUBLISH" = yes ] || { outcome "$result branch=$BRANCH"; echo "$result branch=$BRANCH"; return 0; }
