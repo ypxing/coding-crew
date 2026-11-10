@@ -8,7 +8,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 - tracker, solve-feature: the `spec` op puts a `<!-- spec-issue: <id> -->` line above each issue's `### <id> — <title>`
   section, and `result.json` lists only those, so a heading of that shape in the PRD or an issue's text is no longer
-  an extra issue; crew-review unstages what a check `git add`ed before restoring the reviewed checkout.
+  an extra issue; crew-review saves the index before its check run and restores it afterwards, so what a check `git add`ed is
+  unstaged and the caller's own staged changes are kept.
 
 ## [2.3.10]
 
