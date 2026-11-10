@@ -533,7 +533,7 @@ reviewed() {
 # fix — last stdout line `FIX: findings=<k> needs-attention=<a> review-again=yes|no`.
 fix() {
   local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.json" clog="$LOGS/pr-$PR.checks.log"
-  local discarded="$LOGS/pr-$PR.discarded.md" headf="$LOGS/pr-$PR.head" head_oid spec rc=0 total severe moved=no again=no attention=""
+  local discarded="$LOGS/pr-$PR.discarded.md" headf="$LOGS/pr-$PR.head" head_oid spec rc=0 total severe moved=no again=no
   local pr_name="PR #$PR" fresh="; or re-run in a fresh clone"
   [ "$PUBLISH" = yes ] || pr_name=$BRANCH fresh=""
   checks_lib
