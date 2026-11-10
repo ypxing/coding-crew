@@ -14,7 +14,7 @@ bats_require_minimum_version 1.5.0
   for args in "" "feat" "run feat" "next" "land feat 2" "sync feat" "sync feat b x" "fix feat 10" "fix feat 10 feature/feat x" "fix feat ten feature/feat" "reviewed feat 10" "reviewed feat ten feature/feat" "describe feat" "describe feat ten" "start feat other"; do
     run bash "$SCRIPT" $args
     [ "$status" -eq 2 ] || { echo "'$args': status $status"; return 1; }
-    [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
+    [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] [--review-since <sha>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
   done
   [ ! -f "$STATE/gh.log" ]
   [ ! -e "$WORK/.coding-crew/solve-feature/outcome" ]
@@ -565,6 +565,80 @@ synced_branch() {
   run bash "$SCRIPT" sync feat feature/feat
   [ "$status" -eq 1 ]
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: git push failed: pre-receive hook declined; once it can push, or once you have pushed it, re-run" ]
+}
+
+# --- --review-since: a follow-up run's review scoped to the commits since a sha ---------
+
+@test "start --review-since <sha> then sync prints review-base=<sha> when origin's default branch is in it and it is in HEAD" {
+  synced_branch
+  run bash "$SCRIPT" start feat --review-since "$TIP"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  coder 9
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out review-base)" = "$TIP" ]
+}
+
+@test "--review-since at a commit that merged the default branch in counts as up to date" {
+  synced_branch
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  git merge -q --no-ff --no-edit origin/main && git push -q origin feature/feat
+  local merged; merged=$(git rev-parse HEAD)
+  run bash "$SCRIPT" start feat --review-since "$merged"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  coder 9
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out review-base)" = "$merged" ]
+}
+
+@test "sync prints an empty review-base= when the default branch moved past the sha, the sha is not in HEAD, or none was given" {
+  synced_branch
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"review-base="* ]] && [ -z "$(out review-base)" ]
+
+  run bash "$SCRIPT" start feat --review-since "$TIP"
+  [ "$status" -eq 0 ]
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"review-base="* ]] && [ -z "$(out review-base)" ]
+
+  git checkout -q -b aside origin/main && echo aside > aside.txt && git add aside.txt && git commit -q -m aside
+  local aside; aside=$(git rev-parse HEAD); git checkout -q feature/feat
+  run bash "$SCRIPT" start feat --review-since "$aside"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"review-base="* ]] && [ -z "$(out review-base)" ]
+
+  # A later start without the flag forgets the earlier one's sha.
+  run bash "$SCRIPT" start feat --review-since "$(git rev-parse HEAD)"
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"review-base="* ]] && [ -z "$(out review-base)" ]
+}
+
+@test "start --review-since naming no commit exits 1 naming it with a stopped outcome; a sha only origin had before the fetch is accepted" {
+  synced_branch
+  run bash "$SCRIPT" start feat --review-since nosuchref
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"nosuchref"* ]] || { echo "$output"; return 1; }
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: start failed: "*"nosuchref"* ]]
+  [ -f .coding-crew/solve-feature/result.json ]
+
+  run bash "$SCRIPT" start feat --review-since
+  [ "$status" -eq 2 ]
+
+  local remote; remote=$(branch_moves bot.txt "a bot's commit")
+  ! git cat-file -e "$remote^{commit}" 2>/dev/null || false
+  run bash "$SCRIPT" start feat --review-since "$remote"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out review-base)" = "$remote" ]
 }
 
 @test "issues run lowest number first, skipping closed and blocked-labelled issues and any whose blocker is neither CLOSED nor awaiting-merge" {

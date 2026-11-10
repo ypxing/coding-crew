@@ -3,7 +3,7 @@
 # loop and runs each issue's coder (between `next` and `land`), a conflicting merge's resolver (between `sync`'s exit 4
 # and its re-run), the review's reviewer (before `reviewed`) and fixer
 # (before `fix`) and the PR's writer (before `describe`) as subagents of the host agent; every guard is an exit code here.
-#   start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch>
+#   start <slug> [--branch <name>] [--review-since <sha>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch>
 #   | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr> — each function's comment states its contract.
 # Exit: 0 ok; 1 a stop (its one-line result in .coding-crew/solve-feature/outcome); 2 a usage error; 3 from next
 # when no ready issue is left; 4 from sync when its merge of the default branch conflicts, left in progress.
@@ -36,14 +36,15 @@ outcome() {
 die() { echo "solve-feature: $*" >&2; outcome "stopped: $CMD failed: $*"; exit 1; }
 usage() {
   [ -z "${1:-}" ] || echo "solve-feature: $1" >&2
-  echo "usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>" >&2; exit 2
+  echo "usage: solve-feature.sh start <slug> [--branch <name>] [--review-since <sha>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>" >&2; exit 2
 }
 
 CMD="${1:-}"; [ $# -eq 0 ] || shift
-SLUG="" BRANCH="" REF="" PR=""
+SLUG="" BRANCH="" REF="" PR="" SINCE=""
 case "$CMD" in
   start) while [ $# -gt 0 ]; do case "$1" in
       --branch) [ $# -ge 2 ] || usage "--branch needs a value"; BRANCH="$2"; shift 2 ;;
+      --review-since) [ $# -ge 2 ] && [ -n "$2" ] || usage "--review-since needs a value"; SINCE="$2"; shift 2 ;;
       -*) usage "unknown flag: $1" ;;
       *) [ -z "$SLUG" ] || usage "unexpected argument: $1"; SLUG="$1"; shift ;;
     esac; done ;;
@@ -70,7 +71,7 @@ BRANCH_WORK=(. ':!.coding-crew/config.json') SETUP_FILES=(.coding-crew/config.js
 git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 ||
   { BRANCH_WORK+=(':!.coding-crew/dev-commands.json'); SETUP_FILES+=(.coding-crew/dev-commands.json); }
 [ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS/result.json" "$LOGS/spec.md" "$LOGS"/pr-*.r[0-9]*.* "$LOGS"/*.checks.head "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head \
-  "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base"
+  "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base" "$LOGS/review.since"
 # solveFeature.publish: false keeps the run on this machine: no push, no PR, the body in local_body's file. Read from
 # the user-level config only: an Actions runner has none, so it never keeps commits that vanish with the runner.
 PUBLISH=yes
@@ -171,8 +172,8 @@ model() {
   done
 }
 
-# start — preconditions, the branch (--branch, else feature/<slug>), spec.md; prints branch=, coder-model=,
-# reviewer-model= and pr= (empty with no open PR).
+# start — preconditions, the branch (--branch, else feature/<slug>), spec.md, --review-since's commit for sync;
+# prints branch=, coder-model=, reviewer-model= and pr= (empty with no open PR).
 start() {
   [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || die "working tree is not clean: commit or stash first"
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
@@ -181,6 +182,10 @@ start() {
   # an existing one: a re-run lands on it as the last run left it, with the default branch merged in (and land and
   # fix merge in origin's copy of the branch, so a commit someone else pushed there never refuses their push).
   git fetch -q origin || die "git fetch origin failed (see above)"
+  if [ -n "$SINCE" ]; then
+    local since; since=$(git rev-parse -q --verify "$SINCE^{commit}") || die "--review-since '$SINCE' is not a commit here or on origin"
+    echo "$since" >"$LOGS/review.since"
+  fi
   local default; default=$(default_branch)
   [ "$BRANCH" != "$default" ] || die "--branch '$BRANCH': '$default' is the default branch; name a feature branch"
   BRANCH=${BRANCH:-feature/$SLUG}
@@ -440,7 +445,9 @@ land() {
 }
 
 # sync — before the first review: merge origin's default branch (then origin's <branch>) into <branch>, gate a merge with the checks, push it,
-# and save HEAD as the head the reviewer starts from. A conflict exits 4 with the merge left in progress, printing
+# and save HEAD as the head the reviewer starts from. Prints review-base=: start's --review-since commit when origin's
+# default branch is in it and it is in HEAD, else empty — an older base would put the merged-in default branch's
+# commits under review, for the fixer to change. A conflict exits 4 with the merge left in progress, printing
 # conflicts=<files>; once someone finishes it, a re-run gates and pushes it. Success is judged here, never from
 # whoever resolved it: no merge in progress, a clean tree, the default branch in HEAD.
 sync() {
@@ -490,6 +497,11 @@ sync() {
     [ "$PUBLISH" = no ] || push -u origin "$BRANCH" || die "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, re-run"
   fi
   git rev-parse HEAD >"$LOGS/review.base"
+  local since; since=$(cat "$LOGS/review.since" 2>/dev/null || true)
+  if [ -n "$since" ] && git merge-base --is-ancestor "origin/$default" "$since" 2>/dev/null &&
+    git merge-base --is-ancestor "$since" HEAD 2>/dev/null; then echo "review-base=$since"
+  else echo "review-base="
+  fi
 }
 
 # The reviewer may run the tests and its own experiments but leaves the tree as it found it; what it left anyway
