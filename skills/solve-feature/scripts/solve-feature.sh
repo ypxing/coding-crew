@@ -226,29 +226,13 @@ model() {
   done
 }
 
-# publish_spec — --spec's file as the one-issue local feature $SLUG, rebuilt from the file on every run, as on a fresh
-# runner: the draft is the file with a Status line under its title and without its Blocked by section, which the local
-# tracker never reads (blockers live in issues-deps.json, written empty) and publish-issues would refuse. Only a
-# feature directory carrying start's own marker is removed: one without it is someone's real feature.
+# publish_spec — --spec's file as the one-issue local feature $SLUG (publish-spec.sh). An earlier run's landing record
+# goes with the feature it rebuilds, or next would read the rebuilt issue as closed but never landed.
 publish_spec() {
-  local kind dir="$MAIN_ROOT/.coding-crew/scratch/$SLUG" drafts="$LOGS/spec-drafts"
-  kind=$(node "$CLI" config | sed -n 's/^tracker=//p') || die "config failed (see above)"
-  [ "$kind" = local ] || die "--spec runs on the local tracker, and this repo's is '$kind': set CREW_TRACKER=local for the run"
-  [ -f "$SPEC" ] || die "no spec file $SPEC"
-  grep -qE '^#[[:blank:]]+[^[:blank:]]' "$SPEC" || die "spec file $SPEC has no '# <title>' line"
-  if [ -e "$dir" ]; then
-    [ -f "$dir/.solve-feature-spec" ] || die "$dir exists and no start --spec made it: move it aside, or pick another --issue, then re-run"
-    rm -rf "$dir" || die "cannot remove $dir (see above)"
-  fi
-  # An earlier run's record would read the rebuilt issue as closed-but-unlanded.
+  local why
+  why=$(bash "$SELF/publish-spec.sh" --cli "$CLI" --main-root "$MAIN_ROOT" --drafts "$LOGS/spec-drafts" --slug "$SLUG" --spec "$SPEC") ||
+    die "${why:-publishing $SPEC failed (see above)}"
   rm -f "$(landing)"
-  rm -rf "$drafts" && mkdir -p "$drafts" && echo '{}' >"$drafts/deps.json" || die "cannot write $drafts (see above)"
-  awk '/^##?#?#?#?#?[ \t]+/ { skip = tolower($0) ~ /^#+[ \t]+blocked by[ \t]*$/ }
-    skip { next }
-    !t && /^#[ \t]+[^ \t]/ { print; print ""; print "Status: ready-for-agent"; t = 1; next }
-    { print }' "$SPEC" >"$drafts/01-$SLUG.md" || die "cannot write $drafts (see above)"
-  node "$CLI" publish-issues --feature-slug "$SLUG" --drafts "$drafts" >/dev/null || die "publishing $SPEC failed (see above)"
-  echo "$SPEC" >"$dir/.solve-feature-spec" || die "cannot write $dir/.solve-feature-spec (see above)"
 }
 
 # start — preconditions, --spec's feature, the branch (--branch, else feature/<slug>), spec.md, --review-since's

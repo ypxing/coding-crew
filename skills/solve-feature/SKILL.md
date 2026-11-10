@@ -4,8 +4,9 @@ description: >
   Runs one feature's ready-for-agent issues unattended on one branch, each by a fresh coder subagent gated by
   the project's checks, in a draft PR that is reviewed at the end, has its findings fixed, and is marked ready
   when nothing needs a person. Works with a local or GitHub tracker. Use when a feature's issues are ready and
-  should land as one reviewed PR. Trigger with /solve-feature <slug>. Optional: --branch <name>, --review-since <sha>.
-argument-hint: "<feature-slug> [--branch <name>] [--review-since <sha>]"
+  should land as one reviewed PR. Trigger with /solve-feature <slug>, or /solve-feature --spec <file> --issue <n> to
+  build one spec file as the feature issue-<n>. Optional: --branch <name>, --review-since <sha>.
+argument-hint: "<feature-slug> | --spec <file> --issue <n> [--branch <name>] [--review-since <sha>]"
 allowed-tools: Bash shell
 ---
 
@@ -18,8 +19,9 @@ and the script decides whether their work lands and when the PR is ready.
 A bare word the user gave is the slug: pass it as is; `start` stops on a slug the tracker does not list. `<repo>` is the repo's absolute top level;
 `<skill-dir>` is the directory you read this file from.
 
-1. **Start.** `bash "<skill-dir>/scripts/solve-feature.sh" start <slug> [--branch <name>] [--review-since <sha>]`, passing on the flags the user gave. It prints `branch=`,
-   `coder-model=`, `reviewer-model=` and `pr=`; keep them.
+1. **Start.** `bash "<skill-dir>/scripts/solve-feature.sh" start <slug> [--branch <name>] [--review-since <sha>]`, passing on the flags the user gave;
+   given `--spec <file> --issue <n>`, pass those in place of `<slug>`. It prints `branch=`,
+   `coder-model=`, `reviewer-model=` and `pr=`; keep them. With `--spec` it prints `slug=` first: that value is `<slug>` in every step below.
 2. **Per issue**, until `next` exits 3:
    1. `bash "<skill-dir>/scripts/solve-feature.sh" next <slug>` — prints the issue's ref. Exit 3: no ready issue is
      left, go to step 3; it prints `red-files=` and `reviewer-model=` again, for step 3.
@@ -99,4 +101,7 @@ the user works in. Nothing takes a lock: never start a second run on a slug whos
 | `--review-since <sha>`                          | Scopes the review's findings to the commits since `<sha>` (a follow-up run's), while spec and gaps are judged on the whole code; used only when `<sha>` holds the default branch and is in the branch after `sync`'s merge, else the whole branch is reviewed. Not a commit: `start` stops |
 | `CREW_COMMANDS_FILE`                            | The dev commands file every check reads and writes, in place of the repo's; keep it outside the checkout, where a coder cannot commit it. One that is not writable is never rewritten: discovery stops instead. A keyed check may be slower than its raw command (a host's may go through a broker and run in containers): that is expected, and no reason to fall back to raw commands |
 | `solveFeature.models.coder` / `.reviewer`       | The coder and fixer / reviewer model name; `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` override it, and `start` prints the one it resolved |
+| `--spec <file> --issue <n>`                     | Builds the spec in `<file>` as the one-issue local feature `issue-<n>`, with no tracker set up beforehand: every `start` rebuilds it from the file. Keep the file outside the checkout (an untracked one inside stops `start` as a dirty tree does), and its `## Blocked by` section is dropped. Needs the local tracker in effect |
+| `CREW_PUBLISH`                                  | `false` turns publishing off as `solveFeature.publish: false` does, with no user config; any other value leaves that config's answer |
+| `CREW_TRACKER`                                  | `local` or `github`: the tracker every process of the run uses, ahead of the project's and the user-level config. Empty counts as unset |
 | `solveFeature.publish`                          | `false` keeps the run on this machine: no `git push` and no `gh pr` call, the body in the local file of step 3. Read from the user-level `~/.coding-crew/config.json` only, never the project's, so an Actions run always pushes |

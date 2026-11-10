@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature, tracker: `/solve-feature --spec <file> --issue <n>` builds one spec file as the one-issue local
+  feature `issue-<n>` with no tracker set up beforehand, rebuilding it from the file on every run;
+  `CREW_PUBLISH=false` turns pushing and PR calls off without a user config, and `CREW_TRACKER` picks the tracker
+  for every process of a run, ahead of the repo's config (#739).
 - tracker, solve-feature: the `spec` op puts a `<!-- spec-issue: <id> -->` line above each issue's `### <id> — <title>`
   section, and `result.json` lists only those, so a heading of that shape in the PRD or an issue's text is no longer
   an extra issue; crew-review saves the index before its check run and restores it afterwards, so what a check `git add`ed is

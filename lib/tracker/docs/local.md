@@ -11,7 +11,8 @@ The tracker this repo uses is the `tracker` section of `.coding-crew/config.json
 ```
 
 `kind` is `local` or `github`; other sections of the file (`solveFeature`) are kept beside it. No
-`tracker` section means `local`, so this tracker needs no config at all. `configure-tracker`
+`tracker` section means `local`, so this tracker needs no config at all. A non-empty `CREW_TRACKER` environment variable
+(`local` or `github`) overrides both files, for a host running in a repo whose config it cannot change. `configure-tracker`
 writes the section, and `node "$TRACKER" config` prints what is in effect (`tracker=<kind>`,
 `configured=yes|no`). This doc ships beside the tracker CLI in the `coding-crew-lib` skill
 (`coding-crew-lib/scripts/tracker/docs/`, copied through its link into `lib/`) and is refreshed by every install — edit `config.json`, not this file.

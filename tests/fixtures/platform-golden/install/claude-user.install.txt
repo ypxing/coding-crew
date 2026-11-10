@@ -82,6 +82,7 @@ HOME/.claude/skills/solve-feature/ /
 HOME/.claude/skills/solve-feature/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/solve-feature/result.schema.json exec=0
 HOME/.claude/skills/solve-feature/scripts/ /
+HOME/.claude/skills/solve-feature/scripts/publish-spec.sh exec=0
 HOME/.claude/skills/solve-feature/scripts/result.mjs exec=0
 HOME/.claude/skills/solve-feature/scripts/solve-feature.sh exec=0
 HOME/.claude/skills/solve-issue/ /
