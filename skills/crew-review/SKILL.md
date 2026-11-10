@@ -90,13 +90,18 @@ bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$(gi
 
 Run the project's checks by key in the reviewed repo itself, not a scratch copy: its checks passed and their
 rewrites were committed before review, so the run should leave the tree as it found it, and a `<key>: rewrote:` or
-`<key>: modified files:` line from it is a finding. A failure from a command run other than by key, such as a single
+`<key>: modified files:` line from it is a finding. Note `git status --porcelain` before the run; afterwards put back
+each file those lines name that was clean before (`git checkout -- <file>`), and say in the report which
+already-dirty files it changed. A failure from a command run other than by key, such as a single
 test file or an ad-hoc `npm test`, is never a finding until the keyed check fails too; an environment failure (a
-missing service, socket or env variable) is the environment, not the change. Narrow commands still help to probe a
+missing service, socket or env variable) is the environment, not the change. When `run-checks.sh` prints `DISCOVER`
+there is no dev commands file and so no key: run the project's own test command through `run.sh` and judge its
+failures as the keyed check's, environment failures still excluded. Narrow commands still help to probe a
 finding. Compare against base only when a keyed check fails at HEAD: `git worktree add --detach` the base commit in
 a new `mktemp -d` directory, run `run-checks.sh` there with no dependency install, and remove that worktree
-afterwards; a base run that fails on missing dependencies is no comparison. Never check out, switch or stash in the
-reviewed repo.
+afterwards; a base run that fails on missing dependencies is no comparison. A docker-mode project (`install_mode`
+`docker`) gets no comparison: in a new worktree `run-checks.sh` installs first. Never check out, switch or stash in
+the reviewed repo.
 
 Start helper subagents whenever they help. Every judgement about the change is made on your model, never a weaker
 one, and the report is yours, judged across the whole change.
