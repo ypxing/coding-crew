@@ -43,7 +43,9 @@ bash "<skill-dir>/../coding-crew-lib/scripts/git-workflow/branch-safety-check.sh
 ## Step 0.1 — Check prerequisites
 
 `PROJECT_ROOT` is this checkout, `git rev-parse --show-toplevel`; carry it as a literal, since each
-bash call is a fresh shell. Do not install dependencies up front. Run project commands through
+bash call is a fresh shell. Do not install dependencies up front. Run a project check (the suite, lint, typecheck)
+by its key through `bash "<skill-dir>/../coding-crew-lib/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT"`,
+never by retyping its command line; run every other project command through
 `bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<command>"`; only when
 one fails for a missing dependency (module-not-found, import error, test runner not found) invoke the
 `dep-install` skill, with `PROJECT_ROOT` set, then retry the command once.

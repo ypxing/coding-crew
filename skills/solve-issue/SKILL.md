@@ -255,7 +255,7 @@ or touch unrelated doc sections.
 
 ### 5. Verify
 
-This is the one full-suite run:
+Run every check once more on the finished work:
 
 ```bash
 bash "<skill-dir>/../coding-crew-lib/scripts/checks/run-checks.sh" --project-root "$PROJECT_ROOT"

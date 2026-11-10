@@ -62,9 +62,9 @@ your host, do the review yourself.
 
 ## Review
 
-Leave the repo as you found it: never edit, commit or change its tree. Run what helps — the tests, the scripts
-under review, experiments — in a scratch copy when they would write to it, in a new directory from `mktemp -d`, never
-a fixed path such as `/tmp/<name>`: other reviews share the machine.
+Leave the repo as you found it: never edit, commit or change its tree, the keyed checks below excepted. Run what
+else helps — a single test file, the scripts under review, experiments — in a scratch copy when they would write to
+it, in a new directory from `mktemp -d`, never a fixed path such as `/tmp/<name>`: other reviews share the machine.
 
 <!-- fragment:project-commands -->
 **Run a project check by its key through `run-checks.sh`** — the suite, lint, typecheck, any key the dev commands
@@ -91,12 +91,10 @@ bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$(gi
 Run the project's checks by key in the reviewed repo itself, not a scratch copy: its checks passed and their
 rewrites were committed before review, so the run should leave the tree as it found it, and a `<key>: rewrote:` or
 `<key>: modified files:` line from it is a finding. Note `git status --porcelain` before the run; afterwards put back
-each file those lines name that was clean before (`git checkout -- <file>`), and say in the report which
-already-dirty files it changed. A failure from a command run other than by key, such as a single
+each file those lines name that was clean before — remove one the run created (`git clean -f -- <file>`), restore
+one it rewrote or removed (`git checkout -- <file>`) — and say in the report which already-dirty files it changed. A failure from a command run other than by key, such as a single
 test file or an ad-hoc `npm test`, is never a finding until the keyed check fails too; an environment failure (a
-missing service, socket or env variable) is the environment, not the change. When `run-checks.sh` prints `DISCOVER`
-there is no dev commands file and so no key: run the project's own test command through `run.sh` and judge its
-failures as the keyed check's, environment failures still excluded. Narrow commands still help to probe a
+missing service, socket or env variable) is the environment, not the change. Narrow commands still help to probe a
 finding. Compare against base only when a keyed check fails at HEAD: `git worktree add --detach` the base commit in
 a new `mktemp -d` directory, run `run-checks.sh` there with no dependency install, and remove that worktree
 afterwards; a base run that fails on missing dependencies is no comparison. A docker-mode project (`install_mode`
