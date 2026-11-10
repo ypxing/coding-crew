@@ -46,10 +46,16 @@ const refs = files
   .filter((f) => f.endsWith(".ref"))
   .map((f) => readFileSync(at(f), "utf8").split("\n")[0])
   .filter((r) => r && (/\/\.coding-crew\/scratch\/([^/]+)\/issues\//.exec(r)?.[1] ?? args.slug) === args.slug);
-const sections = lines("spec.md")
-  .map((l) => /^### (\S+) — (.*)$/.exec(l))
-  .filter(Boolean)
-  .map(([, id, title]) => ({ id, title, ref: pick(id, refs, slugOf) }));
+// A section is the tracker's `<!-- spec-issue: <id> -->` line and the `### <id> — <title>` under it: a heading of that
+// shape in the PRD or an issue's prose is no issue.
+const spec = lines("spec.md");
+const sections = spec
+  .flatMap((l, i) => {
+    const id = /^<!-- spec-issue: (\S+) -->$/.exec(l)?.[1];
+    const title = id && spec[i + 1]?.startsWith(`### ${id} — `) ? spec[i + 1].slice(`### ${id} — `.length) : null;
+    return title === null ? [] : [{ id, title }];
+  })
+  .map(({ id, title }) => ({ id, title, ref: pick(id, refs, slugOf) }));
 
 if (args["red-files"] === "yes") {
   const red = sections.filter((s) => s.ref).map((s) => at(`${s.ref.replace(/\//g, "_")}.red.md`));

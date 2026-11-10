@@ -953,6 +953,7 @@ test("spec (github) prints prd's output, a blank line, then each known issue in 
     r.stdout,
     [
       prd,
+      "<!-- spec-issue: 7-seven -->",
       "### 7-seven — Seven",
       "",
       "## Decisions",
@@ -969,6 +970,7 @@ test("spec (github) prints prd's output, a blank line, then each known issue in 
       "",
       "- c",
       "",
+      "<!-- spec-issue: 10-ten -->",
       "### 10-ten — Ten",
       "",
       "## Acceptance criteria",
@@ -989,9 +991,9 @@ test("spec (local) with no PRD prints the issues alone, keeping Status:, the tit
   assert.equal(r.code, 0, r.stderr);
   assert.equal(
     r.stdout,
-    "### 2-two — Two\n\nStatus: done\n\n## Acceptance criteria\n\n- w\n\n" +
-      "### 10-ten — Ten\n\nStatus: ready-for-agent\n\n- t\n\n" +
-      "### notes — notes\n\nno title here\n",
+    "<!-- spec-issue: 2-two -->\n### 2-two — Two\n\nStatus: done\n\n## Acceptance criteria\n\n- w\n\n" +
+      "<!-- spec-issue: 10-ten -->\n### 10-ten — Ten\n\nStatus: ready-for-agent\n\n- t\n\n" +
+      "<!-- spec-issue: notes -->\n### notes — notes\n\nno title here\n",
   );
 });
 
@@ -1002,7 +1004,7 @@ test("spec (local) puts the PRD first, then a blank line", async () => {
   writeIssue(dir, "open", "01-one.md", "# One\n\n- [ ] x\n");
   const r = await cli(dir, ["spec", "--feature-slug", "feat"]);
   assert.equal(r.code, 0, r.stderr);
-  assert.equal(r.stdout, "# PRD: feat\n\nthe prd\n\n### 01-one — One\n\n- x\n");
+  assert.equal(r.stdout, "# PRD: feat\n\nthe prd\n\n<!-- spec-issue: 01-one -->\n### 01-one — One\n\n- x\n");
 });
 
 test("spec with no PRD and no issues prints nothing and exits 0, on both backends", async () => {

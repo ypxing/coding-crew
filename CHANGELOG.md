@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tracker, solve-feature: the `spec` op puts a `<!-- spec-issue: <id> -->` line above each issue's `### <id> — <title>`
+  section, and `result.json` lists only those, so a heading of that shape in the PRD or an issue's text is no longer
+  an extra issue; crew-review unstages what a check `git add`ed before restoring the reviewed checkout.
+
 ## [2.3.10]
 
 - solve-feature: a coder's notes for a person hold only what must be done or decided before the branch merges, so the

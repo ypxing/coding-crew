@@ -217,6 +217,17 @@ fix_ready() {
   [ "$(r '.issues[0].commits')" = '[]' ]
 }
 
+@test "a '### <id> — <title>' heading in the PRD or an issue's own text is no issue in result.json" {
+  printf '\n### rollout — Deployment plan\n' >> "$STATE/prd.md"
+  printf '\n### 9-nine — Nine\n' >> "$STATE/2.md"
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat
+  coder 2
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  result_ok
+  [ "$(r '[.issues[].ref]')" = '["3-three","2-two"]' ]
+}
+
 @test "an issue is matched to its own feature's ref, not another feature's issue file of the same name" {
   # A local tracker's refs are paths under .coding-crew/scratch/<feature>/issues/; two features can both have a 3.md.
   # This run never hands out its own 3, so only the other feature's ref has that name.
