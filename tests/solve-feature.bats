@@ -1575,9 +1575,9 @@ SH
   [ "$status" -ne 0 ] && [[ "$output" == *"needs the repo secret ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"* ]]
 }
 
-@test "SKILL.md has the fixer run project commands through run.sh as solve-issue does, where a docker-mode project's dependencies are" {
+@test "SKILL.md has the fixer run checks by key through run-checks.sh and other project commands through run.sh, as solve-issue does" {
   local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
   local prompt; prompt=$(awk '/with exactly this prompt: `Judge each finding/{f=1} f; f && /ask no questions`/{exit}' "$skill" | tr '\n' ' ' | sed 's/  */ /g')
-  [[ "$prompt" == *"Run every project command through run.sh in the coding-crew-lib skill (coding-crew-lib/scripts/checks/run.sh --project-root <repo> -- \"<command>\"), as the solve-issue skill's Step 4 says: it runs where the project's dependencies are installed. Use the tdd skill"* ]] || { echo "$prompt"; return 1; }
+  [[ "$prompt" == *"Run a project check by its key through run-checks.sh in the coding-crew-lib skill (coding-crew-lib/scripts/checks/run-checks.sh --project-root <repo>), never by retyping its command line, and every other project command through run.sh (coding-crew-lib/scripts/checks/run.sh --project-root <repo> -- \"<command>\"), as the solve-issue skill's Step 4 says: they run where the project's dependencies are installed. Use the tdd skill"* ]] || { echo "$prompt"; return 1; }
   grep -qF '<!-- fragment:project-commands -->' "$REPO_ROOT/skills/solve-issue/SKILL.md"
 }

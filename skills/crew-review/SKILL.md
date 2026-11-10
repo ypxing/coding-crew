@@ -67,16 +67,36 @@ under review, experiments — in a scratch copy when they would write to it, in 
 a fixed path such as `/tmp/<name>`: other reviews share the machine.
 
 <!-- fragment:project-commands -->
-**Run every project command through `run.sh`** — test runs, type checks, linting, a look at an installed
-dependency, and any ad-hoc command, a one-off `docker compose` one included. It runs the command where the dev
-commands file's `install_mode` says: inside docker (with this checkout's compose override), where a docker-mode
-project's dependencies are installed and the host has none, or on the host. Never hand-build a `docker compose`
-command.
+**Run a project check by its key through `run-checks.sh`** — the suite, lint, typecheck, any key the dev commands
+file has — never by retyping its command line: the dev commands file (a host's `CREW_COMMANDS_FILE` included)
+decides what a key runs, and the command it gives may not be the one you would type. It runs every check and prints
+each as `=== <key>: <command>`, then `<key>: pass` or `<key>: fail (exit N)`.
+
+```bash
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/run-checks.sh" --project-root "$(git rev-parse --show-toplevel)"
+```
+
+**Run every other project command through `run.sh`** — one test file, a look at an installed dependency, and any
+ad-hoc command, a one-off `docker compose` one included. It runs the command where the dev commands file's
+`install_mode` says: inside docker (with this checkout's compose override), where a docker-mode project's
+dependencies are installed and the host has none, or on the host. Never hand-build a `docker compose` command. A
+failure from such a command that looks like the environment (a missing service, socket or env variable) is
+re-checked with `run-checks.sh` before any verdict.
 
 ```bash
 bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$(git rev-parse --show-toplevel)" -- "<command>"
 ```
 <!-- /fragment:project-commands -->
+
+Run the project's checks by key in the reviewed repo itself, not a scratch copy: its checks passed and their
+rewrites were committed before review, so the run should leave the tree as it found it, and a `<key>: rewrote:` or
+`<key>: modified files:` line from it is a finding. A failure from a command run other than by key, such as a single
+test file or an ad-hoc `npm test`, is never a finding until the keyed check fails too; an environment failure (a
+missing service, socket or env variable) is the environment, not the change. Narrow commands still help to probe a
+finding. Compare against base only when a keyed check fails at HEAD: `git worktree add --detach` the base commit in
+a new `mktemp -d` directory, run `run-checks.sh` there with no dependency install, and remove that worktree
+afterwards; a base run that fails on missing dependencies is no comparison. Never check out, switch or stash in the
+reviewed repo.
 
 Start helper subagents whenever they help. Every judgement about the change is made on your model, never a weaker
 one, and the report is yours, judged across the whole change.

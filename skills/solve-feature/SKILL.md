@@ -57,9 +57,10 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      directory — with exactly this prompt: `Judge each finding in <repo>/.coding-crew/solve-feature/pr-<n>.review.json
      against the code and the spec in <repo>/.coding-crew/solve-feature/spec.md before acting on it: its fix is a
      reviewer's suggestion, and a tool, API or platform fact a fix rests on is checked, never taken from memory. Run
-     every project command through run.sh in the coding-crew-lib skill (coding-crew-lib/scripts/checks/run.sh
-     --project-root <repo> -- "<command>"), as the solve-issue skill's Step 4 says: it runs where the project's
-     dependencies are installed. Use the tdd skill to fix each real defect with the fix that adds no trigger, flag,
+     a project check by its key through run-checks.sh in the coding-crew-lib skill (coding-crew-lib/scripts/checks/run-checks.sh
+     --project-root <repo>), never by retyping its command line, and every other project command through run.sh
+     (coding-crew-lib/scripts/checks/run.sh --project-root <repo> -- "<command>"), as the solve-issue skill's Step 4
+     says: they run where the project's dependencies are installed. Use the tdd skill to fix each real defect with the fix that adds no trigger, flag,
      permission, input or path the spec does not name. List each finding you did not fix, with why — it is wrong, or
      only changing a spec decision fixes it (quote the decision) — in <repo>/.coding-crew/solve-feature/pr-<n>.unfixed.json as a
      JSON list, [{"finding": <its 0-based index in the report's findings>, "why": "<why>"}], and leave that file absent if you fixed them all. Anything else a person must do or decide goes in
@@ -95,6 +96,6 @@ the user works in. Nothing takes a lock: never start a second run on a slug whos
 | ----------------------------------------------- | -------------------------------------------------------------- |
 | `--branch <name>`                               | The branch the run uses, never the default branch (default: one named after the slug) |
 | `--review-since <sha>`                          | Scopes the review's findings to the commits since `<sha>` (a follow-up run's), while spec and gaps are judged on the whole code; used only when `<sha>` holds the default branch and is in the branch after `sync`'s merge, else the whole branch is reviewed. Not a commit: `start` stops |
-| `CREW_COMMANDS_FILE`                            | The dev commands file every check reads and writes, in place of the repo's; keep it outside the checkout, where a coder cannot commit it. One that is not writable is never rewritten: discovery stops instead |
+| `CREW_COMMANDS_FILE`                            | The dev commands file every check reads and writes, in place of the repo's; keep it outside the checkout, where a coder cannot commit it. One that is not writable is never rewritten: discovery stops instead. A keyed check may be slower than its raw command (a host's may go through a broker and run in containers): that is expected, and no reason to fall back to raw commands |
 | `solveFeature.models.coder` / `.reviewer`       | The coder and fixer / reviewer model name; `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` override it, and `start` prints the one it resolved |
 | `solveFeature.publish`                          | `false` keeps the run on this machine: no `git push` and no `gh pr` call, the body in the local file of step 3. Read from the user-level `~/.coding-crew/config.json` only, never the project's, so an Actions run always pushes |

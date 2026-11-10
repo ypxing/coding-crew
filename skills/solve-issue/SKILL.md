@@ -23,9 +23,13 @@ the words, not the wire format:
   a `[WIP]` marker (Step 6) so the branch preserves it, and say what remains. A later round resumes here.
 - **`blocked`** — cannot proceed without human input or an environment fix. Not a way to avoid
   reporting `partial`. A failure that names something **no file in this repo can provide** — a
-  credential, a license, a daemon, a registry, an external service — is `blocked`: run the
-  project's documented command for it **once**, keep that command, its exit code and its verbatim
-  output as the evidence, and stop. Do not start services by hand, search for tokens, or edit
+  credential, a license, a daemon, a registry, an external service — is `blocked`. For a failure of
+  something a check runs, the evidence is one `run-checks.sh` run (Step 5), or `run.sh`'s
+  docker-install stop (Step 2): a failure seen from a command line you typed, through `run.sh` or
+  not, is first re-checked with `run-checks.sh`, and only its result decides `blocked` — the dev
+  commands file may run that check differently. A failing command no check key runs (a registry
+  login, a migration) is run through `run.sh` **once**, its output the evidence. Keep the command,
+  its exit code and its verbatim output, and stop. Do not start services by hand, search for tokens, or edit
   compose files or the Makefile to get around it: whatever you start is gone before anyone re-runs
   the checks, so a pass that depended on it proves nothing. Setup *inside* the repo that the issue
   asks for (helpers, wiring, config) is still coding, and in scope. A `blocked` run that changed files
@@ -41,6 +45,9 @@ BLOCKED: <reason>
 $ <command> (exit <N>)
 <verbatim output, or the dependency name>
 ```
+
+For a failed check, `<command>` and `<N>` are the failing key's command and exit code as `run-checks.sh`
+prints them (`=== <key>: <cmd>`, `<key>: fail (exit N)`). Preflight and premise stops keep their own form.
 
 Do not attempt workarounds.
 
@@ -179,11 +186,21 @@ call (`grep -rn -E 'patternA|patternB'`) and read several files per turn.
 ### 4. Implement with TDD
 
 <!-- fragment:project-commands -->
-**Run every project command through `run.sh`** — test runs, type checks, linting, a look at an installed
-dependency, and any ad-hoc command, a one-off `docker compose` one included. It runs the command where the dev
-commands file's `install_mode` says: inside docker (with this checkout's compose override), where a docker-mode
-project's dependencies are installed and the host has none, or on the host. Never hand-build a `docker compose`
-command.
+**Run a project check by its key through `run-checks.sh`** — the suite, lint, typecheck, any key the dev commands
+file has — never by retyping its command line: the dev commands file (a host's `CREW_COMMANDS_FILE` included)
+decides what a key runs, and the command it gives may not be the one you would type. It runs every check and prints
+each as `=== <key>: <command>`, then `<key>: pass` or `<key>: fail (exit N)`.
+
+```bash
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/run-checks.sh" --project-root "$(git rev-parse --show-toplevel)"
+```
+
+**Run every other project command through `run.sh`** — one test file, a look at an installed dependency, and any
+ad-hoc command, a one-off `docker compose` one included. It runs the command where the dev commands file's
+`install_mode` says: inside docker (with this checkout's compose override), where a docker-mode project's
+dependencies are installed and the host has none, or on the host. Never hand-build a `docker compose` command. A
+failure from such a command that looks like the environment (a missing service, socket or env variable) is
+re-checked with `run-checks.sh` before any verdict.
 
 ```bash
 bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$(git rev-parse --show-toplevel)" -- "<command>"
@@ -197,10 +214,13 @@ such as `/tmp/<name>`; never kill a process you did not start.
 
 STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
 
-**Red evidence.** When your caller names a red-evidence file, each new test's red run appends one line to it:
-`<file>: <test name> — <failing line>`, the test file's repo-relative path, the test's name as its runner prints it,
-and the one line of the failure that says what was wrong, trimmed. A test never seen failing gets no line. With no
-file named, write none.
+**Red evidence.** When your caller names a red-evidence file, each new test's red run appends one line per test to
+it: `<file>: <test name> — <failing line>`, the test file's repo-relative path, the test's name, and the one line of
+the failure that says what was wrong, trimmed. When one error fails several tests at once (an import error failing
+a whole file), each test gets its own line, the failing line repeated on each — never one line for several: a line
+is matched to its test by its exact start. The name is the test's as its runner prints it, taken from its green run
+when the red run reported only the file, else as written in the test source. A test never seen failing gets no
+line; one that failed only through its file's error was seen failing. With no file named, write none.
 
 **Comments.** A comment states a non-obvious *why* in 1–3 lines. History, PR and issue numbers,
 and incident counts go in the commit message or PR body, never in code; neither does a comment that
