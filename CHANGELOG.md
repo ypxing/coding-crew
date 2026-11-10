@@ -8,7 +8,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 - crew-review, address-pr-comments: crew-review run on a checkout with uncommitted edits keeps them across its keyed
   check run; address-pr-comments discovers the dev commands when `run-checks.sh` finds no dev commands file (#732).
-- solve-issue, crew-review, solve-feature: a project check runs by its key through `run-checks.sh`, never by
+- solve-issue, crew-review, solve-feature, dep-install: a project check runs by its key through `run-checks.sh`, never by
   retyping its command line, so an environment `blocked` or a review finding comes only from the command the dev
   commands file (a host's `CREW_COMMANDS_FILE` included) gives that key; the reviewer compares against base only in
   a temporary worktree, never by checking out or stashing; the red-evidence file gets one line per test (#730).

@@ -70,8 +70,8 @@ The install guides below only read `install`; they never look for one themselves
 
 ## Step 2 — Follow the install guide
 
-The mode is **session-wide**: every command for the rest of this session — install, test, lint,
-type-check, format, verify — runs in it, through `run.sh`.
+The mode is **session-wide**: every command for the rest of this session runs in it — a check by its
+key through `run-checks.sh`, any other command through `run.sh`.
 
 - `INSTALL_MODE=docker` → Read `references/docker-install.md` and follow it. Never fall back to host commands.
 - `INSTALL_MODE=host` → Read `references/host-install.md` and follow it. Never switch to docker commands.
