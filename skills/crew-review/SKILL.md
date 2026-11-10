@@ -90,9 +90,10 @@ bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$(gi
 
 Run the project's checks by key in the reviewed repo itself, not a scratch copy: its checks passed and their
 rewrites were committed before review, so the run should leave the tree as it found it, and a `<key>: rewrote:` or
-`<key>: modified files:` line from it is a finding. Note `git status --porcelain` before the run; afterwards put back
-each file those lines name that was clean before — remove one the run created (`git clean -f -- <file>`), restore
-one it rewrote or removed (`git checkout -- <file>`) — and say in the report which already-dirty files it changed. A failure from a command run other than by key, such as a single
+`<key>: modified files:` line from it is a finding. Before the run, copy each file `git status --porcelain` lists to
+a new `mktemp -d` directory, so uncommitted edits survive the checks' rewrites; afterwards put back each file those
+lines name — from that copy when it was dirty before, else remove one the run created (`git clean -f -- <file>`) or
+restore one it rewrote or removed (`git checkout -- <file>`) — then remove the copy. A failure from a command run other than by key, such as a single
 test file or an ad-hoc `npm test`, is never a finding until the keyed check fails too; an environment failure (a
 missing service, socket or env variable) is the environment, not the change. The one exception is a repo with no
 dev commands file (`run-checks.sh` prints `DISCOVER`): there a failing test is a finding only when the same command,
