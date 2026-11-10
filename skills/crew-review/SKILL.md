@@ -94,7 +94,11 @@ rewrites were committed before review, so the run should leave the tree as it fo
 each file those lines name that was clean before — remove one the run created (`git clean -f -- <file>`), restore
 one it rewrote or removed (`git checkout -- <file>`) — and say in the report which already-dirty files it changed. A failure from a command run other than by key, such as a single
 test file or an ad-hoc `npm test`, is never a finding until the keyed check fails too; an environment failure (a
-missing service, socket or env variable) is the environment, not the change. Narrow commands still help to probe a
+missing service, socket or env variable) is the environment, not the change. The one exception is a repo with no
+dev commands file (`run-checks.sh` prints `DISCOVER`): there a failing test is a finding only when the same command,
+run the same way, passes on base in its own `git worktree add --detach` in a new `mktemp -d` directory (removed
+afterwards), and the change touches the test or the code it covers — an environment failure fails on base too. When
+base cannot be run, report it as not verified here, not as a finding. Narrow commands still help to probe a
 finding. Compare against base only when a keyed check fails at HEAD: `git worktree add --detach` the base commit in
 a new `mktemp -d` directory, run `run-checks.sh` there with no dependency install, and remove that worktree
 afterwards; a base run that fails on missing dependencies is no comparison. A docker-mode project (`install_mode`
