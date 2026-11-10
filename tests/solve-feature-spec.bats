@@ -54,7 +54,7 @@ cli() { node "$LIB/tracker/cli.mjs" "$@"; }
 @test "start --spec drops the Blocked by section of a spec file with CRLF line endings too" {
   spec_setup; no_tracker_config
   printf '\n## Blocked by\n\n- 01-other.md\n' >> "$SPEC"
-  sed -i 's/$/\r/' "$SPEC"
+  awk '{ printf "%s\r\n", $0 }' "$SPEC" > "$SPEC.crlf" && mv "$SPEC.crlf" "$SPEC"
   run bash "$SCRIPT" start --spec "$SPEC" --issue 13 --branch b
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" next issue-13
