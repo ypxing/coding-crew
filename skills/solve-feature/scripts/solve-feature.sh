@@ -76,23 +76,19 @@ LOGS="$ROOT/.coding-crew/solve-feature"
 # The main checkout, as the tracker finds it: its .coding-crew/ files are read from every worktree, committed or not.
 MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 [ "$(basename "$MAIN_ROOT")" = .git ] && MAIN_ROOT=$(dirname "$MAIN_ROOT") || MAIN_ROOT="$ROOT"
-# The files every start deletes (below), relative to $LOGS: a spec kept at one would be gone before it is read.
-START_CLEARS=(outcome result.json spec.md 'pr-*.r[0-9]*.*' '*.checks.head' 'pr-*.unfixed.json' 'pr-*.review.json' 'pr-*.summary.md'
-  'pr-*attention.json' 'pr-*.head' 'pr-*.discarded.md' 'pr-*.notes.md' review.base review.since)
-if [ -n "$SPEC" ] && [ "$(cd "$(dirname "$SPEC")" 2>/dev/null && pwd -P)" = "$(cd "$LOGS" && pwd -P)" ]; then
-  for p in "${START_CLEARS[@]}"; do
-    # shellcheck disable=SC2053 # $p is a glob pattern
-    [[ "$(basename "$SPEC")" != $p ]] ||
-      die "--spec $SPEC is this run's own file, which start deletes: keep the spec outside the checkout or in another ignored path"
-  done
+# A spec kept in $LOGS itself: start and the later steps delete or rewrite its files, so it is refused. The stop
+# writes its outcome and result.json unless the spec is one of them.
+if [ -n "$SPEC" ] && [ -d "$(dirname "$SPEC")" ] && [ "$(cd "$(dirname "$SPEC")" && pwd -P)" = "$(cd "$LOGS" && pwd -P)" ]; then
+  case "$(basename "$SPEC")" in outcome | result.json) LOGS="" ;; esac
+  die "--spec $SPEC is in this run's own directory, whose files start deletes or a later step rewrites: keep the spec outside the checkout or in an ignored path elsewhere"
 fi
 # The setup files a user commits once satisfied: no tree check counts them, and no run commits them. A dev commands
 # file this tree tracks is not one: it is the branch's own copy, the one its checks read, counted and committed.
 BRANCH_WORK=(. ':!.coding-crew/config.json') SETUP_FILES=(.coding-crew/config.json)
 git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 ||
   { BRANCH_WORK+=(':!.coding-crew/dev-commands.json'); SETUP_FILES+=(.coding-crew/dev-commands.json); }
-# shellcheck disable=SC2086 # each pattern expands as a glob
-[ "$CMD" != start ] || for p in "${START_CLEARS[@]}"; do rm -f "$LOGS"/$p; done
+[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS/result.json" "$LOGS/spec.md" "$LOGS"/pr-*.r[0-9]*.* "$LOGS"/*.checks.head "$LOGS"/pr-*.unfixed.json "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*attention.json "$LOGS"/pr-*.head \
+  "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base" "$LOGS/review.since"
 # solveFeature.publish: false keeps the run on this machine: no push, no PR, the body in local_body's file. Read from
 # the user-level config only: an Actions runner has none, so it never keeps commits that vanish with the runner.
 # CREW_PUBLISH=false does the same for a host that pushes the commits itself and has no user config to write.

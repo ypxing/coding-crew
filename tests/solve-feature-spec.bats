@@ -93,11 +93,11 @@ cli() { node "$LIB/tracker/cli.mjs" "$@"; }
   [ "$(basename "$output")" = 01-issue-13.md ]
 }
 
-@test "start --spec on a file start deletes in .coding-crew/solve-feature/ stops and leaves it unchanged" {
+@test "start --spec on a file directly in .coding-crew/solve-feature/ stops and leaves it unchanged" {
   spec_setup; no_tracker_config
   local name
-  # outcome and result.json are left out: every command's stop rewrites them.
-  for name in review.since review.base pr-1.notes.md 01-x.checks.head; do
+  # landing-issue-13: the publish deletes it; outcome and result.json: a stop rewrites them.
+  for name in review.since review.base pr-1.notes.md 01-x.checks.head outcome result.json landing-issue-13; do
     mkdir -p .coding-crew/solve-feature && cp "$SPEC" ".coding-crew/solve-feature/$name"
     run bash "$SCRIPT" start --spec ".coding-crew/solve-feature/$name" --issue 13 --branch b
     [ "$status" -eq 1 ] || { echo "$name: exit $status: $output"; return 1; }
