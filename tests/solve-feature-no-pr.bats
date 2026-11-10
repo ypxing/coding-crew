@@ -84,6 +84,8 @@ EOF
 
 Users need accounts.
 
+**Tested:** test pass
+
 ## Needs attention
 
 - notes for a person, in the section below: delete each once it is handled

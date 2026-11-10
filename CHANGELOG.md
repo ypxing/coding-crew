@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: the PR body's `**Tested:**` line is now written by the script, listing each check key of the last
+  gate with its result, in place of the PR writer's sentence; `result.json` adds `status`, a per-finding `fixed`, and
+  `pr_summary` / `pr_title` from the writer's summary in both publish modes; the guide's new "Embedding solve-feature"
+  section shows a host running one spec file and computing its own ready bar from `result.json` (#740).
+
 - solve-feature, tracker: `/solve-feature --spec <file> --issue <n>` builds one spec file as the one-issue local
   feature `issue-<n>` with no tracker set up beforehand, rebuilding it from the file on every run;
   `CREW_PUBLISH=false` turns pushing and PR calls off without a user config, and `CREW_TRACKER` picks the tracker

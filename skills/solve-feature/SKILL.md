@@ -78,9 +78,9 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    4. Run a **fresh subagent** — none of this conversation, the repo's working directory — with exactly
      this prompt: `Use the write-pr skill on PR #<n>; its intent is the spec in <repo>/.coding-crew/solve-feature/spec.md
      and its checks passed (<repo>/.coding-crew/solve-feature/pr-<n>.checks.log). Write it to
-     <repo>/.coding-crew/solve-feature/pr-<n>.summary.md`; when `<n>` is `local`, the same prompt with `Use the
+     <repo>/.coding-crew/solve-feature/pr-<n>.summary.md, leaving out its **Tested:** line: the script writes that line from the checks`; when `<n>` is `local`, the same prompt with `Use the
      write-pr skill on branch <branch>` in place of `Use the write-pr skill on PR #<n>`. Wait for it to finish.
-   5. `bash "<skill-dir>/scripts/solve-feature.sh" describe <slug> <n>` — writes the PR's body and title, marks the
+   5. `bash "<skill-dir>/scripts/solve-feature.sh" describe <slug> <n>` — writes the PR's body (its `**Tested:**` line included) and title, marks the
      draft ready when nothing needs a person, and prints the run's outcome, `ready pr=<n>` or
      `needs-attention pr=<n>`. Report it. When `<n>` is `local` it writes the local body file instead (its first
      line the title) and prints `ready branch=<b>` or `needs-attention branch=<b>`: report it with that file's path,
