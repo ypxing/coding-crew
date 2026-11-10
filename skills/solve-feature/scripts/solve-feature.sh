@@ -3,7 +3,8 @@
 # loop and runs each issue's coder (between `next` and `land`), a conflicting merge's resolver (between `sync`'s exit 4
 # and its re-run), the review's reviewer (before `reviewed`) and fixer
 # (before `fix`) and the PR's writer (before `describe`) as subagents of the host agent; every guard is an exit code here.
-#   start <slug> [--branch <name>] [--review-since <sha>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch>
+#   start <slug> [--branch <name>] [--review-since <sha>] | start --spec <file> --issue <n> [--branch …] [--review-since …]
+#   | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch>
 #   | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr> — each function's comment states its contract.
 # Exit: 0 ok; 1 a stop (its one-line result in .coding-crew/solve-feature/outcome); 2 a usage error; 3 from next
 # when no ready issue is left; 4 from sync when its merge of the default branch conflicts, left in progress.
@@ -36,18 +37,28 @@ outcome() {
 die() { echo "solve-feature: $*" >&2; outcome "stopped: $CMD failed: $*"; exit 1; }
 usage() {
   [ -z "${1:-}" ] || echo "solve-feature: $1" >&2
-  echo "usage: solve-feature.sh start <slug> [--branch <name>] [--review-since <sha>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>" >&2; exit 2
+  echo "usage: solve-feature.sh start <slug> [--branch <name>] [--review-since <sha>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr> | start --spec <file> --issue <n> [--branch <name>] [--review-since <sha>]" >&2; exit 2
 }
 
 CMD="${1:-}"; [ $# -eq 0 ] || shift
-SLUG="" BRANCH="" REF="" PR="" SINCE=""
+SLUG="" BRANCH="" REF="" PR="" SINCE="" SPEC="" ISSUE=""
 case "$CMD" in
   start) while [ $# -gt 0 ]; do case "$1" in
       --branch) [ $# -ge 2 ] || usage "--branch needs a value"; BRANCH="$2"; shift 2 ;;
       --review-since) [ $# -ge 2 ] && [ -n "$2" ] || usage "--review-since needs a value"; SINCE="$2"; shift 2 ;;
+      --spec) [ $# -ge 2 ] && [ -n "$2" ] || usage "--spec needs a value"; SPEC="$2"; shift 2 ;;
+      --issue) [ $# -ge 2 ] || usage "--issue needs a value"; ISSUE="$2"; shift 2 ;;
       -*) usage "unknown flag: $1" ;;
       *) [ -z "$SLUG" ] || usage "unexpected argument: $1"; SLUG="$1"; shift ;;
-    esac; done ;;
+    esac; done
+    if [ -n "$SPEC$ISSUE" ]; then
+      [ -n "$SPEC" ] && [ -n "$ISSUE" ] || usage "--spec and --issue go together"
+      [ -z "$SLUG" ] || usage "--spec takes no feature slug: the feature is issue-<n>"
+      # <n> reaches a path and argv.
+      [[ "$ISSUE" =~ ^[0-9]+$ ]] || usage "--issue '$ISSUE' is not a number"
+      SLUG="issue-$ISSUE"
+      case "$SPEC" in /*) ;; *) SPEC="$PWD/$SPEC" ;; esac # before the cd to the top level below
+    fi ;;
   next) [ $# -eq 1 ] || usage; SLUG="$1" ;;
   land) [ $# -eq 3 ] || usage; SLUG="$1" REF="$2" BRANCH="$3" ;;
   sync) [ $# -eq 2 ] || usage; SLUG="$1" BRANCH="$2" ;;
@@ -62,6 +73,9 @@ for t in gh jq node git; do command -v "$t" >/dev/null || die "$t not found on P
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"; cd "$ROOT"
 mkdir -p "$ROOT/.coding-crew/solve-feature" && echo '*' >"$ROOT/.coding-crew/solve-feature/.gitignore" # ignored in any repo, so the tree stays clean
 LOGS="$ROOT/.coding-crew/solve-feature"
+# Every start deletes spec.md (below), so a spec kept there would be gone before it is read.
+[ -z "$SPEC" ] || [ "$(cd "$(dirname "$SPEC")" 2>/dev/null && pwd -P)/$(basename "$SPEC")" != "$(cd "$LOGS" && pwd -P)/spec.md" ] ||
+  die "--spec $SPEC is this run's own file, which start deletes: keep the spec outside the checkout or in another ignored path"
 # The main checkout, as the tracker finds it: its .coding-crew/ files are read from every worktree, committed or not.
 MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 [ "$(basename "$MAIN_ROOT")" = .git ] && MAIN_ROOT=$(dirname "$MAIN_ROOT") || MAIN_ROOT="$ROOT"
@@ -212,10 +226,36 @@ model() {
   done
 }
 
-# start — preconditions, the branch (--branch, else feature/<slug>), spec.md, --review-since's commit for sync;
-# prints branch=, coder-model=, reviewer-model= and pr= (empty with no open PR).
+# publish_spec — --spec's file as the one-issue local feature $SLUG, rebuilt from the file on every run, as on a fresh
+# runner: the draft is the file with a Status line under its title and without its Blocked by section, which the local
+# tracker never reads (blockers live in issues-deps.json, written empty) and publish-issues would refuse. Only a
+# feature directory carrying start's own marker is removed: one without it is someone's real feature.
+publish_spec() {
+  local kind dir="$MAIN_ROOT/.coding-crew/scratch/$SLUG" drafts="$LOGS/spec-drafts"
+  kind=$(node "$CLI" config | sed -n 's/^tracker=//p') || die "config failed (see above)"
+  [ "$kind" = local ] || die "--spec runs on the local tracker, and this repo's is '$kind': set CREW_TRACKER=local for the run"
+  [ -f "$SPEC" ] || die "no spec file $SPEC"
+  grep -qE '^#[[:blank:]]+[^[:blank:]]' "$SPEC" || die "spec file $SPEC has no '# <title>' line"
+  if [ -e "$dir" ]; then
+    [ -f "$dir/.solve-feature-spec" ] || die "$dir exists and no start --spec made it: move it aside, or pick another --issue, then re-run"
+    rm -rf "$dir" || die "cannot remove $dir (see above)"
+  fi
+  # An earlier run's record would read the rebuilt issue as closed-but-unlanded.
+  rm -f "$(landing)"
+  rm -rf "$drafts" && mkdir -p "$drafts" && echo '{}' >"$drafts/deps.json" || die "cannot write $drafts (see above)"
+  awk '/^##?#?#?#?#?[ \t]+/ { skip = tolower($0) ~ /^#+[ \t]+blocked by[ \t]*$/ }
+    skip { next }
+    !t && /^#[ \t]+[^ \t]/ { print; print ""; print "Status: ready-for-agent"; t = 1; next }
+    { print }' "$SPEC" >"$drafts/01-$SLUG.md" || die "cannot write $drafts (see above)"
+  node "$CLI" publish-issues --feature-slug "$SLUG" --drafts "$drafts" >/dev/null || die "publishing $SPEC failed (see above)"
+  echo "$SPEC" >"$dir/.solve-feature-spec" || die "cannot write $dir/.solve-feature-spec (see above)"
+}
+
+# start — preconditions, --spec's feature, the branch (--branch, else feature/<slug>), spec.md, --review-since's
+# commit for sync; prints slug= (with --spec), branch=, coder-model=, reviewer-model= and pr= (empty with no open PR).
 start() {
   [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || die "working tree is not clean: commit or stash first"
+  [ -z "$SPEC" ] || publish_spec
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
   grep -qxF "$SLUG" <<<"$features" || die "no feature '$SLUG'; features: $(paste -sd' ' - <<<"$features")"
   # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase
@@ -248,6 +288,7 @@ start() {
   # A ready PR would read as reviewed while coders and the review change it; describe marks it ready again.
   [ -z "$PR_N" ] || [ "$PR_IS_DRAFT" != false ] || gh pr ready "$PR_N" --undo >/dev/null ||
     die "gh pr ready $PR_N --undo failed: run gh pr ready $PR_N --undo by hand, then re-run"
+  [ -z "$SPEC" ] || echo "slug=$SLUG"
   echo "branch=$BRANCH"
   echo "coder-model=$(model coder)"
   echo "reviewer-model=$(model reviewer)"
