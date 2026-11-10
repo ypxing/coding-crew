@@ -73,12 +73,12 @@ for t in gh jq node git; do command -v "$t" >/dev/null || die "$t not found on P
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"; cd "$ROOT"
 mkdir -p "$ROOT/.coding-crew/solve-feature" && echo '*' >"$ROOT/.coding-crew/solve-feature/.gitignore" # ignored in any repo, so the tree stays clean
 LOGS="$ROOT/.coding-crew/solve-feature"
-# Every start deletes spec.md (below), so a spec kept there would be gone before it is read.
-[ -z "$SPEC" ] || [ "$(cd "$(dirname "$SPEC")" 2>/dev/null && pwd -P)/$(basename "$SPEC")" != "$(cd "$LOGS" && pwd -P)/spec.md" ] ||
-  die "--spec $SPEC is this run's own file, which start deletes: keep the spec outside the checkout or in another ignored path"
 # The main checkout, as the tracker finds it: its .coding-crew/ files are read from every worktree, committed or not.
 MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 [ "$(basename "$MAIN_ROOT")" = .git ] && MAIN_ROOT=$(dirname "$MAIN_ROOT") || MAIN_ROOT="$ROOT"
+# Every start deletes spec.md (below), so a spec kept there would be gone before it is read.
+[ -z "$SPEC" ] || [ "$(cd "$(dirname "$SPEC")" 2>/dev/null && pwd -P)/$(basename "$SPEC")" != "$(cd "$LOGS" && pwd -P)/spec.md" ] ||
+  die "--spec $SPEC is this run's own file, which start deletes: keep the spec outside the checkout or in another ignored path"
 # The setup files a user commits once satisfied: no tree check counts them, and no run commits them. A dev commands
 # file this tree tracks is not one: it is the branch's own copy, the one its checks read, counted and committed.
 BRANCH_WORK=(. ':!.coding-crew/config.json') SETUP_FILES=(.coding-crew/config.json)

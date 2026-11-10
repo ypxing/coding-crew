@@ -114,6 +114,8 @@ cli() { node "$LIB/tracker/cli.mjs" "$@"; }
   mkdir -p .coding-crew/solve-feature && cp "$SPEC" .coding-crew/solve-feature/spec.md
   run bash "$SCRIPT" start --spec .coding-crew/solve-feature/spec.md --issue 13
   [ "$status" -eq 1 ]; [[ "$output" == *".coding-crew/solve-feature/spec.md"*"own"* ]] || { echo "$output"; return 1; }
+  [[ "$output" != *"unbound variable"* ]] || { echo "$output"; return 1; }
+  [ "$(jq -r .status .coding-crew/solve-feature/result.json)" = stopped ]
   [ ! -e .coding-crew/scratch/issue-13 ]
   [ "$(git branch --show-current)" = main ]
 }
