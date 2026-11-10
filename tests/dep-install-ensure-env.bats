@@ -194,3 +194,39 @@ MK
   [ "$status" -eq 0 ]
   [[ "$output" == *"failed, falling back to template expansion"* ]]
 }
+
+# ─── .tpl expansion: exported variables only, nothing executed ──────────────────────────
+#
+# A template is repo content a branch can change, expanded where the registry token is in the environment.
+
+# _tpl_case [<PATH>] — expands a .npmrc.tpl in $PROJECT, run from $PROJECT so a command it ran would leave x or y
+# there. PROJECT_ROOT, REGISTRY_AUTH and log are ensure-env.sh's own variables, never exported by it.
+_tpl_case() {
+  cat > "$PROJECT/.npmrc.tpl" <<'EOF'
+a=$A b=${B} c=$C cmd=$(touch x) bt=`touch y` ar=$((1+1))
+p=$PROJECT_ROOT r=${REGISTRY_AUTH} l=$log $ end$ ${ x}
+EOF
+  run env -u PROJECT_ROOT -u C ${1:+PATH="$1"} A=1 B='two  words' bash -c 'cd "$1" && bash "$2" --project-root "$1"' _ "$PROJECT" "$SCRIPT"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  cat > "$PROJECT/expected" <<'EOF'
+a=1 b=two  words c= cmd=$(touch x) bt=`touch y` ar=$((1+1))
+p= r= l= $ end$ ${ x}
+EOF
+  diff "$PROJECT/expected" "$PROJECT/.npmrc"
+  [ ! -e "$PROJECT/x" ] && [ ! -e "$PROJECT/y" ]
+}
+
+@test "a .tpl expands \$NAME and \${NAME} from exported variables only, unset to empty, executing nothing" {
+  _tpl_case
+}
+
+@test "a .tpl expands the same with no envsubst on PATH, and ensure-env.sh never calls envsubst" {
+  local bin="$PROJECT/bin" t p
+  mkdir -p "$bin"
+  for t in bash env dirname cat grep sed mkdir touch cp find printenv basename head tail tr git rm; do
+    p=$(command -v "$t") && ln -sf "$p" "$bin/$t"
+  done
+  [ ! -e "$bin/envsubst" ]
+  _tpl_case "$bin"
+  ! grep -q envsubst "$SCRIPT" || false
+}

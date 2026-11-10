@@ -83,6 +83,13 @@ for f in "${FIELDS[@]}"; do
   fi
 done
 
+# The mv below would replace a read-only file in a writable directory: a host makes its file read-only so a coder
+# cannot rewrite its own checks.
+if [ -e "$CACHE_FILE" ] && [ ! -w "$CACHE_FILE" ]; then
+  echo "ERROR: ${CREW_COMMANDS_FILE:+CREW_COMMANDS_FILE=}$CACHE_FILE is not writable — leaving it untouched" >&2
+  exit 1
+fi
+
 mkdir -p "$(dirname "$CACHE_FILE")"
 
 JSON_BODY=""

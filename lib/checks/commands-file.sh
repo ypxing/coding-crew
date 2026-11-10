@@ -3,11 +3,13 @@
 # command and install mode): <path>'s own tree's .coding-crew/dev-commands.json when that tree tracks it, else the
 # main checkout's, committed or not, so every worktree reads and writes the one file and a run works before the
 # user commits it. Outside a git repository it is
-# <path>/.coding-crew/dev-commands.json. The file need not exist yet. Sourced, it defines commands_file <root> instead,
+# <path>/.coding-crew/dev-commands.json. CREW_COMMANDS_FILE, set and non-empty, is the path instead, from any root: a host's
+# own copy kept outside the checkout. The file need not exist yet. Sourced, it defines commands_file <root> instead,
 # and the only readers of the file's fields: commands_field and commands_field_present.
 
 commands_file() { # <project-root>
   local root="$1" common top
+  [ -z "${CREW_COMMANDS_FILE:-}" ] || { echo "$CREW_COMMANDS_FILE"; return; }
   # A branch that commits the file is gated on its own copy, not on whatever the main checkout has.
   if top=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) &&
     git -C "$top" ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1; then
