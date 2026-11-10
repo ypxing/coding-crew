@@ -73,6 +73,7 @@ EOF
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$output" = "needs-attention branch=feature/feat" ]
   [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention branch=feature/feat" ]
+  [ "$(jq -c .needs_attention .coding-crew/solve-feature/result.json)" = '[{"type":"note","author":"fixer","text":"- rotate the key"}]' ]
   [ "$(cat "$LOCAL")" = "$(cat <<EOF
 # Let users log in
 
@@ -250,7 +251,7 @@ EOF
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$output" = pr=local ] || { echo "$output"; return 1; }
   perl -pi -e 's/\n/\r\n/' "$LOCAL"
-  : > .coding-crew/solve-feature/pr-local.attention.md
+  echo '[]' > .coding-crew/solve-feature/pr-local.attention.json
   printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n' > .coding-crew/solve-feature/pr-local.summary.md
   run bash "$SCRIPT" describe feat local
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
@@ -276,13 +277,14 @@ EOF
   run bash "$SCRIPT" fix feat local feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=1 needs-attention=1 review-again=no" ]
-  grep -qx "the fixer changed nothing" .coding-crew/solve-feature/pr-local.attention.md
+  [ "$(jq -c . .coding-crew/solve-feature/pr-local.attention.json)" = '[{"type":"fixer_changed_nothing","round":0}]' ]
   echo fixed > fixed.txt
   rereview local
   run bash "$SCRIPT" fix feat local feature/feat
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=1 needs-attention=0 review-again=yes" ]
   run bash "$SCRIPT" describe feat local
   [ "$output" = "ready branch=feature/feat" ]
+  [ "$(jq -c .needs_attention .coding-crew/solve-feature/result.json)" = '[]' ]
   # write-pr wrote no summary: land's title stays.
   [ "$(head -n1 "$LOCAL")" = "# Feat" ] || { cat "$LOCAL"; return 1; }
   no_pr_calls

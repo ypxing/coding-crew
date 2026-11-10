@@ -370,17 +370,19 @@ main_moves() {
 
 @test "start removes an old outcome and review files" {
   mkdir -p .coding-crew/solve-feature && echo '*' > .coding-crew/solve-feature/.gitignore && echo 'ready pr=7' > .coding-crew/solve-feature/outcome
-  echo old > .coding-crew/solve-feature/pr-7.unfixed.md && echo old > .coding-crew/solve-feature/pr-7.review.json && echo old > .coding-crew/solve-feature/pr-7.head
-  echo old > .coding-crew/solve-feature/pr-7.summary.md && echo old > .coding-crew/solve-feature/pr-7.attention.md
+  echo old > .coding-crew/solve-feature/pr-7.unfixed.json && echo old > .coding-crew/solve-feature/pr-7.review.json && echo old > .coding-crew/solve-feature/pr-7.head
+  echo old > .coding-crew/solve-feature/pr-7.summary.md && echo old > .coding-crew/solve-feature/pr-7.attention.json
+  echo old > .coding-crew/solve-feature/pr-7.describe-attention.json
   echo old > .coding-crew/solve-feature/pr-7.discarded.md && echo old > .coding-crew/solve-feature/review.base
   echo old > .coding-crew/solve-feature/pr-7.notes.md
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ ! -e .coding-crew/solve-feature/outcome ]
-  [ ! -e .coding-crew/solve-feature/pr-7.unfixed.md ]
+  [ ! -e .coding-crew/solve-feature/pr-7.unfixed.json ]
   [ ! -e .coding-crew/solve-feature/pr-7.review.json ]
   [ ! -e .coding-crew/solve-feature/pr-7.summary.md ]
-  [ ! -e .coding-crew/solve-feature/pr-7.attention.md ]
+  [ ! -e .coding-crew/solve-feature/pr-7.attention.json ]
+  [ ! -e .coding-crew/solve-feature/pr-7.describe-attention.json ]
   [ ! -e .coding-crew/solve-feature/pr-7.head ]
   [ ! -e .coding-crew/solve-feature/pr-7.discarded.md ]
   [ ! -e .coding-crew/solve-feature/pr-7.notes.md ]
@@ -738,19 +740,25 @@ EOF
   [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention pr=10" ]
 }
 
-@test "an attention line already starting with a bullet renders as one bullet in Needs attention" {
-  fixed
-  printf -- '- already a bullet\nplain line\n' > .coding-crew/solve-feature/pr-10.attention.md
+@test "Needs attention renders one line per gap and per unfixed finding, a gap already a bullet as one bullet" {
+  fix_ready '{"spec":"unmet","gaps":["- already a bullet","plain\nline"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
+  echo '[{"finding": 0, "why": "needs a\ndesign call"}, {"finding": 4, "why": "w"}, {"why": "no index"}]' > .coding-crew/solve-feature/pr-10.unfixed.json
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(sed -n '/^## Needs attention$/,/^Spec: /{/^- /p;}' "$STATE/pr-body")" = "$(printf -- '- already a bullet\n- plain line')" ]
+  [ "$(sed -n '/^## Needs attention$/,/^Spec: /{/^- /p;}' "$STATE/pr-body")" = "$(printf -- '%s\n' '- already a bullet' '- plain line' \
+    '- the fixer left finding #0 (HIGH, a:1) unfixed: needs a design call' '- the fixer left finding #4 (no severity) unfixed: w' \
+    '- the fixer left a finding unfixed: no index')" ]
+  [ "${lines[${#lines[@]}-1]}" = "needs-attention pr=10" ]
 }
 
 @test "a report whose spec is unmet, with no gap or finding, leaves the PR a draft and writes needs-attention" {
   fixed '{"spec":"unmet","gaps":[],"findings":[]}'
-  [ "$(attention)" = "the reviewer found the spec unmet" ]
+  [ "$(attention)" = '{"type":"spec_unmet","round":0,"gaps":[]}' ]
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(sed -n '/^## Needs attention$/,/^Spec: /{/^- /p;}' "$STATE/pr-body")" = '- the reviewer found the spec unmet' ]
   ! grep -q '^pr ready' "$STATE/gh.log" || false
   [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention pr=10" ]
 }
@@ -1058,7 +1066,8 @@ SH
   grep -qxF -- '- Agent: claude, model unpinned (the CLI default)' "$GITHUB_STEP_SUMMARY"
   mkdir -p .coding-crew/solve-feature
   echo 'needs-attention pr=10' > .coding-crew/solve-feature/outcome
-  echo '- the flaky test' > .coding-crew/solve-feature/pr-10.attention.md
+  echo '{"needs_attention":[{"type":"spec_unmet","round":0,"gaps":[0]},{"type":"note","author":"coder","text":"the flaky test"}]}' \
+    > .coding-crew/solve-feature/result.json
   echo 'report of the last coder' > .coding-crew/solve-feature/coder.report.md
   echo '{"type":"system","subtype":"init","model":"claude-opus-5-5"}' > .coding-crew/solve-feature/session.jsonl
   : > "$GITHUB_STEP_SUMMARY"
@@ -1068,7 +1077,9 @@ SH
   grep -qxF -- '- PR: https://github.com/o/r/pull/10' "$GITHUB_STEP_SUMMARY"
   grep -qxF -- '- Agent: claude, model claude-opus-5-5' "$GITHUB_STEP_SUMMARY"
   ! grep -q 'Subagent models' "$GITHUB_STEP_SUMMARY" || false
-  grep -qxF -- '- the flaky test' "$GITHUB_STEP_SUMMARY"
+  # result.json's needs_attention, one line per item.
+  grep -qxF -- '  - spec_unmet: {"round":0,"gaps":[0]}' "$GITHUB_STEP_SUMMARY"
+  grep -qxF -- '  - note: {"author":"coder","text":"the flaky test"}' "$GITHUB_STEP_SUMMARY"
   ! grep -q 'report of the last coder' "$GITHUB_STEP_SUMMARY" || false
   # The models the subagents ran on: distinct, in first-seen order, right after the Agent line; the main session's
   # own messages, Claude Code's made-up <synthetic> ones and a message with no model add nothing.
