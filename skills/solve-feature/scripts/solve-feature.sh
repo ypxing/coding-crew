@@ -74,8 +74,10 @@ git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 |
   "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base" "$LOGS/review.since"
 # solveFeature.publish: false keeps the run on this machine: no push, no PR, the body in local_body's file. Read from
 # the user-level config only: an Actions runner has none, so it never keeps commits that vanish with the runner.
+# CREW_PUBLISH=false does the same for a host that pushes the commits itself and has no user config to write.
 PUBLISH=yes
 [ "$(jq -r '.solveFeature.publish' "$HOME/.coding-crew/config.json" 2>/dev/null || true)" != false ] || PUBLISH=no
+[ "${CREW_PUBLISH:-}" != false ] || PUBLISH=no
 # Keyed by branch as `gh pr view "$BRANCH"` is; not pr-body.md, land's draft body in publish mode.
 local_body() { echo "$LOGS/local-pr-${BRANCH//\//_}.md"; }
 # The issue next handed out for this feature until its land records it: per feature, as runs share this directory.
