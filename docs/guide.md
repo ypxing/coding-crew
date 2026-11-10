@@ -443,8 +443,10 @@ subagent, and the run stops on it only when the resolver leaves it unresolved; t
 `review` and its step (`2 checks`, `review fix`); no file means the run never finished. Beside it,
 `.coding-crew/solve-feature/result.json` (schema: `skills/solve-feature/result.schema.json`) holds the same line with
 its evidence, for a host that writes the PR itself: each issue's commits, checks and the lines its coder recorded for
-each new test seen failing, and each review round's findings, gaps, per-criterion tests, unfixed lines and whether a
-later round re-reviewed its fixes.
+each new test seen failing, each review round's findings, gaps, per-criterion tests, the findings its fixer left
+unfixed (by index, with why) and whether a later round re-reviewed its fixes, and `needs_attention`: one typed item
+per reason the run needs a person (an unmet spec, an unfixed finding, a note, open review threads), the same list
+that holds the draft and renders the PR body's Needs attention, `[]` when the run ends ready.
 
 | Setting | Effect |
 | --- | --- |
@@ -576,8 +578,8 @@ exits the session without failing it, so the job's last step fails it unless the
 describe`) once it has marked the PR ready. It fails on `needs-attention pr=<n>`, on a stop a script
 recorded (`stopped: <what> failed: <reason>`), and when the file is absent because the session ended before the run
 finished. The same step writes the run's summary page: the outcome, the PR, the model, and what to read next
-(a stop's coder report and checks log tail, the list of what a needs-attention's review left; notes and open threads
-are named in the PR body's `Needs attention`), so a failed run says why or where to read it, without the artifact. Tools the agent runs add nothing to it: the agent runs without `GITHUB_STEP_SUMMARY`, so test runners
+(a stop's coder report and checks log tail; on needs-attention, `result.json`'s `needs_attention` items, notes and
+open threads included, as the PR body's `Needs attention` renders them), so a failed run says why or where to read it, without the artifact. Tools the agent runs add nothing to it: the agent runs without `GITHUB_STEP_SUMMARY`, so test runners
 that write a job summary (Vitest) do not find it.
 
 The job pushes and opens the PR with the workflow's own `GITHUB_TOKEN`, so the PR's `pull_request` runs wait for

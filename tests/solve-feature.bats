@@ -853,6 +853,13 @@ EOF
   grep -qE '^\| `CREW_COMMANDS_FILE` +\|.*outside the checkout' "$skill"
 }
 
+@test "SKILL.md's fixer prompt asks for pr-<n>.unfixed.json, a list of finding indices with why; no code reads the old unfixed.md or attention.md" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
+  grep -qF '<repo>/.coding-crew/solve-feature/pr-<n>.unfixed.json as a' "$skill"
+  grep -qF '[{"finding": <its 0-based index in the report'"'"'s findings>, "why": "<why>"}]' "$skill"
+  ! grep -rqE 'unfixed\.md|attention\.md' "$REPO_ROOT/skills" "$REPO_ROOT/lib" "$REPO_ROOT/.github" || false
+}
+
 @test "SKILL.md reviews once more only on review-again=yes after the first review, then goes on to the PR body" {
   local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
   grep -qF 'FIX: findings=<k> needs-attention=<a> review-again=yes|no' "$skill"
