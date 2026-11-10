@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.3.11]
+
 - solve-feature: `start --spec` stages its draft in a fresh directory and stops on a spec kept at a file `start`
   deletes, so no spec under `.coding-crew/solve-feature/` is removed; the PR body's `**Tested:**` line says `no check
   ran` when every check was `NOT RUN` instead of being left out (#743).
@@ -24,7 +26,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - tracker, solve-feature: the `spec` op puts a `<!-- spec-issue: <id> -->` line above each issue's `### <id> — <title>`
   section, and `result.json` lists only those, so a heading of that shape in the PRD or an issue's text is no longer
   an extra issue; crew-review saves the index before its check run and restores it afterwards, so what a check `git add`ed is
-  unstaged and the caller's own staged changes are kept.
+  unstaged and the caller's own staged changes are kept (#737).
 
 ## [2.3.10]
 
