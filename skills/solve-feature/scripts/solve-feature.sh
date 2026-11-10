@@ -744,12 +744,16 @@ describe() {
       ( if any($items[]; .type == "note") then "notes for a person, in the section below: delete each once it is handled" else empty end )' \
     "$att" "$datt") || die "rendering the needs-attention list failed (see above)"
   jq -e '.[] | select(.type == "note")' "$datt" >/dev/null || notes=""
+  # The Tested line's one writer: the last gate's own verdict lines, never the writer's prose.
+  local tested
+  tested=$(node "$SELF/result.mjs" --logs "$LOGS" --tested-line "pr-$PR.checks.log") || die "reading the checks log $LOGS/pr-$PR.checks.log failed (see above)"
   {
     echo "$BEGIN"
     # Written here, not by the writer subagent, so a reviewer always sees that agents wrote this PR.
     printf '> Written by solve-feature (`%s`): its coder, reviewer and fixer were agents; no person has read this body.\n\n' "$SLUG"
     # write-pr's summary minus its title line, which titles the PR instead.
     if [ -f "$f" ]; then if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d'; echo; fi
+    [ -z "$tested" ] || printf '%s\n\n' "$tested"
     if [ -n "$need" ]; then printf '## Needs attention\n\n'; sed '/^- /!s/^/- /' <<<"$need"; echo; fi
     [ -z "$notes" ] || printf '%s\n\n' "$notes"
     printf '%s\n\n' "$spec_line"
