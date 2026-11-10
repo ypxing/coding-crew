@@ -251,8 +251,8 @@ rereview() {
 report() { printf '%s\n' "$1" > .coding-crew/solve-feature/pr-10.review.json; }
 pushed() { [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]; }
 
-# attention — what fix handed describe.
-attention() { cat .coding-crew/solve-feature/pr-10.attention.md; }
+# attention — what fix handed describe: its items, one compact JSON object a line.
+attention() { jq -c ".[]" .coding-crew/solve-feature/pr-10.attention.json; }
 
 # fixed [<report json>] — fix_ready, then fix: describe's input as SKILL.md leaves it.
 fixed() {

@@ -60,9 +60,9 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      every project command through run.sh in the coding-crew-lib skill (coding-crew-lib/scripts/checks/run.sh
      --project-root <repo> -- "<command>"), as the solve-issue skill's Step 4 says: it runs where the project's
      dependencies are installed. Use the tdd skill to fix each real defect with the fix that adds no trigger, flag,
-     permission, input or path the spec does not name. List each finding you did not fix, one per line with why — it
-     is wrong, or only changing a spec decision fixes it (quote the decision) — in <repo>/.coding-crew/solve-feature/pr-<n>.unfixed.md, and leave that
-     file absent if you fixed them all. Anything else a person must do or decide goes in
+     permission, input or path the spec does not name. List each finding you did not fix, with why — it is wrong, or
+     only changing a spec decision fixes it (quote the decision) — in <repo>/.coding-crew/solve-feature/pr-<n>.unfixed.json as a
+     JSON list, [{"finding": <its 0-based index in the report's findings>, "why": "<why>"}], and leave that file absent if you fixed them all. Anything else a person must do or decide goes in
      <repo>/.coding-crew/solve-feature/pr-<n>.notes.md, left absent when there is none. This run is non-interactive; ask no questions`. Run it on `coder-model=` as for each issue's coder.
      Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" fix <slug> <n> <branch>` — always, whatever the subagents

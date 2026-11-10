@@ -94,7 +94,7 @@ fix_stops() {
   CHECK_REWRITES=work-2.txt run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(git log -1 --format=%s)" = "Apply the checks' rewrites" ]
-  [ "$(attention)" = "the fixer changed nothing" ]
+  [ "$(attention)" = '{"type":"fixer_changed_nothing","round":0}' ]
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
 }
 
@@ -125,14 +125,14 @@ fix_stops() {
   branch_moves bot.txt "after" >/dev/null
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(attention)" = "the fixer changed nothing" ]
+  [ "$(attention)" = '{"type":"fixer_changed_nothing","round":0}' ]
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
   pushed
   # The bot pushes before fix records the round's head, which is then the bot's commit.
   rereview
   PR_HEAD_OID=$(branch_moves bot2.txt "before") run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(attention)" = "the fixer changed nothing" ]
+  [ "$(attention)" = '{"type":"fixer_changed_nothing","round":1}' ]
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
   pushed
 }
@@ -145,7 +145,7 @@ fix_stops() {
   [ "$status" -ne 0 ]
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(attention)" = "the fixer changed nothing" ]
+  [ "$(attention)" = '{"type":"fixer_changed_nothing","round":0}' ]
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
 }
 
@@ -229,7 +229,7 @@ push_says() {
   rereview
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(attention)" = "the fixer changed nothing" ]
+  [ "$(attention)" = '{"type":"fixer_changed_nothing","round":1}' ]
 }
 
 @test "a fixer that changed nothing fixed nothing: the findings need attention" {
@@ -237,13 +237,23 @@ push_says() {
   rm fixed.txt
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(attention)" = "the fixer changed nothing" ]
+  [ "$(attention)" = '{"type":"fixer_changed_nothing","round":0}' ]
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=1 review-again=no" ]
-  # A fixer that said why it changed nothing is listed for what it said, as it wrote it, not twice.
-  printf -- '- a:1 needs a design call\n\nb:2 too\n' > .coding-crew/solve-feature/pr-10.unfixed.md
+  # A fixer that said why it changed nothing is listed for what it said, not twice; so is one whose file is off its
+  # shape, kept whole as one item. A fixer that wrote an empty list claims every fix it never made.
+  echo '[{"finding": 0, "why": "needs a design call"}, {"why": "too"}]' > .coding-crew/solve-feature/pr-10.unfixed.json
   rereview
   run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$(attention)" = "$(printf -- '- a:1 needs a design call\nb:2 too')" ]
+  [ "$(attention)" = "$(printf '%s\n' '{"type":"unfixed","round":1,"finding":0,"severity":"HIGH","why":"needs a design call"}' \
+    '{"type":"unfixed","round":1,"severity":null,"why":"too"}')" ]
+  printf -- '- a:1 needs a design call\n' > .coding-crew/solve-feature/pr-10.unfixed.json
+  rereview
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$(attention)" = '{"type":"unfixed","round":2,"severity":null,"why":"- a:1 needs a design call\n"}' ]
+  echo '[]' > .coding-crew/solve-feature/pr-10.unfixed.json
+  rereview
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$(attention)" = '{"type":"fixer_changed_nothing","round":3}' ]
 }
 
 @test "fix commits a dirty tree as one commit and pushes it, never marks the PR ready, and writes no stopped or reviewed file" {
@@ -257,7 +267,7 @@ push_says() {
   [ -z "$(git status --porcelain)" ]
   pushed
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=0 review-again=yes" ]
-  [ -f .coding-crew/solve-feature/pr-10.attention.md ]
+  [ "$(cat .coding-crew/solve-feature/pr-10.attention.json)" = '[]' ]
   [ -z "$(attention)" ]
   ! grep -q '^pr ready' "$STATE/gh.log" || false
   [ ! -e .coding-crew/solve-feature/stopped ]
@@ -339,20 +349,32 @@ push_says() {
   pushed
 }
 
-@test "each gap and unfixed line, or an unmet spec with no gap named, is handed to describe as needing attention" {
-  fix_ready '{"spec":"unmet","gaps":["no logout endpoint"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"},{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
-  printf -- '#2: race on the lock: needs a design call\n\n' > .coding-crew/solve-feature/pr-10.unfixed.md
+@test "an unmet spec and each finding left in unfixed.json are handed to describe as typed items, by index" {
+  fix_ready '{"spec":"unmet","gaps":["no logout endpoint","no login"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"},{"severity":"MEDIUM","location":"b:2","issue":"j","fix":"g"}]}'
+  echo '[{"finding": 1, "why": "w"}, {"finding": 7, "why": "out of range"}]' > .coding-crew/solve-feature/pr-10.unfixed.json
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(attention)" = "$(printf 'no logout endpoint\n#2: race on the lock: needs a design call')" ]
-  [ ! -e .coding-crew/solve-feature/pr-10.unfixed.md ]
-  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=2 review-again=yes" ]
+  [ "$(attention)" = "$(printf '%s\n' '{"type":"spec_unmet","round":0,"gaps":[0,1]}' \
+    '{"type":"unfixed","round":0,"finding":1,"severity":"MEDIUM","why":"w"}' \
+    '{"type":"unfixed","round":0,"finding":7,"severity":null,"why":"out of range"}')" ]
+  [ ! -e .coding-crew/solve-feature/pr-10.unfixed.json ]
+  [ "$(cat .coding-crew/solve-feature/pr-10.r1.unfixed.json)" = '[{"finding": 1, "why": "w"}, {"finding": 7, "why": "out of range"}]' ]
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=3 review-again=yes" ]
 
-  # The spec unmet with no gap named still needs a person.
-  report '{"spec":"unmet","gaps":[],"findings":[]}'
+  # The spec unmet with no gap named, or anything but met (none, missing, unknown), still needs a person.
+  local spec
+  for spec in '"spec":"unmet",' '"spec":"none",' '' '"spec":"maybe",' '"spec":3,'; do
+    report "{${spec}\"gaps\":[],\"findings\":[]}"
+    run bash "$SCRIPT" fix feat 10 feature/feat
+    [ "$status" -eq 0 ] || { echo "$spec: $output"; return 1; }
+    [ "$(attention)" = "$(jq -nc --argjson r "$(($(ls .coding-crew/solve-feature/pr-10.r*.review.json | wc -l) - 1))" '{type: "spec_unmet", round: $r, gaps: []}')" ] ||
+      { echo "$spec: $(attention)"; return 1; }
+  done
+  # An unreadable file is one item with no finding and its raw text, never dropped.
+  report '{"spec":"met","gaps":[],"findings":[{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
+  printf 'not json' > .coding-crew/solve-feature/pr-10.unfixed.json
   run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 0 ]
-  [ "$(attention)" = "the reviewer found the spec unmet" ]
+  [ "$(attention)" = '{"type":"unfixed","round":6,"severity":null,"why":"not json"}' ]
 }
 
 @test "fix asks for a re-review after a CRITICAL, HIGH or MEDIUM finding when the fixer left a change, committed by fix or by the fixer" {
@@ -389,22 +411,23 @@ push_says() {
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=1 needs-attention=1 review-again=no" ]
 }
 
-@test "a second fix after a re-review leaves only its own gaps and unfixed lines needing attention" {
-  fix_ready '{"spec":"met","gaps":["first gap"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
-  echo 'first unfixed' > .coding-crew/solve-feature/pr-10.unfixed.md
+@test "a second fix after a re-review leaves only its own gaps and unfixed findings needing attention" {
+  fix_ready '{"spec":"unmet","gaps":["first gap"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
+  echo '[{"finding": 0, "why": "first"}]' > .coding-crew/solve-feature/pr-10.unfixed.json
   run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$(attention)" = "$(printf 'first gap\nfirst unfixed')" ]
+  [ "$(attention)" = "$(printf '%s\n' '{"type":"spec_unmet","round":0,"gaps":[0]}' '{"type":"unfixed","round":0,"finding":0,"severity":"HIGH","why":"first"}')" ]
+  # A gap named under a spec the report calls met still needs a person.
   report '{"spec":"met","gaps":["second gap"],"findings":[{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
-  echo 'second unfixed' > .coding-crew/solve-feature/pr-10.unfixed.md
+  echo '[{"finding": 0, "why": "second"}]' > .coding-crew/solve-feature/pr-10.unfixed.json
   echo second > fixed.txt
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(attention)" = "$(printf 'second gap\nsecond unfixed')" ]
+  [ "$(attention)" = "$(printf '%s\n' '{"type":"spec_unmet","round":1,"gaps":[0]}' '{"type":"unfixed","round":1,"finding":0,"severity":"LOW","why":"second"}')" ]
 }
 
 @test "fix posts nothing on the PR" {
   fix_ready '{"spec":"unmet","gaps":["g"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
-  echo 'x' > .coding-crew/solve-feature/pr-10.unfixed.md
+  echo '[{"finding": 0, "why": "x"}]' > .coding-crew/solve-feature/pr-10.unfixed.json
   : > "$STATE/gh.log"
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ]
@@ -514,7 +537,7 @@ reviewed_stops() {
   echo fixed > fixed.txt
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(attention)" = "the reviewer changed the tree; discarded: new.txt" ]
+  [ "$(attention)" = '{"type":"reviewer_changed_tree","paths":["new.txt"]}' ]
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ]
   [ "${lines[${#lines[@]}-1]}" = "needs-attention pr=10" ]
@@ -536,7 +559,7 @@ reviewed_stops() {
   [ "$status" -eq 0 ]
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(attention)" = "the reviewer changed the tree; discarded: new.txt" ]
+  [ "$(attention)" = '{"type":"reviewer_changed_tree","paths":["new.txt"]}' ]
   run bash "$SCRIPT" describe feat 10
   [ "${lines[${#lines[@]}-1]}" = "needs-attention pr=10" ]
   # A second round that discards too lists both rounds' paths.
@@ -562,7 +585,7 @@ reviewed_stops() {
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$tip" ]
   [ "$(git show origin/feature/feat:yarn.lock)" = v1 ]
   [ ! -e package-lock.json ]
-  [ "$(attention)" = "the reviewer changed the tree; discarded: package-lock.json yarn.lock" ]
+  [ "$(attention)" = '{"type":"reviewer_changed_tree","paths":["package-lock.json","yarn.lock"]}' ]
 }
 
 @test "reviewed on another branch, or with no saved head, stops and discards nothing" {
