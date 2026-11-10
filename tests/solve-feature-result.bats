@@ -532,6 +532,13 @@ summary_file() { printf '%s' "$2" > "$D/pr-$1.summary.md"; }
   run bash "$SCRIPT" describe feat 10
   [ "$(grep '^\*\*Tested:\*\*' "$STATE/pr-body")" = '**Tested:** lint fail (exit 2), test pass' ]
 
+  # A log where every check is NOT RUN: still one Tested line, after the summary, saying no check ran.
+  printf 'lint: NOT RUN: no command found\ntest: NOT RUN: no command found\nCHECKS: pass\n' > "$D/pr-10.checks.log"
+  run bash "$SCRIPT" describe feat 10
+  [ "$(grep -c '^\*\*Tested:\*\*' "$STATE/pr-body")" = 1 ]
+  [ "$(grep '^\*\*Tested:\*\*' "$STATE/pr-body")" = '**Tested:** no check ran' ]
+  [ "$(grep -n -m1 '^Users need accounts' "$STATE/pr-body" | cut -d: -f1)" -lt "$(grep -n -m1 '^\*\*Tested:\*\*' "$STATE/pr-body" | cut -d: -f1)" ]
+
   # A writer that kept its own Tested line: it stays, in the body and in pr_summary.
   summary_file 10 $'# Let users log in\n\n## Why\n\nUsers need accounts.\n\n**Tested:** checks pass\n'
   run bash "$SCRIPT" describe feat 10

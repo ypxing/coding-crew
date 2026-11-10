@@ -3,7 +3,7 @@
 // [--pr <n|local>] — writes <dir>/result.json (result.schema.json beside SKILL.md) from the run's files and git. It reads
 // what the script and its subagents wrote, splitting prose only into lines; any error exits non-zero, leaving the
 // earlier file untouched. With --red-files yes it only prints the red-evidence files of the spec issues next handed
-// out, one path a line. With --tested-line <checks log> it only prints the PR body's `**Tested:**` line from that log.
+// out, one path a line. With --tested-line <checks log> it only prints the PR body's one `**Tested:**` line from that log.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -34,7 +34,8 @@ function checkResults(name) {
 
 if (args["tested-line"]) {
   const results = checkResults(args["tested-line"]);
-  if (results.length) console.log(`**Tested:** ${results.map((c) => `${c.key} ${c.result}`).join(", ")}`);
+  // No verdict (every check NOT RUN) still gets a line: a body without one reads as if checks were never looked at.
+  console.log(`**Tested:** ${results.length ? results.map((c) => `${c.key} ${c.result}`).join(", ") : "no check ran"}`);
   process.exit(0);
 }
 
