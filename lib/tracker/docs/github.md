@@ -13,7 +13,8 @@ The tracker this repo uses is the `tracker` section of `.coding-crew/config.json
 ```
 
 `configure-tracker` writes it when you choose `github` (other sections of the file are kept), and
-`node "$TRACKER" config` prints what is in effect. `gh` targets the repo of the current
+`node "$TRACKER" config` prints what is in effect. A non-empty `CREW_TRACKER` environment variable (`local` or
+`github`) overrides both files, for a host running in a repo whose config it cannot change. `gh` targets the repo of the current
 directory's git remote; there is no override. This doc ships beside the tracker CLI in the `coding-crew-lib`
 skill (`coding-crew-lib/scripts/tracker/docs/`, copied through its link into `lib/`) and is refreshed by every install — edit
 `config.json`, not this file.
@@ -35,7 +36,7 @@ node "$TRACKER" prd --feature-slug <slug>                 # print the feature's 
 node "$TRACKER" next --feature-slug <slug>                # the number of the next issue to run, or exit 3
 node "$TRACKER" known --feature-slug <slug> --out <dir>   # write the feature's issues, open and closed (not wontfix), into <dir>
 node "$TRACKER" spec --feature-slug <slug>                # print the feature's spec: the PRD, then each issue `known` writes, whole
-node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace | --append]
+node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace | --append]   # not --rebuild
 node "$TRACKER" publish-prd --feature-slug <slug> --title "<feature title>" --body-file <file>
 node "$TRACKER" rewrite <number> --body-file <file> --status <status> --feature-slug <slug>
 node "$TRACKER" tick <number>                             # check every criterion off, in the live body
@@ -75,7 +76,8 @@ never reopened; new issues are filed under it as it is. `publish-issues` creates
 draft, labelled by its `Status:` line, in dependency order, rewriting each draft's `## Blocked by`
 to `Issue #<n>` with the number its blocker got and mirroring those edges as native GitHub
 dependencies (best-effort: a failed link only warns; `next` reads the body's `## Blocked by`).
-A feature's issues only accumulate, so it never exits `4` or `5`, and `--append` changes nothing. `publish-prd` creates the
+A feature's issues only accumulate, so it never exits `4` or `5`, and `--append` changes nothing; `--rebuild`, the local
+tracker's, is not taken: it exits `1` and files nothing. `publish-prd` creates the
 `PRD: <feature title>` issue — as the root when the slug has none, else as a sub-issue of the
 root — or edits the feature's existing one, keeping its `Feature:` line. It pins nothing: the
 root's sub-issue progress bar is the feature's overview. Work issues cite it as `PRD: #<n>`.

@@ -14,6 +14,7 @@ const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures",
 // Every test gets its own HOME, so a developer's real ~/.coding-crew/config.json never decides an outcome.
 beforeEach(() => {
   process.env.HOME = mkdtempSync(join(tmpdir(), "crew-tracker-config-home-"));
+  delete process.env.CREW_TRACKER;
 });
 
 function repo() {
@@ -168,6 +169,51 @@ for (const [name, content] of [
     assert.ok(stderr.includes(path), stderr);
   });
 }
+
+// --- CREW_TRACKER ------------------------------------------------------------------------
+
+test("CREW_TRACKER=local wins over a project config of github: cli config prints tracker=local, configured=yes", async () => {
+  const root = repo();
+  configJson(root, { tracker: { kind: "github" } });
+  userConfig({ tracker: { kind: "github" } });
+  process.env.CREW_TRACKER = "local";
+  assert.deepEqual(readTrackerConfig(root), { tracker: "local", configured: true });
+  assert.deepEqual(await cliConfig(root), { code: 0, stdout: "tracker=local\nconfigured=yes\n", stderr: "" });
+  process.env.CREW_TRACKER = "github";
+  assert.deepEqual(readTrackerConfig(repo()), { tracker: "github", configured: true });
+});
+
+test("CREW_TRACKER=local makes the other ops use the local backend under a github project config: no gh call", async () => {
+  const root = repo();
+  configJson(root, { tracker: { kind: "github" } });
+  process.env.CREW_TRACKER = "local";
+  const calls = [];
+  const exec = (cmd, args) => {
+    calls.push([cmd, ...args].join(" "));
+    return { code: 0, stdout: "[]", stderr: "" };
+  };
+  const code = await run(["features", "--main-root", root], { exec, out: () => {}, err: () => {} });
+  assert.equal(code, 0);
+  assert.deepEqual(calls, []);
+});
+
+test("CREW_TRACKER outside the accepted kinds fails config naming the variable and the kinds", async () => {
+  const root = repo();
+  process.env.CREW_TRACKER = "jira";
+  assert.throws(() => readTrackerConfig(root), /CREW_TRACKER.*jira.*local, github/);
+  const r = await cliConfig(root);
+  assert.equal(r.code, 1);
+  assert.equal(r.stdout, "");
+  assert.match(r.stderr, /CREW_TRACKER.*local, github/);
+});
+
+test("an empty CREW_TRACKER reads the config files as without it", () => {
+  const root = repo();
+  configJson(root, { tracker: { kind: "github" } });
+  process.env.CREW_TRACKER = "";
+  assert.deepEqual(readTrackerConfig(root), { tracker: "github", configured: true });
+  assert.deepEqual(readTrackerConfig(repo()), { tracker: "local", configured: false });
+});
 
 test("mainCheckout: a checkout whose git dir is not named .git (git init --separate-git-dir) resolves to its top level from a subdirectory and from a linked worktree", () => {
   const dir = realpathSync(repo()); // macOS: git reports tmpdir()'s /var as /private/var

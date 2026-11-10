@@ -3,7 +3,8 @@
 # loop and runs each issue's coder (between `next` and `land`), a conflicting merge's resolver (between `sync`'s exit 4
 # and its re-run), the review's reviewer (before `reviewed`) and fixer
 # (before `fix`) and the PR's writer (before `describe`) as subagents of the host agent; every guard is an exit code here.
-#   start <slug> [--branch <name>] [--review-since <sha>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch>
+#   start <slug> [--branch <name>] [--review-since <sha>] | start --spec <file> --issue <n> [--branch …] [--review-since …]
+#   | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch>
 #   | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr> — each function's comment states its contract.
 # Exit: 0 ok; 1 a stop (its one-line result in .coding-crew/solve-feature/outcome); 2 a usage error; 3 from next
 # when no ready issue is left; 4 from sync when its merge of the default branch conflicts, left in progress.
@@ -36,18 +37,28 @@ outcome() {
 die() { echo "solve-feature: $*" >&2; outcome "stopped: $CMD failed: $*"; exit 1; }
 usage() {
   [ -z "${1:-}" ] || echo "solve-feature: $1" >&2
-  echo "usage: solve-feature.sh start <slug> [--branch <name>] [--review-since <sha>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>" >&2; exit 2
+  echo "usage: solve-feature.sh start <slug> [--branch <name>] [--review-since <sha>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr> | start --spec <file> --issue <n> [--branch <name>] [--review-since <sha>]" >&2; exit 2
 }
 
 CMD="${1:-}"; [ $# -eq 0 ] || shift
-SLUG="" BRANCH="" REF="" PR="" SINCE=""
+SLUG="" BRANCH="" REF="" PR="" SINCE="" SPEC="" ISSUE=""
 case "$CMD" in
   start) while [ $# -gt 0 ]; do case "$1" in
       --branch) [ $# -ge 2 ] || usage "--branch needs a value"; BRANCH="$2"; shift 2 ;;
       --review-since) [ $# -ge 2 ] && [ -n "$2" ] || usage "--review-since needs a value"; SINCE="$2"; shift 2 ;;
+      --spec) [ $# -ge 2 ] && [ -n "$2" ] || usage "--spec needs a value"; SPEC="$2"; shift 2 ;;
+      --issue) [ $# -ge 2 ] || usage "--issue needs a value"; ISSUE="$2"; shift 2 ;;
       -*) usage "unknown flag: $1" ;;
       *) [ -z "$SLUG" ] || usage "unexpected argument: $1"; SLUG="$1"; shift ;;
-    esac; done ;;
+    esac; done
+    if [ -n "$SPEC$ISSUE" ]; then
+      [ -n "$SPEC" ] && [ -n "$ISSUE" ] || usage "--spec and --issue go together"
+      [ -z "$SLUG" ] || usage "--spec takes no feature slug: the feature is issue-<n>"
+      # <n> reaches a path and argv.
+      [[ "$ISSUE" =~ ^[0-9]+$ ]] || usage "--issue '$ISSUE' is not a number"
+      SLUG="issue-$ISSUE"
+      case "$SPEC" in /*) ;; *) SPEC="$PWD/$SPEC" ;; esac # before the cd to the top level below
+    fi ;;
   next) [ $# -eq 1 ] || usage; SLUG="$1" ;;
   land) [ $# -eq 3 ] || usage; SLUG="$1" REF="$2" BRANCH="$3" ;;
   sync) [ $# -eq 2 ] || usage; SLUG="$1" BRANCH="$2" ;;
@@ -65,6 +76,12 @@ LOGS="$ROOT/.coding-crew/solve-feature"
 # The main checkout, as the tracker finds it: its .coding-crew/ files are read from every worktree, committed or not.
 MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 [ "$(basename "$MAIN_ROOT")" = .git ] && MAIN_ROOT=$(dirname "$MAIN_ROOT") || MAIN_ROOT="$ROOT"
+# A spec kept in $LOGS itself: start and the later steps delete or rewrite its files, so it is refused. The stop
+# writes its outcome and result.json unless the spec is one of them.
+if [ -n "$SPEC" ] && [ -d "$(dirname "$SPEC")" ] && [ "$(cd "$(dirname "$SPEC")" && pwd -P)" = "$(cd "$LOGS" && pwd -P)" ]; then
+  case "$(basename "$SPEC")" in outcome | result.json) LOGS="" ;; esac
+  die "--spec $SPEC is in this run's own directory, whose files start deletes or a later step rewrites: keep the spec outside the checkout or in an ignored path elsewhere"
+fi
 # The setup files a user commits once satisfied: no tree check counts them, and no run commits them. A dev commands
 # file this tree tracks is not one: it is the branch's own copy, the one its checks read, counted and committed.
 BRANCH_WORK=(. ':!.coding-crew/config.json') SETUP_FILES=(.coding-crew/config.json)
@@ -74,8 +91,10 @@ git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 |
   "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base" "$LOGS/review.since"
 # solveFeature.publish: false keeps the run on this machine: no push, no PR, the body in local_body's file. Read from
 # the user-level config only: an Actions runner has none, so it never keeps commits that vanish with the runner.
+# CREW_PUBLISH=false does the same for a host that pushes the commits itself and has no user config to write.
 PUBLISH=yes
 [ "$(jq -r '.solveFeature.publish' "$HOME/.coding-crew/config.json" 2>/dev/null || true)" != false ] || PUBLISH=no
+[ "${CREW_PUBLISH:-}" != false ] || PUBLISH=no
 # Keyed by branch as `gh pr view "$BRANCH"` is; not pr-body.md, land's draft body in publish mode.
 local_body() { echo "$LOGS/local-pr-${BRANCH//\//_}.md"; }
 # The issue next handed out for this feature until its land records it: per feature, as runs share this directory.
@@ -210,10 +229,23 @@ model() {
   done
 }
 
-# start — preconditions, the branch (--branch, else feature/<slug>), spec.md, --review-since's commit for sync;
-# prints branch=, coder-model=, reviewer-model= and pr= (empty with no open PR).
+# publish_spec — --spec's file as the one-issue local feature $SLUG (publish-spec.sh). An earlier run's landing record
+# goes with the feature it rebuilds, or next would read the rebuilt issue as closed but never landed.
+publish_spec() {
+  local why drafts rc=0
+  # A fresh directory, so clearing it can never delete the spec a host keeps under $LOGS.
+  drafts=$(mktemp -d "$LOGS/spec-drafts.XXXXXX") || die "cannot create a drafts directory in $LOGS (see above)"
+  why=$(bash "$SELF/publish-spec.sh" --cli "$CLI" --main-root "$MAIN_ROOT" --drafts "$drafts" --slug "$SLUG" --spec "$SPEC") || rc=$?
+  rm -rf "$drafts"
+  [ "$rc" = 0 ] || die "${why:-publishing $SPEC failed (see above)}"
+  rm -f "$(landing)"
+}
+
+# start — preconditions, --spec's feature, the branch (--branch, else feature/<slug>), spec.md, --review-since's
+# commit for sync; prints slug= (with --spec), branch=, coder-model=, reviewer-model= and pr= (empty with no open PR).
 start() {
   [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || die "working tree is not clean: commit or stash first"
+  [ -z "$SPEC" ] || publish_spec
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
   grep -qxF "$SLUG" <<<"$features" || die "no feature '$SLUG'; features: $(paste -sd' ' - <<<"$features")"
   # preflight.sh blocks a coder on the default branch, so the branch comes first. Never reset or rebase
@@ -246,6 +278,7 @@ start() {
   # A ready PR would read as reviewed while coders and the review change it; describe marks it ready again.
   [ -z "$PR_N" ] || [ "$PR_IS_DRAFT" != false ] || gh pr ready "$PR_N" --undo >/dev/null ||
     die "gh pr ready $PR_N --undo failed: run gh pr ready $PR_N --undo by hand, then re-run"
+  [ -z "$SPEC" ] || echo "slug=$SLUG"
   echo "branch=$BRANCH"
   echo "coder-model=$(model coder)"
   echo "reviewer-model=$(model reviewer)"
@@ -717,12 +750,16 @@ describe() {
       ( if any($items[]; .type == "note") then "notes for a person, in the section below: delete each once it is handled" else empty end )' \
     "$att" "$datt") || die "rendering the needs-attention list failed (see above)"
   jq -e '.[] | select(.type == "note")' "$datt" >/dev/null || notes=""
+  # The Tested line's one writer: the last gate's own verdict lines, never the writer's prose.
+  local tested
+  tested=$(node "$SELF/result.mjs" --logs "$LOGS" --tested-line "pr-$PR.checks.log") || die "reading the checks log $LOGS/pr-$PR.checks.log failed (see above)"
   {
     echo "$BEGIN"
     # Written here, not by the writer subagent, so a reviewer always sees that agents wrote this PR.
     printf '> Written by solve-feature (`%s`): its coder, reviewer and fixer were agents; no person has read this body.\n\n' "$SLUG"
     # write-pr's summary minus its title line, which titles the PR instead.
     if [ -f "$f" ]; then if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d'; echo; fi
+    printf '%s\n\n' "$tested"
     if [ -n "$need" ]; then printf '## Needs attention\n\n'; sed '/^- /!s/^/- /' <<<"$need"; echo; fi
     [ -z "$notes" ] || printf '%s\n\n' "$notes"
     printf '%s\n\n' "$spec_line"

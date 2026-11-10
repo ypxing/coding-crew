@@ -84,6 +84,8 @@ EOF
 
 Users need accounts.
 
+**Tested:** test pass
+
 ## Needs attention
 
 - notes for a person, in the section below: delete each once it is handled
@@ -297,4 +299,48 @@ EOF
   grep -q 'ready branch=<b>' "$skill"
   grep -q 'needs-attention branch=<b>' "$skill"
   grep -q 'write-pr skill on branch <branch>' "$skill"
+}
+
+@test "CREW_PUBLISH=false with no user config keeps the run local as publish false does: pr=local, no push, no gh PR call" {
+  export CREW_PUBLISH=false
+  [ ! -e "$HOME/.coding-crew/config.json" ]
+  loop
+  [ "$LAST_PR" = local ] || { echo "$LAST_PR"; return 1; }
+  printf '{"spec":"met","gaps":[],"findings":[{"severity":"LOW","location":"a:1","issue":"i","fix":"f"}]}\n' > .coding-crew/solve-feature/pr-local.review.json
+  run bash "$SCRIPT" reviewed feat local feature/feat
+  [ "$output" = findings=1 ] || { echo "$output"; return 1; }
+  echo fixed > fixed.txt
+  run bash "$SCRIPT" fix feat local feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "${lines[${#lines[@]}-1]}" = "FIX: findings=1 needs-attention=0 review-again=no" ]
+  printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n' > .coding-crew/solve-feature/pr-local.summary.md
+  run bash "$SCRIPT" describe feat local
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "ready branch=feature/feat" ]
+  [ "$(head -n1 "$LOCAL")" = "# Let users log in" ]
+  ! on_origin feature/feat || false
+  no_pr_calls
+}
+
+@test "CREW_PUBLISH unset, empty or any value but false leaves publishing to the user-level config" {
+  local v
+  for v in unset "" true no FALSE; do
+    rm -rf "$STATE"/pr-* "$STATE/gh.log" .coding-crew/solve-feature
+    git checkout -q main && git branch -q -D feature/feat 2>/dev/null || true
+    git push -q origin --delete feature/feat 2>/dev/null || true
+    jq 'map(if .number > 1 then .labels = [{"name":"ready-for-agent"}] else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+    if [ "$v" = unset ]; then unset CREW_PUBLISH; else export CREW_PUBLISH="$v"; fi
+    loop
+    [ "$LAST_PR" = 10 ] || { echo "'$v': $LAST_PR"; return 1; }
+    on_origin feature/feat
+  done
+  # The user-level config still turns it off whatever the variable says.
+  no_publish
+  rm -rf "$STATE"/pr-* "$STATE/gh.log" .coding-crew/solve-feature
+  git checkout -q main && git branch -q -D feature/feat && git push -q origin --delete feature/feat
+  jq 'map(if .number > 1 then .labels = [{"name":"ready-for-agent"}] else . end)' "$STATE/issues.json" > "$STATE/i.tmp" && mv "$STATE/i.tmp" "$STATE/issues.json"
+  export CREW_PUBLISH=true
+  loop
+  [ "$LAST_PR" = local ] || { echo "$LAST_PR"; return 1; }
+  no_pr_calls
 }

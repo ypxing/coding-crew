@@ -11,7 +11,8 @@ The tracker this repo uses is the `tracker` section of `.coding-crew/config.json
 ```
 
 `kind` is `local` or `github`; other sections of the file (`solveFeature`) are kept beside it. No
-`tracker` section means `local`, so this tracker needs no config at all. `configure-tracker`
+`tracker` section means `local`, so this tracker needs no config at all. A non-empty `CREW_TRACKER` environment variable
+(`local` or `github`) overrides both files, for a host running in a repo whose config it cannot change. `configure-tracker`
 writes the section, and `node "$TRACKER" config` prints what is in effect (`tracker=<kind>`,
 `configured=yes|no`). This doc ships beside the tracker CLI in the `coding-crew-lib` skill
 (`coding-crew-lib/scripts/tracker/docs/`, copied through its link into `lib/`) and is refreshed by every install — edit `config.json`, not this file.
@@ -34,7 +35,7 @@ node "$TRACKER" next --feature-slug <slug>                # the absolute path of
 node "$TRACKER" closing-refs --feature-slug <slug>        # prints nothing: a local issue has no PR to close it
 node "$TRACKER" known --feature-slug <slug> --out <dir>   # copy the feature's issues, open and done (not wontfix), into <dir>
 node "$TRACKER" spec --feature-slug <slug>                # print the feature's spec: the PRD, then each issue `known` writes, whole
-node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace | --append]
+node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace | --append | --rebuild]
 node "$TRACKER" publish-prd --feature-slug <slug> --title "<feature title>" --body-file <file>
 node "$TRACKER" rewrite <ref> --body-file <file> --status <status> --feature-slug <slug>
 node "$TRACKER" tick <ref>                                # check every criterion off
@@ -63,7 +64,11 @@ issue without an entry (or a feature without the file) has none, and a `## Block
 hand after publish does not change dispatch; `rewrite` sets the issue's entry from its new `## Blocked by`. It exits `4` when the feature
 already has issues in `done/` and `5` when it has open ones and `--replace` is absent; both write
 nothing. `--append` adds the drafts to a feature that already has issues, open or done: numbered after
-its highest one, its existing issues and their `issues-deps.json` entries kept, neither exit applied. `publish-prd` writes `.coding-crew/scratch/<slug>/PRD.md`.
+its highest one, its existing issues and their `issues-deps.json` entries kept, neither exit applied. `--rebuild`
+publishes the drafts as a first publish does after removing `.coding-crew/scratch/<slug>/`, and leaves a `.rebuilt`
+marker file there; it removes only a directory carrying that marker, so on one no `--rebuild` made it exits `4`, naming
+the directory, and changes nothing (move it aside, or use another slug). It excludes `--replace` and `--append`.
+`publish-prd` writes `.coding-crew/scratch/<slug>/PRD.md`.
 
 `mark-done` does not evaluate criteria for you — it only checks that you already did. Before
 running it, verify every `- [ ]` in `## Acceptance criteria` (and `## Cross-cutting Requirements`,

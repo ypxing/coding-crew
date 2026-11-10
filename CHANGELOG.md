@@ -6,6 +6,21 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: `start --spec` stages its draft in a fresh directory and stops on a spec kept at a file `start`
+  deletes, so no spec under `.coding-crew/solve-feature/` is removed; the PR body's `**Tested:**` line says `no check
+  ran` when every check was `NOT RUN` instead of being left out (#743).
+- tracker: `publish-issues --rebuild` (local tracker) removes a feature directory an earlier `--rebuild` made and
+  publishes the drafts afresh, refusing (exit 4) one it did not make; `solve-feature start --spec` uses it, so no
+  solve-feature script names a tracker path or deletes an issue file (#742).
+- solve-feature: the PR body's `**Tested:**` line is now written by the script, listing each check key of the last
+  gate with its result, in place of the PR writer's sentence; `result.json` adds `status`, a per-finding `fixed`, and
+  `pr_summary` / `pr_title` from the writer's summary in both publish modes; the guide's new "Embedding solve-feature"
+  section shows a host running one spec file and computing its own ready bar from `result.json` (#740).
+
+- solve-feature, tracker: `/solve-feature --spec <file> --issue <n>` builds one spec file as the one-issue local
+  feature `issue-<n>` with no tracker set up beforehand, rebuilding it from the file on every run;
+  `CREW_PUBLISH=false` turns pushing and PR calls off without a user config, and `CREW_TRACKER` picks the tracker
+  for every process of a run, ahead of the repo's config (#739).
 - tracker, solve-feature: the `spec` op puts a `<!-- spec-issue: <id> -->` line above each issue's `### <id> — <title>`
   section, and `result.json` lists only those, so a heading of that shape in the PRD or an issue's text is no longer
   an extra issue; crew-review saves the index before its check run and restores it afterwards, so what a check `git add`ed is

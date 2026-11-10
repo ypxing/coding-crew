@@ -3,7 +3,7 @@
 // [--pr <n|local>] — writes <dir>/result.json (result.schema.json beside SKILL.md) from the run's files and git. It reads
 // what the script and its subagents wrote, splitting prose only into lines; any error exits non-zero, leaving the
 // earlier file untouched. With --red-files yes it only prints the red-evidence files of the spec issues next handed
-// out, one path a line.
+// out, one path a line. With --tested-line <checks log> it only prints the PR body's one `**Tested:**` line from that log.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -30,6 +30,13 @@ function checkResults(name) {
     if (m) results.set(m[1], m[2]);
   }
   return [...results].map(([key, result]) => ({ key, result }));
+}
+
+if (args["tested-line"]) {
+  const results = checkResults(args["tested-line"]);
+  // No verdict (every check NOT RUN) still gets a line: a body without one reads as if checks were never looked at.
+  console.log(`**Tested:** ${results.length ? results.map((c) => `${c.key} ${c.result}`).join(", ") : "no check ran"}`);
+  process.exit(0);
 }
 
 // preflight.sh's ISSUE_SLUG: the ref's basename without .md. A spec section's id is that slug, or it followed by
@@ -67,10 +74,21 @@ const outcome = (text("outcome") ?? "").split("\n")[0];
 const branch = git("branch", "--show-current").trim();
 const head = git("rev-parse", "HEAD").trim();
 const result = { outcome, branch, head };
+const status = /^(ready|needs-attention|stopped)\b/.exec(outcome)?.[1];
+if (status) result.status = status;
 
 const roundRe = /^pr-(\d+|local)\.r(\d+)\.review\.json$/;
 const pr = /^\d+$/.test(args.pr ?? "") ? args.pr : "";
 if (args.publish === "yes" && pr) result.pr = Number(pr);
+const name = /^(\d+|local)$/.test(args.pr ?? "") ? args.pr : "";
+// The PR writer's summary as it wrote it, its `# <title>` line apart: describe adds its own lines around it.
+const summary = name ? text(`pr-${name}.summary.md`) : null;
+if (summary !== null) {
+  const [first, ...rest] = summary.split("\n");
+  const title = /^# (.*)$/.exec(first)?.[1];
+  if (title !== undefined) result.pr_title = title;
+  result.pr_summary = (title === undefined ? summary : rest.join("\n")).replace(/^(\s*\n)+/, "");
+}
 if (args.publish === "no") {
   const body = text(`local-pr-${branch.replace(/\//g, "_")}.md`);
   if (body !== null) {
@@ -164,15 +182,22 @@ result.rounds = rounds.map((r, i) => {
   }));
   const cited = new Set(criteria.flatMap((c) => c.tests.map((t) => t.red)).filter(Boolean));
   const fix = r.stem && text(`${r.stem}.fix`) !== null ? JSON.parse(text(`${r.stem}.fix`)) : null;
+  const changed = fix ? fix.fixer_changed_code === true : null;
+  const raw = list(report.findings);
+  const unfixed = readUnfixed(r.unfixed);
+  // fixed only where it can be told: a finished fix, and every unfixed entry naming one of this round's findings.
+  const known = changed !== null && unfixed.every((u) => "finding" in u && u.finding < raw.length);
+  const left = new Set(unfixed.map((u) => u.finding));
+  const isObject = (f) => f && typeof f === "object" && !Array.isArray(f);
   return {
     spec: String(report.spec ?? ""),
     gaps: list(report.gaps).map(String),
     // Mapped, not filtered: unfixed and needs_attention name a finding by its index in the report.
-    findings: list(report.findings).map((f) => (f && typeof f === "object" && !Array.isArray(f) ? f : {})),
+    findings: raw.map((f, k) => (!isObject(f) ? {} : known ? { ...f, fixed: changed && !left.has(k) } : f)),
     criteria,
-    unfixed: readUnfixed(r.unfixed),
+    unfixed,
     unmatched_red: red.filter((l) => !cited.has(l)),
-    fixer_changed_code: fix ? fix.fixer_changed_code === true : null,
+    fixer_changed_code: changed,
     checks: fix ? checkResults(`${r.stem}.checks.log`) : null,
     checks_commit: fix ? String(fix.checks_commit) : null,
     re_reviewed: i < rounds.length - 1,
@@ -180,7 +205,6 @@ result.rounds = rounds.map((r, i) => {
 });
 
 // The items fix and describe wrote for the PR, the one list its draft hold and Needs attention lines come from.
-const name = /^(\d+|local)$/.test(args.pr ?? "") ? args.pr : "";
 result.needs_attention = name
   ? [`pr-${name}.attention.json`, `pr-${name}.describe-attention.json`].flatMap((f) => (text(f) === null ? [] : JSON.parse(text(f))))
   : [];

@@ -487,6 +487,63 @@ Nothing removes a worktree: `git worktree remove <path>` once you are done with 
 
 ---
 
+### Embedding solve-feature
+
+A host that owns the spec, the branch, the push, the PR and the verdict (a CI job with read-only tokens, say) runs
+solve-feature as its build-review-fix step on one spec file, with no tracker set up and no config file written:
+
+```bash
+CREW_PUBLISH=false CREW_TRACKER=local CREW_COMMANDS_FILE=/runner/dev-commands.json \
+  claude -p "/solve-feature --spec /runner/spec.md --issue 13 --branch agent/13"
+```
+
+- `--spec <file> --issue <n>` builds the file as the one-issue local feature `issue-<n>` (commits `[01-issue-<n>]`),
+  rebuilt from the file on every run. The file's first `# ` line is the issue's title; its `## Blocked by` section is
+  dropped. Keep the file outside the checkout: an untracked file inside it stops the run as a dirty tree does.
+  `--branch` and `--review-since` work as for any feature.
+- `CREW_PUBLISH=false` — no `git push` and no `gh pr` call; the host pushes the branch and opens the PR itself.
+- `CREW_TRACKER=local` — every process of the run uses the local tracker, whatever the repo's committed
+  `.coding-crew/config.json` says. `--spec` stops without it on a repo whose tracker is `github`.
+- `CREW_COMMANDS_FILE` — the dev commands file every check reads, kept outside the checkout.
+- `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` — the coder and fixer / reviewer model, ahead of any config.
+
+When the run ends, `.coding-crew/solve-feature/result.json` (schema: `skills/solve-feature/result.schema.json`) holds
+what a host renders, with no prose to parse:
+
+| Field | What it is |
+| --- | --- |
+| `status` | `ready`, `needs-attention` or `stopped`: the outcome line's first word |
+| `pr_title`, `pr_summary` | The PR writer's title and summary (Why, What changes, Risk), with no `**Tested:**` line, banner or Needs attention; present once the writer has run |
+| `rounds[].findings[].fixed` | Whether that round's fixer fixed the finding; absent when that cannot be told (the fix stopped, or the fixer's list named no finding) |
+| `rounds[].checks` | Each check key of that round's gate and its result; the last round's are what the PR body's script-written `**Tested:**` line lists |
+| `rounds[].re_reviewed` | Whether a later round reviewed that round's fixes |
+| `needs_attention` | One typed item per reason the run needs a person: `spec_unmet`, `unfixed` (with its `severity`), `note`, … |
+
+coding-crew's own verdict holds the draft on any `needs_attention` item. A host with its own ready bar computes it
+from the file, with the severities as arguments: the unfixed severities it counts as notes, and the fixed severities
+that need a later review. Save this filter as `ready.jq`:
+
+```jq
+(.rounds[-1] // {}) as $last
+| .status != "stopped"
+  and all(.needs_attention[];
+        .type == "note" or (.type == "unfixed" and (.severity as $s | any($note_severities[]; . == $s))))
+  and ($last.re_reviewed != false
+       or all(($last.findings // [])[];
+              .fixed != true or (.severity as $s | any($review_severities[]; . == $s) | not)))
+```
+
+```bash
+ready=$(jq -r -f ready.jq --argjson note_severities '["LOW"]' --argjson review_severities '["CRITICAL","HIGH"]' \
+  .coding-crew/solve-feature/result.json)
+body=$(jq -r '.pr_summary // ""' .coding-crew/solve-feature/result.json)
+git push origin HEAD
+gh pr create --draft --title "$(jq -r '.pr_title // "agent change"' .coding-crew/solve-feature/result.json)" --body "$body"
+[ "$ready" = true ] && gh pr ready
+```
+
+---
+
 ### PR rework
 
 Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it files the accepted comments as one `ready-for-agent` issue of the PR's feature and runs `/solve-feature` on the PR's branch, which fixes, checks and reviews it like any other issue and, in its describe step, marks the PR ready unless something needs a person (listed under `Needs attention` in the PR body); it then replies `Fixed in <sha>` on each accepted thread, or re-opens the threads when the run stopped. It never edits or pushes code itself there. On any other PR it fixes the comments and commits, but does not push; run non-interactively by a host (`Use the address-pr-comments skill on PR #<n>; this run is non-interactive`), it first stops unless the checkout is at the PR's head, and it also pushes that commit to the PR's head branch, never forcing, then replies `Fixed in <sha>` and resolves each fixed thread. A refused push leaves those threads open and the commit local, and the summary quotes git's reason. A thread left for a person @mentions the PR's author. How such a run starts is the host's: this repo's workflow runs rounds only on solve-feature PRs.

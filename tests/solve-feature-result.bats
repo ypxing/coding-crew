@@ -431,3 +431,169 @@ fix_ready() {
   result_ok
   [ "$(r .needs_attention)" = '[{"type":"unresolved_threads","count":2,"url":"https://github.com/o/r/pull/10"}]' ]
 }
+
+@test "status is the outcome line's leading word: ready, needs-attention, stopped, with publishing on and off" {
+  fix_ready
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  run bash "$SCRIPT" describe feat 10
+  [ "$output" = "ready pr=10" ]
+  result_ok
+  [ "$(r .status)" = '"ready"' ]
+  rereview
+  echo '[{"finding": 0, "why": "w"}]' > "$D/pr-10.unfixed.json"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  run bash "$SCRIPT" describe feat 10
+  [ "$output" = "needs-attention pr=10" ]
+  result_ok
+  [ "$(r .status)" = '"needs-attention"' ]
+  rereview
+  echo again > fixed.txt
+  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 1 ]
+  result_ok
+  [ "$(r .status)" = '"stopped"' ]
+
+  CREW_PUBLISH=false run bash "$SCRIPT" start feat
+  CREW_PUBLISH=false run bash "$SCRIPT" next feat
+  coder "$output"
+  CHECKS_RC=1 CREW_PUBLISH=false run bash "$SCRIPT" land feat 2 feature/feat
+  result_ok
+  [ "$(r .status)" = '"stopped"' ]
+}
+
+@test "fixed: true for a finding a changed-code round did not leave unfixed, false otherwise, absent when the fix stopped or an unfixed entry names no finding" {
+  fix_ready '{"spec":"met","gaps":[],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"},{"severity":"LOW","location":"b:2","issue":"j","fix":"g"}]}'
+  echo '[{"finding": 1, "why": "w"}]' > "$D/pr-10.unfixed.json"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  # Round 2: the fixer changes nothing and says why for neither.
+  rereview
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  result_ok
+  [ "$(r '[.rounds[] | .fixer_changed_code, [.findings[].fixed]]')" = '[true,[true,false],false,[false,false]]' ]
+
+  # An unfixed entry with no finding, and one naming an index past the findings: no fixed key in that round.
+  rereview
+  echo again >> fixed.txt
+  echo '[{"why": "no index"}]' > "$D/pr-10.unfixed.json"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  rereview
+  echo again >> fixed.txt
+  echo '[{"finding": 7, "why": "out of range"}]' > "$D/pr-10.unfixed.json"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  # A stopped fix: its round's fixer_changed_code is null.
+  rereview
+  echo again >> fixed.txt
+  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 1 ]
+  result_ok
+  [ "$(r '[.rounds[2:][] | [.fixer_changed_code, ([.findings[] | has("fixed")] | any)]]')" = '[[true,false],[true,false],[null,false]]' ]
+}
+
+@test "a finding that is no object gets no fixed key" {
+  fix_ready '{"spec":"met","gaps":[],"findings":["junk",{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  run bash "$SCRIPT" describe feat 10
+  result_ok
+  [ "$(r '.rounds[0].findings')" = '[{},{"severity":"HIGH","location":"a:1","issue":"i","fix":"f","fixed":true}]' ]
+}
+
+# summary_file <pr> <text> — what the PR writer leaves.
+summary_file() { printf '%s' "$2" > "$D/pr-$1.summary.md"; }
+
+@test "pr_summary and pr_title come from the writer's summary once it exists, with none of describe's own lines; describe adds one Tested line after it" {
+  fix_ready
+  echo '- rotate the key' > "$D/pr-10.notes.md"
+  echo '[{"finding": 1, "why": "w"}]' > "$D/pr-10.unfixed.json"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  run bash "$SCRIPT" describe feat 10
+  result_ok
+  [ "$(r '[has("pr_summary"), has("pr_title")]')" = '[false,false]' ]
+  summary_file 10 $'# Let users log in\n\n## Why\n\nUsers need accounts.\n'
+  run bash "$SCRIPT" describe feat 10
+  [ "$output" = "needs-attention pr=10" ]
+  result_ok
+  [ "$(r '[.pr_title, .pr_summary]')" = '["Let users log in","## Why\n\nUsers need accounts.\n"]' ]
+  local s; s=$(r .pr_summary)
+  for bad in 'solve-feature:begin' 'Written by solve-feature' '## Needs attention' 'Notes for a person' 'rotate the key' '**Tested:**'; do
+    [[ "$s" != *"$bad"* ]] || { echo "pr_summary holds $bad"; return 1; }
+  done
+  # One Tested line, after the summary text, naming each check key with its result as rounds[].checks has it.
+  [ "$(grep -c '^\*\*Tested:\*\*' "$STATE/pr-body")" = 1 ]
+  [ "$(grep '^\*\*Tested:\*\*' "$STATE/pr-body")" = "**Tested:** $(r '.rounds[-1].checks | map("\(.key) \(.result)") | join(", ")' | tr -d '"')" ]
+  [ "$(grep '^\*\*Tested:\*\*' "$STATE/pr-body")" = '**Tested:** test pass' ]
+  [ "$(grep -n -m1 '^Users need accounts' "$STATE/pr-body" | cut -d: -f1)" -lt "$(grep -n -m1 '^\*\*Tested:\*\*' "$STATE/pr-body" | cut -d: -f1)" ]
+  [ "$(grep -n -m1 '^\*\*Tested:\*\*' "$STATE/pr-body" | cut -d: -f1)" -lt "$(grep -n -m1 '^## Needs attention' "$STATE/pr-body" | cut -d: -f1)" ]
+
+  # Each key of the live checks log, the last verdict of a key that ran twice.
+  printf 'lint: pass\ntest: pass\nnoise line\nlint: fail (exit 2)\nCHECKS: fail\n' > "$D/pr-10.checks.log"
+  run bash "$SCRIPT" describe feat 10
+  [ "$(grep '^\*\*Tested:\*\*' "$STATE/pr-body")" = '**Tested:** lint fail (exit 2), test pass' ]
+
+  # A log where every check is NOT RUN: still one Tested line, after the summary, saying no check ran.
+  printf 'lint: NOT RUN: no command found\ntest: NOT RUN: no command found\nCHECKS: pass\n' > "$D/pr-10.checks.log"
+  run bash "$SCRIPT" describe feat 10
+  [ "$(grep -c '^\*\*Tested:\*\*' "$STATE/pr-body")" = 1 ]
+  [ "$(grep '^\*\*Tested:\*\*' "$STATE/pr-body")" = '**Tested:** no check ran' ]
+  [ "$(grep -n -m1 '^Users need accounts' "$STATE/pr-body" | cut -d: -f1)" -lt "$(grep -n -m1 '^\*\*Tested:\*\*' "$STATE/pr-body" | cut -d: -f1)" ]
+
+  # A writer that kept its own Tested line: it stays, in the body and in pr_summary.
+  summary_file 10 $'# Let users log in\n\n## Why\n\nUsers need accounts.\n\n**Tested:** checks pass\n'
+  run bash "$SCRIPT" describe feat 10
+  result_ok
+  [ "$(grep -c '^\*\*Tested:\*\*' "$STATE/pr-body")" = 2 ]
+  [ "$(r '.pr_summary | [scan("(?m)^\\*\\*Tested:\\*\\*")] | length')" = 1 ]
+}
+
+@test "with publishing off pr_summary and pr_title come from the summary, and the local body has one Tested line" {
+  export CREW_PUBLISH=false
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" next feat; coder 2
+  run bash "$SCRIPT" land feat 2 feature/feat
+  run bash "$SCRIPT" next feat; coder 3
+  run bash "$SCRIPT" land feat 3 feature/feat
+  run bash "$SCRIPT" next feat
+  run bash "$SCRIPT" sync feat feature/feat
+  printf '{"spec":"met","gaps":[],"findings":[]}\n' > "$D/pr-local.review.json"
+  run bash "$SCRIPT" reviewed feat local feature/feat
+  run bash "$SCRIPT" fix feat local feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  summary_file local $'# Let users log in\n\n## Why\n\nUsers need accounts.\n'
+  run bash "$SCRIPT" describe feat local
+  [ "$output" = "ready branch=feature/feat" ]
+  result_ok
+  [ "$(r '[.pr_title, .pr_summary, has("pr")]')" = '["Let users log in","## Why\n\nUsers need accounts.\n",false]' ]
+  local body="$D/local-pr-feature_feat.md"
+  [ "$(grep -c '^\*\*Tested:\*\*' "$body")" = 1 ]
+  [ "$(grep '^\*\*Tested:\*\*' "$body")" = '**Tested:** test pass' ]
+  [[ "$(r .pr_body)" == *'**Tested:** test pass'* ]]
+}
+
+# host_ready <result.json> — the guide's host example jq, taken from the guide's one ```jq block under
+# "Embedding solve-feature", with LOW unfixed findings counting as notes and CRITICAL/HIGH fixes needing a review.
+host_ready() {
+  local filter
+  filter=$(awk '/^### Embedding solve-feature/{s=1; next} s && /^### /{exit} s && /^```jq$/{j=1; next} j && /^```$/{exit} j' "$REPO_ROOT/docs/guide.md")
+  [ -n "$filter" ] || { echo "no jq block in the guide's Embedding solve-feature section" >&2; return 1; }
+  jq -r --argjson note_severities '["LOW"]' --argjson review_severities '["CRITICAL","HIGH"]' "$filter" "$1"
+}
+
+@test "the guide's host jq: ready on notes and note-severity unfixed items, not on an unreviewed severe fix or an unmet spec" {
+  local f="$BATS_TEST_TMPDIR/result.json" round
+  round='{"spec":"met","gaps":[],"findings":[{"severity":"LOW","fixed":true},{"severity":"LOW","fixed":false}],"criteria":[],"unfixed":[{"finding":1,"why":"w"}],"unmatched_red":[],"fixer_changed_code":true,"checks":[],"checks_commit":"c","re_reviewed":false}'
+  jq -n --argjson r "$round" '{outcome:"needs-attention pr=1",status:"needs-attention",branch:"b",head:"h",issues:[],rounds:[$r],
+    needs_attention:[{type:"note",author:"coder",text:"x"},{type:"unfixed",round:0,finding:1,severity:"LOW",why:"w"}]}' > "$f"
+  [ "$(host_ready "$f")" = true ]
+  # An unfixed finding of a severity outside the first set.
+  jq '.needs_attention[1].severity = "MEDIUM"' "$f" > "$f.2"
+  [ "$(host_ready "$f.2")" = false ]
+  # The last round fixed a HIGH finding no later round reviewed.
+  jq '.rounds[0].findings[0].severity = "HIGH"' "$f" > "$f.3"
+  [ "$(host_ready "$f.3")" = false ]
+  jq '.rounds[0].findings[0].severity = "HIGH" | .rounds = [.rounds[0] | .re_reviewed = true] + [.rounds[0] | .findings = []]' "$f" > "$f.4"
+  [ "$(host_ready "$f.4")" = true ]
+  jq '.needs_attention += [{type:"spec_unmet",round:0,gaps:[]}]' "$f" > "$f.5"
+  [ "$(host_ready "$f.5")" = false ]
+}

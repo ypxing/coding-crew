@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -363,6 +363,86 @@ test("publish-issues (local) exits 5 and writes nothing when open issues exist a
   assert.match(r.stderr, /01-old\.md/);
   assert.match(r.stderr, /--replace/);
   assert.deepEqual(tree(dir), before);
+});
+
+// --- publish-issues --rebuild -------------------------------------------------------
+
+/** One draft `01-a.md` holding `text`, in a directory outside the feature's. */
+function rebuildDrafts(dir, text = DRAFT_A) {
+  return drafts(join(dir, "elsewhere"), { deps: {}, files: { "01-a.md": text } });
+}
+
+test("publish-issues (local) --rebuild publishes a new feature, and after mark-done republishes the drafts' current text with nothing in done/", async () => {
+  const dir = root();
+  const issues = join(dir, ".coding-crew/scratch/feat/issues");
+  const first = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", rebuildDrafts(dir), "--rebuild"]);
+  assert.equal(first.code, 0, first.stderr);
+  assert.deepEqual(readdirSync(join(issues, "open")), ["01-a.md"]);
+  const ref = join(issues, "open/01-a.md");
+  assert.equal((await cli(dir, ["tick", ref])).code, 0);
+  assert.equal((await cli(dir, ["mark-done", ref])).code, 0);
+  const second = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", rebuildDrafts(dir, DRAFT_A.replace("A.", "A, again.")), "--rebuild"]);
+  assert.equal(second.code, 0, second.stderr);
+  assert.deepEqual(readdirSync(join(issues, "open")), ["01-a.md"]);
+  assert.equal(existsSync(join(issues, "done")), false);
+  assert.match(readFileSync(ref, "utf8"), /^A, again\.$/m);
+});
+
+test("publish-issues (local) --rebuild exits 4 naming a feature directory no --rebuild made, and changes nothing under it", async () => {
+  const dir = root();
+  const feat = join(dir, ".coding-crew/scratch/feat");
+  mkdirSync(join(feat, "issues/open"), { recursive: true });
+  writeFileSync(join(feat, "issues/open/01-mine.md"), "# Mine\n\nStatus: ready-for-agent\n");
+  const snapshot = () => tree(feat).map((f) => [f, statSync(join(feat, f)).isFile() ? readFileSync(join(feat, f), "utf8") : null]);
+  const before = snapshot();
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", rebuildDrafts(dir), "--rebuild"]);
+  assert.equal(r.code, 4, r.stderr);
+  assert.match(r.stderr, /\.coding-crew\/scratch\/feat/);
+  assert.deepEqual(snapshot(), before);
+});
+
+test("publish-issues (local) --rebuild exits 1 and removes nothing when a draft is blocked by an issue the rebuild would remove", async () => {
+  const dir = root();
+  const issues = join(dir, ".coding-crew/scratch/feat/issues");
+  assert.equal((await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", rebuildDrafts(dir), "--rebuild"])).code, 0);
+  const blocked = drafts(join(dir, "elsewhere"), { deps: {}, files: { "01-b.md": `${DRAFT_A}\n## Blocked by\n\n- 01-a.md\n` } });
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", blocked, "--rebuild"]);
+  assert.equal(r.code, 1, r.stderr);
+  assert.match(r.stderr, /01-a\.md/);
+  assert.deepEqual(readdirSync(join(issues, "open")), ["01-a.md"]);
+});
+
+test("publish-issues exits 2 with the usage line for --rebuild with --replace or --append", async () => {
+  for (const other of ["--replace", "--append"]) {
+    const dir = root();
+    const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", rebuildDrafts(dir), "--rebuild", other]);
+    assert.equal(r.code, 2, `${other}: ${r.stderr}`);
+    assert.match(r.stderr, /usage: publish-issues .*--rebuild/);
+    assert.equal(existsSync(join(dir, ".coding-crew/scratch/feat")), false);
+  }
+});
+
+test("publish-issues (github) --rebuild exits 1 saying it needs the local tracker, with no gh issue call", async () => {
+  const dir = root({ github: true });
+  const exec = fakeGithub();
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", rebuildDrafts(dir), "--rebuild"], exec);
+  assert.equal(r.code, 1, r.stderr);
+  assert.match(r.stderr, /--rebuild needs the local tracker/);
+  assert.equal(exec.calls.filter((c) => c[1] === "issue").length, 0);
+});
+
+test("publish-issues without --rebuild on a feature --rebuild made exits 4 with done issues and 5 with open ones", async () => {
+  const dir = root();
+  const issues = join(dir, ".coding-crew/scratch/feat/issues");
+  assert.equal((await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", rebuildDrafts(dir), "--rebuild"])).code, 0);
+  const open = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", rebuildDrafts(dir)]);
+  assert.equal(open.code, 5, open.stderr);
+  const ref = join(issues, "open/01-a.md");
+  await cli(dir, ["tick", ref]);
+  await cli(dir, ["mark-done", ref]);
+  const done = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", rebuildDrafts(dir)]);
+  assert.equal(done.code, 4, done.stderr);
+  assert.deepEqual(readdirSync(join(issues, "done")), ["01-a.md"]);
 });
 
 test("publish-issues exits 1 before creating anything on a deps.json cycle or an edge to a missing draft", async () => {

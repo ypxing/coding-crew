@@ -666,8 +666,8 @@ synced_branch() {
 
 # The attribution line describe writes under the begin marker, whatever the writer subagent left.
 ATTRIBUTION='> Written by solve-feature (`feat`): its coder, reviewer and fixer were agents; no person has read this body.'
-# summary — what the writer subagent leaves: write-pr's title line and body.
-summary() { printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n\n**Tested:** checks pass\n' > .coding-crew/solve-feature/pr-10.summary.md; }
+# summary — what the writer subagent leaves: write-pr's title line and body, its Tested line left out as its prompt says.
+summary() { printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n' > .coding-crew/solve-feature/pr-10.summary.md; }
 
 @test "describe writes the whole body once in order, titles the PR from the summary, then marks the draft ready and writes ready" {
   fixed
@@ -684,7 +684,7 @@ $ATTRIBUTION
 
 Users need accounts.
 
-**Tested:** checks pass
+**Tested:** test pass
 
 Spec: PRD #1, feature \`feat\`
 
@@ -769,7 +769,7 @@ EOF
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   ! grep -q '^pr ready' "$STATE/gh.log" || false
   [ "$(cat "$STATE/pr-title")" = Feat ]
-  [ "$(head -4 "$STATE/pr-body")" = "$(printf '<!-- solve-feature:begin -->\n%s\n\nSpec: PRD #1, feature `feat`' "$ATTRIBUTION")" ]
+  [ "$(head -6 "$STATE/pr-body")" = "$(printf '<!-- solve-feature:begin -->\n%s\n\n**Tested:** test pass\n\nSpec: PRD #1, feature `feat`' "$ATTRIBUTION")" ]
   [ "$(cat .coding-crew/solve-feature/outcome)" = "ready pr=10" ]
 }
 
