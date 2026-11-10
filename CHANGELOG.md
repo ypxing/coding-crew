@@ -6,6 +6,16 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: `result.json` always carries `needs_attention`, typed items (`spec_unmet`, `unfixed`,
+  `reviewer_changed_tree`, `fixer_changed_nothing`, `note`, `unresolved_threads`) that the draft hold, the outcome and
+  the PR body's "Needs attention" lines are all rendered from; the fixer writes `pr-<n>.unfixed.json` naming each
+  finding it left by index, so `rounds[].unfixed` is `{finding, why}` objects (was strings), and the Actions job
+  summary lists the items (#727).
+- solve-feature, checks: `/solve-feature <slug> --review-since <sha>` scopes a follow-up run's review findings to
+  the commits since `<sha>` when the default branch is already in it (`sync` prints `review-base=`);
+  `CREW_COMMANDS_FILE` names the dev commands file every check reads and writes, and a read-only one is never
+  rewritten; `.tpl` credential templates expand `$NAME`/`${NAME}` from exported variables without `envsubst`,
+  executing nothing in them (#726).
 - checks: a repo whose compose file is `compose.yaml` keeps Docker mode, and with several compose files the
   checks read the one `docker compose` runs (Docker's order: `compose.yaml`, `compose.yml`, `docker-compose.yaml`,
   `docker-compose.yml`) (#723).

@@ -60,6 +60,67 @@ where() { bash "$LIB/commands-file.sh" --project-root "$1"; }
   [ "$status" -eq 2 ]
 }
 
+@test "CREW_COMMANDS_FILE names the file from any root, tracked copy or not; unset or empty changes nothing" {
+  git -C "$WT" checkout -q -b with-cmds
+  mkdir -p "$WT/.coding-crew" && echo '{"test": "branch"}' > "$WT/.coding-crew/dev-commands.json"
+  git -C "$WT" add .coding-crew && git -C "$WT" -c user.email=t@t -c user.name=T commit -q -m cmds
+  mkdir "$TEMP_DIR/plain"
+  for root in "$MAIN" "$WT" "$WT2" "$TEMP_DIR/plain"; do
+    [ "$(CREW_COMMANDS_FILE="$TEMP_DIR/host.json" where "$root")" = "$TEMP_DIR/host.json" ] || { echo "$root"; return 1; }
+  done
+  [ "$(CREW_COMMANDS_FILE= where "$WT")" = "$WT/.coding-crew/dev-commands.json" ]
+  [ "$(where "$WT2")" = "$MAIN/.coding-crew/dev-commands.json" ]
+  echo '{"test": "echo host"}' > "$TEMP_DIR/host.json"
+  printf '{"lint": "echo L"}\n' > "$TEMP_DIR/answer.json"
+  (cd "$WT" && CREW_COMMANDS_FILE="$TEMP_DIR/host.json" bash "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/answer.json") >/dev/null
+  grep -q '"test": "echo host"' "$TEMP_DIR/host.json"
+  grep -q '"lint": "echo L"' "$TEMP_DIR/host.json"
+  [ "$(cat "$WT/.coding-crew/dev-commands.json")" = '{"test": "branch"}' ]
+}
+
+@test "write-commands-cache.sh refuses a CREW_COMMANDS_FILE that exists and is not writable, changing no file" {
+  mkdir -p "$MAIN/.coding-crew" && echo '{"test": "repo"}' > "$MAIN/.coding-crew/dev-commands.json"
+  echo '{"test": "host"}' > "$TEMP_DIR/host.json" && chmod 444 "$TEMP_DIR/host.json"
+  printf '{"test": "echo coder"}\n' > "$TEMP_DIR/answer.json"
+  run bash -c 'cd "$1" && CREW_COMMANDS_FILE="$2" bash "$3/write-commands-cache.sh" --response-file "$4"' _ "$MAIN" "$TEMP_DIR/host.json" "$LIB" "$TEMP_DIR/answer.json"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *CREW_COMMANDS_FILE*"$TEMP_DIR/host.json"* ]] || { echo "$output"; return 1; }
+  [ "$(cat "$TEMP_DIR/host.json")" = '{"test": "host"}' ]
+  [ ! -w "$TEMP_DIR/host.json" ]
+  [ "$(cat "$MAIN/.coding-crew/dev-commands.json")" = '{"test": "repo"}' ]
+  [ -z "$(ls "$TEMP_DIR" | grep 'host\.json\.')" ]
+}
+
+@test "write-commands-cache.sh refuses a read-only CREW_COMMANDS_FILE when run as root too" {
+  unshare -r true 2>/dev/null || skip "no unprivileged user namespace to run as root"
+  echo '{"test": "host"}' > "$TEMP_DIR/host.json" && chmod 444 "$TEMP_DIR/host.json"
+  printf '{"test": "echo coder"}\n' > "$TEMP_DIR/answer.json"
+  run unshare -r bash -c 'cd "$1" && CREW_COMMANDS_FILE="$2" bash "$3/write-commands-cache.sh" --response-file "$4"' _ "$MAIN" "$TEMP_DIR/host.json" "$LIB" "$TEMP_DIR/answer.json"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *CREW_COMMANDS_FILE*"$TEMP_DIR/host.json"* ]] || { echo "$output"; return 1; }
+  [ "$(cat "$TEMP_DIR/host.json")" = '{"test": "host"}' ]
+}
+
+@test "write-commands-cache.sh writes, as root, a CREW_COMMANDS_FILE writable only through its group bits" {
+  unshare -r true 2>/dev/null || skip "no unprivileged user namespace to run as root"
+  echo '{"test": "host"}' > "$TEMP_DIR/host.json" && chmod 460 "$TEMP_DIR/host.json"
+  printf '{"test": "echo coder"}\n' > "$TEMP_DIR/answer.json"
+  run unshare -r bash -c 'cd "$1" && CREW_COMMANDS_FILE="$2" bash "$3/write-commands-cache.sh" --response-file "$4"' _ "$MAIN" "$TEMP_DIR/host.json" "$LIB" "$TEMP_DIR/answer.json"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -q '"test": "echo coder"' "$TEMP_DIR/host.json"
+}
+
+@test "write-commands-cache.sh refuses, as root, a CREW_COMMANDS_FILE that links to a read-only file, leaving the link" {
+  unshare -r true 2>/dev/null || skip "no unprivileged user namespace to run as root"
+  echo '{"test": "host"}' > "$TEMP_DIR/host.json" && chmod 444 "$TEMP_DIR/host.json"
+  ln -s host.json "$TEMP_DIR/link.json"
+  printf '{"test": "echo coder"}\n' > "$TEMP_DIR/answer.json"
+  run unshare -r bash -c 'cd "$1" && CREW_COMMANDS_FILE="$2" bash "$3/write-commands-cache.sh" --response-file "$4"' _ "$MAIN" "$TEMP_DIR/link.json" "$LIB" "$TEMP_DIR/answer.json"
+  [ "$status" -ne 0 ]
+  [ -L "$TEMP_DIR/link.json" ]
+  [ "$(cat "$TEMP_DIR/link.json")" = '{"test": "host"}' ]
+}
+
 @test "checks discovered in one worktree land in the main checkout's file, read from another, both trees clean" {
   printf '{"test": "echo T > %s/ran", "lint": null}\n' "$TEMP_DIR" > "$TEMP_DIR/discovered.json"
   (cd "$WT" && bash "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/discovered.json") >/dev/null

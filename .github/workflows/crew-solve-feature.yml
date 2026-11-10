@@ -581,7 +581,8 @@ jobs:
               "stopped: sync failed: run-checks.sh"*) files="$logs/sync.checks.log" ;;
               needs-attention*)
                 echo "- Needs attention: the PR body's \`Needs attention\` section lists every item, notes included"
-                files="$logs/pr-$pr.attention.md" ;;
+                jq -r '.needs_attention[]? | "  - \(.type): \(del(.type) | tojson)"' "$logs/result.json" 2>/dev/null || true
+                files="" ;;
               *) files="" ;;
             esac
             for f in $files; do

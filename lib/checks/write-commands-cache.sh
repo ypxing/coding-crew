@@ -83,6 +83,16 @@ for f in "${FIELDS[@]}"; do
   fi
 done
 
+# The mv below would replace a read-only file in a writable directory: a host makes its file read-only so a coder
+# cannot rewrite its own checks. The mode-bit test holds under root, for whom -w is always true: any write bit
+# counts, as one may be how a non-root caller writes it. -L reads the bits of a link's target, as -w does, not the
+# link's own. Three -perm tests, as GNU find spells "any of these bits" /222 and BSD +222.
+if [ -e "$CACHE_FILE" ] && { [ ! -w "$CACHE_FILE" ] ||
+  [ -z "$(find -L "$CACHE_FILE" -prune \( -perm -200 -o -perm -020 -o -perm -002 \) -print)" ]; }; then
+  echo "ERROR: ${CREW_COMMANDS_FILE:+CREW_COMMANDS_FILE=}$CACHE_FILE is not writable — leaving it untouched" >&2
+  exit 1
+fi
+
 mkdir -p "$(dirname "$CACHE_FILE")"
 
 JSON_BODY=""

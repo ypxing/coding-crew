@@ -14,7 +14,7 @@ bats_require_minimum_version 1.5.0
   for args in "" "feat" "run feat" "next" "land feat 2" "sync feat" "sync feat b x" "fix feat 10" "fix feat 10 feature/feat x" "fix feat ten feature/feat" "reviewed feat 10" "reviewed feat ten feature/feat" "describe feat" "describe feat ten" "start feat other"; do
     run bash "$SCRIPT" $args
     [ "$status" -eq 2 ] || { echo "'$args': status $status"; return 1; }
-    [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
+    [[ "$output" == *"usage: solve-feature.sh start <slug> [--branch <name>] [--review-since <sha>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>"* ]]
   done
   [ ! -f "$STATE/gh.log" ]
   [ ! -e "$WORK/.coding-crew/solve-feature/outcome" ]
@@ -370,17 +370,19 @@ main_moves() {
 
 @test "start removes an old outcome and review files" {
   mkdir -p .coding-crew/solve-feature && echo '*' > .coding-crew/solve-feature/.gitignore && echo 'ready pr=7' > .coding-crew/solve-feature/outcome
-  echo old > .coding-crew/solve-feature/pr-7.unfixed.md && echo old > .coding-crew/solve-feature/pr-7.review.json && echo old > .coding-crew/solve-feature/pr-7.head
-  echo old > .coding-crew/solve-feature/pr-7.summary.md && echo old > .coding-crew/solve-feature/pr-7.attention.md
+  echo old > .coding-crew/solve-feature/pr-7.unfixed.json && echo old > .coding-crew/solve-feature/pr-7.review.json && echo old > .coding-crew/solve-feature/pr-7.head
+  echo old > .coding-crew/solve-feature/pr-7.summary.md && echo old > .coding-crew/solve-feature/pr-7.attention.json
+  echo old > .coding-crew/solve-feature/pr-7.describe-attention.json
   echo old > .coding-crew/solve-feature/pr-7.discarded.md && echo old > .coding-crew/solve-feature/review.base
   echo old > .coding-crew/solve-feature/pr-7.notes.md
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ ! -e .coding-crew/solve-feature/outcome ]
-  [ ! -e .coding-crew/solve-feature/pr-7.unfixed.md ]
+  [ ! -e .coding-crew/solve-feature/pr-7.unfixed.json ]
   [ ! -e .coding-crew/solve-feature/pr-7.review.json ]
   [ ! -e .coding-crew/solve-feature/pr-7.summary.md ]
-  [ ! -e .coding-crew/solve-feature/pr-7.attention.md ]
+  [ ! -e .coding-crew/solve-feature/pr-7.attention.json ]
+  [ ! -e .coding-crew/solve-feature/pr-7.describe-attention.json ]
   [ ! -e .coding-crew/solve-feature/pr-7.head ]
   [ ! -e .coding-crew/solve-feature/pr-7.discarded.md ]
   [ ! -e .coding-crew/solve-feature/pr-7.notes.md ]
@@ -567,6 +569,80 @@ synced_branch() {
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: sync failed: git push failed: pre-receive hook declined; once it can push, or once you have pushed it, re-run" ]
 }
 
+# --- --review-since: a follow-up run's review scoped to the commits since a sha ---------
+
+@test "start --review-since <sha> then sync prints review-base=<sha> when origin's default branch is in it and it is in HEAD" {
+  synced_branch
+  run bash "$SCRIPT" start feat --review-since "$TIP"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  coder 9
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out review-base)" = "$TIP" ]
+}
+
+@test "--review-since at a commit that merged the default branch in counts as up to date" {
+  synced_branch
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  git merge -q --no-ff --no-edit origin/main && git push -q origin feature/feat
+  local merged; merged=$(git rev-parse HEAD)
+  run bash "$SCRIPT" start feat --review-since "$merged"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  coder 9
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out review-base)" = "$merged" ]
+}
+
+@test "sync prints an empty review-base= when the default branch moved past the sha, the sha is not in HEAD, or none was given" {
+  synced_branch
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"review-base="* ]] && [ -z "$(out review-base)" ]
+
+  run bash "$SCRIPT" start feat --review-since "$TIP"
+  [ "$status" -eq 0 ]
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"review-base="* ]] && [ -z "$(out review-base)" ]
+
+  git checkout -q -b aside origin/main && echo aside > aside.txt && git add aside.txt && git commit -q -m aside
+  local aside; aside=$(git rev-parse HEAD); git checkout -q feature/feat
+  run bash "$SCRIPT" start feat --review-since "$aside"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"review-base="* ]] && [ -z "$(out review-base)" ]
+
+  # A later start without the flag forgets the earlier one's sha.
+  run bash "$SCRIPT" start feat --review-since "$(git rev-parse HEAD)"
+  run bash "$SCRIPT" start feat
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"review-base="* ]] && [ -z "$(out review-base)" ]
+}
+
+@test "start --review-since naming no commit exits 1 naming it with a stopped outcome; a sha only origin had before the fetch is accepted" {
+  synced_branch
+  run bash "$SCRIPT" start feat --review-since nosuchref
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"nosuchref"* ]] || { echo "$output"; return 1; }
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: start failed: "*"nosuchref"* ]]
+  [ -f .coding-crew/solve-feature/result.json ]
+
+  run bash "$SCRIPT" start feat --review-since
+  [ "$status" -eq 2 ]
+
+  local remote; remote=$(branch_moves bot.txt "a bot's commit")
+  ! git cat-file -e "$remote^{commit}" 2>/dev/null || false
+  run bash "$SCRIPT" start feat --review-since "$remote"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(out review-base)" = "$remote" ]
+}
+
 @test "issues run lowest number first, skipping closed and blocked-labelled issues and any whose blocker is neither CLOSED nor awaiting-merge" {
   issues '[{"number":1,"title":"PRD: Feat","state":"OPEN","labels":[],"root":true},
            {"number":7,"title":"Seven","state":"OPEN","labels":[{"name":"ready-for-agent"}]},
@@ -664,19 +740,25 @@ EOF
   [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention pr=10" ]
 }
 
-@test "an attention line already starting with a bullet renders as one bullet in Needs attention" {
-  fixed
-  printf -- '- already a bullet\nplain line\n' > .coding-crew/solve-feature/pr-10.attention.md
+@test "Needs attention renders one line per gap and per unfixed finding, a gap already a bullet as one bullet" {
+  fix_ready '{"spec":"unmet","gaps":["- already a bullet","plain\nline"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
+  echo '[{"finding": 0, "why": "needs a\ndesign call"}, {"finding": 4, "why": "w"}, {"why": "no index"}]' > .coding-crew/solve-feature/pr-10.unfixed.json
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(sed -n '/^## Needs attention$/,/^Spec: /{/^- /p;}' "$STATE/pr-body")" = "$(printf -- '- already a bullet\n- plain line')" ]
+  [ "$(sed -n '/^## Needs attention$/,/^Spec: /{/^- /p;}' "$STATE/pr-body")" = "$(printf -- '%s\n' '- already a bullet' '- plain line' \
+    '- the fixer left finding #0 (HIGH, a:1) unfixed: needs a design call' '- the fixer left finding #4 (no severity) unfixed: w' \
+    '- the fixer left a finding unfixed: no index')" ]
+  [ "${lines[${#lines[@]}-1]}" = "needs-attention pr=10" ]
 }
 
 @test "a report whose spec is unmet, with no gap or finding, leaves the PR a draft and writes needs-attention" {
   fixed '{"spec":"unmet","gaps":[],"findings":[]}'
-  [ "$(attention)" = "the reviewer found the spec unmet" ]
+  [ "$(attention)" = '{"type":"spec_unmet","round":0,"gaps":[]}' ]
   run bash "$SCRIPT" describe feat 10
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(sed -n '/^## Needs attention$/,/^Spec: /{/^- /p;}' "$STATE/pr-body")" = '- the reviewer found the spec unmet' ]
   ! grep -q '^pr ready' "$STATE/gh.log" || false
   [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention pr=10" ]
 }
@@ -759,6 +841,23 @@ EOF
   ! grep -qF '<skill-dir>/..' "$skill" || false
   ! grep -qF 'SOLVE_FEATURE_HOST' "$skill" || false
   ! grep -qF 'review-pr' "$skill" || false
+}
+
+@test "SKILL.md passes --review-since to start, and a non-empty review-base= scopes both review rounds' prompt" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
+  grep -qF 'start <slug> [--branch <name>] [--review-since <sha>]`' "$skill"
+  grep -qF 'prints `review-base=`; keep it for both review rounds' "$skill"
+  grep -qF 'When `review-base=` is non-empty, `<sha>` its value, the prompt reads `…on branch <branch> base <sha> against the spec…`' "$skill"
+  grep -qF '`; Findings cover <sha>..HEAD; judge spec, gaps and criteria on the code at HEAD: the commits before <sha> were already reviewed`' "$skill"
+  grep -qE '^\| `--review-since <sha>` +\|' "$skill"
+  grep -qE '^\| `CREW_COMMANDS_FILE` +\|.*outside the checkout' "$skill"
+}
+
+@test "SKILL.md's fixer prompt asks for pr-<n>.unfixed.json, a list of finding indices with why; no code reads the old unfixed.md or attention.md" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
+  grep -qF '<repo>/.coding-crew/solve-feature/pr-<n>.unfixed.json as a' "$skill"
+  grep -qF '[{"finding": <its 0-based index in the report'"'"'s findings>, "why": "<why>"}]' "$skill"
+  ! grep -rqE 'unfixed\.md|attention\.md' "$REPO_ROOT/skills" "$REPO_ROOT/lib" "$REPO_ROOT/.github" || false
 }
 
 @test "SKILL.md reviews once more only on review-again=yes after the first review, then goes on to the PR body" {
@@ -974,7 +1073,8 @@ SH
   grep -qxF -- '- Agent: claude, model unpinned (the CLI default)' "$GITHUB_STEP_SUMMARY"
   mkdir -p .coding-crew/solve-feature
   echo 'needs-attention pr=10' > .coding-crew/solve-feature/outcome
-  echo '- the flaky test' > .coding-crew/solve-feature/pr-10.attention.md
+  echo '{"needs_attention":[{"type":"spec_unmet","round":0,"gaps":[0]},{"type":"note","author":"coder","text":"the flaky test"}]}' \
+    > .coding-crew/solve-feature/result.json
   echo 'report of the last coder' > .coding-crew/solve-feature/coder.report.md
   echo '{"type":"system","subtype":"init","model":"claude-opus-5-5"}' > .coding-crew/solve-feature/session.jsonl
   : > "$GITHUB_STEP_SUMMARY"
@@ -984,7 +1084,9 @@ SH
   grep -qxF -- '- PR: https://github.com/o/r/pull/10' "$GITHUB_STEP_SUMMARY"
   grep -qxF -- '- Agent: claude, model claude-opus-5-5' "$GITHUB_STEP_SUMMARY"
   ! grep -q 'Subagent models' "$GITHUB_STEP_SUMMARY" || false
-  grep -qxF -- '- the flaky test' "$GITHUB_STEP_SUMMARY"
+  # result.json's needs_attention, one line per item.
+  grep -qxF -- '  - spec_unmet: {"round":0,"gaps":[0]}' "$GITHUB_STEP_SUMMARY"
+  grep -qxF -- '  - note: {"author":"coder","text":"the flaky test"}' "$GITHUB_STEP_SUMMARY"
   ! grep -q 'report of the last coder' "$GITHUB_STEP_SUMMARY" || false
   # The models the subagents ran on: distinct, in first-seen order, right after the Agent line; the main session's
   # own messages, Claude Code's made-up <synthetic> ones and a message with no model add nothing.

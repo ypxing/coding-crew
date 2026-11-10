@@ -62,6 +62,7 @@ fix_ready() {
   [ "$(r '.rounds | length')" = 1 ]
   [ "$(r '.rounds[0] | [.spec, .gaps, (.findings | length), .unfixed, .fixer_changed_code, .checks, .checks_commit, .re_reviewed]')" = \
     "[\"met\",[],1,[],true,[{\"key\":\"test\",\"result\":\"pass\"}],\"$checked\",false]" ]
+  [ "$(r .needs_attention)" = '[]' ]
 }
 
 @test "a needs-attention run and a fix stop each leave a result.json; the stopped round has null where fix stopped first" {
@@ -72,6 +73,7 @@ fix_ready() {
   [ "$output" = "needs-attention pr=10" ]
   result_ok
   [ "$(r '.rounds[0].gaps')" = '["no logout"]' ]
+  [ "$(r .needs_attention)" = '[{"type":"spec_unmet","round":0,"gaps":[0]}]' ]
 
   # A fix stop: its report is never moved, so it is the last round, with nothing fix computed.
   rereview
@@ -177,7 +179,7 @@ fix_ready() {
   echo 'tests/b.bats: three — boom' > "$D/3.red.md"
   report '{"spec":"unmet","gaps":["g1"],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}],
     "criteria":[{"issue":"2-two","text":"logs out","met":true,"tests":["tests/a.bats: logs out","tests/a.bats: logs"]}]}'
-  echo '- a:1 needs a person' > "$D/pr-10.unfixed.md"
+  echo '[{"finding": 0, "why": "needs a person"}]' > "$D/pr-10.unfixed.json"
   run bash "$SCRIPT" fix feat 10 feature/feat
   [[ "${lines[${#lines[@]}-1]}" == *"review-again=yes" ]]
   local c1; c1=$(cat "$D/review.base")
@@ -187,7 +189,7 @@ fix_ready() {
   run bash "$SCRIPT" describe feat 10
   result_ok
   [ "$(r '[.rounds[] | [.spec, .gaps, (.findings | length), .unfixed, .re_reviewed, .fixer_changed_code]]')" = \
-    '[["unmet",["g1"],1,["- a:1 needs a person"],true,true],["met",[],0,[],false,false]]' ]
+    '[["unmet",["g1"],1,[{"finding":0,"why":"needs a person"}],true,true],["met",[],0,[],false,false]]' ]
   [ "$(r '.rounds[0].checks_commit')" = "\"$c1\"" ]
   [ "$(r '.rounds[1].checks_commit')" = "\"$(git rev-parse HEAD)\"" ]
   [ "$(r '.rounds[0].criteria')" = '[{"issue":"2-two","text":"logs out","met":true,"tests":[{"test":"tests/a.bats: logs out","red":"tests/a.bats: logs out — expected 200, got 404"},{"test":"tests/a.bats: logs","red":null}]}]' ]
@@ -266,6 +268,9 @@ fix_ready() {
   coder 2
   CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
   [ "$(r '.issues | length')" = 2 ]
+  # A stop before any review round has nothing typed to name.
+  result_ok
+  [ "$(r .needs_attention)" = '[]' ]
   echo dirty > work-2.txt
   run bash "$SCRIPT" start feat
   [ "$status" -eq 1 ]
@@ -338,4 +343,80 @@ fix_ready() {
   [ "$status" -eq 1 ]
   result_ok
   [ "$(r '.issues[1].checks')" = null ]
+}
+
+@test "needs_attention: each finding the fixer left by index with its severity, and an unreadable unfixed.json whole" {
+  fix_ready '{"spec":"met","gaps":[],"findings":[{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"},{"severity":"MEDIUM","location":"b:2","issue":"j","fix":"g"}]}'
+  echo '[{"finding": 1, "why": "w"}]' > "$D/pr-10.unfixed.json"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  [ "$output" = "needs-attention pr=10" ]
+  result_ok
+  [ "$(r '.rounds[0].unfixed')" = '[{"finding":1,"why":"w"}]' ]
+  [ "$(r .needs_attention)" = '[{"type":"unfixed","round":0,"finding":1,"severity":"MEDIUM","why":"w"}]' ]
+  # Off its shape (a finding that is no index), it is one entry with the raw text and no finding.
+  rereview
+  printf '[{"finding": "1", "why": "w"}]\n' > "$D/pr-10.unfixed.json"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  [ "$output" = "needs-attention pr=10" ]
+  result_ok
+  [ "$(r '.rounds[1].unfixed')" = '[{"why":"[{\"finding\": \"1\", \"why\": \"w\"}]\n"}]' ]
+  [ "$(r .needs_attention)" = '[{"type":"unfixed","round":1,"severity":null,"why":"[{\"finding\": \"1\", \"why\": \"w\"}]\n"}]' ]
+}
+
+@test "rounds[].findings keeps a non-object entry as {} at its index, so an unfixed finding index names the same finding" {
+  fix_ready '{"spec":"met","gaps":[],"findings":["junk",{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
+  echo '[{"finding": 1, "why": "w"}]' > "$D/pr-10.unfixed.json"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  result_ok
+  [ "$(r '.rounds[0].findings | [length, .[0], .[1].severity]')" = '[2,{},"HIGH"]' ]
+  [ "$(r .needs_attention)" = '[{"type":"unfixed","round":0,"finding":1,"severity":"HIGH","why":"w"}]' ]
+}
+
+@test "needs_attention: one note per block of the body's notes section, its author from the script's tag or person, the same on a second describe" {
+  run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
+  run bash "$SCRIPT" next feat; [ "$output" = 2 ]
+  coder 2
+  echo '- set the CREW_X repo variable' > "$D/coder.notes.md"
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" next feat; [ "$output" = 3 ]
+  coder 3
+  run bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  report '{"spec":"met","gaps":[],"findings":[]}'
+  echo '- rotate the key' > "$D/pr-10.notes.md"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  # A person types a note of their own under no tag.
+  perl -0pi -e 's/(Delete a note here once it is handled\.\n\n)/$1check the docs page\n\n/' "$STATE/pr-body"
+  run bash "$SCRIPT" describe feat 10
+  [ "$output" = "needs-attention pr=10" ] || { echo "$output"; return 1; }
+  result_ok
+  local want='[{"type":"note","author":"person","text":"check the docs page"},{"type":"note","author":"coder","text":"- set the CREW_X repo variable"},{"type":"note","author":"fixer","text":"- rotate the key"}]'
+  [ "$(r .needs_attention)" = "$want" ] || { r .needs_attention; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  result_ok
+  [ "$(r .needs_attention)" = "$want" ]
+  # A note a person deleted gives no item; its tag left behind is no note.
+  perl -0pi -e 's/- set the CREW_X repo variable\n//' "$STATE/pr-body"
+  run bash "$SCRIPT" describe feat 10
+  result_ok
+  [ "$(r '[.needs_attention[].author]')" = '["person","fixer"]' ]
+}
+
+@test "needs_attention: a published run's unresolved review threads are one item with their count and the PR's URL" {
+  fix_ready
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  threads "false true" "false"
+  run bash "$SCRIPT" describe feat 10
+  [ "$output" = "needs-attention pr=10" ]
+  result_ok
+  [ "$(r .needs_attention)" = '[{"type":"unresolved_threads","count":2,"url":"https://github.com/o/r/pull/10"}]' ]
 }

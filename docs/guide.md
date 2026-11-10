@@ -443,12 +443,15 @@ subagent, and the run stops on it only when the resolver leaves it unresolved; t
 `review` and its step (`2 checks`, `review fix`); no file means the run never finished. Beside it,
 `.coding-crew/solve-feature/result.json` (schema: `skills/solve-feature/result.schema.json`) holds the same line with
 its evidence, for a host that writes the PR itself: each issue's commits, checks and the lines its coder recorded for
-each new test seen failing, and each review round's findings, gaps, per-criterion tests, unfixed lines and whether a
-later round re-reviewed its fixes.
+each new test seen failing, each review round's findings, gaps, per-criterion tests, the findings its fixer left
+unfixed (by index, with why) and whether a later round re-reviewed its fixes, and `needs_attention`: one typed item
+per reason the run needs a person (an unmet spec, an unfixed finding, a note, open review threads), the same list
+that holds the draft and renders the PR body's Needs attention, `[]` when the run ends ready.
 
 | Setting | Effect |
 | --- | --- |
 | `--branch <name>` | The branch the run uses, never the default branch (default: one named after the slug) |
+| `--review-since <sha>` | Scopes the review's findings to the commits since `<sha>` (a follow-up run's), while spec and gaps are judged on the whole code; used only when `<sha>` holds the default branch and is in the branch after `sync`'s merge, else the whole branch is reviewed. Not a commit: `start` stops |
 | `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model name, a family with an optional version (`opus`, `claude-opus-5-5`, `opus 5.5`): the host runs the subagent on the matching model in its own list, the closest of the same family when it lacks that version, its own model when it lacks the family. Read from `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` when set and non-empty (a name for the one host where you set it: your shell, your agent CLI's settings `env`, or the workflow's repo variables), then the project's file, then `~/.coding-crew/config.json` for each key it lacks (an Actions runner sees only the project's committed file), then the default (your own) |
 | `~/.coding-crew/config.json` `solveFeature.publish` | `false` keeps the run on this machine: no `git push` and no PR; the branch is reviewed and fixed locally and the PR body, its title on the first line, is left in `.coding-crew/solve-feature/local-pr-<branch, / as _>.md` for you to push and open yourself. Read from the user-level file only, never the project's, so an Actions run always pushes |
 
@@ -576,8 +579,8 @@ exits the session without failing it, so the job's last step fails it unless the
 describe`) once it has marked the PR ready. It fails on `needs-attention pr=<n>`, on a stop a script
 recorded (`stopped: <what> failed: <reason>`), and when the file is absent because the session ended before the run
 finished. The same step writes the run's summary page: the outcome, the PR, the model, and what to read next
-(a stop's coder report and checks log tail, the list of what a needs-attention's review left; notes and open threads
-are named in the PR body's `Needs attention`), so a failed run says why or where to read it, without the artifact. Tools the agent runs add nothing to it: the agent runs without `GITHUB_STEP_SUMMARY`, so test runners
+(a stop's coder report and checks log tail; on needs-attention, `result.json`'s `needs_attention` items, notes and
+open threads included, as the PR body's `Needs attention` renders them), so a failed run says why or where to read it, without the artifact. Tools the agent runs add nothing to it: the agent runs without `GITHUB_STEP_SUMMARY`, so test runners
 that write a job summary (Vitest) do not find it.
 
 The job pushes and opens the PR with the workflow's own `GITHUB_TOKEN`, so the PR's `pull_request` runs wait for
@@ -711,6 +714,8 @@ reads and writes that file, and a solve-feature run ignores it when checking for
 Once a branch commits the file, a worktree on that branch uses its own copy instead, so a branch that changes its
 checks is gated on them; solve-feature then counts an edit to it as uncommitted work, and a run commits what it
 discovers there with the branch.
+A host that runs the checks itself can set `CREW_COMMANDS_FILE` to its own copy, kept outside the checkout: every
+check reads and writes that file instead, and a read-only one stops discovery rather than being rewritten.
 `/setup-coding-crew` discovers them, runs them so you see them pass, and prints the commit line; commit it once
 satisfied to share the commands with your team and with Actions. The installed tooling beside them (`lib/`, `manifest.json`) is what `install.sh` writes, not team
 state.

@@ -93,19 +93,38 @@ if [[ -n "$REGISTRY_AUTH" ]]; then
   fi
 fi
 
+# _expand_tpl <file> — the file with each $NAME and ${NAME} replaced by the exported variable's value (empty when unset
+# or not exported), every other character copied. A template is repo content a branch can change,
+# expanded where the registry token is: nothing in it is evaluated, and this script's own variables never leak.
+_expand_tpl() {
+  local rest out="" v
+  rest=$(cat "$1"; printf x); rest=${rest%x}
+  while [[ "$rest" == *'$'* ]]; do
+    out+=${rest%%\$*}; rest=${rest#*\$}
+    if [[ "$rest" =~ ^\{([A-Za-z_][A-Za-z0-9_]*)\}(.*)$ ]] || [[ "$rest" =~ ^([A-Za-z_][A-Za-z0-9_]*)(.*)$ ]]; then
+      # printenv ends the value with a newline; the x keeps any of the value's own.
+      v=$(printenv -- "${BASH_REMATCH[1]}"; printf x); v=${v%x}; v=${v%$'\n'}
+      out+=$v; rest=${BASH_REMATCH[2]}
+    else
+      out+='$'
+    fi
+  done
+  printf '%s' "$out$rest"
+}
+
 if [[ "$ran_registry_auth" -eq 0 ]]; then
   tpl_expanded=""
   while IFS= read -r tpl; do
     out="${tpl%.tpl}"
     if [[ ! -f "$out" ]]; then
-      envsubst < "$tpl" > "$out"
+      _expand_tpl "$tpl" > "$out"
       tpl_expanded="$tpl_expanded ${out##*/}"
     fi
   done < <(find "$PROJECT_ROOT" -maxdepth 2 -name "*.tpl" \
     \( -name ".npmrc.tpl" -o -name ".yarnrc.yml.tpl" -o -name "pip.conf.tpl" \))
 
   if [[ -n "$tpl_expanded" ]]; then
-    log="$log; generated via envsubst:$tpl_expanded"
+    log="$log; generated from templates:$tpl_expanded"
   fi
 fi
 

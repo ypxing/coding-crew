@@ -3,7 +3,7 @@
   "title": "solve-feature result.json",
   "description": "One solve-feature run's ending and its evidence, written to .coding-crew/solve-feature/result.json whenever the run writes its outcome file. A run killed before then leaves none.",
   "type": "object",
-  "required": ["outcome", "branch", "head", "issues", "rounds"],
+  "required": ["outcome", "branch", "head", "issues", "rounds", "needs_attention"],
   "properties": {
     "outcome": { "type": "string", "description": "The outcome file's line, verbatim." },
     "branch": { "type": "string" },
@@ -75,7 +75,18 @@
               }
             }
           },
-          "unfixed": { "type": "array", "items": { "type": "string" }, "description": "The fixer's unfixed lines, verbatim." },
+          "unfixed": {
+            "type": "array",
+            "description": "The findings the fixer left unfixed, from its unfixed.json. A finding is fixed when this round's fixer_changed_code is true and it is not listed here. A file off this shape is one entry with no finding and the file's raw text as why.",
+            "items": {
+              "type": "object",
+              "required": ["why"],
+              "properties": {
+                "finding": { "type": "integer", "description": "Index into this round's findings." },
+                "why": { "type": "string" }
+              }
+            }
+          },
           "unmatched_red": { "type": "array", "items": { "type": "string" }, "description": "Red lines no criterion of this round cites." },
           "fixer_changed_code": { "type": ["boolean", "null"], "description": "null when the round's fix stopped first." },
           "checks": {
@@ -88,6 +99,27 @@
           },
           "checks_commit": { "type": ["string", "null"], "description": "The commit the round's checks passed on." },
           "re_reviewed": { "type": "boolean", "description": "Whether a later round reviewed this round's fixes." }
+        }
+      }
+    },
+    "needs_attention": {
+      "type": "array",
+      "description": "What needs a person, one typed item per reason: the last finished fix round's items, then describe's. The run ends needs-attention exactly when this is non-empty, and the body's Needs attention lines are rendered from it; [] when the run ends ready or no review round ran. round is the 0-based index into rounds.",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "enum": ["spec_unmet", "unfixed", "reviewer_changed_tree", "fixer_changed_nothing", "note", "unresolved_threads"] },
+          "round": { "type": "integer", "description": "spec_unmet, unfixed, fixer_changed_nothing: the round it comes from." },
+          "gaps": { "type": "array", "items": { "type": "integer" }, "description": "spec_unmet: indices into rounds[round].gaps; empty when the spec is not met with no gap named." },
+          "finding": { "type": "integer", "description": "unfixed: index into rounds[round].findings; absent when the fixer's file was off its shape." },
+          "severity": { "type": ["string", "null"], "description": "unfixed: that finding's severity; null when it has none or the index is out of range." },
+          "why": { "type": "string", "description": "unfixed: the fixer's reason, or the raw text of a file off its shape." },
+          "paths": { "type": "array", "items": { "type": "string" }, "description": "reviewer_changed_tree: the paths discarded." },
+          "author": { "type": "string", "enum": ["coder", "fixer", "person"], "description": "note: from the script-written header above it; person for text under none." },
+          "text": { "type": "string", "description": "note: the note's text, as the PR body's notes section holds it." },
+          "count": { "type": "integer", "description": "unresolved_threads: the PR's unresolved review threads." },
+          "url": { "type": "string", "description": "unresolved_threads: the PR's URL." }
         }
       }
     }

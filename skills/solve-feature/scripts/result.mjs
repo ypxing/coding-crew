@@ -114,10 +114,10 @@ const kept = files
   .filter((m) => m && (!pr || m[1] === pr || m[1] === "local"))
   .map((m) => ({ stem: `pr-${m[1]}.r${m[2]}`, k: Number(m[2]) }))
   .sort((a, b) => a.k - b.k);
-const rounds = kept.map(({ stem }) => ({ review: `${stem}.review.json`, unfixed: `${stem}.unfixed.md`, stem }));
+const rounds = kept.map(({ stem }) => ({ review: `${stem}.review.json`, unfixed: `${stem}.unfixed.json`, stem }));
 // A live report a stopped fix never moved is the last round.
 const live = files.find((f) => /^pr-(\d+|local)\.review\.json$/.test(f) && (!pr || f === `pr-${pr}.review.json` || f === "pr-local.review.json"));
-if (live) rounds.push({ review: live, unfixed: live.replace(/\.review\.json$/, ".unfixed.md"), stem: null });
+if (live) rounds.push({ review: live, unfixed: live.replace(/\.review\.json$/, ".unfixed.json"), stem: null });
 
 // A reviewer's report is read leniently: one off the expected shape (the stops reviewed and fix make for it, too)
 // renders as a round with that field empty, never as no result.json.
@@ -129,6 +129,23 @@ const readReport = (name) => {
   } catch {
     return {};
   }
+};
+
+// The fixer's unfixed.json, as fix reads it: `[{finding?, why}]`, else the whole file as one entry's why.
+const whole = (n) => Number.isInteger(n) && n >= 0;
+const readUnfixed = (name) => {
+  const raw = text(name);
+  if (raw === null) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = null;
+  }
+  const ok =
+    Array.isArray(parsed) &&
+    parsed.every((u) => u && typeof u === "object" && !Array.isArray(u) && typeof u.why === "string" && (!("finding" in u) || whole(u.finding)));
+  return ok ? parsed.map((u) => ("finding" in u ? { finding: u.finding, why: u.why } : { why: u.why })) : [{ why: raw }];
 };
 
 result.rounds = rounds.map((r, i) => {
@@ -144,9 +161,10 @@ result.rounds = rounds.map((r, i) => {
   return {
     spec: String(report.spec ?? ""),
     gaps: list(report.gaps).map(String),
-    findings: list(report.findings).filter((f) => f && typeof f === "object" && !Array.isArray(f)),
+    // Mapped, not filtered: unfixed and needs_attention name a finding by its index in the report.
+    findings: list(report.findings).map((f) => (f && typeof f === "object" && !Array.isArray(f) ? f : {})),
     criteria,
-    unfixed: lines(r.unfixed),
+    unfixed: readUnfixed(r.unfixed),
     unmatched_red: red.filter((l) => !cited.has(l)),
     fixer_changed_code: fix ? fix.fixer_changed_code === true : null,
     checks: fix ? checkResults(`${r.stem}.checks.log`) : null,
@@ -154,6 +172,12 @@ result.rounds = rounds.map((r, i) => {
     re_reviewed: i < rounds.length - 1,
   };
 });
+
+// The items fix and describe wrote for the PR, the one list its draft hold and Needs attention lines come from.
+const name = /^(\d+|local)$/.test(args.pr ?? "") ? args.pr : "";
+result.needs_attention = name
+  ? [`pr-${name}.attention.json`, `pr-${name}.describe-attention.json`].flatMap((f) => (text(f) === null ? [] : JSON.parse(text(f))))
+  : [];
 
 writeFileSync(at("result.json.tmp"), `${JSON.stringify(result, null, 2)}\n`);
 renameSync(at("result.json.tmp"), at("result.json"));

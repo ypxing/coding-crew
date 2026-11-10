@@ -3,7 +3,7 @@
 # loop and runs each issue's coder (between `next` and `land`), a conflicting merge's resolver (between `sync`'s exit 4
 # and its re-run), the review's reviewer (before `reviewed`) and fixer
 # (before `fix`) and the PR's writer (before `describe`) as subagents of the host agent; every guard is an exit code here.
-#   start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch>
+#   start <slug> [--branch <name>] [--review-since <sha>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch>
 #   | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr> — each function's comment states its contract.
 # Exit: 0 ok; 1 a stop (its one-line result in .coding-crew/solve-feature/outcome); 2 a usage error; 3 from next
 # when no ready issue is left; 4 from sync when its merge of the default branch conflicts, left in progress.
@@ -36,14 +36,15 @@ outcome() {
 die() { echo "solve-feature: $*" >&2; outcome "stopped: $CMD failed: $*"; exit 1; }
 usage() {
   [ -z "${1:-}" ] || echo "solve-feature: $1" >&2
-  echo "usage: solve-feature.sh start <slug> [--branch <name>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>" >&2; exit 2
+  echo "usage: solve-feature.sh start <slug> [--branch <name>] [--review-since <sha>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr>" >&2; exit 2
 }
 
 CMD="${1:-}"; [ $# -eq 0 ] || shift
-SLUG="" BRANCH="" REF="" PR=""
+SLUG="" BRANCH="" REF="" PR="" SINCE=""
 case "$CMD" in
   start) while [ $# -gt 0 ]; do case "$1" in
       --branch) [ $# -ge 2 ] || usage "--branch needs a value"; BRANCH="$2"; shift 2 ;;
+      --review-since) [ $# -ge 2 ] && [ -n "$2" ] || usage "--review-since needs a value"; SINCE="$2"; shift 2 ;;
       -*) usage "unknown flag: $1" ;;
       *) [ -z "$SLUG" ] || usage "unexpected argument: $1"; SLUG="$1"; shift ;;
     esac; done ;;
@@ -69,8 +70,8 @@ MAIN_ROOT=$(git rev-parse --path-format=absolute --git-common-dir)
 BRANCH_WORK=(. ':!.coding-crew/config.json') SETUP_FILES=(.coding-crew/config.json)
 git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 ||
   { BRANCH_WORK+=(':!.coding-crew/dev-commands.json'); SETUP_FILES+=(.coding-crew/dev-commands.json); }
-[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS/result.json" "$LOGS/spec.md" "$LOGS"/pr-*.r[0-9]*.* "$LOGS"/*.checks.head "$LOGS"/pr-*.unfixed.md "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.attention.md "$LOGS"/pr-*.head \
-  "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base"
+[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS/result.json" "$LOGS/spec.md" "$LOGS"/pr-*.r[0-9]*.* "$LOGS"/*.checks.head "$LOGS"/pr-*.unfixed.json "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*attention.json "$LOGS"/pr-*.head \
+  "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base" "$LOGS/review.since"
 # solveFeature.publish: false keeps the run on this machine: no push, no PR, the body in local_body's file. Read from
 # the user-level config only: an Actions runner has none, so it never keeps commits that vanish with the runner.
 PUBLISH=yes
@@ -171,8 +172,8 @@ model() {
   done
 }
 
-# start — preconditions, the branch (--branch, else feature/<slug>), spec.md; prints branch=, coder-model=,
-# reviewer-model= and pr= (empty with no open PR).
+# start — preconditions, the branch (--branch, else feature/<slug>), spec.md, --review-since's commit for sync;
+# prints branch=, coder-model=, reviewer-model= and pr= (empty with no open PR).
 start() {
   [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || die "working tree is not clean: commit or stash first"
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
@@ -181,6 +182,10 @@ start() {
   # an existing one: a re-run lands on it as the last run left it, with the default branch merged in (and land and
   # fix merge in origin's copy of the branch, so a commit someone else pushed there never refuses their push).
   git fetch -q origin || die "git fetch origin failed (see above)"
+  if [ -n "$SINCE" ]; then
+    local since; since=$(git rev-parse -q --verify "$SINCE^{commit}") || die "--review-since '$SINCE' is not a commit here or on origin"
+    echo "$since" >"$LOGS/review.since"
+  fi
   local default; default=$(default_branch)
   [ "$BRANCH" != "$default" ] || die "--branch '$BRANCH': '$default' is the default branch; name a feature branch"
   BRANCH=${BRANCH:-feature/$SLUG}
@@ -440,7 +445,9 @@ land() {
 }
 
 # sync — before the first review: merge origin's default branch (then origin's <branch>) into <branch>, gate a merge with the checks, push it,
-# and save HEAD as the head the reviewer starts from. A conflict exits 4 with the merge left in progress, printing
+# and save HEAD as the head the reviewer starts from. Prints review-base=: start's --review-since commit when origin's
+# default branch is in it and it is in HEAD, else empty — an older base would put the merged-in default branch's
+# commits under review, for the fixer to change. A conflict exits 4 with the merge left in progress, printing
 # conflicts=<files>; once someone finishes it, a re-run gates and pushes it. Success is judged here, never from
 # whoever resolved it: no merge in progress, a clean tree, the default branch in HEAD.
 sync() {
@@ -490,6 +497,11 @@ sync() {
     [ "$PUBLISH" = no ] || push -u origin "$BRANCH" || die "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, re-run"
   fi
   git rev-parse HEAD >"$LOGS/review.base"
+  local since; since=$(cat "$LOGS/review.since" 2>/dev/null || true)
+  if [ -n "$since" ] && git merge-base --is-ancestor "origin/$default" "$since" 2>/dev/null &&
+    git merge-base --is-ancestor "$since" HEAD 2>/dev/null; then echo "review-base=$since"
+  else echo "review-base="
+  fi
 }
 
 # The reviewer may run the tests and its own experiments but leaves the tree as it found it; what it left anyway
@@ -520,8 +532,8 @@ reviewed() {
 # changes), then the checks run on that clean tree, so the push carries exactly what was gated.
 # fix — last stdout line `FIX: findings=<k> needs-attention=<a> review-again=yes|no`.
 fix() {
-  local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.md" clog="$LOGS/pr-$PR.checks.log"
-  local discarded="$LOGS/pr-$PR.discarded.md" headf="$LOGS/pr-$PR.head" head_oid spec rc=0 total severe moved=no again=no attention=""
+  local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.json" clog="$LOGS/pr-$PR.checks.log"
+  local discarded="$LOGS/pr-$PR.discarded.md" headf="$LOGS/pr-$PR.head" head_oid spec rc=0 total severe moved=no again=no
   local pr_name="PR #$PR" fresh="; or re-run in a fresh clone"
   [ "$PUBLISH" = yes ] || pr_name=$BRANCH fresh=""
   checks_lib
@@ -568,33 +580,46 @@ fix() {
   # behind a merge's second parent, and a fix committed here and pushed by hand still counts. The checks' rewrites are
   # not the fixer's.
   [ -z "$(git rev-list --first-parent --no-merges --invert-grep --grep="^Apply the checks' rewrites\$" -n1 HEAD "^$head_oid")" ] || moved=yes
-  # Needs a person: the reviewer's gaps, an unmet spec, each line the fixer left in unfixed.md, and a fixer that
-  # changed nothing without saying why (it crashed or gave up).
-  attention=$(jq -r '.gaps // [] | .[] | tostring' "$report")
-  # The gaps already name what is unmet; the bare line is for an unmet spec with none named.
-  [ "$spec" = met ] || [ -n "$(jq -r '.gaps // [] | .[]' "$report")" ] || attention+=$'\n'"the reviewer found the spec unmet"
-  [ ! -f "$unfixed" ] || attention+=$'\n'"$(cat "$unfixed")"
-  [ ! -f "$discarded" ] || attention+=$'\n'"the reviewer changed the tree; discarded: $(paste -sd' ' "$discarded")"
-  [ "$total" = 0 ] || [ "$moved" = yes ] || [ -s "$unfixed" ] || attention+=$'\n'"the fixer changed nothing"
-  # Fixes to a CRITICAL/HIGH/MEDIUM finding are worth reviewing again; SKILL.md caps that at one re-review.
-  [ "$severe" = 0 ] || [ "$moved" = no ] || again=yes
   # The round is kept for result.json, and the live paths emptied, so the next round's reviewer and fixer start from
-  # none. The checks log is copied: the PR writer reads the live one.
+  # none. The checks log is copied: the PR writer reads the live one. Its 0-based index into result.json's rounds is
+  # its number less one: start deletes every round, and each fix adds the next.
   local k=0 f n
   for f in "$LOGS/pr-$PR".r[0-9]*.review.json; do
     [[ "$f" =~ \.r([0-9]+)\.review\.json$ ]] && n=${BASH_REMATCH[1]} && [ "$n" -gt "$k" ] && k=$n || true
   done
+  # Needs a person, one typed item each (result.schema.json's needs_attention): a spec not met (or gaps named), each
+  # finding the fixer left in unfixed.json, what the reviewer changed in the tree, and a fixer that changed nothing
+  # without saying why (it crashed or gave up). An unfixed.json off its shape is kept whole as one item, never dropped.
+  local items
+  items=$(jq -n --slurpfile rep "$report" --argjson round "$k" --arg moved "$moved" \
+    --rawfile u <([ ! -f "$unfixed" ] || cat "$unfixed") --arg has_u "$([ -f "$unfixed" ] && echo yes || echo no)" \
+    --rawfile d <([ ! -f "$discarded" ] || cat "$discarded") --arg has_d "$([ -f "$discarded" ] && echo yes || echo no)" '
+    ($rep[0]) as $r | ($r.findings // []) as $f | ($r.gaps // []) as $g
+    | def whole: type == "number" and . >= 0 and . == floor;
+      ($u | try fromjson catch null) as $p
+    | ( if $has_u == "no" then []
+        elif ($p | type) == "array" and all($p[]; type == "object" and (.why | type) == "string" and ((has("finding") | not) or (.finding | whole)))
+        then [$p[] | {type: "unfixed", round: $round}
+              + (if has("finding") then {finding, severity: ($f[.finding] | if type == "object" and (.severity | type) == "string" then .severity else null end)} else {severity: null} end)
+              + {why}]
+        else [{type: "unfixed", round: $round, severity: null, why: $u}] end ) as $un
+    | [ if $r.spec != "met" or ($g | length) > 0 then {type: "spec_unmet", round: $round, gaps: [range($g | length)]} else empty end ]
+      + $un
+      + [ if $has_d == "yes" then {type: "reviewer_changed_tree", paths: ($d | split("\n") | map(select(test("\\S"))))} else empty end ]
+      + [ if ($f | length) > 0 and $moved == "no" and ($un | length) == 0 then {type: "fixer_changed_nothing", round: $round} else empty end ]') || stop fix "building the round's needs-attention list failed (see above)"
+  # Fixes to a CRITICAL/HIGH/MEDIUM finding are worth reviewing again; SKILL.md caps that at one re-review.
+  [ "$severe" = 0 ] || [ "$moved" = no ] || again=yes
   k="$LOGS/pr-$PR.r$((k + 1))"
   jq -n --argjson c "$([ "$moved" = yes ] && echo true || echo false)" --arg h "$(cat "$LOGS/review.base")" \
     '{fixer_changed_code: $c, checks_commit: $h}' >"$k.fix"
   cp "$clog" "$k.checks.log"
-  [ ! -f "$unfixed" ] || mv "$unfixed" "$k.unfixed.md"
+  [ ! -f "$unfixed" ] || mv "$unfixed" "$k.unfixed.json"
   mv "$report" "$k.review.json"
-  # describe reads it: an empty file is a review with nothing needing a person.
-  grep -v '^[[:space:]]*$' <<<"$attention" >"$LOGS/pr-$PR.attention.md" || true
+  # describe reads it: an empty list is a review with nothing needing a person.
+  printf '%s\n' "$items" >"$LOGS/pr-$PR.attention.json"
   # A second review round starts from the head its reviewer saw.
   rm -f "$headf"
-  echo "FIX: findings=$total needs-attention=$(grep -c . "$LOGS/pr-$PR.attention.md" || true) review-again=$again"
+  echo "FIX: findings=$total needs-attention=$(jq length <<<"$items") review-again=$again"
 }
 
 # unresolved_threads — sets UNRESOLVED to the count of $PR's unresolved review threads, every page, and PR_URL.
@@ -615,14 +640,13 @@ unresolved_threads() {
 # ready PR with land's one-line body. A re-run rewrites all of it, text a person added included, but the notes
 # section, kept as the PR shows it.
 describe() {
-  local f="$LOGS/pr-$PR.summary.md" att="$LOGS/pr-$PR.attention.md" body="$LOGS/pr-$PR.body.md" title="" refs draft result
+  local f="$LOGS/pr-$PR.summary.md" att="$LOGS/pr-$PR.attention.json" datt="$LOGS/pr-$PR.describe-attention.json"
+  local body="$LOGS/pr-$PR.body.md" title="" refs draft result
   [ -f "$att" ] || die "no review result at $att: run fix $SLUG $PR <branch> first"
   BRANCH=$(git branch --show-current)
   # A review thread still open needs a person as much as fix's list does. Counted on every run, never written into
   # fix's file, so a re-run counts afresh. Without a PR there are none.
   UNRESOLVED=0; [ "$PUBLISH" = no ] || unresolved_threads
-  local need; need=$(cat "$att")
-  [ "$UNRESOLVED" = 0 ] || need=$(printf '%s\n%s unresolved review threads: %s' "$need" "$UNRESOLVED" "$PR_URL" | grep -v '^[[:space:]]*$')
   refs=$(node "$CLI" closing-refs --feature-slug "$SLUG") || die "closing-refs failed for '$SLUG' (see above)"
   # The spec is named, not copied: spec.md stays for the reviewer, and a person opens the PRD itself.
   local prd_head="" spec_line="Spec: feature \`$SLUG\`"
@@ -633,12 +657,43 @@ describe() {
   local notes
   notes=$(pr_body_read "$PR") || die "reading PR $PR's body failed"
   notes=$(sed -n "\|^$NOTES_BEGIN\$|,\|^$NOTES_END\$|p" <<<"$notes")
-  # Not piped into grep -q: its early exit could fail the first grep under pipefail and drop the notes.
-  # A tag post_notes wrote is no note: one left after its note's text was deleted must not hold the draft.
-  [ -n "$(grep -vxE "$NOTES_BEGIN|$NOTES_END|## Notes for a person|Delete a note here once it is handled\.|### the (coder|fixer) of .* · [0-9]{4}-[0-9]{2}-[0-9]{2}|[[:space:]]*" <<<"$notes" || true)" ] || notes=""
-  # The notes are what a coder or fixer says a person must do or decide, so they hold the draft. Read from the body, so
-  # a note survives a stop and a fresh runner, and one a person deleted no longer counts.
-  [ -z "$notes" ] || need=$(printf '%s\n%s' "$need" "notes for a person, in the section below: delete each once it is handled" | grep -v '^[[:space:]]*$')
+  # describe's own items, in their own file so a re-run replaces them: the open review threads, and one note per block
+  # of the notes section, its author from the tag post_notes wrote above it, `person` for text under none. A tag left
+  # after its note's text was deleted is no note. The notes are what a coder or fixer says a person must do or decide,
+  # so they hold the draft; read from the body, they survive a stop and a fresh runner.
+  jq -n --rawfile s <(printf '%s\n' "$notes") --argjson count "$UNRESOLVED" --arg url "$PR_URL" \
+    --arg nb "$NOTES_BEGIN" --arg ne "$NOTES_END" '
+    [ if $count > 0 then {type: "unresolved_threads", count: $count, url: $url} else empty end ]
+    + ( $s | split("\n")
+        | map(select(IN($nb, $ne, "## Notes for a person", "Delete a note here once it is handled.") | not))
+        | reduce .[] as $l ([{author: "person", lines: []}];
+            ([$l | capture("^### the (?<a>coder|fixer) of .* · [0-9]{4}-[0-9]{2}-[0-9]{2}$").a][0]) as $a
+            | if $a then . + [{author: $a, lines: []}] else .[-1].lines += [$l] end)
+        | map({type: "note", author, text: (.lines | join("\n") | sub("^(\\s*\n)+"; "") | sub("\\s+$"; ""))})
+        | map(select(.text != "")) )' >"$datt" || die "building describe's needs-attention list failed (see above)"
+  # The Needs attention lines, one owner with the draft hold and result.json: fix's items and describe's, a gap or an
+  # unfixed finding read from the report of the round it names, and one pointer line for every note.
+  local need rep round
+  round=$(jq '[.[].round | numbers][0] // empty' "$att")
+  rep="$LOGS/pr-$PR.r$((${round:-0} + 1)).review.json"
+  need=$(jq -rs --slurpfile rep <(if [ -n "$round" ] && jq -e . "$rep" >/dev/null 2>&1; then cat "$rep"; else echo '{}'; fi) '
+    def line: tostring | gsub("\\s*\n\\s*"; " ");
+    ($rep[0] | if type == "object" then . else {} end) as $r | ($r.gaps // []) as $g | ($r.findings // []) as $f
+    | (.[0] + .[1]) as $items
+    | ( $items[]
+        | if .type == "spec_unmet" then (if (.gaps | length) > 0 then $g[.gaps[]] | line else "the reviewer found the spec unmet" end)
+          elif .type == "unfixed" then
+            if has("finding") then
+              ($f[.finding] | if type == "object" and (.location | type) == "string" then ", \(.location)" else "" end) as $loc
+              | "the fixer left finding #\(.finding) (\(.severity // "no severity")\($loc)) unfixed: \(.why | line)"
+            else "the fixer left a finding unfixed: \(.why | line)" end
+          elif .type == "reviewer_changed_tree" then "the reviewer changed the tree; discarded: \(.paths | join(" "))"
+          elif .type == "fixer_changed_nothing" then "the fixer changed nothing"
+          elif .type == "unresolved_threads" then "\(.count) unresolved review threads: \(.url)"
+          else empty end ),
+      ( if any($items[]; .type == "note") then "notes for a person, in the section below: delete each once it is handled" else empty end )' \
+    "$att" "$datt") || die "rendering the needs-attention list failed (see above)"
+  jq -e '.[] | select(.type == "note")' "$datt" >/dev/null || notes=""
   {
     echo "$BEGIN"
     # Written here, not by the writer subagent, so a reviewer always sees that agents wrote this PR.
@@ -652,7 +707,7 @@ describe() {
     printf '%s\n' "<!-- solve-feature:slug $SLUG -->" "$END"
   } >"$body"
   pr_body_write "$PR" "$body" "$title" || die "writing PR $PR's body failed"
-  if [ -n "$need" ]; then result=needs-attention
+  if [ "$(jq -s 'add | length' "$att" "$datt")" != 0 ]; then result=needs-attention
   elif [ "$PUBLISH" = no ]; then result=ready
   else
     result=ready draft=$(gh pr view "$PR" --json isDraft | jq -r '.isDraft') || die "gh pr view $PR failed"
