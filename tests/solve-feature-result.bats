@@ -367,6 +367,17 @@ fix_ready() {
   [ "$(r .needs_attention)" = '[{"type":"unfixed","round":1,"severity":null,"why":"[{\"finding\": \"1\", \"why\": \"w\"}]\n"}]' ]
 }
 
+@test "rounds[].findings keeps a non-object entry as {} at its index, so an unfixed finding index names the same finding" {
+  fix_ready '{"spec":"met","gaps":[],"findings":["junk",{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
+  echo '[{"finding": 1, "why": "w"}]' > "$D/pr-10.unfixed.json"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  result_ok
+  [ "$(r '.rounds[0].findings | [length, .[0], .[1].severity]')" = '[2,{},"HIGH"]' ]
+  [ "$(r .needs_attention)" = '[{"type":"unfixed","round":0,"finding":1,"severity":"HIGH","why":"w"}]' ]
+}
+
 @test "needs_attention: one note per block of the body's notes section, its author from the script's tag or person, the same on a second describe" {
   run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
   run bash "$SCRIPT" next feat; [ "$output" = 2 ]

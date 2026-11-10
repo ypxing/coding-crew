@@ -101,6 +101,15 @@ where() { bash "$LIB/commands-file.sh" --project-root "$1"; }
   [ "$(cat "$TEMP_DIR/host.json")" = '{"test": "host"}' ]
 }
 
+@test "write-commands-cache.sh writes, as root, a CREW_COMMANDS_FILE writable only through its group bits" {
+  unshare -r true 2>/dev/null || skip "no unprivileged user namespace to run as root"
+  echo '{"test": "host"}' > "$TEMP_DIR/host.json" && chmod 460 "$TEMP_DIR/host.json"
+  printf '{"test": "echo coder"}\n' > "$TEMP_DIR/answer.json"
+  run unshare -r bash -c 'cd "$1" && CREW_COMMANDS_FILE="$2" bash "$3/write-commands-cache.sh" --response-file "$4"' _ "$MAIN" "$TEMP_DIR/host.json" "$LIB" "$TEMP_DIR/answer.json"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -q '"test": "echo coder"' "$TEMP_DIR/host.json"
+}
+
 @test "write-commands-cache.sh refuses, as root, a CREW_COMMANDS_FILE that links to a read-only file, leaving the link" {
   unshare -r true 2>/dev/null || skip "no unprivileged user namespace to run as root"
   echo '{"test": "host"}' > "$TEMP_DIR/host.json" && chmod 444 "$TEMP_DIR/host.json"

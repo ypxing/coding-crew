@@ -161,7 +161,8 @@ result.rounds = rounds.map((r, i) => {
   return {
     spec: String(report.spec ?? ""),
     gaps: list(report.gaps).map(String),
-    findings: list(report.findings).filter((f) => f && typeof f === "object" && !Array.isArray(f)),
+    // Mapped, not filtered: unfixed and needs_attention name a finding by its index in the report.
+    findings: list(report.findings).map((f) => (f && typeof f === "object" && !Array.isArray(f) ? f : {})),
     criteria,
     unfixed: readUnfixed(r.unfixed),
     unmatched_red: red.filter((l) => !cited.has(l)),
