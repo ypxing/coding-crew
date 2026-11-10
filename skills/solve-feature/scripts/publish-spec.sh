@@ -2,7 +2,7 @@
 # publish-spec.sh --cli <cli.mjs> --main-root <dir> --drafts <dir> --slug <slug> --spec <file> — start --spec's
 # feature: the spec file published as the one-issue local feature <slug>, rebuilt from the file on every run, as on a
 # fresh runner, by the tracker CLI's publish-issues --rebuild. Exit 0 published; 1 a stop, its one-line reason on
-# stdout (the tracker CLI's own errors reach stderr).
+# stdout (the tracker CLI's own errors also reach stderr).
 set -euo pipefail
 CLI="" MAIN_ROOT="" DRAFTS="" SLUG="" SPEC=""
 while [ $# -gt 0 ]; do case "$1" in
@@ -24,5 +24,10 @@ awk '/^##?#?#?#?#?[ \t]+/ { skip = tolower($0) ~ /^#+[ \t]+blocked by[ \t\r]*$/ 
   skip { next }
   !t && /^#[ \t]+[^ \t]/ { print; print ""; print "Status: ready-for-agent"; t = 1; next }
   { print }' "$SPEC" >"$DRAFTS/01-$SLUG.md" || stop "cannot write $DRAFTS (see above)"
-node "$CLI" publish-issues --feature-slug "$SLUG" --drafts "$DRAFTS" --rebuild --main-root "$MAIN_ROOT" >/dev/null ||
-  stop "publishing $SPEC failed (see above)"
+# The tracker CLI's last error line is the stop reason, so the outcome a host reads names what failed (an unmarked
+# feature directory, say); the whole of it still reaches stderr.
+err=$(node "$CLI" publish-issues --feature-slug "$SLUG" --drafts "$DRAFTS" --rebuild --main-root "$MAIN_ROOT" 2>&1 >/dev/null) || {
+  [ -n "$err" ] || stop "publishing $SPEC failed"
+  printf '%s\n' "$err" >&2
+  stop "publishing $SPEC failed: ${err##*$'\n'}"
+}

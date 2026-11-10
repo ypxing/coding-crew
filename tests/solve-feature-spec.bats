@@ -94,7 +94,17 @@ cli() { node "$LIB/tracker/cli.mjs" "$@"; }
   [ "$(cd "$SCRATCH" && find . -type f -exec cksum {} + | sort)" = "$before" ]
 }
 
-@test "publish-spec.sh names no tracker path: the rebuild is the tracker CLI's publish-issues --rebuild" {
+@test "start --spec's stop on a directory no --rebuild made names it in the outcome line, for a host that reads only result.json" {
+  spec_setup; no_tracker_config
+  mkdir -p "$SCRATCH/issues/open" && echo '*' > .coding-crew/scratch/.gitignore
+  printf '# Someone else\n\nStatus: ready-for-agent\n' > "$SCRATCH/issues/open/01-mine.md"
+  run bash "$SCRIPT" start --spec "$SPEC" --issue 13 --branch b
+  [ "$status" -eq 1 ] || { echo "exit $status: $output"; return 1; }
+  [[ "$(cat .coding-crew/solve-feature/outcome)" == "stopped: start failed: "*".coding-crew/scratch/issue-13"* ]] || {
+    cat .coding-crew/solve-feature/outcome; return 1; }
+}
+
+@test "publish-spec.sh names no tracker path:the rebuild is the tracker CLI's publish-issues --rebuild" {
   run grep -n scratch "$REPO_ROOT/skills/solve-feature/scripts/publish-spec.sh"
   [ "$status" -eq 1 ] || { echo "$output"; return 1; }
   grep -q -- 'publish-issues .*--rebuild' "$REPO_ROOT/skills/solve-feature/scripts/publish-spec.sh"
