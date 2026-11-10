@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: `solve-feature.sh`'s pushing, PR opening, round head, mark-ready and review-thread count each decide
+  publish or local in one function, so its verbs read the same in both modes; no change in behaviour or output (#733).
 - crew-review, address-pr-comments: crew-review run on a checkout with uncommitted edits keeps them across its keyed
   check run; address-pr-comments discovers the dev commands when `run-checks.sh` finds no dev commands file (#732).
 - solve-issue, crew-review, solve-feature, dep-install: a project check runs by its key through `run-checks.sh`, never by
