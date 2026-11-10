@@ -6,8 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.3.10]
+
 - solve-feature: a coder's notes for a person hold only what must be done or decided before the branch merges, so the
-  tracker defaulting to local, `[WIP]` checkpoint commits or an optional follow-up no longer keep the PR a draft.
+  tracker defaulting to local, `[WIP]` checkpoint commits or an optional follow-up no longer keep the PR a draft (#735).
 
 - solve-feature: `solve-feature.sh`'s pushing, PR opening, round head, mark-ready and review-thread count each decide
   publish or local in one function, so its verbs read the same in both modes; no change in behaviour or output (#733).
