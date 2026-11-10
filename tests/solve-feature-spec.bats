@@ -94,6 +94,12 @@ cli() { node "$LIB/tracker/cli.mjs" "$@"; }
   [ "$(cd "$SCRATCH" && find . -type f -exec cksum {} + | sort)" = "$before" ]
 }
 
+@test "publish-spec.sh names no tracker path: the rebuild is the tracker CLI's publish-issues --rebuild" {
+  run grep -n scratch "$REPO_ROOT/skills/solve-feature/scripts/publish-spec.sh"
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  grep -q -- 'publish-issues .*--rebuild' "$REPO_ROOT/skills/solve-feature/scripts/publish-spec.sh"
+}
+
 @test "start --spec usage errors exit 2; a missing spec, one with no title, an untracked one in the checkout or the run's own spec.md exit 1 and publish nothing" {
   spec_setup; no_tracker_config
   local args
