@@ -81,6 +81,33 @@ cli() { node "$LIB/tracker/cli.mjs" "$@"; }
   [ "$output" = "$ref" ]
 }
 
+@test "start --spec with the spec at an ignored path inside .coding-crew/solve-feature/spec-drafts/ publishes it and leaves the file unchanged" {
+  spec_setup; no_tracker_config
+  local kept=.coding-crew/solve-feature/spec-drafts/issue.md
+  mkdir -p "$(dirname "$kept")" && cp "$SPEC" "$kept"
+  run bash "$SCRIPT" start --spec "$kept" --issue 13 --branch b
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  cmp "$SPEC" "$kept"
+  run bash "$SCRIPT" next issue-13
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(basename "$output")" = 01-issue-13.md ]
+}
+
+@test "start --spec on a file start deletes in .coding-crew/solve-feature/ stops and leaves it unchanged" {
+  spec_setup; no_tracker_config
+  local name
+  # outcome and result.json are left out: every command's stop rewrites them.
+  for name in review.since review.base pr-1.notes.md 01-x.checks.head; do
+    mkdir -p .coding-crew/solve-feature && cp "$SPEC" ".coding-crew/solve-feature/$name"
+    run bash "$SCRIPT" start --spec ".coding-crew/solve-feature/$name" --issue 13 --branch b
+    [ "$status" -eq 1 ] || { echo "$name: exit $status: $output"; return 1; }
+    [[ "$output" == *".coding-crew/solve-feature/$name"*"start deletes"* ]] || { echo "$name: $output"; return 1; }
+    cmp "$SPEC" ".coding-crew/solve-feature/$name" || { echo "$name changed"; return 1; }
+    rm ".coding-crew/solve-feature/$name"
+  done
+  [ ! -e "$SCRATCH" ]
+}
+
 @test "start --spec stops naming .coding-crew/scratch/issue-13/ when it has no marker of an earlier start --spec, and changes nothing under it" {
   spec_setup; no_tracker_config
   # Someone's feature, as the local tracker publishes one: its scratch/.gitignore keeps the tree clean.

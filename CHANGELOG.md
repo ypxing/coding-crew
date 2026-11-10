@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: `start --spec` stages its draft in a fresh directory and stops on a spec kept at a file `start`
+  deletes, so no spec under `.coding-crew/solve-feature/` is removed; the PR body's `**Tested:**` line says `no check
+  ran` when every check was `NOT RUN` instead of being left out (#743).
 - tracker: `publish-issues --rebuild` (local tracker) removes a feature directory an earlier `--rebuild` made and
   publishes the drafts afresh, refusing (exit 4) one it did not make; `solve-feature start --spec` uses it, so no
   solve-feature script names a tracker path or deletes an issue file (#742).

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# publish-spec.sh --cli <cli.mjs> --main-root <dir> --drafts <dir> --slug <slug> --spec <file> — start --spec's
+# publish-spec.sh --cli <cli.mjs> --main-root <dir> --drafts <empty dir> --slug <slug> --spec <file> — start --spec's
 # feature: the spec file published as the one-issue local feature <slug>, rebuilt from the file on every run, as on a
 # fresh runner, by the tracker CLI's publish-issues --rebuild. Exit 0 published; 1 a stop, its one-line reason on
 # stdout (the tracker CLI's own errors also reach stderr).
@@ -19,7 +19,7 @@ grep -qE '^#[[:blank:]]+[^[:blank:]]' "$SPEC" || stop "spec file $SPEC has no '#
 # The draft is the file with a Status line under its title and without its Blocked by section: the local tracker reads
 # blockers only from issues-deps.json, written empty, and publish-issues would refuse a name it does not know. A
 # heading may end in \r: a spec written in a web UI has CRLF line endings.
-rm -rf "$DRAFTS" && mkdir -p "$DRAFTS" && echo '{}' >"$DRAFTS/deps.json" || stop "cannot write $DRAFTS (see above)"
+echo '{}' >"$DRAFTS/deps.json" || stop "cannot write $DRAFTS (see above)"
 awk '/^##?#?#?#?#?[ \t]+/ { skip = tolower($0) ~ /^#+[ \t]+blocked by[ \t\r]*$/ }
   skip { next }
   !t && /^#[ \t]+[^ \t]/ { print; print ""; print "Status: ready-for-agent"; t = 1; next }
