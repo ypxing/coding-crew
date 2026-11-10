@@ -84,8 +84,9 @@ for f in "${FIELDS[@]}"; do
 done
 
 # The mv below would replace a read-only file in a writable directory: a host makes its file read-only so a coder
-# cannot rewrite its own checks. The mode-bit test holds under root, for whom -w is always true.
-if [ -e "$CACHE_FILE" ] && { [ ! -w "$CACHE_FILE" ] || [ -z "$(find "$CACHE_FILE" -prune -perm -200)" ]; }; then
+# cannot rewrite its own checks. The mode-bit test holds under root, for whom -w is always true; -L reads the bits of
+# a link's target, as -w does, not the link's own.
+if [ -e "$CACHE_FILE" ] && { [ ! -w "$CACHE_FILE" ] || [ -z "$(find -L "$CACHE_FILE" -prune -perm -200)" ]; }; then
   echo "ERROR: ${CREW_COMMANDS_FILE:+CREW_COMMANDS_FILE=}$CACHE_FILE is not writable — leaving it untouched" >&2
   exit 1
 fi

@@ -101,6 +101,17 @@ where() { bash "$LIB/commands-file.sh" --project-root "$1"; }
   [ "$(cat "$TEMP_DIR/host.json")" = '{"test": "host"}' ]
 }
 
+@test "write-commands-cache.sh refuses, as root, a CREW_COMMANDS_FILE that links to a read-only file, leaving the link" {
+  unshare -r true 2>/dev/null || skip "no unprivileged user namespace to run as root"
+  echo '{"test": "host"}' > "$TEMP_DIR/host.json" && chmod 444 "$TEMP_DIR/host.json"
+  ln -s host.json "$TEMP_DIR/link.json"
+  printf '{"test": "echo coder"}\n' > "$TEMP_DIR/answer.json"
+  run unshare -r bash -c 'cd "$1" && CREW_COMMANDS_FILE="$2" bash "$3/write-commands-cache.sh" --response-file "$4"' _ "$MAIN" "$TEMP_DIR/link.json" "$LIB" "$TEMP_DIR/answer.json"
+  [ "$status" -ne 0 ]
+  [ -L "$TEMP_DIR/link.json" ]
+  [ "$(cat "$TEMP_DIR/link.json")" = '{"test": "host"}' ]
+}
+
 @test "checks discovered in one worktree land in the main checkout's file, read from another, both trees clean" {
   printf '{"test": "echo T > %s/ran", "lint": null}\n' "$TEMP_DIR" > "$TEMP_DIR/discovered.json"
   (cd "$WT" && bash "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/discovered.json") >/dev/null
