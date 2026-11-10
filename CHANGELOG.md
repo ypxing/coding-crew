@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature, checks: `/solve-feature <slug> --review-since <sha>` scopes a follow-up run's review findings to
+  the commits since `<sha>` when the default branch is already in it (`sync` prints `review-base=`);
+  `CREW_COMMANDS_FILE` names the dev commands file every check reads and writes, and a read-only one is never
+  rewritten; `.tpl` credential templates expand `$NAME`/`${NAME}` from exported variables without `envsubst`,
+  executing nothing in them (#726).
 - checks: a repo whose compose file is `compose.yaml` keeps Docker mode, and with several compose files the
   checks read the one `docker compose` runs (Docker's order: `compose.yaml`, `compose.yml`, `docker-compose.yaml`,
   `docker-compose.yml`) (#723).

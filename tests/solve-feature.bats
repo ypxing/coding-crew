@@ -835,6 +835,16 @@ EOF
   ! grep -qF 'review-pr' "$skill" || false
 }
 
+@test "SKILL.md passes --review-since to start, and a non-empty review-base= scopes both review rounds' prompt" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
+  grep -qF 'start <slug> [--branch <name>] [--review-since <sha>]`' "$skill"
+  grep -qF 'prints `review-base=`; keep it for both review rounds' "$skill"
+  grep -qF 'When `review-base=` is non-empty, `<sha>` its value, the prompt reads `…on branch <branch> base <sha> against the spec…`' "$skill"
+  grep -qF '`; Findings cover <sha>..HEAD; judge spec, gaps and criteria on the code at HEAD: the commits before <sha> were already reviewed`' "$skill"
+  grep -qE '^\| `--review-since <sha>` +\|' "$skill"
+  grep -qE '^\| `CREW_COMMANDS_FILE` +\|.*outside the checkout' "$skill"
+}
+
 @test "SKILL.md reviews once more only on review-again=yes after the first review, then goes on to the PR body" {
   local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
   grep -qF 'FIX: findings=<k> needs-attention=<a> review-again=yes|no' "$skill"

@@ -711,6 +711,8 @@ reads and writes that file, and a solve-feature run ignores it when checking for
 Once a branch commits the file, a worktree on that branch uses its own copy instead, so a branch that changes its
 checks is gated on them; solve-feature then counts an edit to it as uncommitted work, and a run commits what it
 discovers there with the branch.
+A host that runs the checks itself can set `CREW_COMMANDS_FILE` to its own copy, kept outside the checkout: every
+check reads and writes that file instead, and a read-only one stops discovery rather than being rewritten.
 `/setup-coding-crew` discovers them, runs them so you see them pass, and prints the commit line; commit it once
 satisfied to share the commands with your team and with Actions. The installed tooling beside them (`lib/`, `manifest.json`) is what `install.sh` writes, not team
 state.
