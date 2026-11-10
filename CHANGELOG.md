@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tracker: `publish-issues --rebuild` (local tracker) removes a feature directory an earlier `--rebuild` made and
+  publishes the drafts afresh, refusing (exit 4) one it did not make; `solve-feature start --spec` uses it, so no
+  solve-feature script names a tracker path or deletes an issue file (#742).
 - solve-feature: the PR body's `**Tested:**` line is now written by the script, listing each check key of the last
   gate with its result, in place of the PR writer's sentence; `result.json` adds `status`, a per-finding `fixed`, and
   `pr_summary` / `pr_title` from the writer's summary in both publish modes; the guide's new "Embedding solve-feature"
