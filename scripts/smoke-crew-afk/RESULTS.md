@@ -27,3 +27,5 @@ crew-afk-version / date / result / cost / dispatch-hours / findings; rows before
 | da2eff9568a9 | 2026-10-31 | claude | install | PASS | $0.34 | 1 |
 | 7f2bf7eb7d4b | 2026-11-01 | claude | install | PASS | $0.34 | 1 |
 | 85548485ab00 | 2026-11-01 | claude | install | PASS | $0.25 | 0 |
+| e7d8d957bdc4 | 2026-11-10 | claude | install | FAIL | $0.30 | 0 |
+| d74080274de0 | 2026-11-10 | claude | install | PASS | $0.35 | 1 |
