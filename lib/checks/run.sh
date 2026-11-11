@@ -2,7 +2,7 @@
 # run.sh — run one project command where this checkout's checks run.
 #
 # Usage:
-#   bash scripts/run.sh --project-root <path> -- <command>
+#   bash scripts/run.sh --project-root <path> [--full-output] -- <command>
 #
 # The mode is the clone's dev commands file's "install_mode" (resolve-mode.sh): host,
 # or docker, where <command> runs as `docker compose run --rm <service> sh -c 'cd <src> && <command>'`
@@ -11,6 +11,12 @@
 # the service, the step and its log, and <command> never runs. A command that runs docker itself runs
 # on the host, its own compose calls given the override by the shim.
 # Exit code is the command's own, or 1 when the docker install or setup failed.
+#
+# The command's stdout and stderr go, combined, to a log under <git-dir>/crew-run/ (the newest 20 kept),
+# printed unchanged when at most 100 lines. Longer, it prints the first 20 lines, `… <n> lines omitted; full
+# output: <log>`, the omitted middle's failure-marker lines (not ok, FAIL, ✖, Error, AssertionError, each with
+# 2 lines either side, at most 40) under `… <k> failure-marker lines kept of <n> omitted`, then the last 60.
+# --full-output (or no git checkout) passes the output straight through instead.
 
 set -uo pipefail
 
@@ -18,6 +24,7 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PROJECT_ROOT="${PROJECT_ROOT:-}"
 CMD=""
+FULL_OUTPUT=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -26,6 +33,7 @@ while [[ $# -gt 0 ]]; do
       PROJECT_ROOT="$2"
       shift 2
       ;;
+    --full-output) FULL_OUTPUT=1; shift ;;
     --) shift; CMD="$*"; break ;;
     --help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
@@ -52,9 +60,43 @@ _gitdir="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/
 # Every compose call from here on, ours or a recipe's, goes through the shim.
 export PATH="$SELF_DIR/shim:$PATH"
 
+# _capped <log> — the log as the header says: whole up to 100 lines, else head, kept failure markers, tail.
+_capped() {
+  awk -v logpath="$1" '{ line[NR] = $0 }
+    END {
+      if (NR <= 100) { for (i = 1; i <= NR; i++) print line[i]; exit }
+      first = 21; last = NR - 60; omitted = last - first + 1
+      for (i = 1; i <= 20; i++) print line[i]
+      print "… " omitted " lines omitted; full output: " logpath
+      # node --test reports a failure only inline in its TAP, so the tail alone can miss it.
+      for (i = first; i <= last; i++)
+        if (line[i] ~ /not ok|FAIL|✖|Error|AssertionError/)
+          for (j = i - 2; j <= i + 2; j++) if (j >= first && j <= last) keep[j] = 1
+      k = 0
+      for (i = first; i <= last && k < 40; i++) if (i in keep) kept[++k] = line[i]
+      if (k) { print "… " k " failure-marker lines kept of " omitted " omitted"; for (i = 1; i <= k; i++) print kept[i] }
+      for (i = last + 1; i <= NR; i++) print line[i]
+    }' "$1"
+}
+
+# _exec <argv>… — runs the command and exits with its code; its output passes through, or is capped.
+_exec() {
+  local dir log rc
+  dir="$_gitdir/crew-run"
+  if [ "$FULL_OUTPUT" = 1 ] || [ -z "$_gitdir" ] || ! mkdir -p "$dir" || ! log="$(mktemp "$dir/run.XXXXXX")"; then
+    exec "$@"
+  fi
+  "$@" 2>&1 | cat >"$log"
+  rc=${PIPESTATUS[0]}
+  _capped "$log"
+  # shellcheck disable=SC2012
+  ls -1t "$dir" | tail -n +21 | while IFS= read -r old; do rm -f "$dir/$old"; done
+  exit "$rc"
+}
+
 _host() {
   if [ -f "$OVERRIDE" ]; then export CREW_COMPOSE_OVERRIDE="$OVERRIDE"; fi
-  bash -c 'cd "$1" && eval "$2"' _ "$PROJECT_ROOT" "$CMD"
+  _exec bash -c 'cd "$1" && eval "$2"' _ "$PROJECT_ROOT" "$CMD"
 }
 
 _stop() {
@@ -94,4 +136,4 @@ CONTAINER_SRC="$("${gen[@]}" --service "$SERVICE" --query container-src)" \
   || _stop "no container-side source dir for service $SERVICE"
 
 export CREW_COMPOSE_OVERRIDE="$OVERRIDE"
-cd "$PROJECT_ROOT" && exec docker compose run --rm "$SERVICE" sh -c "cd \"$CONTAINER_SRC\" && $CMD"
+cd "$PROJECT_ROOT" && _exec docker compose run --rm "$SERVICE" sh -c "cd \"$CONTAINER_SRC\" && $CMD"

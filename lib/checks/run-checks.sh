@@ -134,8 +134,9 @@ run_pass() {
     before="$(_tree_state)"
     cbefore="$(_content_state)"
     # stdin from /dev/null: a `docker compose run` would otherwise read the rest of this loop. Logged
-    # through a pipe: on overlayfs a check writing straight to a file under /tmp can hang forever.
-    bash "$RUN_SCRIPT" --project-root "$PROJECT_ROOT" -- "$cmd" \
+    # through a pipe: on overlayfs a check writing straight to a file under /tmp can hang forever. --full-output:
+    # the log is this script's, and holds every line.
+    bash "$RUN_SCRIPT" --project-root "$PROJECT_ROOT" --full-output -- "$cmd" \
       </dev/null 2>&1 | cat >"$log"
     rc=${PIPESTATUS[0]}
     after="$(_tree_state)"
