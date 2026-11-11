@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.3.13]
+
 - solve-feature, crew-review: the end-of-run reviewer judges each coder note in the PR body against the code at HEAD;
   one it finds settled moves to a `## Settled by the review` section with its reason and no longer holds the draft,
   so a run whose only notes were settled ends ready. crew-review takes an optional notes input (a JSON list of
