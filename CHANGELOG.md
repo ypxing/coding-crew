@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.3.12]
+
 - checks: dev-commands.json takes named extra checks as `"check:<name>": "<command>"` keys, run after the fixed ones
   in alphabetical order and reported by name; discovery also reads `.github/workflows/*.yml` and asks for their
   local checks as such keys. `run.sh` prints output over 100 lines as its first 20 and last 60 lines (plus failure
