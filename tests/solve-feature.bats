@@ -1190,6 +1190,65 @@ J
   [ "$(git -C "$TEMP_DIR/clone" rev-parse feature/feat)" = "$(git rev-parse HEAD)" ]
 }
 
+@test "the reusable workflow's summary prints one usage line per session: Claude's main and each subagent's tokens, Copilot's per subagent; none without a session" {
+  local wf="$REPO_ROOT/.github/workflows/crew-solve-feature.yml" json="$TEMP_DIR/wf.json"
+  run yaml_to_json "$wf" "$json"
+  [ "$status" -ne 3 ] || skip "no YAML parser on this machine (node js-yaml or python3 PyYAML)"
+  [ "$status" -eq 0 ]
+  jq -r '.jobs.solve.steps[-1].run' "$json" > "$TEMP_DIR/last-step.sh"
+  export GITHUB_STEP_SUMMARY="$TEMP_DIR/summary.md" GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=o/r \
+    CREW_AGENT=claude CREW_MODEL= SLUG=feat
+  mkdir -p .coding-crew/solve-feature
+  echo 'ready pr=10' > .coding-crew/solve-feature/outcome
+  # Two subagents; s1 is one API response streamed as two events, counted once; <synthetic> names no model.
+  cat > .coding-crew/solve-feature/session.jsonl <<'J'
+{"type":"system","subtype":"init","model":"claude-opus-5-5"}
+{"type":"assistant","message":{"id":"m1","model":"claude-opus-5-5","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":20},"content":[{"type":"tool_use","id":"t1","name":"Agent","input":{"description":"Coder for 7"}},{"type":"tool_use","id":"t2","name":"Task","input":{"description":"Review"}}]},"parent_tool_use_id":null}
+{"type":"assistant","message":{"id":"s3","model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0},"content":[]},"parent_tool_use_id":"t1"}
+{"type":"assistant","message":{"id":"s1","model":"claude-sonnet-5-5","usage":{"input_tokens":1,"output_tokens":2,"cache_read_input_tokens":3,"cache_creation_input_tokens":4},"content":[{"type":"text","text":"a"}]},"parent_tool_use_id":"t1"}
+{"type":"assistant","message":{"id":"s1","model":"claude-sonnet-5-5","usage":{"input_tokens":1,"output_tokens":2,"cache_read_input_tokens":3,"cache_creation_input_tokens":4},"content":[{"type":"tool_use","id":"u1","name":"Bash","input":{"command":"ls"}}]},"parent_tool_use_id":"t1"}
+{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]},"parent_tool_use_id":"t1"}
+{"type":"assistant","message":{"id":"r1","model":"claude-haiku-5-5","usage":{"input_tokens":7,"output_tokens":8,"cache_read_input_tokens":9,"cache_creation_input_tokens":10},"content":[]},"parent_tool_use_id":"t2"}
+{"type":"assistant","message":{"id":"s2","model":"claude-sonnet-5-5","usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":30,"cache_creation_input_tokens":40},"content":[]},"parent_tool_use_id":"t1"}
+{"type":"assistant","message":{"id":"m2","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":1,"cache_creation_input_tokens":1},"content":[]},"parent_tool_use_id":null}
+not json
+{"type":"result","subtype":"success","num_turns":3,"duration_ms":1,"total_cost_usd":1}
+J
+  : > "$GITHUB_STEP_SUMMARY"
+  run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(grep -A3 -F -- '- Subagent models:' "$GITHUB_STEP_SUMMARY" | tail -n 3)" = "$(printf '%s\n' \
+    '- Usage: main (claude-opus-5-5): input 11, output 6, cache read 101, cache write 21' \
+    '- Usage: Coder for 7 (claude-sonnet-5-5): input 11, output 22, cache read 33, cache write 44' \
+    '- Usage: Review (claude-haiku-5-5): input 7, output 8, cache read 9, cache write 10')" ] || { cat "$GITHUB_STEP_SUMMARY"; return 1; }
+
+  # Copilot: one line per completed subagent, its tokens unknown when the event has none; no main line.
+  cat > .coding-crew/solve-feature/session.jsonl <<'J'
+{"type":"assistant.message","data":{"model":"claude-sonnet-5.5","content":"Starting."}}
+{"type":"subagent.completed","data":{"agentDisplayName":"coder","model":"claude-sonnet-5.5","totalTokens":12345,"totalToolCalls":40}}
+{"type":"subagent.completed","data":{"agentDisplayName":"reviewer","model":"claude-opus-5.5","totalToolCalls":3}}
+{"type":"result","exitCode":0,"usage":{"premiumRequests":1,"sessionDurationMs":1}}
+J
+  : > "$GITHUB_STEP_SUMMARY"
+  CREW_AGENT=copilot run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -eq 0 ]
+  [ "$(grep -F -- '- Usage:' "$GITHUB_STEP_SUMMARY")" = "$(printf '%s\n' \
+    '- Usage: coder (claude-sonnet-5.5): 12345 tokens, 40 tool calls' \
+    '- Usage: reviewer (claude-opus-5.5): unknown tokens, 3 tool calls')" ] || { cat "$GITHUB_STEP_SUMMARY"; return 1; }
+
+  # No session, or one that cannot be read: no usage line, and the step still passes.
+  rm .coding-crew/solve-feature/session.jsonl
+  : > "$GITHUB_STEP_SUMMARY"
+  run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -eq 0 ]
+  ! grep -q 'Usage' "$GITHUB_STEP_SUMMARY" || false
+  mkdir .coding-crew/solve-feature/session.jsonl
+  : > "$GITHUB_STEP_SUMMARY"
+  run bash -e "$TEMP_DIR/last-step.sh"
+  [ "$status" -eq 0 ]
+  ! grep -q 'Usage' "$GITHUB_STEP_SUMMARY" || false
+}
+
 @test "the reusable workflow: after the run, the runs held on the PR's head are approved, a refused one's workflow dispatched on the PR's branch instead, warning when both fail" {
   local wf="$REPO_ROOT/.github/workflows/crew-solve-feature.yml" json="$TEMP_DIR/wf.json"
   run yaml_to_json "$wf" "$json"

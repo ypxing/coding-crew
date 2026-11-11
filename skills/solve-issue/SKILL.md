@@ -314,7 +314,9 @@ The dev commands file (`bash "<skill-dir>/../coding-crew-lib/scripts/checks/comm
 it, else the main checkout's, committed or not. Step 5's `DISCOVER` may write it. When it has
 uncommitted changes, a copy this branch tracks is this branch's: commit it as Step 6 does, with its prefix and the
 message `Record the discovered dev commands`. An untracked one with changes in the main checkout is the
-user's to commit once satisfied: print `Reminder: <its path> is untracked or modified — review and commit it.`
+user's to commit once satisfied: on an interactive run, print `Reminder: <its path> is untracked or modified —
+review and commit it.`; on a non-interactive run (a headless/`-p` invocation or a subagent) print nothing about it,
+as nobody there can act on it.
 
 ### 7. Mark done
 

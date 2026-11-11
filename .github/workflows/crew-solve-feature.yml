@@ -562,6 +562,29 @@ jobs:
               (select(.type == "subagent.completed") | .data.model?)
             | strings | select(. != "<synthetic>")]
             | reduce .[] as $m ([]; if index([$m]) then . else . + [$m] end) | join(", ")' "$logs/session.jsonl" 2>/dev/null || true)
+          # Usage per session. Claude: each message's usage summed by its direct parent (the Agent/Task tool_use that
+          # started the subagent, or none for main), once per message.id, as one response streams as several events.
+          # Copilot: each subagent.completed event's totals; its credits are session-level, so it has no main line.
+          usage=$( {
+            jq -Rrn 'reduce (inputs | fromjson? | objects | select(.type == "assistant" and (.message | type) == "object")) as $e ({order: [], g: {}, seen: {}, desc: {}};
+                reduce ($e.message.content[]? | objects | select(.type == "tool_use" and (.name == "Agent" or .name == "Task"))) as $t
+                  (.; .desc[$t.id // ""] = ($t.input.description // ""))
+                | ($e.parent_tool_use_id // "") as $p | ($e.message.id // null) as $id | ($e.message.usage // null) as $u
+                | if ($u | type) != "object" or ($id != null and .seen[$id] != null) then .
+                  else (if $id != null then .seen[$id] = true else . end)
+                    | (if .g[$p] == null then .order += [$p] | .g[$p] = {i: 0, o: 0, cr: 0, cw: 0, m: null} else . end)
+                    | .g[$p] |= (.i += ($u.input_tokens // 0) | .o += ($u.output_tokens // 0)
+                        | .cr += ($u.cache_read_input_tokens // 0) | .cw += ($u.cache_creation_input_tokens // 0)
+                        | .m = (.m // ([$e.message.model | strings | select(. != "<synthetic>")][0])))
+                  end)
+              | . as $s | ([$s.order[] | select(. == "")] + [$s.order[] | select(. != "")])[]
+              | $s.g[.] as $g | (if . == "" then "main" else ($s.desc[.] // .) end) as $label
+              | "- Usage: \($label)\(if $g.m then " (\($g.m))" else "" end): input \($g.i), output \($g.o), cache read \($g.cr), cache write \($g.cw)"' \
+              "$logs/session.jsonl"
+            jq -Rrn 'inputs | fromjson? | objects | select(.type == "subagent.completed") | .data
+              | "- Usage: \(.agentDisplayName // "subagent")\(if .model then " (\(.model))" else "" end): \(.totalTokens // "unknown") tokens, \(.totalToolCalls // "unknown") tool calls"' \
+              "$logs/session.jsonl"
+          } 2>/dev/null || true)
           pr=$(sed -n 's/.*pr=\([0-9][0-9]*\).*/\1/p' <<<"$line")
           pr=${pr:-$REVIEW_PR}
           {
@@ -570,6 +593,7 @@ jobs:
             [ -z "$pr" ] || echo "- PR: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr"
             echo "- Agent: $CREW_AGENT, model ${model:-${CREW_MODEL:-unpinned (the CLI default)}}"
             [ -z "$subagent_models" ] || echo "- Subagent models: $subagent_models"
+            [ -z "$usage" ] || echo "$usage"
             [ ! -s "$logs/unpushed.bundle" ] ||
               echo "- Unpushed commits: in the artifact's unpushed.bundle. In a clone where git can push, fetch them with \`gh run download $GITHUB_RUN_ID -n $artifact-$GITHUB_RUN_ATTEMPT -D /tmp/sf-$GITHUB_RUN_ID && git fetch /tmp/sf-$GITHUB_RUN_ID/unpushed.bundle 'refs/heads/*:refs/heads/*'\`, then run $rerun"
             ref=${line#stopped: }
