@@ -261,6 +261,15 @@ _log_of() { printf '%s\n' "$output" | sed -n 's/^… [0-9]* lines omitted; full 
   [ "$(printf '%s\n' "$output" | wc -l)" -eq $((20 + 2 + 40 + 60)) ]
 }
 
+@test "two failure-marker blocks apart in the log are kept with a … line between them" {
+  run bash "$SCRIPT" --project-root "$WORK" -- 'seq 1 50; echo "not ok 1"; seq 51 100; echo "not ok 2"; seq 101 200; exit 1'
+  [ "$status" -eq 1 ]
+  [ "$(printf '%s\n' "$output" | sed -n '22,33p')" = "$(echo "… 10 failure-marker lines kept of 122 omitted"
+    echo 49; echo 50; echo "not ok 1"; echo 51; echo 52; echo "…"
+    echo 99; echo 100; echo "not ok 2"; echo 101; echo 102)" ] || { echo "$output"; return 1; }
+  [ "$(printf '%s\n' "$output" | wc -l)" -eq $((20 + 2 + 11 + 60)) ]
+}
+
 @test "--full-output prints the whole output unchanged, keeping the exit code" {
   run bash "$SCRIPT" --project-root "$WORK" --full-output -- 'seq 1 250; exit 5'
   [ "$status" -eq 5 ]

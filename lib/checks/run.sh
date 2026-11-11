@@ -15,7 +15,8 @@
 # The command's stdout and stderr go, combined, to a log under <git-dir>/crew-run/ (the newest 20 kept),
 # printed unchanged when at most 100 lines. Longer, it prints the first 20 lines, `… <n> lines omitted; full
 # output: <log>`, the omitted middle's failure-marker lines (not ok, FAIL, ✖, Error, AssertionError, each with
-# 2 lines either side, at most 40) under `… <k> failure-marker lines kept of <n> omitted`, then the last 60.
+# 2 lines either side, at most 40, a `…` line between blocks apart in the log) under `… <k> failure-marker
+# lines kept of <n> omitted`, then the last 60.
 # --full-output (or no git checkout) passes the output straight through instead. Killed by TERM, INT or HUP
 # (a caller's timeout), it stops the command and prints its output so far the same way, exiting 143, 130 or 129.
 
@@ -73,9 +74,13 @@ _capped() {
       for (i = first; i <= last; i++)
         if (line[i] ~ /not ok|FAIL|✖|Error|AssertionError/)
           for (j = i - 2; j <= i + 2; j++) if (j >= first && j <= last) keep[j] = 1
-      k = 0
-      for (i = first; i <= last && k < 40; i++) if (i in keep) kept[++k] = line[i]
-      if (k) { print "… " k " failure-marker lines kept of " omitted " omitted"; for (i = 1; i <= k; i++) print kept[i] }
+      # A "…" line between kept lines that are not next to each other in the log; it does not count toward the 40.
+      k = 0; prev = 0
+      for (i = first; i <= last && k < 40; i++) if (i in keep) { kept[++k] = line[i]; gap[k] = prev && i > prev + 1; prev = i }
+      if (k) {
+        print "… " k " failure-marker lines kept of " omitted " omitted"
+        for (i = 1; i <= k; i++) { if (gap[i]) print "…"; print kept[i] }
+      }
       for (i = last + 1; i <= NR; i++) print line[i]
     }' "$1"
 }
