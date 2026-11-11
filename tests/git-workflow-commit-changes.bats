@@ -66,3 +66,19 @@ teardown() { rm -rf "$WORK"; }
   [ "$status" -eq 0 ]
   [ -z "$(git -C "$WORK" status --porcelain)" ]
 }
+
+@test "a named path whose deletion is already committed is skipped, so nothing staged exits 3" {
+  echo a > "$WORK/a.txt"
+  git -C "$WORK" add a.txt && git -C "$WORK" commit -q -m a
+  git -C "$WORK" rm -q a.txt && git -C "$WORK" commit -q -m "drop a"
+  PROJECT_ROOT="$WORK" run bash "$COMMIT" --message "Work" --files "a.txt"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"nothing to commit"* ]]
+}
+
+@test "a named path git has never seen exits 1, not git's 128" {
+  PROJECT_ROOT="$WORK" run bash "$COMMIT" --message "Work" --files "typo.txt"
+  [ "$status" -eq 1 ]
+  PROJECT_ROOT="$WORK" run bash "$COMMIT" --message "Work" --files ""
+  [ "$status" -eq 1 ]
+}
