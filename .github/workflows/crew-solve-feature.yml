@@ -582,7 +582,7 @@ jobs:
               | "- Usage: \($label)\(if $g.m then " (\($g.m))" else "" end): input \($g.i), output \($g.o), cache read \($g.cr), cache write \($g.cw)"' \
               "$logs/session.jsonl"
             jq -Rrn 'inputs | fromjson? | objects | select(.type == "subagent.completed") | .data
-              | "- Usage: \(.agentDisplayName // "subagent")\(if .model then " (\(.model))" else "" end): \(.totalTokens // "unknown") tokens, \(.totalToolCalls // "unknown") tool calls"' \
+              | "- Usage: \(.agentDisplayName // "subagent")\(if .model then " (\(.model))" else "" end): \(.totalTokens // "unknown") tokens, \(.totalToolCalls // "unknown") tool calls\(if .durationMs then ", \(.durationMs / 1000 | floor)s" else "" end)"' \
               "$logs/session.jsonl"
           } 2>/dev/null || true)
           pr=$(sed -n 's/.*pr=\([0-9][0-9]*\).*/\1/p' <<<"$line")

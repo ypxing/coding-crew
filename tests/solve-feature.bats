@@ -1225,16 +1225,16 @@ J
   # Copilot: one line per completed subagent, its tokens unknown when the event has none; no main line.
   cat > .coding-crew/solve-feature/session.jsonl <<'J'
 {"type":"assistant.message","data":{"model":"claude-sonnet-5.5","content":"Starting."}}
-{"type":"subagent.completed","data":{"agentDisplayName":"coder","model":"claude-sonnet-5.5","totalTokens":12345,"totalToolCalls":40}}
-{"type":"subagent.completed","data":{"agentDisplayName":"reviewer","model":"claude-opus-5.5","totalToolCalls":3}}
+{"type":"subagent.completed","data":{"agentDisplayName":"coder","model":"claude-sonnet-5.5","totalTokens":12345,"totalToolCalls":40,"durationMs":123456}}
+{"type":"subagent.completed","data":{"agentDisplayName":"reviewer","model":"claude-opus-5.5","totalToolCalls":3,"durationMs":4400}}
 {"type":"result","exitCode":0,"usage":{"premiumRequests":1,"sessionDurationMs":1}}
 J
   : > "$GITHUB_STEP_SUMMARY"
   CREW_AGENT=copilot run bash -e "$TEMP_DIR/last-step.sh"
   [ "$status" -eq 0 ]
   [ "$(grep -F -- '- Usage:' "$GITHUB_STEP_SUMMARY")" = "$(printf '%s\n' \
-    '- Usage: coder (claude-sonnet-5.5): 12345 tokens, 40 tool calls' \
-    '- Usage: reviewer (claude-opus-5.5): unknown tokens, 3 tool calls')" ] || { cat "$GITHUB_STEP_SUMMARY"; return 1; }
+    '- Usage: coder (claude-sonnet-5.5): 12345 tokens, 40 tool calls, 123s' \
+    '- Usage: reviewer (claude-opus-5.5): unknown tokens, 3 tool calls, 4s')" ] || { cat "$GITHUB_STEP_SUMMARY"; return 1; }
 
   # No session, or one that cannot be read: no usage line, and the step still passes.
   rm .coding-crew/solve-feature/session.jsonl
