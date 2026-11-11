@@ -143,6 +143,22 @@ _cache() {
   [[ "$output" != *"=== install"* ]]
 }
 
+@test "run-checks: check:<name> keys run after the fixed keys, alphabetically, by name; null is NOT RUN and a fail fails the run" {
+  _cache '{"check:zeta": "echo Z", "test": "echo T", "check:alpha": "exit 5", "check:mid.dle": null, "lint": null, "typecheck": null}'
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"test: pass"*"=== check:alpha: exit 5"*"check:alpha: fail (exit 5)"*"check:mid.dle: NOT RUN: no command found"*"=== check:zeta: echo Z"*"check:zeta: pass"*"CHECKS: fail" ]] || { echo "$output"; return 1; }
+}
+
+@test "run-checks: a check:<name> key that rewrites a tracked file gets the rewrote: line and the second pass" {
+  _committed_src
+  _cache "{\"typecheck\": null, \"lint\": null, \"test\": \"echo T >> $TEMP_DIR/runs\", \"check:fmt\": \"printf 'a=1\\\\n' > src/app.py\"}"
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *"=== check:fmt (second pass): "*"check:fmt: rewrote: src/app.py"*"CHECKS: pass" ]] || { echo "$output"; return 1; }
+  [ "$(tr '\n' ' ' < "$TEMP_DIR/runs")" = "T T " ]
+}
+
 @test "run-checks: registry_auth and a key it does not know are never run as checks" {
   _cache "{\"test\": \"echo T\", \"registry_auth\": \"touch $TEMP_DIR/auth\", \"old_key\": \"touch $TEMP_DIR/old\"}"
   run bash "$RUN_CHECKS" --project-root "$WORK"

@@ -5,7 +5,8 @@
 # Usage:
 #   bash scripts/run-checks.sh --project-root <path>
 #
-# Order: typecheck, lint, test, coverage, integration: the checks write-commands-cache.sh writes. In docker mode with no override
+# Order: typecheck, lint, test, coverage, integration: the checks write-commands-cache.sh writes, then every
+# `check:<name>` key the file has, in alphabetical order. In docker mode with no override
 # yet, the dependency install runs once first; if it fails, no check runs (CHECKS: fail).
 # Prints per check `<key>: pass`, `<key>: fail (exit N)` (then its output tail and log path), `<key>: NOT
 # RUN: no command found` (the cache's null), or `<key>: modified files: <list>` (then a fail); last,
@@ -51,6 +52,7 @@ if ! commands_field_present "$CACHE" test; then
 fi
 
 KEYS=(typecheck lint test coverage integration)
+while IFS= read -r k; do [ -z "$k" ] || KEYS+=("$k"); done < <(commands_check_keys "$CACHE")
 
 # Prior dirt is in the before snapshot, so only what the check itself changed counts. -z: git quotes a
 # path with a space or a non-ASCII byte otherwise, and the `rewrote:` names go to `git add` as written.
