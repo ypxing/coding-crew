@@ -49,9 +49,11 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    again, once: any non-zero exit of that run, 4 included, stops the run like any other.
    1. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working directory —
      with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.coding-crew/solve-feature/spec.md; write the report to <repo>/.coding-crew/solve-feature/pr-<n>.review.json; the tests named in <red files> are the coders' new tests`,
-     `<red files>` being `next`'s last `red-files=` value; when that is empty, the prompt ends at `.review.json`.
+     `<red files>` being `next`'s last `red-files=` value; when that is empty, the `; the tests named…` clause is left out.
      When `review-base=` is non-empty, `<sha>` its value, the prompt reads `…on branch <branch> base <sha> against the spec…`
-     and ends with `; Findings cover <sha>..HEAD; judge spec, gaps and criteria on the code at HEAD: the commits before <sha> were already reviewed`.
+     and `; Findings cover <sha>..HEAD; judge spec, gaps and criteria on the code at HEAD: the commits before <sha> were already reviewed` is appended.
+     When `<repo>/.coding-crew/solve-feature/pr-<n>.coder-notes.json` exists, `; the notes the change's author left for a person are in <repo>/.coding-crew/solve-feature/pr-<n>.coder-notes.json` is appended last:
+     `fix` moves each note the review settles out of the notes that hold the draft.
      When `reviewer-model=` (as `next` last printed it) is non-empty, run it on the model in your own list that
      matches that name, as for `coder-model=`, naming that model in the call; when it is empty, on your own. Wait for it to finish.
    2. `bash "<skill-dir>/scripts/solve-feature.sh" reviewed <slug> <n> <branch>` — always: it discards what the
