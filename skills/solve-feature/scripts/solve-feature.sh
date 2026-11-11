@@ -377,6 +377,24 @@ stop() { # <step> <reason> [<log>]; exit 1
 BEGIN='<!-- solve-feature:begin -->' END='<!-- solve-feature:end -->'
 # The notes section, inside begin/end: post_notes adds to it, describe carries it over verbatim.
 NOTES_BEGIN='<!-- solve-feature:notes:begin -->' NOTES_END='<!-- solve-feature:notes:end -->'
+# The notes the review settled, out of the notes section: fix adds to it, describe carries it over and never counts it.
+SETTLED_BEGIN='<!-- solve-feature:settled:begin -->' SETTLED_END='<!-- solve-feature:settled:end -->'
+# jq `blocks`: the notes section's {key: line number, value: line} entries, $nb/$ne its markers, split into one block
+# per note — its author from the tag post_notes wrote above it, `person` for text under none, so a coder's own `### `
+# headings stay in its block. `at` is the block's line numbers; `block` its tag and text as the body holds them.
+# A tag left after its note's text was deleted is no note. jq `section`: the body's lines as entries, from the notes
+# section's begin marker to its end marker, else to the body's end, as describe's sed range reads it.
+NOTE_BLOCKS='def blocks:
+  map(select(.value | IN($nb, $ne, "## Notes for a person", "Delete a note here once it is handled.") | not))
+  | reduce .[] as $e ([{author: "person", tag: null, at: [], lines: []}];
+      ([$e.value | capture("^### the (?<a>coder|fixer) of .* · [0-9]{4}-[0-9]{2}-[0-9]{2}$").a][0]) as $a
+      | if $a then . + [{author: $a, tag: $e.value, at: [$e.key], lines: []}]
+        else .[-1].lines += [$e.value] | .[-1].at += [$e.key] end)
+  | map(. + {text: (.lines | join("\n") | sub("^(\\s*\n)+"; "") | sub("\\s+$"; ""))})
+  | map(select(.text != "") | . + {block: ([.tag // empty] + .lines | join("\n") | sub("\\s+$"; ""))});
+def section: to_entries | ([.[] | select(.value == $nb) | .key][0]) as $b
+  | if $b == null then [] else .[$b:] | ([.[1:][] | select(.value == $ne) | .key][0]) as $f
+    | if $f == null then . else map(select(.key <= $f)) end end;'
 pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the spec, else the issue's own
   local t; t=$(head -n 1 "$LOGS/spec.md" | sed -nE 's/^<!-- PRD issue #[0-9]+: (.*) -->$/\1/p' | sed 's/^PRD: //')
   [ -n "$t" ] || t=$(grep -m1 '^# ' "$LOGS/$1.issue.md" | sed 's/^# //')
@@ -555,6 +573,16 @@ sync() {
     push -u origin "$BRANCH" || die "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, re-run"
   fi
   git rev-parse HEAD >"$LOGS/review.base"
+  # The coder notes the body holds now, for the reviewer to judge: a note a person deleted is not judged.
+  pr_view
+  if [ -n "$PR_N" ]; then
+    local body notes="$LOGS/pr-$PR_N.coder-notes.json"
+    body=$(pr_body_read "$PR_N") || die "reading the PR body failed (see above): re-run sync $SLUG $BRANCH"
+    jq -n --rawfile s <(printf '%s\n' "$body") --arg nb "$NOTES_BEGIN" --arg ne "$NOTES_END" \
+      "$NOTE_BLOCKS"' [$s | split("\n") | section | blocks[] | select(.author == "coder") | .block]' >"$notes.tmp" ||
+      die "listing the PR body's coder notes failed (see above)"
+    if [ "$(jq length "$notes.tmp")" = 0 ]; then rm -f "$notes" "$notes.tmp"; else mv "$notes.tmp" "$notes"; fi
+  fi
   local since; since=$(cat "$LOGS/review.since" 2>/dev/null || true)
   if [ -n "$since" ] && git merge-base --is-ancestor "origin/$default" "$since" 2>/dev/null &&
     git merge-base --is-ancestor "$since" HEAD 2>/dev/null; then echo "review-base=$since"
@@ -584,6 +612,50 @@ reviewed() {
   [ -f "$report" ] || stop reviewer "no review report at $report"
   jq -e . "$report" >/dev/null 2>&1 || stop reviewer "unreadable review report $report"
   echo "findings=$(jq '.findings // [] | length' "$report")"
+}
+
+# settle_notes <report> <recovery> — each coder note the report marks settled whose block in pr-<n>.coder-notes.json
+# still matches one of the body's notes section exactly moves to the settled section, under its own heading and text and
+# the reviewer's why; then that file keeps only the coder notes still standing, for a second round, which runs no sync.
+# Fix calls it after its last stop and before the report moves, so a re-run reads the report against the file as its
+# reviewer saw it. Anything off its shape settles nothing: the note stands and holds the draft.
+settle_notes() {
+  local cn="$LOGS/pr-$PR.coder-notes.json" body out new="$LOGS/pr-$PR.settled-body.md" why
+  [ -f "$cn" ] || return 0
+  why="moving the notes the review settled into the PR body's Settled by the review section failed; nothing moved: $2"
+  body=$(pr_body_read "$PR") || stop fix "reading the PR body failed (see above): $2"
+  out=$(jq -n --rawfile s <(printf '%s\n' "$body") --rawfile c "$cn" --slurpfile rep "$1" \
+    --arg nb "$NOTES_BEGIN" --arg ne "$NOTES_END" --arg sb "$SETTLED_BEGIN" --arg se "$SETTLED_END" \
+    --arg slug "<!-- solve-feature:slug " --arg end "$END" "$NOTE_BLOCKS"'
+    def whole: type == "number" and . >= 0 and . == floor;
+    def at($v): [to_entries[] | select(.value == $v) | .key][0];
+    ($s | split("\n")) as $L
+    | ($c | try fromjson catch null | if type == "array" and all(.[]; type == "string") then . else [] end) as $list
+    | [ $rep[0].notes | if type == "array" then .[] else empty end
+        | select(type == "object" and .settled == true and (.why | type) == "string"
+                 and (.note | whole) and .note < ($list | length)) ] as $S
+    | ( reduce ($L | section | blocks[] | select(.author == "coder")) as $k ({used: [], moved: []};
+          . as $st
+          | ([$S[] | select($list[.note] == $k.block and (.note | IN($st.used[]) | not))][0]) as $hit
+          | if $hit then .used += [$hit.note] | .moved += [$k + {why: $hit.why}] else . end) ).moved as $m
+    | [$m[].at[]] as $drop
+    | [$L | to_entries[] | select(.key | IN($drop[]) | not) | .value] as $N
+    | [$m[] | (.block | split("\n"))[], "", "Settled by the review: \(.why | gsub("\\s*\n\\s*"; " "))", ""] as $E
+    | ( if ($m | length) == 0 then $L
+        elif ($N | at($se)) != null then ($N | at($se)) as $p | $N[:$p] + $E + $N[$p:]
+        else ( if ($N | at($ne)) != null then ($N | at($ne)) + 1
+               else [$N | to_entries[] | select((.value | startswith($slug)) or .value == $end) | .key][0] // ($N | length) end ) as $p
+          | $N[:$p] + [$sb, "## Settled by the review", ""] + $E + [$se] + $N[$p:]
+        end ) as $out
+    | {moved: ($m | length), body: ($out | join("\n")),
+       standing: [$out | section | blocks[] | select(.author == "coder") | .block]}') ||
+    stop fix "settling the review's notes failed (see above): $2"
+  if [ "$(jq .moved <<<"$out")" != 0 ]; then
+    jq -j .body <<<"$out" >"$new"
+    pr_body_write "$PR" "$new" || stop fix "$why"
+    rm -f "$new"
+  fi
+  if [ "$(jq '.standing | length' <<<"$out")" = 0 ]; then rm -f "$cn"; else jq .standing <<<"$out" >"$cn"; fi
 }
 
 # The fixer's edits are committed, then what others pushed to the branch merged in (git refuses a merge over staged
@@ -661,6 +733,7 @@ fix() {
       + $un
       + [ if $has_d == "yes" then {type: "reviewer_changed_tree", paths: ($d | split("\n") | map(select(test("\\S"))))} else empty end ]
       + [ if ($f | length) > 0 and $moved == "no" and ($un | length) == 0 then {type: "fixer_changed_nothing", round: $round} else empty end ]') || stop fix "building the round's needs-attention list failed (see above)"
+  settle_notes "$report" "run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   # Fixes to a CRITICAL/HIGH/MEDIUM finding are worth reviewing again; SKILL.md caps that at one re-review.
   [ "$severe" = 0 ] || [ "$moved" = no ] || again=yes
   k="$LOGS/pr-$PR.r$((k + 1))"
@@ -710,23 +783,18 @@ describe() {
   [[ ! "$prd_head" =~ ^'<!-- PRD issue #'([0-9]+): ]] || spec_line="Spec: PRD #${BASH_REMATCH[1]}, feature \`$SLUG\`"
   [ ! -f "$f" ] || title=$(head -n 1 "$f" | sed -n 's/^# //p')
   # The notes section as the body holds it now, so a note a person deleted stays deleted; with no note left, none.
-  local notes
+  local notes settled
   notes=$(pr_body_read "$PR") || die "reading PR $PR's body failed"
+  # The settled section is a record for a person, never a hold: carried over verbatim, never counted.
+  settled=$(sed -n "\|^$SETTLED_BEGIN\$|,\|^$SETTLED_END\$|p" <<<"$notes")
   notes=$(sed -n "\|^$NOTES_BEGIN\$|,\|^$NOTES_END\$|p" <<<"$notes")
   # describe's own items, in their own file so a re-run replaces them: the open review threads, and one note per block
-  # of the notes section, its author from the tag post_notes wrote above it, `person` for text under none. A tag left
-  # after its note's text was deleted is no note. The notes are what a coder or fixer says a person must do or decide,
-  # so they hold the draft; read from the body, they survive a stop and a fresh runner.
+  # of the notes section. The notes are what a coder or fixer says a person must do or decide, so they hold the draft;
+  # read from the body, they survive a stop and a fresh runner.
   jq -n --rawfile s <(printf '%s\n' "$notes") --argjson count "$UNRESOLVED" --arg url "$PR_URL" \
-    --arg nb "$NOTES_BEGIN" --arg ne "$NOTES_END" '
+    --arg nb "$NOTES_BEGIN" --arg ne "$NOTES_END" "$NOTE_BLOCKS"'
     [ if $count > 0 then {type: "unresolved_threads", count: $count, url: $url} else empty end ]
-    + ( $s | split("\n")
-        | map(select(IN($nb, $ne, "## Notes for a person", "Delete a note here once it is handled.") | not))
-        | reduce .[] as $l ([{author: "person", lines: []}];
-            ([$l | capture("^### the (?<a>coder|fixer) of .* · [0-9]{4}-[0-9]{2}-[0-9]{2}$").a][0]) as $a
-            | if $a then . + [{author: $a, lines: []}] else .[-1].lines += [$l] end)
-        | map({type: "note", author, text: (.lines | join("\n") | sub("^(\\s*\n)+"; "") | sub("\\s+$"; ""))})
-        | map(select(.text != "")) )' >"$datt" || die "building describe's needs-attention list failed (see above)"
+    + [ $s | split("\n") | to_entries | blocks[] | {type: "note", author, text} ]' >"$datt" || die "building describe's needs-attention list failed (see above)"
   # The Needs attention lines, one owner with the draft hold and result.json: fix's items and describe's, a gap or an
   # unfixed finding read from the report of the round it names, and one pointer line for every note.
   local need rep round
@@ -762,6 +830,7 @@ describe() {
     printf '%s\n\n' "$tested"
     if [ -n "$need" ]; then printf '## Needs attention\n\n'; sed '/^- /!s/^/- /' <<<"$need"; echo; fi
     [ -z "$notes" ] || printf '%s\n\n' "$notes"
+    [ -z "$settled" ] || printf '%s\n\n' "$settled"
     printf '%s\n\n' "$spec_line"
     [ -z "$refs" ] || printf '%s\n' "$refs"
     printf '%s\n' "<!-- solve-feature:slug $SLUG -->" "$END"
