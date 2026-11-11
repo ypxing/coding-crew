@@ -87,3 +87,14 @@ teardown() {
   run bash -c 'cd "$1" && bash "$2/discover-commands.sh"' _ "$REPO" "$LIB"
   [[ "$output" == "Command discovery: skipped (already cached"* ]]
 }
+
+@test "a partial discovery names the commands the file already holds, so a check does not repeat one" {
+  mkdir -p "$REPO/.github/workflows" "$REPO/.coding-crew"
+  printf 'on: push\n' > "$REPO/.github/workflows/ci.yml"
+  echo '{"test": "make test", "lint": null, "typecheck": "tsc", "check:api": "npm run api"}' > "$REPO/.coding-crew/dev-commands.json"
+  run bash -c 'cd "$1" && bash "$2/discover-commands.sh"' _ "$REPO" "$LIB"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'`make test`'* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *'`tsc`'* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *'check:api: `npm run api`'* ]] || { echo "$output"; return 1; }
+}

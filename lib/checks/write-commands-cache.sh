@@ -109,8 +109,12 @@ if [ "$REFRESH" = 0 ]; then
     CHECK_VAL["$k"]="$(_json_value "$CACHE_FILE" "$k")"
   done < <(commands_check_keys "$CACHE_FILE")
 fi
-for k in ${RESP_CHECKS[@]+"${RESP_CHECKS[@]}"}; do CHECK_VAL["$k"]="$(_json_value "$RESPONSE_FILE" "$k")"; done
-while IFS= read -r k; do [ -z "$k" ] || CHECKS+=("$k"); done < <(printf '%s\n' "${!CHECK_VAL[@]}" | LC_ALL=C sort)
+# A value that is neither a command nor null reads empty and is left out, as the fixed fields are; the file's stays.
+for k in ${RESP_CHECKS[@]+"${RESP_CHECKS[@]}"}; do
+  v="$(_json_value "$RESPONSE_FILE" "$k")"
+  [ -z "$v" ] || CHECK_VAL["$k"]="$v"
+done
+while IFS= read -r k; do [ -z "$k" ] || [ -z "${CHECK_VAL[$k]}" ] || CHECKS+=("$k"); done < <(printf '%s\n' "${!CHECK_VAL[@]}" | LC_ALL=C sort)
 
 # The mv below would replace a read-only file in a writable directory: a host makes its file read-only so a coder
 # cannot rewrite its own checks. The mode-bit test holds under root, for whom -w is always true: any write bit

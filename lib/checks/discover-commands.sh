@@ -209,8 +209,27 @@ Also give, as named extra checks, each local dev-loop check a CI workflow file i
 e.g. a public-API check or a schema validation. Add one `"check:<name>": "<command>"` entry per
 check to the JSON you save, `<name>` matching `[a-z0-9][a-z0-9_.-]*` (e.g. `check:public-api`),
 the command as a developer runs it locally. Leave out a step whose command is already one of the
-categories above, and add none when the list has no workflow file or no such step.
+categories above, or one of the commands the dev commands file already holds (listed below when it
+holds any), and add none when the list has no workflow file or no such step.
 PROMPT
+# The file's commands this run does not ask for: a check repeating one of them would run it twice.
+if [ -f "$CACHE_FILE" ] && [ "$REFRESH" = 0 ]; then
+  HELD=()
+  for key in "${CACHE_FIELDS[@]}"; do
+    _in_ask "$key" && continue
+    cmd=$(commands_field "$CACHE_FILE" "$key")
+    [ -z "$cmd" ] || HELD+=("$key: \`$cmd\`")
+  done
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    cmd=$(commands_field "$CACHE_FILE" "$key")
+    [ -z "$cmd" ] || HELD+=("$key: \`$cmd\`")
+  done < <(commands_check_keys "$CACHE_FILE")
+  if [ "${#HELD[@]}" -gt 0 ]; then
+    echo "The dev commands file already holds:"
+    printf '  - %s\n' "${HELD[@]}"
+  fi
+fi
 
 cat <<'PROMPT'
 

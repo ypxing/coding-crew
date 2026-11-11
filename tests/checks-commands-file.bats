@@ -143,6 +143,15 @@ _write() { run bash -c 'cd "$1" && shift && bash "$@"' _ "$MAIN" "$LIB/write-com
   [ "$(cat "$MAIN/.coding-crew/dev-commands.json")" = '{"test": "t2", "check:api": "echo api-new"}' ]
 }
 
+@test "write-commands-cache.sh leaves out a check key whose value is not a command or null, keeping the file's own value" {
+  mkdir -p "$MAIN/.coding-crew"
+  echo '{"test": "t", "check:keep": "echo keep"}' > "$MAIN/.coding-crew/dev-commands.json"
+  printf '{"lint": null, "check:x": 1, "check:y": ["a"], "check:keep": false}\n' > "$TEMP_DIR/answer.json"
+  _write
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat "$MAIN/.coding-crew/dev-commands.json")" = '{"test": "t", "lint": null, "check:keep": "echo keep"}' ]
+}
+
 @test "write-commands-cache.sh refuses a check key whose name is not check:[a-z0-9][a-z0-9_.-]*, naming it, the file byte-identical" {
   mkdir -p "$MAIN/.coding-crew"
   printf '{"test":"t",  "check:old": "x"}\n' > "$MAIN/.coding-crew/dev-commands.json"
