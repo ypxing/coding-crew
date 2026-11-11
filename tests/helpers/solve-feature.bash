@@ -173,6 +173,8 @@ git rev-parse HEAD > "$STATE/checks.head"
 [ -z "${CHECK_STAGES:-}" ] || git add -A -- $CHECK_STAGES
 for i in $(seq 1 30); do echo "check line $i"; done
 echo "test: ${CHECK_RESULT:-pass}"
+# A named extra check's verdict line, as run-checks.sh prints one.
+[ -z "${CHECK_EXTRA:-}" ] || echo "$CHECK_EXTRA"
 [ "${CHECKS_RC:-0}" != 3 ] || { echo DISCOVER; exit 3; }
 [ "${CHECKS_RC:-0}" = 0 ] && echo "CHECKS: pass" || echo "CHECKS: fail"
 exit "${CHECKS_RC:-0}"
