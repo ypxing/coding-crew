@@ -105,7 +105,9 @@ the last round did not fix is listed under `Needs attention` in the PR body, whi
 Anything else a coder or the fixer says a person must do or decide goes into the PR body's `Notes for a person`
 section before its work is gated (a first coder's once its land opens the PR), so a stop never loses it, and `Needs attention` names the section. A note keeps the PR a draft, as the run
 ends `needs-attention`, until a person handles it: delete a note there once it is handled, and later runs keep it
-deleted; then mark the PR ready yourself, or re-run and let the run do it.
+deleted; then mark the PR ready yourself, or re-run and let the run do it. The reviewer also judges each coder's note on the
+code at HEAD: one it finds settled moves to a `Settled by the review` section with its reason, where it no longer
+holds the draft; a fixer's note and your own text are never judged.
 
 ---
 

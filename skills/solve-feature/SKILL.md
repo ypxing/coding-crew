@@ -52,6 +52,8 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      `<red files>` being `next`'s last `red-files=` value; when that is empty, the prompt ends at `.review.json`.
      When `review-base=` is non-empty, `<sha>` its value, the prompt reads `…on branch <branch> base <sha> against the spec…`
      and ends with `; Findings cover <sha>..HEAD; judge spec, gaps and criteria on the code at HEAD: the commits before <sha> were already reviewed`.
+     When `<repo>/.coding-crew/solve-feature/pr-<n>.coder-notes.json` exists, the prompt ends with `; the notes the change's author left for a person are in <repo>/.coding-crew/solve-feature/pr-<n>.coder-notes.json`:
+     `fix` moves each note the review settles out of the notes that hold the draft.
      When `reviewer-model=` (as `next` last printed it) is non-empty, run it on the model in your own list that
      matches that name, as for `coder-model=`, naming that model in the call; when it is empty, on your own. Wait for it to finish.
    2. `bash "<skill-dir>/scripts/solve-feature.sh" reviewed <slug> <n> <branch>` — always: it discards what the

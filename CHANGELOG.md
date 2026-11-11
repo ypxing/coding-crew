@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature, crew-review: the end-of-run reviewer judges each coder note in the PR body against the code at HEAD;
+  one it finds settled moves to a `## Settled by the review` section with its reason and no longer holds the draft,
+  so a run whose only notes were settled ends ready. crew-review takes an optional notes input (a JSON list of
+  strings) and then reports a `notes` list of `{note, settled, why}` (#751).
 - solve-issue: fewer turns and narrower reads per run: each green test and its checkpoint commit run as one call;
   a `complete` run's final commits, `tick` and `mark-done` run as one call; commit messages are never amended; Step 3
   lists a file's definitions before reading only the parts it needs, and scopes searches. `commit-changes.sh` now
