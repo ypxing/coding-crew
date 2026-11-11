@@ -29,8 +29,9 @@ commands_file() { # <project-root>
 # the same.
 _commands_token() {
   [ -f "$1" ] || return 0
-  grep -o "\"$2\"[[:space:]]*:[[:space:]]*\(\"\([^\"\\\\]\|\\\\.\)*\"\|null\)" "$1" 2>/dev/null | head -1 \
-    | sed -E "s/^\"$2\"[[:space:]]*:[[:space:]]*//" || true
+  local key="${2//./\\.}"  # a check:<name> may hold a dot, which must match only itself
+  grep -o "\"$key\"[[:space:]]*:[[:space:]]*\(\"\([^\"\\\\]\|\\\\.\)*\"\|null\)" "$1" 2>/dev/null | head -1 \
+    | sed -E "s/^\"$key\"[[:space:]]*:[[:space:]]*//" || true
 }
 
 commands_field() { # <file> <key> — the string value, \" \\ and \/ unescaped; empty for null or an absent key
