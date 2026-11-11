@@ -6,6 +6,8 @@
 SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/prune-volumes.sh"
 
+load helpers/fake-compose-config
+
 setup() {
   TEMP_DIR=$(mktemp -d)
   WORK=$(cd "$(mktemp -d)" && pwd -P)
@@ -19,6 +21,7 @@ setup() {
   # rm fails for a volume listed in in-use, as docker refuses one a container has mounted
   cat > "$TEMP_DIR/stub/docker" <<EOF
 #!/usr/bin/env bash
+$(fake_compose_config_line)
 echo "\$*" >> "$TEMP_DIR/docker.calls"
 [ "\$1 \$2" = "volume rm" ] || exit 0
 ! grep -qxF "\${@: -1}" "$TEMP_DIR/in-use" 2>/dev/null

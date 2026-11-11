@@ -2,6 +2,7 @@
 #
 #   fake_compose_config            print, from the compose file in $PWD, the JSON compose would
 #   stub_compose_config <stub-dir> write <stub-dir>/docker answering only `compose … config …`
+#   fake_compose_config_line       the line a docker stub puts first to answer `compose … config …` too
 #
 # It knows only the short volume form, block (`- .:/opt/app`) or inline (`volumes: [".:/opt/app"]`),
 # and prints each mount as compose resolves it: a source of `.` or `./…` becomes an absolute bind under
@@ -64,14 +65,12 @@ fake_compose_config() {
   printf '\n  }\n}\n'
 }
 
+fake_compose_config_line() {
+  printf 'case " $* " in *" compose "*"config "*) . "%s"; fake_compose_config; exit $? ;; esac\n' "$FAKE_COMPOSE_CONFIG_HELPER"
+}
+
 stub_compose_config() {
   mkdir -p "$1"
-  cat > "$1/docker" <<STUB
-#!/usr/bin/env bash
-case " \$* " in
-  *" compose "*"config "*) . "$FAKE_COMPOSE_CONFIG_HELPER"; fake_compose_config; exit \$? ;;
-esac
-exit 0
-STUB
+  { echo '#!/usr/bin/env bash'; fake_compose_config_line; echo 'exit 0'; } > "$1/docker"
   chmod +x "$1/docker"
 }

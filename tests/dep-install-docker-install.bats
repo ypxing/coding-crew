@@ -11,6 +11,7 @@ SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/docker-install.sh"
 
 load helpers/fake-docker
+load helpers/fake-compose-config
 
 setup() {
   TEMP_DIR=$(mktemp -d)
@@ -36,7 +37,7 @@ JSON
 {}
 JSON
   STUB="$TEMP_DIR/stub"
-  mkdir -p "$STUB"
+  stub_compose_config "$STUB"
   export PATH="$STUB:$PATH"
 }
 
@@ -50,6 +51,7 @@ stub_docker() {
   local rc="$1" err="${2:-}"
   {
     printf '#!/usr/bin/env bash\n'
+    fake_compose_config_line
     [ -n "$err" ] && printf 'echo %q >&2\n' "$err"
     printf 'exit %s\n' "$rc"
   } > "$STUB/docker"
@@ -141,7 +143,8 @@ YML
   [ "$(cat "$OVERRIDE")" = "$first" ]
 }
 
-@test "gen-override.sh falls back to /app when no bind-mount volume line matches" {
+@test "a service with no bind mount of the project root is exit 2 at step detect, saying why, and installs nothing" {
+  stub_docker 0
   cat > "$WORK/docker-compose.yml" <<'YML'
 services:
   app:
@@ -149,9 +152,11 @@ services:
 volumes:
   appdata:
 YML
-  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --query container-src
-  [ "$status" -eq 0 ]
-  [ "$output" = "/app" ]
+  run bash "$SCRIPT" --project-root "$WORK"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"no bind mount of the project root in service app; can't tell where the source is in the container"* ]]
+  [[ "$output" == *"docker-install: failed — service app, step detect, exit 2" ]]
+  [ ! -f "$OVERRIDE" ]
 }
 
 # stub_uname_m <arch> — `uname -m` prints <arch>; any other uname call goes to the real one.

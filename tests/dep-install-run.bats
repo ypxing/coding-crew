@@ -10,6 +10,8 @@ LIB="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$LIB/run.sh"
 RUN_CHECKS="$LIB/run-checks.sh"
 
+load helpers/fake-compose-config
+
 setup() {
   TEMP_DIR=$(mktemp -d)
   WORK="$TEMP_DIR/work"
@@ -26,6 +28,7 @@ setup() {
   # The install's container script (it writes .crew-stamp) exits FAKE_INSTALL_RC; nothing else runs.
   cat > "$STUB/docker" <<EOF
 #!/usr/bin/env bash
+$(fake_compose_config_line)
 printf '%s\n' "\$@" > "$DOCKER_LOG"
 all="\$*"
 printf '%s\n' "\${all//\$'\n'/ }" >> "$CALLS"
@@ -181,6 +184,16 @@ _docker_ready() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"no compose file in $WORK"* ]]
   [ ! -e "$TEMP_DIR/ran-on-host" ]
+}
+
+@test "docker mode with no bind mount of the project root stops saying why; the command never runs" {
+  _docker_ready
+  printf 'services:\n  app:\n    build: .\n' > "$WORK/docker-compose.yml"
+  run bash "$SCRIPT" --project-root "$WORK" -- "touch $TEMP_DIR/ran"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no bind mount of the project root in service app; can't tell where the source is in the container"* ]]
+  [[ "$output" == *"did not run"* ]]
+  ! grep -q ' run ' "$CALLS"
 }
 
 @test "two worktrees of one repo get their own compose project and volumes" {

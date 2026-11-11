@@ -15,7 +15,7 @@
 # A failed install removes the override again, so the next run.sh call retries it. Once the override is
 # written, prune-volumes.sh removes the repo's volumes no live checkout names any more.
 # Exit codes: 0 installed (now or already), 1 argument or filesystem error, 2 nothing to install (no
-# compose file, service or ecosystem), 3 install failed (no stamp written)
+# compose file, service, ecosystem, or bind mount of the project root), 3 install failed (no stamp written)
 # Every failure ends with one line on stderr: `docker-install: failed — service <s>, step <step>, exit <n>`.
 
 set -uo pipefail
@@ -75,6 +75,8 @@ _fail() {
 }
 
 CACHE="$(commands_file "$PROJECT_ROOT")"
+TMP_ERR="$(mktemp)"
+trap 'rm -f "$TMP_ERR"' EXIT
 
 ECO_NAME="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query ecosystem 2>/dev/null || true)"
 [[ -n "$ECO_NAME" ]] || _fail 2 detect "No compose file or no supported ecosystem at $PROJECT_ROOT"
@@ -85,7 +87,9 @@ ECO_NAME="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query ecosyste
 
 INSTALL_CMD="$(commands_field "$CACHE" install)"
 
-CONTAINER_SRC="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query container-src 2>/dev/null)"
+# Before the first compose read: a .env it writes can hold what the compose file interpolates.
+GEN=(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --service "$SERVICE")
+CONTAINER_SRC="$("${GEN[@]}" --query container-src 2>"$TMP_ERR")" || _fail 2 detect "$(cat "$TMP_ERR")"
 
 HOST_CMD=""
 if [[ -n "$INSTALL_CMD" ]]; then
@@ -119,12 +123,12 @@ fi
 
 [[ -n "$OVERRIDE" ]] || _fail 1 "generate override" "$PROJECT_ROOT is not a git checkout — the override is written to its git dir"
 GENERATED=1
-GEN_OUT="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" 2>&1)" \
+GEN_OUT="$("${GEN[@]}" 2>&1)" \
   || _fail 1 "generate override" "gen-override.sh failed: $GEN_OUT"
 bash "$SELF_DIR/prune-volumes.sh" --project-root "$PROJECT_ROOT"
 
 # The stamp lives in the first (root) dependency volume: only an install that ran fills it.
-STAMP_DIR="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --query vendor-paths 2>/dev/null | head -1)"
+STAMP_DIR="$("${GEN[@]}" --query vendor-paths 2>/dev/null | head -1)"
 [[ -n "$STAMP_DIR" ]] || _fail 2 detect "No dependency volume to install into at $PROJECT_ROOT"
 
 TIMEOUT_BIN=""
@@ -147,7 +151,7 @@ date -u +%Y-%m-%dT%H:%M:%SZ > "$stamp"
 '
 
 OUT_FILE="$(mktemp)"
-trap 'rm -f "$OUT_FILE"' EXIT
+trap 'rm -f "$OUT_FILE" "$TMP_ERR"' EXIT
 
 # _run <cmd…> — in PROJECT_ROOT under the timeout, tee'd, so a foreground caller sees install output live.
 _run() {

@@ -5,7 +5,7 @@
 #   bash scripts/gen-override.sh --project-root /path/to/checkout [--service <name>] [--query <field>]
 #
 #   --service <name> The service whose bind mount of the project root says where the source sits in the
-#                    container (container-src, and the dependency volume paths under it); default the first
+#                    container (container-src, and the dependency volume paths under it); default the first service
 #   --query <field>  Print one detected fact and exit: services | ecosystem | container-src |
 #                    manifest-dirs | project-name | vendor-paths
 # Writes <project-root's git dir>/crew-compose.override.yml; the docker shim adds it as the last -f.

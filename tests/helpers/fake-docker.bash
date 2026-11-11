@@ -13,8 +13,11 @@
 # container's /opt/app rewritten to <state-dir>/app. The last `-f` that is a crew-compose.override.yml
 # says which volume sits at which container path: each `- wt_…:/opt/app/…` line becomes a symlink
 # app/… -> vols/<name>, so a second run with the same override sees what the first one wrote, and
-# one with a different volume name sees an empty dir. Anything else exits 0.
+# one with a different volume name sees an empty dir. `compose … config` answers with the fake
+# config (fake-compose-config.bash), unlogged. Anything else exits 0.
 # FAKE_NPM_RC is the exit code of the `npm` stub (default 0).
+
+. "$(dirname "${BASH_SOURCE[0]}")/fake-compose-config.bash"
 
 install_fake_docker() {
   local stub="$1" state="$2"
@@ -23,6 +26,7 @@ install_fake_docker() {
   : > "$state/install.calls"
   cat > "$stub/docker" <<EOF
 #!/usr/bin/env bash
+$(fake_compose_config_line)
 STATE="$state"
 all="\$*"
 printf '%s\n' "\${all//\$'\n'/ }" >> "\$STATE/docker.calls"
