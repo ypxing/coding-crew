@@ -9,7 +9,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - checks (docker mode): the source dir inside the container is read from `docker compose config`, so a compose file
   that mounts the project inline (`volumes: [".:/src"]`), in the long form or through `${VAR}` installs and runs
   there instead of in an empty `/app`; a service with no bind mount of the project root now stops naming it
-  (`docker-install.sh` exit 2, step detect) instead of guessing `/app`.
+  (`docker-install.sh` exit 2, step detect) instead of guessing `/app` (#745).
 
 ## [2.3.11]
 
