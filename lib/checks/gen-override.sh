@@ -2,8 +2,10 @@
 # Generate this worktree's crew compose override deterministically from the project's manifest files.
 #
 # Usage:
-#   bash scripts/gen-override.sh --project-root /path/to/checkout [--query <field>]
+#   bash scripts/gen-override.sh --project-root /path/to/checkout [--service <name>] [--query <field>]
 #
+#   --service <name> The service whose bind mount of the project root says where the source sits in the
+#                    container (container-src, and the dependency volume paths under it); default the first
 #   --query <field>  Print one detected fact and exit: services | ecosystem | container-src |
 #                    manifest-dirs | project-name | vendor-paths
 # Writes <project-root's git dir>/crew-compose.override.yml; the docker shim adds it as the last -f.
@@ -12,17 +14,20 @@
 # checkout's path, <lock8> every manifest and lockfile, so a changed lockfile names fresh volumes.
 # The repo's shared .git is mounted read-only at /git-common (with GIT_DIR for a linked worktree, whose
 # .git names a host path no container has).
-# Exit codes: 0 success, 1 argument or filesystem error, 2 no compose file, 3 no supported ecosystem
+# Exit codes: 0 success, 1 argument or filesystem error, 2 no compose file, 3 no supported ecosystem,
+# 4 no container source dir (`docker compose config` failed, or the service has no bind mount of the root)
 
 set -euo pipefail
 
 PROJECT_ROOT=""
 QUERY=""
+SERVICE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project-root) PROJECT_ROOT="$2"; shift 2 ;;
     --query)        QUERY="$2";        shift 2 ;;
+    --service)      SERVICE="$2";      shift 2 ;;
     --help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -103,17 +108,6 @@ done < "$COMPOSE_FILE"
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
   echo "Error: no services found in $COMPOSE_FILE" >&2
   exit 1
-fi
-
-# CONTAINER_SRC: the container side of the project bind mount (`- .:/opt/app`).
-CONTAINER_SRC=$(grep -E '^\s+-\s+(\.|"\."|\$\{PROJECT_ROOT\}|\$\{APP_ROOT\}):' "$COMPOSE_FILE" \
-  | head -1 \
-  | grep -oE ':(\/[^: ]+)' \
-  | head -1 \
-  | sed 's|^:||; s|/$||') || true
-
-if [[ -z "$CONTAINER_SRC" ]]; then
-  CONTAINER_SRC="/app"
 fi
 
 ECO_NAME=""
@@ -224,6 +218,50 @@ _common="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-common-
 if [[ -n "$GIT_DIR_ABS" && -n "$_common" && "$GIT_DIR_ABS" != "$_common" ]]; then
   PROJECT_NAME="${PROJECT_NAME}-$(_owner4)"
 fi
+
+# _container_src — the target of the service's bind mount of the project root, in compose's resolved
+# config: compose turns the short, inline and long forms, ${VAR} and extends into one form. Run without
+# -f so it reads the files a `docker compose run` here reads; env files are not read, as nothing here
+# needs them and a template's may not exist yet. The JSON is compose's own indented output.
+_container_src() {
+  local svc="${SERVICE:-${SERVICES[0]}}" logical physical cfg err target
+  logical="$(cd "$PROJECT_ROOT" && pwd -L)"
+  physical="$(cd "$PROJECT_ROOT" && pwd -P)"
+  err="$(mktemp)"
+  if ! cfg="$(cd "$logical" && docker compose config --no-env-resolution --format json 2>"$err")"; then
+    echo "Error: \`docker compose config\` failed in $PROJECT_ROOT, so the source dir in the container is unknown:" >&2
+    cat "$err" >&2
+    rm -f "$err"
+    return 4
+  fi
+  rm -f "$err"
+  target=$(awk -v svc="$svc" -v r1="$logical" -v r2="$physical" '
+    function val(l) { sub(/^[^:]*: "/, "", l); sub(/",?[[:space:]]*$/, "", l); gsub(/\\\\/, "\\", l); gsub(/\\"/, "\"", l); return l }
+    $0 == "  \"services\": {" { in_s = 1; next }
+    in_s && /^  [}]/ { in_s = 0 }
+    in_s && $0 == "    \"" svc "\": {" { in_svc = 1; next }
+    in_svc && /^    [}]/ { in_svc = 0 }
+    in_svc && $0 == "      \"volumes\": [" { in_v = 1; next }
+    in_v && /^      \]/ { in_v = 0 }
+    in_v && /^        [{]/ { type = src = tgt = "" }
+    in_v && /^          "type": / { type = val($0) }
+    in_v && /^          "source": / { src = val($0); sub(/\/$/, "", src) }
+    in_v && /^          "target": / { tgt = val($0) }
+    in_v && /^        [}]/ && type == "bind" && (src == r1 || src == r2) { print tgt; exit }
+  ' <<<"$cfg")
+  target="${target%/}"
+  if [[ -z "$target" ]]; then
+    echo "Error: no bind mount of the project root in service $svc; can't tell where the source is in the container" >&2
+    echo "Mount it in $COMPOSE_NAME, under the service's volumes: \`- .:<the source dir in the container>\`." >&2
+    return 4
+  fi
+  echo "$target"
+}
+
+CONTAINER_SRC=""
+case "$QUERY" in
+  ""|container-src|vendor-paths) CONTAINER_SRC="$(_container_src)" || exit 4 ;;
+esac
 
 MANIFEST_DIRS=()
 if [[ "$ECO_NAME" == "python" ]]; then
