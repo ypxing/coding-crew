@@ -3,6 +3,7 @@ set -euo pipefail
 
 # Commit changes with standardized format
 # Usage: commit-changes.sh --message "msg" --files "file1 file2" [--coauthor "Name <email>"] [--prefix "[slug]"]
+# Exit: 0 committed; 3 the named files left nothing staged; 1 any other error.
 
 PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
 
@@ -73,4 +74,13 @@ if [ -n "$COAUTHOR" ]; then
 Co-authored-by: ${COAUTHOR}"
 fi
 
-git -C "$PROJECT_ROOT" commit -m "$FULL_MESSAGE" && git -C "$PROJECT_ROOT" log -1 --oneline
+# Exit 3, not git's 1, so a caller can chain this and still go on when the work was already committed.
+if git -C "$PROJECT_ROOT" diff --cached --quiet; then
+  echo "nothing to commit: the named files have no changes"
+  exit 3
+fi
+
+if ! git -C "$PROJECT_ROOT" commit -m "$FULL_MESSAGE"; then
+  exit 1
+fi
+git -C "$PROJECT_ROOT" log -1 --oneline
