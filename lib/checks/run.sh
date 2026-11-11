@@ -16,7 +16,8 @@
 # printed unchanged when at most 100 lines. Longer, it prints the first 20 lines, `… <n> lines omitted; full
 # output: <log>`, the omitted middle's failure-marker lines (not ok, FAIL, ✖, Error, AssertionError, each with
 # 2 lines either side, at most 40) under `… <k> failure-marker lines kept of <n> omitted`, then the last 60.
-# --full-output (or no git checkout) passes the output straight through instead.
+# --full-output (or no git checkout) passes the output straight through instead. Killed by TERM, INT or HUP
+# (a caller's timeout), it stops the command and prints its output so far the same way, exiting 143, 130 or 129.
 
 set -uo pipefail
 
@@ -86,8 +87,23 @@ _exec() {
   if [ "$FULL_OUTPUT" = 1 ] || [ -z "$_gitdir" ] || ! mkdir -p "$dir" || ! log="$(mktemp "$dir/run.XXXXXX")"; then
     exec "$@"
   fi
-  "$@" 2>&1 | cat >"$log"
-  rc=${PIPESTATUS[0]}
+  # In the background, so a TERM/INT/HUP (a caller's timeout) interrupts the wait at once: the killed
+  # run still prints what its command printed so far, with the log path when that is long.
+  "$@" >"$log" 2>&1 <&0 &
+  local pid=$!
+  # The command's own shell first, so it does not log its child's death; then that child.
+  _killed() {
+    local kids; kids="$(pgrep -P "$pid" 2>/dev/null)"
+    kill -TERM "$pid" 2>/dev/null
+    [ -z "$kids" ] || kill -TERM $kids 2>/dev/null # word-split: one pid per word
+    _capped "$log"; exit "$1"
+  }
+  trap '_killed 129' HUP
+  trap '_killed 130' INT
+  trap '_killed 143' TERM
+  wait "$pid"
+  rc=$?
+  trap - HUP INT TERM
   _capped "$log"
   # shellcheck disable=SC2012
   ls -1t "$dir" | tail -n +21 | while IFS= read -r old; do rm -f "$dir/$old"; done

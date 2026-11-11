@@ -267,6 +267,19 @@ _log_of() { printf '%s\n' "$output" | sed -n 's/^… [0-9]* lines omitted; full 
   [ "$output" = "$(seq 1 250)" ]
 }
 
+@test "a run killed by TERM still prints what its command printed so far, and exits 143" {
+  logdir="$(git -C "$WORK" rev-parse --path-format=absolute --git-dir)/crew-run"
+  bash "$SCRIPT" --project-root "$WORK" -- 'echo "Tests: 3 passed"; sleep 30' >"$TEMP_DIR/out" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 50); do grep -qs "Tests: 3 passed" "$logdir"/run.* && break; sleep 0.1; done
+  kill -TERM "$pid"
+  start=$SECONDS
+  wait "$pid" && status=0 || status=$?
+  [ "$status" -eq 143 ]
+  [ $((SECONDS - start)) -lt 10 ]
+  [ "$(cat "$TEMP_DIR/out")" = "Tests: 3 passed" ] || { cat "$TEMP_DIR/out"; return 1; }
+}
+
 @test "run.sh keeps only the newest 20 logs" {
   for i in $(seq 1 23); do bash "$SCRIPT" --project-root "$WORK" -- 'seq 1 101' >/dev/null; done
   [ "$(ls "$(git -C "$WORK" rev-parse --path-format=absolute --git-dir)/crew-run" | wc -l)" -eq 20 ]

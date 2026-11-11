@@ -262,7 +262,7 @@ bash "<skill-dir>/../coding-crew-lib/scripts/checks/run-checks.sh" --project-roo
 ```
 
 It runs every check in the dev commands file (`coding-crew-lib/scripts/checks/commands-file.sh` names it) — `typecheck`, `lint`, `test`, then
-`coverage` and `integration` when the file has them — each through `run.sh`, and reports each. `NOT RUN: no
+`coverage` and `integration` when the file has them, then every `check:<name>` key in alphabetical order — each through `run.sh`, and reports each. `NOT RUN: no
 command found` means no local command exists: report it, do not re-check CLAUDE.md/Makefile.
 
 - `CHECKS: pass` — continue. A `<key>: rewrote: <files>` line is still a pass: the check fixed those
