@@ -31,8 +31,8 @@ retry rule's module-not-found retry: a package installed into the volume since t
 the lockfile, and `--force` reinstalls.
 
 - **0** — the volumes hold the install: it ran, or the stamp was already there (`Present: …`). Go to step 2.
-- **2** — nothing this mechanism can do here (no compose file, no service, no supported ecosystem). Report it
-  plainly rather than guessing a workaround.
+- **2** — nothing this mechanism can do here (no compose file, no service, no supported ecosystem, or no bind
+  mount of the project root in the service). Report it plainly rather than guessing a workaround.
 - **3** — the install command failed. Report `BLOCKED` with the stderr tail it prints, which ends
   `docker-install: failed — service <s>, step <step>, exit <n>`.
 

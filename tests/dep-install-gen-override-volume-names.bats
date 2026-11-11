@@ -9,7 +9,10 @@
 SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/lib/checks"
 SCRIPT="$SCRIPTS_DIR/gen-override.sh"
 
+load helpers/fake-compose-config
+
 setup() {
+  stub_compose_config "$BATS_TEST_TMPDIR/stub"; PATH="$BATS_TEST_TMPDIR/stub:$PATH"
   PARENT=$(mktemp -d)
 }
 

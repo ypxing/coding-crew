@@ -90,8 +90,8 @@ COMPOSE_FILE="$PROJECT_ROOT/$(compose_file "$PROJECT_ROOT")" || _stop "no compos
 gen=(bash "$SELF_DIR/gen-override.sh" --project-root "$PROJECT_ROOT")
 [ -n "$SERVICE" ] || SERVICE="$("${gen[@]}" --query services 2>/dev/null | head -1)"
 [ -n "$SERVICE" ] || _stop "no compose service in $COMPOSE_FILE"
-CONTAINER_SRC="$("${gen[@]}" --query container-src 2>/dev/null)"
-[ -n "$CONTAINER_SRC" ] || _stop "no container-side source dir for service $SERVICE"
+CONTAINER_SRC="$("${gen[@]}" --service "$SERVICE" --query container-src)" \
+  || _stop "no container-side source dir for service $SERVICE"
 
 export CREW_COMPOSE_OVERRIDE="$OVERRIDE"
 cd "$PROJECT_ROOT" && exec docker compose run --rm "$SERVICE" sh -c "cd \"$CONTAINER_SRC\" && $CMD"
