@@ -199,7 +199,15 @@ notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-fe
 
 @test "SKILL.md names pr-<n>.coder-notes.json as the reviewer's notes input only when that file exists" {
   local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
-  grep -qF 'When `<repo>/.coding-crew/solve-feature/pr-<n>.coder-notes.json` exists, the prompt ends with `; the notes the change'"'"'s author left for a person are in <repo>/.coding-crew/solve-feature/pr-<n>.coder-notes.json`' "$skill"
+  grep -qF 'When `<repo>/.coding-crew/solve-feature/pr-<n>.coder-notes.json` exists, `; the notes the change'"'"'s author left for a person are in <repo>/.coding-crew/solve-feature/pr-<n>.coder-notes.json` is appended last' "$skill"
+}
+
+@test "SKILL.md's reviewer prompt clauses append in order, so empty red files do not drop the notes clause" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
+  grep -qF 'when that is empty, the `; the tests named…` clause is left out.' "$skill"
+  grep -qF 'and `; Findings cover <sha>..HEAD; judge spec, gaps and criteria on the code at HEAD: the commits before <sha> were already reviewed` is appended' "$skill"
+  ! grep -qF 'the prompt ends at `.review.json`' "$skill" || false
+  ! grep -qF 'the prompt ends with `; the notes' "$skill" || false
 }
 
 @test "crew-review documents the optional notes input and the report's notes list, naming no caller" {
