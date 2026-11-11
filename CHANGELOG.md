@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-issue: fewer turns and narrower reads per run: each green test and its checkpoint commit run as one call;
+  a `complete` run's final commits, `tick` and `mark-done` run as one call; commit messages are never amended; Step 3
+  lists a file's definitions before reading only the parts it needs, and scopes searches. `commit-changes.sh` now
+  exits 3 (was 1) with a `nothing to commit` line when the named files leave nothing staged (#749).
+
 ## [2.3.12]
 
 - checks: dev-commands.json takes named extra checks as `"check:<name>": "<command>"` keys, run after the fixed ones

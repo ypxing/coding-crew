@@ -17,3 +17,6 @@ Skills run them from the `coding-crew-lib` skill installed beside them:
 ```bash
 bash "<skill-dir>/../coding-crew-lib/scripts/git-workflow/commit-changes.sh" --message "..." --files "..."
 ```
+
+`commit-changes.sh` exits 0 after a commit, 3 with a `nothing to commit` line when the named files leave nothing
+staged, and 1 on any other error.

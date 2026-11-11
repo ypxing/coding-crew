@@ -154,8 +154,10 @@ Before writing code, know from the code, never from a guess:
 - the project's rules: `CLAUDE.md` (or `AGENTS.md`) at `$PROJECT_ROOT`, when it exists;
 - the utilities, helpers and conventions already there to reuse;
 - the callers of every file you plan to change;
-- every such file and its test file, Step 1's list grown by what exploration turns up: their test
-  style, naming and patterns are the style contract for Step 4.
+- every such file and its test file, Step 1's list grown by what exploration turns up: list a file's
+  exports or top-level definitions first (one grep), then read the parts the change touches and the
+  helpers it should reuse, and enough of its test file to copy its style. That test style, naming and
+  those patterns are the style contract for Step 4.
 
 **Bug-fix issues:** if multiple callers share the broken behavior, fix it in the function they all
 route through, not only at the call site the issue names.
@@ -181,7 +183,8 @@ behavior the issue names, find the `file:line` that confirms or contradicts it. 
 Not for what more reading would settle, or a design you merely prefer.
 
 **Batch these calls.** Each tool call re-bills your whole context: combine grep patterns into one
-call (`grep -rn -E 'patternA|patternB'`) and read several files per turn.
+call (`grep -rn -E 'patternA|patternB'`) and read several files per turn. Scope a search to the
+paths likely to matter, and list the matching files (`grep -rl`) before printing their matches.
 
 ### 4. Implement with TDD
 
@@ -236,14 +239,19 @@ already made stay.
 
 **Commit after every GREEN**, before the next RED. A timeout can kill this run mid-loop, and only a
 branch with a commit on it is resumable; uncommitted work looks like a run that never started.
-Message quality doesn't matter — checkpoints are squashed before merge:
+Run the green test and the checkpoint commit in one bash call, so the commit happens only when the
+test passes. Checkpoints stay in the branch's history; a short message saying what went green is
+enough:
 
 ```bash
+bash "<skill-dir>/../coding-crew-lib/scripts/checks/run.sh" --project-root "$PROJECT_ROOT" -- "<the test>" &&
 PROJECT_ROOT="$PROJECT_ROOT" bash "<skill-dir>/../coding-crew-lib/scripts/git-workflow/commit-changes.sh" \
   --prefix "[$ISSUE_SLUG][WIP]" \
   --message "<behavior just made green>" \
   --files "<files touched this cycle>"
 ```
+
+Write each commit message once: never `git commit --amend`.
 
 ### 4.5. Update documentation
 
@@ -285,8 +293,9 @@ Step 7.
 The prefix is `[$ISSUE_SLUG]` when every check passed and every criterion is met. Otherwise — a
 check still fails, a criterion is unmet, or the run is `blocked` with files changed — it is
 `[$ISSUE_SLUG][WIP]`, and the outcome stays `partial` or `blocked`: every outcome but `complete`
-leaves a clean tree. If the working directory is already clean, check whether the issue is already
-implemented and committed; if so, go to Step 7.
+leaves a clean tree. A `complete` run runs these commits inside Step 7's one call instead of on
+their own. `commit-changes.sh` exits 3 when the named files leave nothing staged (the work already
+committed, or every criterion already met).
 
 ```bash
 DETAILS="- <key decision or tradeoff line 1>
@@ -321,9 +330,20 @@ as nobody there can act on it.
 ### 7. Mark done
 
 Verify every criterion under `## Acceptance criteria` — and under `## Cross-cutting Requirements` if
-present — against the code. Once each one holds, run `node "$TRACKER" tick <issue-ref>` (it checks
-every `- [ ]` off, on any tracker: a GitHub issue's body has no file to edit), then `node "$TRACKER"
-mark-done <issue-ref>`. Never hand-roll `mv`, `sed`, `gh issue edit` or a label edit. A criterion that
+present — against the code. Once each one holds, run the work commit (Step 6), then the rewrites and
+dev-commands commits when they apply (Steps 6 and 6.5), then `node "$TRACKER" tick <issue-ref>` (it
+checks every `- [ ]` off, on any tracker: a GitHub issue's body has no file to edit), then
+`node "$TRACKER" mark-done <issue-ref>`, all as one bash call in which each commit accepts exit 3:
+
+```bash
+{ PROJECT_ROOT="$PROJECT_ROOT" bash "<skill-dir>/../coding-crew-lib/scripts/git-workflow/commit-changes.sh" \
+    --prefix "[$ISSUE_SLUG]" --message "<issue title>…" --files "<files>" || [ $? = 3 ]; } &&
+  # the rewrites and dev-commands commits, each `{ … || [ $? = 3 ]; } &&`, when they apply
+  node "$TRACKER" tick <issue-ref> && node "$TRACKER" mark-done <issue-ref>
+```
+
+No `git status` before or after it: `commit-changes.sh` prints what it staged and the commit. Write
+the caller's report once, after this call. Never hand-roll `mv`, `sed`, `gh issue edit` or a label edit. A criterion that
 does not hold is never ticked: go to Step 8, with nothing ticked. Exit 4 means a criterion is still
 unchecked, or the section missing: go to Step 8 too. `--force` closes an issue whose criteria are
 unmet, so pass it only on an interactive run, once the person approved the descope in Step 8.
