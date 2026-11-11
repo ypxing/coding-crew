@@ -82,7 +82,8 @@ each prints `NOT RUN` and the run passes."
 
 Then tell the user: `.coding-crew/dev-commands.json` is plain JSON they can edit by hand at any time; a re-run
 keeps their edits, since discovery never re-asks a field already there; and saying "redo commands" discovers all
-eight fields again (`--refresh`).
+eight fields again (`--refresh`) and replaces their `check:<name>` keys with the ones it finds, so a hand-added one
+it does not find must be added back.
 
 ### Verify the commands
 

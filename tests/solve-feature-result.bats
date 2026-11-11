@@ -65,6 +65,17 @@ fix_ready() {
   [ "$(r .needs_attention)" = '[]' ]
 }
 
+@test "a check:<name> verdict is recorded in issues[].checks.results and rounds[].checks under its own key" {
+  export CHECK_EXTRA='check:public-api: fail (exit 1)'
+  fix_ready
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  run bash "$SCRIPT" describe feat 10
+  result_ok
+  [ "$(r '.issues[1].checks.results')" = '[{"key":"test","result":"pass"},{"key":"check:public-api","result":"fail (exit 1)"}]' ] ||
+    { cat "$D/result.json"; return 1; }
+  [ "$(r '.rounds[0].checks')" = '[{"key":"test","result":"pass"},{"key":"check:public-api","result":"fail (exit 1)"}]' ]
+}
+
 @test "a needs-attention run and a fix stop each leave a result.json; the stopped round has null where fix stopped first" {
   fix_ready '{"spec":"unmet","gaps":["no logout"],"findings":[]}'
   run bash "$SCRIPT" fix feat 10 feature/feat

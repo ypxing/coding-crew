@@ -221,6 +221,88 @@ _docker_ready() {
   [ "$status" -eq 2 ]
 }
 
+# ─── run.sh's long output ───────────────────────────────────────────────────
+
+# _log_of — the log path the omitted line names.
+_log_of() { printf '%s\n' "$output" | sed -n 's/^… [0-9]* lines omitted; full output: //p'; }
+
+@test "output of at most 100 lines prints unchanged, and the exit code is the command's own" {
+  run bash "$SCRIPT" --project-root "$WORK" -- 'seq 1 100; exit 3'
+  [ "$status" -eq 3 ]
+  [ "$output" = "$(seq 1 100)" ]
+  run bash "$SCRIPT" --project-root "$WORK" -- 'seq 1 100'
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(seq 1 100)" ]
+}
+
+@test "output over 100 lines prints its first 20, the omitted count and log, and its last 60; the log holds every line" {
+  run bash "$SCRIPT" --project-root "$WORK" -- 'seq 1 250; echo ERR >&2; exit 4'
+  [ "$status" -eq 4 ]
+  log="$(_log_of)"
+  [ "$output" = "$(seq 1 20; echo "… 171 lines omitted; full output: $log"; seq 192 250; echo ERR)" ] || { echo "$output"; return 1; }
+  [[ "$log" == "$(git -C "$WORK" rev-parse --path-format=absolute --git-dir)/crew-run/"* ]]
+  [ "$(cat "$log")" = "$(seq 1 250; echo ERR)" ]
+  run bash "$SCRIPT" --project-root "$WORK" -- 'seq 1 101'
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | sed -n 21p)" = "… 21 lines omitted; full output: $(_log_of)" ]
+}
+
+@test "a failure-marker block in the omitted middle is kept with 2 lines either side, never more than 40 lines" {
+  run bash "$SCRIPT" --project-root "$WORK" -- 'seq 1 100; echo "not ok 7 - adds"; echo "  ---"; echo "  expected: 2"; seq 101 200; exit 1'
+  [ "$status" -eq 1 ]
+  [ "$(printf '%s\n' "$output" | sed -n '21,27p')" = "$(echo "… 123 lines omitted; full output: $(_log_of)"
+    echo "… 5 failure-marker lines kept of 123 omitted"; echo 99; echo 100; echo "not ok 7 - adds"; echo "  ---"; echo "  expected: 2")" ] ||
+    { echo "$output"; return 1; }
+  [ "$(printf '%s\n' "$output" | wc -l)" -eq $((20 + 2 + 5 + 60)) ]
+  # Many markers: the kept lines stop at 40.
+  run bash "$SCRIPT" --project-root "$WORK" -- 'for i in $(seq 1 300); do echo "Error $i"; done; exit 0'
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"… 40 failure-marker lines kept of 220 omitted"* ]] || { echo "$output"; return 1; }
+  [ "$(printf '%s\n' "$output" | wc -l)" -eq $((20 + 2 + 40 + 60)) ]
+}
+
+@test "two failure-marker blocks apart in the log are kept with a … line between them" {
+  run bash "$SCRIPT" --project-root "$WORK" -- 'seq 1 50; echo "not ok 1"; seq 51 100; echo "not ok 2"; seq 101 200; exit 1'
+  [ "$status" -eq 1 ]
+  [ "$(printf '%s\n' "$output" | sed -n '22,33p')" = "$(echo "… 10 failure-marker lines kept of 122 omitted"
+    echo 49; echo 50; echo "not ok 1"; echo 51; echo 52; echo "…"
+    echo 99; echo 100; echo "not ok 2"; echo 101; echo 102)" ] || { echo "$output"; return 1; }
+  [ "$(printf '%s\n' "$output" | wc -l)" -eq $((20 + 2 + 11 + 60)) ]
+}
+
+@test "--full-output prints the whole output unchanged, keeping the exit code" {
+  run bash "$SCRIPT" --project-root "$WORK" --full-output -- 'seq 1 250; exit 5'
+  [ "$status" -eq 5 ]
+  [ "$output" = "$(seq 1 250)" ]
+}
+
+@test "a run killed by TERM still prints what its command printed so far, and exits 143" {
+  logdir="$(git -C "$WORK" rev-parse --path-format=absolute --git-dir)/crew-run"
+  bash "$SCRIPT" --project-root "$WORK" -- 'echo "Tests: 3 passed"; sleep 30' >"$TEMP_DIR/out" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 50); do grep -qs "Tests: 3 passed" "$logdir"/run.* && break; sleep 0.1; done
+  kill -TERM "$pid"
+  start=$SECONDS
+  wait "$pid" && status=0 || status=$?
+  [ "$status" -eq 143 ]
+  [ $((SECONDS - start)) -lt 10 ]
+  [ "$(cat "$TEMP_DIR/out")" = "Tests: 3 passed" ] || { cat "$TEMP_DIR/out"; return 1; }
+}
+
+@test "run.sh keeps only the newest 20 logs" {
+  for i in $(seq 1 23); do bash "$SCRIPT" --project-root "$WORK" -- 'seq 1 101' >/dev/null; done
+  [ "$(ls "$(git -C "$WORK" rev-parse --path-format=absolute --git-dir)/crew-run" | wc -l)" -eq 20 ]
+}
+
+@test "run-checks: each check's log holds its whole output, however long" {
+  mkdir -p "$WORK/.coding-crew"
+  echo '{"typecheck": null, "lint": null, "test": "seq 1 250; exit 1"}' > "$WORK/.coding-crew/dev-commands.json"
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 1 ]
+  [ "$(cat "$(printf '%s\n' "$output" | sed -n 's/^test: log: //p')")" = "$(seq 1 250)" ]
+  [[ "$output" != *"lines omitted"* ]]
+}
+
 # ─── run-checks.sh in docker mode ───────────────────────────────────────────
 
 @test "run-checks: docker mode with no override installs first, then runs each check in the service" {

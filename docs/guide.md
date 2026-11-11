@@ -763,7 +763,11 @@ Runs read the main checkout's copy before it is committed, from every worktree, 
 commit it once satisfied.
 
 **The dev commands file** holds the project's checks (`test`, `lint`, `typecheck`, …), its install
-command and its install mode (`install_mode`: `host` or `docker`, with `docker_service`). The first
+command and its install mode (`install_mode`: `host` or `docker`, with `docker_service`). Any number of
+named extra checks sit beside the fixed ones as `"check:<name>": "<command>"` keys (`<name>` matching
+`[a-z0-9][a-z0-9_.-]*`): the checks run each after the fixed ones, in alphabetical order, and report it as
+`check:<name>`, so a check CI runs needs no `&&` chain in `lint`. Discovery reads `.github/workflows/` and asks
+for those workflows' local checks as such keys. The first
 `/solve-issue` or `/solve-feature` coder discovers the checks and, in a repo with a compose file, the
 mode; `/dep-install` discovers the mode too, and shows you its answer to change first. They live in one
 place, the main checkout's `.coding-crew/dev-commands.json`, committed or not: every worktree of the clone

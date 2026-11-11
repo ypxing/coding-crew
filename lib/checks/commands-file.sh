@@ -5,7 +5,7 @@
 # user commits it. Outside a git repository it is
 # <path>/.coding-crew/dev-commands.json. CREW_COMMANDS_FILE, set and non-empty, is the path instead, from any root: a host's
 # own copy kept outside the checkout. The file need not exist yet. Sourced, it defines commands_file <root> instead,
-# and the only readers of the file's fields: commands_field and commands_field_present.
+# and the only readers of the file's fields: commands_field, commands_field_present and commands_check_keys.
 
 commands_file() { # <project-root>
   local root="$1" common top
@@ -29,8 +29,9 @@ commands_file() { # <project-root>
 # the same.
 _commands_token() {
   [ -f "$1" ] || return 0
-  grep -o "\"$2\"[[:space:]]*:[[:space:]]*\(\"\([^\"\\\\]\|\\\\.\)*\"\|null\)" "$1" 2>/dev/null | head -1 \
-    | sed -E "s/^\"$2\"[[:space:]]*:[[:space:]]*//" || true
+  local key="${2//./\\.}"  # a check:<name> may hold a dot, which must match only itself
+  grep -o "\"$key\"[[:space:]]*:[[:space:]]*\(\"\([^\"\\\\]\|\\\\.\)*\"\|null\)" "$1" 2>/dev/null | head -1 \
+    | sed -E "s/^\"$key\"[[:space:]]*:[[:space:]]*//" || true
 }
 
 commands_field() { # <file> <key> — the string value, \" \\ and \/ unescaped; empty for null or an absent key
@@ -40,6 +41,12 @@ commands_field() { # <file> <key> — the string value, \" \\ and \/ unescaped; 
 
 commands_field_present() { # <file> <key> — exit 0 when the key is there, null included
   [ -n "$(_commands_token "$1" "$2")" ]
+}
+
+# commands_check_keys <file> — the file's `check:<name>` keys (named extra checks), one a line, sorted, each once.
+commands_check_keys() {
+  [ -f "$1" ] || return 0
+  grep -o '"check:[^"]*"[[:space:]]*:' "$1" 2>/dev/null | sed -E 's/^"([^"]*)".*/\1/' | LC_ALL=C sort -u || true
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then

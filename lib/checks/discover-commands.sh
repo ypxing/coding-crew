@@ -6,7 +6,9 @@ set -euo pipefail
 # file paths, not contents; with no candidate file, asks for the ecosystem's conventional
 # test/lint/typecheck commands instead; prints "skipped" when every field asked about is cached.
 # A cached field, even null, is never re-asked: a fresh guess must not overwrite a hand-edited
-# answer. --refresh re-asks all eight. The prompt ends with the commands that save the answer
+# answer. --refresh re-asks all eight. Any prompt beyond the ecosystem fallback also asks for the CI workflows'
+# local checks as `check:<name>` keys: on a first discovery (no file, or a fixed field missing) and under
+# --refresh, whose save replaces the file's check keys with the answer's. The prompt ends with the commands that save the answer
 # (write-commands-cache.sh), so every skill that discovers the commands saves them the same way.
 
 REFRESH=0
@@ -26,7 +28,7 @@ CACHE_FILE=$(commands_file "$ROOT")
 # found none. Other fields (install_mode, docker_service) share the file, so the file existing proves nothing.
 CACHE_FIELDS=(test lint typecheck install env registry_auth coverage integration)
 
-# Fixed order keeps the hash stable and is the priority handed to the model: docs, build files, manifests.
+# Fixed order keeps the hash stable and is the priority handed to the model: docs, build files, manifests, CI.
 CANDIDATE_FILES=(
   "$ROOT/CLAUDE.md"
   "$ROOT/AGENTS.md"
@@ -39,6 +41,8 @@ CANDIDATE_FILES=(
   "$ROOT/Gemfile"
   "$ROOT/composer.json"
 )
+while IFS= read -r f; do CANDIDATE_FILES+=("$f"); done < <(
+  for f in "$ROOT"/.github/workflows/*.yml "$ROOT"/.github/workflows/*.yaml; do [ ! -f "$f" ] || printf '%s\n' "$f"; done | LC_ALL=C sort)
 
 # _content_hash <file> — spots duplicates (a CLAUDE.md symlinked to AGENTS.md) so the prompt lists each once.
 _content_hash() {
@@ -93,7 +97,7 @@ PROMPT
 cat > $(printf '%q' "$ANSWER") <<'JSON'
 {$json_shape}
 JSON
-(cd $(printf '%q' "$ROOT") && bash $(printf '%q' "$SELF_DIR/write-commands-cache.sh") --response-file .discovered-commands.json)
+(cd $(printf '%q' "$ROOT") && bash $(printf '%q' "$SELF_DIR/write-commands-cache.sh") --response-file .discovered-commands.json$([ "$REFRESH" = 0 ] || printf ' --refresh'))
 rm -f $(printf '%q' "$ANSWER")
 --- end command discovery prompt ---
 PROMPT
@@ -200,8 +204,37 @@ PROMPT
 
 cat <<'PROMPT'
 
+Also give, as named extra checks, each local dev-loop check a CI workflow file in the list below
+(`.github/workflows/…`) runs: a `run:` step that needs no secret and no deploy or publish target —
+e.g. a public-API check or a schema validation. Add one `"check:<name>": "<command>"` entry per
+check to the JSON you save, `<name>` matching `[a-z0-9][a-z0-9_.-]*` (e.g. `check:public-api`),
+the command as a developer runs it locally. Leave out a step whose command is already one of the
+categories above, or one of the commands the dev commands file already holds (listed below when it
+holds any), and add none when the list has no workflow file or no such step.
+PROMPT
+# The file's commands this run does not ask for: a check repeating one of them would run it twice.
+if [ -f "$CACHE_FILE" ] && [ "$REFRESH" = 0 ]; then
+  HELD=()
+  for key in "${CACHE_FIELDS[@]}"; do
+    _in_ask "$key" && continue
+    cmd=$(commands_field "$CACHE_FILE" "$key")
+    [ -z "$cmd" ] || HELD+=("$key: \`$cmd\`")
+  done
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    cmd=$(commands_field "$CACHE_FILE" "$key")
+    [ -z "$cmd" ] || HELD+=("$key: \`$cmd\`")
+  done < <(commands_check_keys "$CACHE_FILE")
+  if [ "${#HELD[@]}" -gt 0 ]; then
+    echo "The dev commands file already holds:"
+    printf '  - %s\n' "${HELD[@]}"
+  fi
+fi
+
+cat <<'PROMPT'
+
 Read these files yourself, in the order listed below — that order is priority order, most
-authoritative first (project docs, then build files, then package manifests):
+authoritative first (project docs, then build files, then package manifests, then CI workflows):
 PROMPT
 
 for f in "${FOUND_FILES[@]}"; do
@@ -262,7 +295,8 @@ cat <<'PROMPT'
   (Docker image builds, CDK/Terraform/CloudFormation, docs bundling/rendering, release/publish
   workflows) even if they appear in the same file as a test/lint/typecheck/install command.
 - Ignore anything the source explicitly marks as CI-only, manual-only, or "not gated by CI",
-  unless no other candidate exists for that category.
+  unless no other candidate exists for that category. A CI workflow's local checks are not
+  CI-only: they are the check:<name> keys asked for above.
 - Where the source recommends against a shortcut (calls it broken, misleading, or says
   "don't use it"), use the alternative it recommends instead of the discouraged shortcut.
 - If a category has no discoverable local command, use null for it — do not guess one.

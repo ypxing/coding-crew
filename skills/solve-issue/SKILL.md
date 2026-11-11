@@ -262,7 +262,7 @@ bash "<skill-dir>/../coding-crew-lib/scripts/checks/run-checks.sh" --project-roo
 ```
 
 It runs every check in the dev commands file (`coding-crew-lib/scripts/checks/commands-file.sh` names it) — `typecheck`, `lint`, `test`, then
-`coverage` and `integration` when the file has them — each through `run.sh`, and reports each. `NOT RUN: no
+`coverage` and `integration` when the file has them, then every `check:<name>` key in alphabetical order — each through `run.sh`, and reports each. `NOT RUN: no
 command found` means no local command exists: report it, do not re-check CLAUDE.md/Makefile.
 
 - `CHECKS: pass` — continue. A `<key>: rewrote: <files>` line is still a pass: the check fixed those
@@ -314,7 +314,9 @@ The dev commands file (`bash "<skill-dir>/../coding-crew-lib/scripts/checks/comm
 it, else the main checkout's, committed or not. Step 5's `DISCOVER` may write it. When it has
 uncommitted changes, a copy this branch tracks is this branch's: commit it as Step 6 does, with its prefix and the
 message `Record the discovered dev commands`. An untracked one with changes in the main checkout is the
-user's to commit once satisfied: print `Reminder: <its path> is untracked or modified — review and commit it.`
+user's to commit once satisfied: on an interactive run, print `Reminder: <its path> is untracked or modified —
+review and commit it.`; on a non-interactive run (a headless/`-p` invocation or a subagent) print nothing about it,
+as nobody there can act on it.
 
 ### 7. Mark done
 

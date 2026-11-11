@@ -121,6 +121,57 @@ where() { bash "$LIB/commands-file.sh" --project-root "$1"; }
   [ "$(cat "$TEMP_DIR/link.json")" = '{"test": "host"}' ]
 }
 
+# _write [--refresh] — write-commands-cache.sh in MAIN with $TEMP_DIR/answer.json.
+_write() { run bash -c 'cd "$1" && shift && bash "$@"' _ "$MAIN" "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/answer.json" "$@"; }
+
+@test "write-commands-cache.sh saves the response's check:<name> keys and keeps the file's others; a response key overrides" {
+  mkdir -p "$MAIN/.coding-crew"
+  echo '{"test": "t", "check:old": "echo old", "check:api": "echo api-old"}' > "$MAIN/.coding-crew/dev-commands.json"
+  printf '{"lint": null, "check:api": "echo api-new", "check:new.one": null}\n' > "$TEMP_DIR/answer.json"
+  _write
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat "$MAIN/.coding-crew/dev-commands.json")" = \
+    '{"test": "t", "lint": null, "check:api": "echo api-new", "check:new.one": null, "check:old": "echo old"}' ]
+}
+
+@test "write-commands-cache.sh --refresh replaces the file's check:<name> set with the response's" {
+  mkdir -p "$MAIN/.coding-crew"
+  echo '{"test": "t", "check:old": "echo old", "check:api": "echo api-old"}' > "$MAIN/.coding-crew/dev-commands.json"
+  printf '{"test": "t2", "check:api": "echo api-new"}\n' > "$TEMP_DIR/answer.json"
+  _write --refresh
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat "$MAIN/.coding-crew/dev-commands.json")" = '{"test": "t2", "check:api": "echo api-new"}' ]
+}
+
+@test "write-commands-cache.sh leaves out a check key whose value is not a command or null, keeping the file's own value" {
+  mkdir -p "$MAIN/.coding-crew"
+  echo '{"test": "t", "check:keep": "echo keep"}' > "$MAIN/.coding-crew/dev-commands.json"
+  printf '{"lint": null, "check:x": 1, "check:y": ["a"], "check:keep": false}\n' > "$TEMP_DIR/answer.json"
+  _write
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat "$MAIN/.coding-crew/dev-commands.json")" = '{"test": "t", "lint": null, "check:keep": "echo keep"}' ]
+}
+
+@test "write-commands-cache.sh refuses a check key whose name is not check:[a-z0-9][a-z0-9_.-]*, naming it, the file byte-identical" {
+  mkdir -p "$MAIN/.coding-crew"
+  printf '{"test":"t",  "check:old": "x"}\n' > "$MAIN/.coding-crew/dev-commands.json"
+  cp "$MAIN/.coding-crew/dev-commands.json" "$TEMP_DIR/before.json"
+  for bad in 'check:Api' 'check:-x' 'check:' 'check:a b'; do
+    printf '{"test": "t2", "%s": "echo x"}\n' "$bad" > "$TEMP_DIR/answer.json"
+    _write
+    [ "$status" -eq 1 ] || { echo "$bad: $output"; return 1; }
+    [[ "$output" == *"\"$bad\""* ]] || { echo "$output"; return 1; }
+    cmp "$TEMP_DIR/before.json" "$MAIN/.coding-crew/dev-commands.json"
+  done
+}
+
+@test "commands_field reads a check:<name> key with a dot by its exact name" {
+  printf '{"check:a.b": "exact", "check:axb": "other"}\n' > "$TEMP_DIR/c.json"
+  printf '{"check:axb": "other", "check:a.b": "exact"}\n' > "$TEMP_DIR/d.json"
+  run bash -c '. "$1/commands-file.sh"; commands_field "$2" check:a.b; echo; commands_field "$3" check:a.b' _ "$LIB" "$TEMP_DIR/c.json" "$TEMP_DIR/d.json"
+  [ "$output" = "$(printf 'exact\nexact')" ]
+}
+
 @test "checks discovered in one worktree land in the main checkout's file, read from another, both trees clean" {
   printf '{"test": "echo T > %s/ran", "lint": null}\n' "$TEMP_DIR" > "$TEMP_DIR/discovered.json"
   (cd "$WT" && bash "$LIB/write-commands-cache.sh" --response-file "$TEMP_DIR/discovered.json") >/dev/null

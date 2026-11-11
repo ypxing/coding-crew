@@ -6,6 +6,15 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- checks: dev-commands.json takes named extra checks as `"check:<name>": "<command>"` keys, run after the fixed ones
+  in alphabetical order and reported by name; discovery also reads `.github/workflows/*.yml` and asks for their
+  local checks as such keys. `run.sh` prints output over 100 lines as its first 20 and last 60 lines (plus failure
+  markers between) and the path of a log holding all of it (`--full-output` for the old pass-through), and
+  `run-checks.sh` prints a check's log tail only when it fails. solve-issue's untracked dev-commands reminder is
+  printed only on an interactive run, so it no longer ends an unattended run needs-attention, and the reusable
+  workflow's run summary prints a usage line per subagent. Upgrade: a repo with a cached dev-commands.json picks up
+  its CI checks with `/setup-coding-crew redo commands` or hand-added `check:*` keys; a host with its own
+  `<key>: pass` parser may need to accept `:` in keys (#746).
 - checks (docker mode): the source dir inside the container is read from `docker compose config`, so a compose file
   that mounts the project inline (`volumes: [".:/src"]`), in the long form or through `${VAR}` installs and runs
   there instead of in an empty `/app`; a service with no bind mount of the project root now stops naming it

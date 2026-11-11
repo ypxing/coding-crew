@@ -29,7 +29,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      directory — with exactly this prompt: `Use the solve-issue skill on <ref>; write your outcome and
      report to <repo>/.coding-crew/solve-feature/coder.report.md, and anything a person must do or decide before
      this branch merges to <repo>/.coding-crew/solve-feature/coder.notes.md (not what the run settles on its own, such
-     as the tracker defaulting to local or [WIP] checkpoint commits, nor optional follow-ups), keeping what that file already holds, leaving it absent when there is none;
+     as the tracker defaulting to local, [WIP] checkpoint commits or an untracked dev commands file, nor optional follow-ups), keeping what that file already holds, leaving it absent when there is none;
      your red-evidence file is <ref, / → _>.red.md in <repo>/.coding-crew/solve-feature`. When `coder-model=`
      is non-empty, run it on the model in your own list that matches that name (a family, with an optional
      version): a version you do not offer → the closest model of the same family; a family you do not offer → your

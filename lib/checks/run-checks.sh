@@ -5,9 +5,10 @@
 # Usage:
 #   bash scripts/run-checks.sh --project-root <path>
 #
-# Order: typecheck, lint, test, coverage, integration: the checks write-commands-cache.sh writes. In docker mode with no override
+# Order: typecheck, lint, test, coverage, integration: the checks write-commands-cache.sh writes, then every
+# `check:<name>` key the file has, in alphabetical order. In docker mode with no override
 # yet, the dependency install runs once first; if it fails, no check runs (CHECKS: fail).
-# Prints per check `<key>: pass`, `<key>: fail (exit N)` (then its output tail and log path), `<key>: NOT
+# Prints per check `<key>: pass`, `<key>: fail (exit N)` (after its output's last 80 lines; a pass prints none), its log path, `<key>: NOT
 # RUN: no command found` (the cache's null), or `<key>: modified files: <list>` (then a fail); last,
 # CHECKS: pass (exit 0) | CHECKS: fail (exit 1) | DISCOVER (exit 3: no usable cache).
 #
@@ -51,6 +52,7 @@ if ! commands_field_present "$CACHE" test; then
 fi
 
 KEYS=(typecheck lint test coverage integration)
+while IFS= read -r k; do [ -z "$k" ] || KEYS+=("$k"); done < <(commands_check_keys "$CACHE")
 
 # Prior dirt is in the before snapshot, so only what the check itself changed counts. -z: git quotes a
 # path with a space or a non-ASCII byte otherwise, and the `rewrote:` names go to `git add` as written.
@@ -132,12 +134,12 @@ run_pass() {
     before="$(_tree_state)"
     cbefore="$(_content_state)"
     # stdin from /dev/null: a `docker compose run` would otherwise read the rest of this loop. Logged
-    # through a pipe: on overlayfs a check writing straight to a file under /tmp can hang forever.
-    bash "$RUN_SCRIPT" --project-root "$PROJECT_ROOT" -- "$cmd" \
+    # through a pipe: on overlayfs a check writing straight to a file under /tmp can hang forever. --full-output:
+    # the log is this script's, and holds every line.
+    bash "$RUN_SCRIPT" --project-root "$PROJECT_ROOT" --full-output -- "$cmd" \
       </dev/null 2>&1 | cat >"$log"
     rc=${PIPESTATUS[0]}
     after="$(_tree_state)"
-    tail -n 80 "$log"
     cafter="$(_content_state)" changed="" created=""
     content=""
     if [ "$pass" = 1 ]; then
@@ -150,6 +152,8 @@ run_pass() {
       [ "$cbefore" = "$cafter" ] || content="$(_changed_content "$cbefore" "$cafter")"
       changed="$(_join "" "$(_changed_files "$before" "$after" all)" "$content")"
     fi
+    # A pass's output is noise re-read on every later turn; only a fail's tail says what to fix.
+    [ -z "$created$changed" ] && [ "$rc" -eq 0 ] || tail -n 80 "$log"
     if [ -n "$created" ]; then
       echo "$key: modified files: $created — the check created or removed files git does not ignore: ignore them, or name a command for it in $CACHE that leaves none"
       echo "$key: fail (exit $rc, modified files)"

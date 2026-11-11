@@ -22,11 +22,12 @@ const at = (name) => join(LOGS, name);
 const text = (name) => (existsSync(at(name)) ? readFileSync(at(name), "utf8").replace(/\r/g, "") : null);
 const lines = (name) => (text(name) ?? "").split("\n").map((l) => l.trimEnd()).filter((l) => l.trim() !== "");
 
-// run-checks.sh's `<key>: pass|fail…` verdicts; a second pass's verdict replaces the first's.
+// run-checks.sh's `<key>: pass|fail…` verdicts, a named extra check's key `check:<name>`; a second pass's verdict
+// replaces the first's.
 function checkResults(name) {
   const results = new Map();
   for (const l of lines(name)) {
-    const m = /^([a-z][A-Za-z0-9_.-]*): (pass|fail\b.*)$/.exec(l);
+    const m = /^([a-z][A-Za-z0-9_.-]*(?::[a-z0-9][a-z0-9_.-]*)?): (pass|fail\b.*)$/.exec(l);
     if (m) results.set(m[1], m[2]);
   }
   return [...results].map(([key, result]) => ({ key, result }));
