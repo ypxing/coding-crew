@@ -159,6 +159,18 @@ _cache() {
   [ "$(tr '\n' ' ' < "$TEMP_DIR/runs")" = "T T " ]
 }
 
+@test "run-checks: a passing check prints only its === and pass lines; a failing one its last 80 log lines; each log holds all" {
+  _cache '{"typecheck": null, "lint": "seq 1 100; echo LINTOUT", "test": "seq 1 100; echo TESTOUT; exit 2"}'
+  run bash "$RUN_CHECKS" --project-root "$WORK"
+  [ "$status" -eq 1 ]
+  [[ "$output" != *$'\n'LINTOUT$'\n'* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"=== lint: seq 1 100; echo LINTOUT"$'\n'"lint: pass"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *$'\n'"22"$'\n'*"TESTOUT"$'\n'"test: fail (exit 2)"* ]] || { echo "$output"; return 1; }
+  [[ "$output" != *$'\n'"21"$'\n'* ]] || { echo "$output"; return 1; }
+  grep -qx LINTOUT "$(printf '%s\n' "$output" | sed -n 's/^lint: log: //p')"
+  [ "$(wc -l < "$(printf '%s\n' "$output" | sed -n 's/^test: log: //p')")" -eq 101 ]
+}
+
 @test "run-checks: registry_auth and a key it does not know are never run as checks" {
   _cache "{\"test\": \"echo T\", \"registry_auth\": \"touch $TEMP_DIR/auth\", \"old_key\": \"touch $TEMP_DIR/old\"}"
   run bash "$RUN_CHECKS" --project-root "$WORK"
@@ -200,14 +212,16 @@ _cache() {
   _cache '{"test": "echo main-copy", "lint": null, "typecheck": null}'
   run bash "$RUN_CHECKS" --project-root "$TEMP_DIR/wt"
   [ "$status" -eq 0 ]
-  [[ "$output" == *branch-copy*"$(cd "$TEMP_DIR/wt" && pwd -P)"* ]]
-  [[ "$output" != *main-copy* ]]
+  # A pass prints no output: what the check printed is in its log.
+  log="$(cat "$(printf '%s\n' "$output" | sed -n 's/^test: log: //p')")"
+  [[ "$log" == *branch-copy*"$(cd "$TEMP_DIR/wt" && pwd -P)"* ]]
+  [[ "$log" != *main-copy* ]]
 
   git -C "$TEMP_DIR/wt" rm -q .coding-crew/dev-commands.json && git -C "$TEMP_DIR/wt" commit -q -m untrack
   _cache '{"test": "pwd -P", "lint": null, "typecheck": null}'
   run bash "$RUN_CHECKS" --project-root "$TEMP_DIR/wt"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"$(cd "$TEMP_DIR/wt" && pwd -P)"* ]]
+  [ "$(cat "$(printf '%s\n' "$output" | sed -n 's/^test: log: //p')")" = "$(cd "$TEMP_DIR/wt" && pwd -P)" ]
   rm -f "$WORK/.coding-crew/dev-commands.json"
   run bash "$RUN_CHECKS" --project-root "$TEMP_DIR/wt"
   [ "$status" -eq 3 ]
