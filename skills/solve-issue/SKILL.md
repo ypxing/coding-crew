@@ -160,7 +160,7 @@ Before writing code, know from the code, never from a guess:
   style to copy. That test style, naming and those patterns are the style contract for Step 4.
 
 ```bash
-wc -l <files>; grep -nE '^[[:space:]]*(export[[:space:]]+)?(default[[:space:]]+)?(declare[[:space:]]+)?(abstract[[:space:]]+)?(pub(\([a-z]+\))?[[:space:]]+)?(unsafe[[:space:]]+)?(async[[:space:]]+)?(def|class|function\*?|func|fn|interface|type|enum|struct|trait|impl|mod|module)[[:space:]<]|^(export[[:space:]]+)?(const|let|var)[[:space:]]|^[A-Za-z_][A-Za-z0-9_:-]*[[:space:]]*\(\)[[:space:]]*\{|^[[:space:]]+((static|async|get|set|public|private|protected|override|readonly)[[:space:]]+)*\*?[#$A-Za-z_][$A-Za-z0-9_]*[[:space:]]*(<[^>]*>)?\(.*\)[^;]*\{[[:space:]]*$|^[[:space:]]*(await[[:space:]]+)?([A-Za-z_]+\.)?(describe|context|suite|it|test)(\.[A-Za-z]+)?\(|^[[:space:]]*(RSpec\.)?(describe|context|it|specify|test)[[:space:]].*[[:space:]]do[[:space:]]*(\|[^|]*\|)?[[:space:]]*$|^@test' <files>
+bash "<skill-dir>/scripts/map-definitions.sh" <files>
 nl -ba <file> | sed -n '<start>,<end>p'
 ```
 

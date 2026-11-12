@@ -90,6 +90,7 @@ REPO/.github/skills/solve-feature/scripts/solve-feature.sh exec=0
 REPO/.github/skills/solve-issue/ /
 REPO/.github/skills/solve-issue/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/solve-issue/scripts/ /
+REPO/.github/skills/solve-issue/scripts/map-definitions.sh exec=1
 REPO/.github/skills/solve-issue/scripts/preflight.sh exec=1
 REPO/.github/skills/tdd/ /
 REPO/.github/skills/tdd/SKILL.md exec=0 unrendered=0

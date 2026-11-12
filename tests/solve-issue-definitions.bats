@@ -1,26 +1,19 @@
 #!/usr/bin/env bats
 
-# solve-issue Step 3's definitions command, taken from SKILL.md as written and run on the samples in
+# solve-issue Step 3's definitions map, scripts/map-definitions.sh, run on the samples in
 # tests/fixtures/definitions/: every definition and test line named below must come out with its
-# line number. Extra lines are fine; the command is a map, and a missed definition sends the coder
+# line number. Extra lines are fine; the script prints a map, and a missed definition sends the coder
 # back to reading the whole file.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-SKILL="$REPO_ROOT/skills/solve-issue/SKILL.md"
+SCRIPT="$REPO_ROOT/skills/solve-issue/scripts/map-definitions.sh"
 SAMPLES="$REPO_ROOT/tests/fixtures/definitions"
 
-# The `wc -l <files>; grep -nE '…' <files>` line of Step 3's fenced block.
-_definitions_command() {
-  awk '/^### 3\./ {in3 = 1; next} /^### / {in3 = 0} in3 && /^wc -l <files>; grep -nE / {print; exit}' "$SKILL"
-}
-
-# Runs the command on one sample and checks each given line's text comes out at its line number.
+# Runs the script on one sample and checks each given line's text comes out at its line number.
 _maps() {
-  local sample="$SAMPLES/$1" cmd out text n
+  local sample="$SAMPLES/$1" out text n
   shift
-  cmd=$(_definitions_command)
-  [ -n "$cmd" ] || { echo "no definitions command in SKILL.md's Step 3"; return 1; }
-  out=$(bash -c "${cmd//<files>/\"$sample\"}")
+  out=$(bash "$SCRIPT" "$sample") || { echo "map-definitions.sh failed on $sample"; return 1; }
   for text in "$@"; do
     n=$(grep -nF -- "$text" "$sample" | cut -d: -f1)
     [ -n "$n" ] || { echo "sample has no line: $text"; return 1; }
@@ -31,10 +24,34 @@ _maps() {
 }
 
 @test "definitions: the pattern is one grep -E using POSIX classes only" {
-  cmd=$(_definitions_command)
-  [ -n "$cmd" ]
-  [[ "$cmd" != *'\s'* && "$cmd" != *'\w'* && "$cmd" != *'\d'* && "$cmd" != *' -P'* ]]
-  [ "$(grep -o "grep -nE" <<<"$cmd" | wc -l)" -eq 1 ]
+  [ -f "$SCRIPT" ]
+  body=$(grep -v '^[[:space:]]*#' "$SCRIPT")
+  [[ "$body" != *'\s'* && "$body" != *'\w'* && "$body" != *'\d'* && "$body" != *' -P'* ]]
+  [ "$(grep -o "grep -nE" <<<"$body" | wc -l)" -eq 1 ]
+}
+
+@test "definitions: prints each file's line count before the map" {
+  run bash "$SCRIPT" "$SAMPLES/sample.py"
+  [ "$status" -eq 0 ]
+  [[ "${lines[0]}" =~ ^[[:space:]]*[0-9]+[[:space:]].*sample\.py$ ]]
+}
+
+@test "definitions: a file with no definitions is an empty map, exit 0" {
+  echo '{"a": 1}' > "$BATS_TEST_TMPDIR/data.json"
+  run bash "$SCRIPT" "$BATS_TEST_TMPDIR/data.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *data.json* ]]
+}
+
+@test "definitions: no file is a usage error" {
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *[Uu]sage* ]]
+}
+
+@test "definitions: a file that does not exist fails" {
+  run bash "$SCRIPT" "$BATS_TEST_TMPDIR/missing.ts"
+  [ "$status" -ne 0 ]
 }
 
 @test "definitions: TypeScript, with class and object methods" {

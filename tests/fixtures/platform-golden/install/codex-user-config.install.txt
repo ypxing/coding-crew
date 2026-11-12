@@ -88,6 +88,7 @@ HOME/.agents/skills/solve-feature/scripts/solve-feature.sh exec=0
 HOME/.agents/skills/solve-issue/ /
 HOME/.agents/skills/solve-issue/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/solve-issue/scripts/ /
+HOME/.agents/skills/solve-issue/scripts/map-definitions.sh exec=1
 HOME/.agents/skills/solve-issue/scripts/preflight.sh exec=1
 HOME/.agents/skills/tdd/ /
 HOME/.agents/skills/tdd/SKILL.md exec=0 unrendered=0

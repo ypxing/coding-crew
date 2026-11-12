@@ -89,6 +89,7 @@ CONFIG/skills/solve-feature/scripts/solve-feature.sh exec=0
 CONFIG/skills/solve-issue/ /
 CONFIG/skills/solve-issue/SKILL.md exec=0 unrendered=0
 CONFIG/skills/solve-issue/scripts/ /
+CONFIG/skills/solve-issue/scripts/map-definitions.sh exec=1
 CONFIG/skills/solve-issue/scripts/preflight.sh exec=1
 CONFIG/skills/tdd/ /
 CONFIG/skills/tdd/SKILL.md exec=0 unrendered=0
