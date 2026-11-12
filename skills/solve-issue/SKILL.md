@@ -154,10 +154,20 @@ Before writing code, know from the code, never from a guess:
 - the project's rules: `CLAUDE.md` (or `AGENTS.md`) at `$PROJECT_ROOT`, when it exists;
 - the utilities, helpers and conventions already there to reuse;
 - the callers of every file you plan to change;
-- every such file and its test file, Step 1's list grown by what exploration turns up: list a file's
-  exports or top-level definitions first (one grep), then read the parts the change touches and the
-  helpers it should reuse, and enough of its test file to copy its style. That test style, naming and
-  those patterns are the style contract for Step 4.
+- every such file and its test file, Step 1's list grown by what exploration turns up. Map them in one
+  call — each file's line count and its definitions and tests with line numbers — then read only the
+  ranges the map points to: the parts the change touches, the helpers to reuse, and one test whose
+  style to copy. That test style, naming and those patterns are the style contract for Step 4.
+
+```bash
+wc -l <files>; grep -nE '^[[:space:]]*(export[[:space:]]+)?(default[[:space:]]+)?(declare[[:space:]]+)?(abstract[[:space:]]+)?(pub(\([a-z]+\))?[[:space:]]+)?(unsafe[[:space:]]+)?(async[[:space:]]+)?(def|class|function\*?|func|fn|interface|type|enum|struct|trait|impl|mod|module)[[:space:]<]|^(export[[:space:]]+)?(const|let|var)[[:space:]]|^[A-Za-z_][A-Za-z0-9_:-]*[[:space:]]*\(\)[[:space:]]*\{|^[[:space:]]+((static|async|get|set|public|private|protected|override|readonly)[[:space:]]+)*\*?[#$A-Za-z_][$A-Za-z0-9_]*[[:space:]]*(<[^>]*>)?\(.*\)[^;]*\{[[:space:]]*$|^[[:space:]]*(await[[:space:]]+)?([A-Za-z_]+\.)?(describe|context|suite|it|test)(\.[A-Za-z]+)?\(|^[[:space:]]*(RSpec\.)?(describe|context|it|specify|test)[[:space:]].*[[:space:]]do[[:space:]]*(\|[^|]*\|)?[[:space:]]*$|^@test' <files>
+nl -ba <file> | sed -n '<start>,<end>p'
+```
+
+A source or test file over 200 lines (per `wc -l`) is never read whole — not with `cat`, not with a
+view that has no range — unless the change rewrites most of it. A host view tool given a line range
+is the same read as `nl | sed`. The rules file, a PRD, a skill file and the files Step 2's prompt
+lists are read as their steps say.
 
 **Bug-fix issues:** if multiple callers share the broken behavior, fix it in the function they all
 route through, not only at the call site the issue names.
@@ -182,9 +192,15 @@ behavior the issue names, find the `file:line` that confirms or contradicts it. 
 
 Not for what more reading would settle, or a design you merely prefer.
 
-**Batch these calls.** Each tool call re-bills your whole context: combine grep patterns into one
-call (`grep -rn -E 'patternA|patternB'`) and read several files per turn. Scope a search to the
-paths likely to matter, and list the matching files (`grep -rl`) before printing their matches.
+**Batch these calls.** Each tool call re-bills your whole context: combine patterns into one
+`<search pattern>` (`patternA|patternB`) and read several ranges per turn. Search the paths likely to
+matter, never a broad glob over the tree: list the matching files first, then print the matches of
+only the files that matter:
+
+```bash
+grep -rlE '<search pattern>' <likely paths>
+grep -nE '<search pattern>' <the files it listed>
+```
 
 ### 4. Implement with TDD
 

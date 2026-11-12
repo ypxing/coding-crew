@@ -6,6 +6,13 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-issue: Step 3's narrow read and search are now commands the coder runs instead of prose: one call prints each
+  file's line count and its definitions and tests with line numbers (one POSIX `grep -E` pattern covering JS/TS,
+  Python, Go, Rust, Ruby, shell and the common test styles), then only those ranges are read; a source or test file
+  over 200 lines is never read whole unless the change rewrites most of it; a search lists matching files
+  (`grep -rlE`) before printing matches, never a broad glob. A measured three-issue feature run showed coders followed
+  the earlier changes given as commands and mostly ignored the ones in prose (#754).
+
 ## [2.3.13]
 
 - solve-feature, crew-review: the end-of-run reviewer judges each coder note in the PR body against the code at HEAD;
