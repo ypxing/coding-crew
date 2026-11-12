@@ -21,8 +21,7 @@ if [[ -z "$LOG_DIR" ]]; then
 fi
 mkdir -p "$LOG_DIR"
 
-# A machine with no bats (the solve-feature workflow's runner installs none) gets the bats-core ci.yml pins,
-# cloned outside the checkout: a check must leave the tree as it found it.
+# A machine with no bats gets the bats-core ci.yml pins, cloned outside the checkout: a check must leave the tree as it found it.
 BATS_REF=v1.13.0
 if [[ -z "${BATS:-}" ]] && ! command -v bats >/dev/null 2>&1; then
   bats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/coding-crew/bats-core-$BATS_REF"

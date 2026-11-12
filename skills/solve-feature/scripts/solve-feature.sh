@@ -433,7 +433,7 @@ pr_create_failed() {
   local why redo
   why=$(grep -v '^[[:space:]]*$' "$LOGS/pr-create.err" | tail -1 || true)
   why="gh pr create failed${why:+: $why}"
-  redo="fix the cause (on GitHub Actions, the setting coding-crew's guide names under \"solve-feature on GitHub Actions\"), then re-run"
+  redo="fix the cause gh pr create printed, then re-run"
   reopen_ref pr "$why" "Reopen $REF: its PR creation failed" "reopen $REF by hand, then $redo"
   push -u origin "$BRANCH" || stop pr "$why; $REF is ready again but git push failed: $PUSH_WHY; once it can push, $redo"
   stop pr "$why; $REF is ready again with its work pushed to $BRANCH: $redo"

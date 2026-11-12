@@ -220,7 +220,7 @@ _skills_copied() {
   [ -z "$(find "$ALL/.claude/skills" -path '*/scripts/*' \( -name write-commands-cache.sh -o -name cli.mjs \) | grep -v '/coding-crew-lib/scripts/')" ]
 }
 
-@test "the Actions workflow's skill subset installs coding-crew-lib with it, on every platform" {
+@test "a --skills subset installs coding-crew-lib with it, on every platform" {
   cd "$SCRIPT_DIR"
   local p
   for p in "${PLATFORMS[@]}"; do
