@@ -508,7 +508,6 @@ land() {
   local rs="${REF//\//_}" rc=0 again clog="$LOGS/${REF//\//_}.checks.log" f checked
   [ -f "$LOGS/$rs.issue.md" ] || die "no saved issue for $REF: run next first"
   checks_lib
-  [ "$(git branch --show-current)" = "$BRANCH" ] || stop solve "branch changed to '$(git branch --show-current)'"
   # Recorded before any stop below, so the stop's result.json has it. The file stays: a re-run's land for the same
   # issue replaces the entry with what its coder left there, and drops it when the coder left none.
   notes_edit --arg ref "$REF" --rawfile t <([ ! -f "$LOGS/coder.notes.md" ] || cat "$LOGS/coder.notes.md") "($NOTE_TEXT) as \$x"'
@@ -516,6 +515,7 @@ land() {
     | if $x == "" then $rest
       elif any(.[]; .author == "coder" and .ref == $ref) then map(if .author == "coder" and .ref == $ref then {author, ref, text: $x} else . end)
       else . + [{author: "coder", ref: $ref, text: $x}] end' || die "recording $LOGS/coder.notes.md in $(notes_file) failed (see above)"
+  [ "$(git branch --show-current)" = "$BRANCH" ] || stop solve "branch changed to '$(git branch --show-current)'"
   [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || stop solve "working tree left dirty$([ ! -s "$LOGS/coder.report.md" ] || echo "; why: $LOGS/coder.report.md")"
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?

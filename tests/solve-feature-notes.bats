@@ -88,6 +88,16 @@ clean_review() { echo '[]' > "$D/pr-${1:-10}.attention.json"; }
   [ "$(jq -c .needs_attention "$D/result.json")" = '[{"type":"note","author":"coder","text":"- set the CREW_X repo variable"}]' ]
 }
 
+@test "a land that stops on a changed branch still records its coder's note in result.json" {
+  land_ready
+  echo '- set the CREW_X repo variable' > "$D/coder.notes.md"
+  git checkout -q -b elsewhere
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"branch changed to 'elsewhere'"* ]] || { echo "$output"; return 1; }
+  [ "$(jq -c .needs_attention "$D/result.json")" = '[{"type":"note","author":"coder","text":"- set the CREW_X repo variable"}]' ]
+}
+
 @test "a stop with no note names no run file" {
   land_ready
   CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
