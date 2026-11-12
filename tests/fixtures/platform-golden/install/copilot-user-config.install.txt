@@ -77,8 +77,6 @@ CONFIG/skills/domain-modeling/references/adr-format.md exec=0
 CONFIG/skills/domain-modeling/references/context-format.md exec=0
 CONFIG/skills/setup-coding-crew/ /
 CONFIG/skills/setup-coding-crew/SKILL.md exec=0 unrendered=0
-CONFIG/skills/setup-coding-crew/hosts/ /
-CONFIG/skills/setup-coding-crew/hosts/github-actions.yml exec=0
 CONFIG/skills/solve-feature/ /
 CONFIG/skills/solve-feature/SKILL.md exec=0 unrendered=0
 CONFIG/skills/solve-feature/result.schema.json exec=0

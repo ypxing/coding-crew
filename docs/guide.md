@@ -29,8 +29,6 @@ THIS REPO (source)
 │   ├── checks/             ← run-checks.sh, the dev commands file (discover/write-commands-cache) and dep-install's install/run scripts
 │   └── git-workflow/       ← commit-changes, branch-safety-check
 └── docs/
-    └── templates/
-        └── workflows/      ← optional GitHub Actions workflows
 ```
 
 ---
@@ -392,9 +390,8 @@ human out of the queue. `awaiting-merge` is what an issue's `done` looks like th
 feature branch, open until the PR that closes it merges. A local issue's `done` is `Status: done` in
 `issues/done/`.
 
-On GitHub Actions, `run-agent` on a `needs-triage` issue triages it unattended: it is built when complete enough,
-and gets an `## Open questions` comment to settle with `/crew-grill #<n>` when not (see
-[solve-feature on GitHub Actions](#solve-feature-on-github-actions-optional)).
+`/crew-triage <issue-ref>` on a `needs-triage` issue triages it unattended: it is built when complete enough, and gets an
+`## Open questions` comment to settle with `/crew-grill #<n>` when not.
 
 **What `next` and `land` read.** The feature is found by its slug — the `Feature:` line on github, the
 directory on local. `next` picks an open `ready-for-agent` issue (not `blocked`) whose every blocker
@@ -457,8 +454,8 @@ that holds the draft and renders the PR body's Needs attention, `[]` when the ru
 | --- | --- |
 | `--branch <name>` | The branch the run uses, never the default branch (default: one named after the slug) |
 | `--review-since <sha>` | Scopes the review's findings to the commits since `<sha>` (a follow-up run's), while spec and gaps are judged on the whole code; used only when `<sha>` holds the default branch and is in the branch after `sync`'s merge, else the whole branch is reviewed. Not a commit: `start` stops |
-| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model name, a family with an optional version (`opus`, `claude-opus-5-5`, `opus 5.5`): the host runs the subagent on the matching model in its own list, the closest of the same family when it lacks that version, its own model when it lacks the family. Read from `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` when set and non-empty (a name for the one host where you set it: your shell, your agent CLI's settings `env`, or the workflow's repo variables), then the project's file, then `~/.coding-crew/config.json` for each key it lacks (an Actions runner sees only the project's committed file), then the default (your own) |
-| `~/.coding-crew/config.json` `solveFeature.publish` | `false` keeps the run on this machine: no `git push` and no PR; the branch is reviewed and fixed locally and the PR body, its title on the first line, is left in `.coding-crew/solve-feature/local-pr-<branch, / as _>.md` for you to push and open yourself. Read from the user-level file only, never the project's, so an Actions run always pushes |
+| `.coding-crew/config.json` `solveFeature.models.coder` / `.reviewer` | The coder and fixer / reviewer subagent's model name, a family with an optional version (`opus`, `claude-opus-5-5`, `opus 5.5`): the host runs the subagent on the matching model in its own list, the closest of the same family when it lacks that version, its own model when it lacks the family. Read from `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` when set and non-empty (a name for the one host where you set it: your shell, your agent CLI's settings `env`, or a CI host's environment), then the project's file, then `~/.coding-crew/config.json` for each key it lacks (a CI runner sees only the project's committed file), then the default (your own) |
+| `~/.coding-crew/config.json` `solveFeature.publish` | `false` keeps the run on this machine: no `git push` and no PR; the branch is reviewed and fixed locally and the PR body, its title on the first line, is left in `.coding-crew/solve-feature/local-pr-<branch, / as _>.md` for you to push and open yourself. Read from the user-level file only, never the project's, so a run on a CI runner always pushes |
 
 **Checks that modify files.** An auto-fixing lint (`make lint` running `--write`) can stay configured:
 when a check rewrites tracked files, every check runs a second time, and if that pass changes nothing the
@@ -562,183 +559,20 @@ gh pr create --draft --title "$(jq -r '.pr_title // "agent change"' .coding-crew
 
 ### PR rework
 
-Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it files the accepted comments as one `ready-for-agent` issue of the PR's feature and runs `/solve-feature` on the PR's branch, which fixes, checks and reviews it like any other issue and, in its describe step, marks the PR ready unless something needs a person (listed under `Needs attention` in the PR body); it then replies `Fixed in <sha>` on each accepted thread, or re-opens the threads when the run stopped. It never edits or pushes code itself there. On any other PR it fixes the comments and commits, but does not push; run non-interactively by a host (`Use the address-pr-comments skill on PR #<n>; this run is non-interactive`), it first stops unless the checkout is at the PR's head, and it also pushes that commit to the PR's head branch, never forcing, then replies `Fixed in <sha>` and resolves each fixed thread. A refused push leaves those threads open and the commit local, and the summary quotes git's reason. A thread left for a person @mentions the PR's author. How such a run starts is the host's: this repo's workflow runs rounds only on solve-feature PRs.
+Run `/address-pr-comments` yourself on the PR. On a solve-feature PR it files the accepted comments as one `ready-for-agent` issue of the PR's feature and runs `/solve-feature` on the PR's branch, which fixes, checks and reviews it like any other issue and, in its describe step, marks the PR ready unless something needs a person (listed under `Needs attention` in the PR body); it then replies `Fixed in <sha>` on each accepted thread, or re-opens the threads when the run stopped. It never edits or pushes code itself there. On any other PR it fixes the comments and commits, but does not push; run non-interactively by a host (`Use the address-pr-comments skill on PR #<n>; this run is non-interactive`), it first stops unless the checkout is at the PR's head, and it also pushes that commit to the PR's head branch, never forcing, then replies `Fixed in <sha>` and resolves each fixed thread. A refused push leaves those threads open and the commit local, and the summary quotes git's reason. A thread left for a person @mentions the PR's author. How such a run starts is the host's.
 
----
-
-### solve-feature on GitHub Actions (optional)
-
-`/solve-feature` runs one feature from a terminal or a worktree pane. To run it on a GitHub runner
-instead, run `/setup-coding-crew redo actions` with the github tracker (a plain run only says the workflow is not
-installed) and answer yes: it writes the caller
-file [`hosts/github-actions.yml`](../skills/setup-coding-crew/hosts/github-actions.yml) to
-`.github/workflows/solve-feature.yml` pinned to the commit SHA of the coding-crew release the file names (it writes
-nothing when that release is not tagged yet), creates the `run-agent` label, sets the repo variable
-`CREW_AGENT` to the agent you pick and prints the commit line for it. `copilot` (the default) is billed
-to GitHub Copilot with no API key; `claude` runs Claude Code on an `ANTHROPIC_API_KEY` or
-`CLAUDE_CODE_OAUTH_TOKEN` repo secret. The run opens its PR with the workflow's token, so a repo admin enables
-"Allow GitHub Actions to create and approve pull requests" (Settings → Actions → General → Workflow permissions, and
-the organisation's same setting); a new repo has it off. Commit, then label any issue of a feature `run-agent` (on a sub-issue the
-job also labels the root) or run the workflow by hand with the slug. A finished `ready-for-human` issue of a
-`run-agent` feature (its label removed, as `mark-done` does, or the issue closed) re-runs it while the root is open
-(when whoever finished it has triage access or more), so a run that stopped for a person resumes once they are done.
-
-`run-agent` on an issue that belongs to no feature yet (no `Feature:` line on it or its parent, as a fresh
-`needs-triage` issue has) triages it in the same run: the `crew-triage` skill reads the code the issue touches, then
-judges whether the issue states its
-problem with evidence, has testable acceptance criteria and leaves no open decision you would want to make
-yourself. If so, `/to-issues` turns it into a feature with no approve prompt (rewriting the issue, or splitting it
-under a PRD) and `/solve-feature` builds it to the usual draft PR. If not, the run comments `## Open questions` on
-the issue, only those neither the code, the docs nor the issue answers, each naming what it checked, @mentioning whoever added the label, removes `run-agent` and passes: settle the questions locally with
-`/crew-grill #<n>`, which ends in the issues a later `run-agent` builds. Nothing reviews the breakdown before code
-is written on this path; the draft PR and its review are the check.
-
-The caller file is short: the triggers, the permissions (with `id-token: write`), and one job, `run`, that calls
-coding-crew's reusable workflow [`crew-solve-feature.yml`](../.github/workflows/crew-solve-feature.yml) pinned to a
-release's full commit SHA with the version in a trailing comment
-(`uses: ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@<sha>  # vX.Y.Z`; a tag can be moved, and the job
-holds the repo's write token and your secrets), passing `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`,
-`COPILOT_GITHUB_TOKEN` and `NPM_TOKEN` by name. Everything the job does lives in the reusable workflow, whose header
-explains billing and the rest. The pin fixes that file, not the `ypxing/coding-crew/actions/install@<tag>` it runs,
-which is resolved when the job runs (protected by coding-crew's release-tag ruleset, which admins can bypass, and
-locked by Immutable releases for releases published after it is enabled). To pick up a newer coding-crew, take
-Dependabot's `github-actions` PR, which bumps the SHA and its comment together, or run `/setup-coding-crew redo
-actions` after updating the installed coding-crew skills to the new release (re-run `install.sh`, or the
-`npx skills add` command you installed with): `redo actions` writes the release of the installed skills, so on old
-skills it re-writes the same pin:
-
-```yaml
-# .github/dependabot.yml
-version: 2
-updates:
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: weekly
-```
-
-The job runs on `ubuntu-latest` with Node set up, and has no step of the repo's own: a toolchain the image lacks is
-installed by `.coding-crew/dev-commands.json`'s `install` command, before the agent starts (a `uv` project:
-`pipx install uv && uv sync`).
-
-The runner installs the skills of that same release (the composite action `ypxing/coding-crew/actions/install`, at
-the tag the reusable workflow names), never `main`: the repo variable `CODING_CREW_REF` is no longer read. `with:
-timeout-minutes: <n>` on the `run` job changes the solve job's timeout (360 by default). The checks a run adds show
-as `run / slug` and `run / solve`, not `slug` and `solve`, so a branch rule requiring the old names needs the new
-ones. An older full copy of the workflow keeps working until `/setup-coding-crew redo actions` replaces it.
-
-**An internal copy.** An organisation that allows only its own actions can run its own copy of coding-crew: push a
-mirror of `ypxing/coding-crew` to `<org>/coding-crew` (`git clone --mirror`, then `git push --mirror`); in the
-copy's Settings → Actions → General → Access, allow access from the organisation's repositories, so their runners
-download its workflow and action with no token; then create a `stable` branch from a release tag with one commit
-that changes the reusable workflow's install line to `uses: <org>/coding-crew/actions/install@stable`. Callers use
-`<org>/coding-crew/.github/workflows/crew-solve-feature.yml@stable`. To update, fetch the new release into the
-copy, rebase a branch of `stable` onto its tag (the one-line commit on top) and merge it into `stable` by PR: every
-repo picks it up on its next run.
-
-The job launches the skill with `copilot -p "Use the solve-feature skill on $SLUG" --allow-all
---no-color --output-format json` or `claude -p "/solve-feature $SLUG" --dangerously-skip-permissions --output-format stream-json
---verbose` (every tool and path: the skill's scripts are outside the checkout), adding `--model` when the repo
-variable `CREW_MODEL` names one (else the CLI's default for the account); the agent runs each coder, the
-reviewer, the fixer and the PR's writer as its own subagents, on that model unless `solveFeature.models` names
-theirs; the repo variables `CREW_CODER_MODEL` and `CREW_REVIEWER_MODEL` override `solveFeature.models` for the coder
-(and fixer) and the reviewer on the runner, and for Claude Code, `ANTHROPIC_DEFAULT_HAIKU_MODEL`, `_SONNET_MODEL` and `_OPUS_MODEL`, when set, pin the model each alias means. Claude's job log shows the run as it goes, one line per step (the model, each command and subagent, a
-failed tool), Copilot's too (each subagent's model as it ends). Both keep the whole stream as `.coding-crew/solve-feature/session.jsonl`
-(Copilot's own logs beside it, in `copilot-logs/`). Every run uploads `.coding-crew/solve-feature/` as an artifact, so the checks log a stop names
-outlives the runner; a stop at an issue's checks or at opening its draft PR has already pushed its work and made the issue ready again,
-so a re-run picks it up there. A stop
-exits the session without failing it, so the job's last step fails it unless the run's one-line
-`.coding-crew/solve-feature/outcome` starts with `ready` — written by the describe step (`solve-feature.sh
-describe`) once it has marked the PR ready. It fails on `needs-attention pr=<n>`, on a stop a script
-recorded (`stopped: <what> failed: <reason>`), and when the file is absent because the session ended before the run
-finished. The same step writes the run's summary page: the outcome, the PR, the model, and what to read next
-(a stop's coder report and checks log tail; on needs-attention, `result.json`'s `needs_attention` items, notes and
-open threads included, as the PR body's `Needs attention` renders them), so a failed run says why or where to read it, without the artifact. Tools the agent runs add nothing to it: the agent runs without `GITHUB_STEP_SUMMARY`, so test runners
-that write a job summary (Vitest) do not find it.
-
-The job pushes and opens the PR with the workflow's own `GITHUB_TOKEN`, so the PR's `pull_request` runs wait for
-someone with write access to approve them, after every push. After the session, the job approves the runs held on
-the PR's head commit, so the PR's CI runs and shows on the PR. Where GitHub refuses the approval, the job dispatches
-that workflow on the PR's branch instead, which needs a `workflow_dispatch:` trigger in it; that run's checks are on
-the commit but not listed on the PR. A failure of both is a warning, and leaves the run waiting for approval.
-
-Review comments start a round on their own: a review submitted on a solve-feature PR (one whose body has the
-`<!-- solve-feature:begin -->` block; a reply on a review thread is submitted as a review too), other than an
-approval, by Copilot's reviewer or a user with write, maintain or admin permission, runs `/address-pr-comments` on that PR non-interactively, in the
-feature's concurrency group. That group holds one run in progress and one pending, and a newer run cancels the
-pending one: a round runs solve-feature whenever the feature has a ready issue, so a label run it displaced is not
-lost, and a round a later run displaced waits for the next review. Anyone else's review starts no session. Answer the agent's reply on a thread by replying there:
-resolving the thread alone starts no round, so the PR stays a draft until the next review. A round that ran no solve-feature (every thread
-dismissed or waiting on a person) or ended `needs-attention` ends with a notice, not a failed job; a stop still
-fails. GitHub never starts Copilot's automatic review on a PR the bot marks ready, so after a run that ends `ready
-pr=<n>` on a PR Copilot has not reviewed, the job requests it with the repo secret `COPILOT_GITHUB_TOKEN` (a
-fine-grained PAT with Pull requests: write), used for that one call only; unset or refused, the job warns and you
-request Copilot by hand.
-
-Which comments reach the agent: only those by Copilot's reviewer, by the identity the agent posts as (on Actions `github-actions`, only for a comment GitHub reports a Bot wrote), by a bot the
+Which comments reach the agent: only those by Copilot's reviewer, by the identity the agent posts as (`github-actions` on a GitHub runner, only for a comment GitHub reports a Bot wrote), by a bot the
 repo lists under `github.trustedBots` in `.coding-crew/config.json`, or by a user with write, maintain or admin
 permission on the repo. GitHub reports no permission for a bot, so a GitHub App's comments (Wiz's, say) reach the
 agent only when listed: `{"github": {"trustedBots": ["wiz-security-bot-0123456789"]}}`, its login with or without
 `[bot]`, matched exactly, and only for a comment GitHub's GraphQL reports a Bot wrote (a user who takes the bot's name is checked like any user). The key is read from the project's file only, never `~/.coding-crew/config.json`, applies
 to this repo's PRs only and only while the repo is private or internal (on a public one anyone could make a listed
-bot quote their text to the agent), and a listed bot's reviews start no rounds: the agent reads its comments when a round
-runs. A round reads the PR's reviews, comments and threads through
+bot quote their text to the agent). A round reads the PR's reviews, comments and threads through
 coding-crew-lib's `pr-comments.mjs`, and `fetch --comments` reads an issue's, both dropping everyone else's comments
 (a failed permission check counts as no access) and naming the omitted authors in one line; an outsider's reply
 on a thread the agent answered does not reopen it, though its open thread still keeps the PR under Needs attention
-until a person resolves it. Issue and PR bodies are not filtered: labelling a feature `run-agent` trusts its
-issues' bodies, so read them first.
-
-**Who starts a run, and what the agent holds.** A `run-agent` label starts a run only when whoever added it has
-write, maintain or admin permission (anyone else's label ends with a notice), and a review round never runs on a PR
-from a fork. Each job declares its own permissions: only `approve-ci` has `actions: write`, only `solve` (the agent's
-job) `id-token: write`, and the run step drops `ACTIONS_ID_TOKEN_REQUEST_TOKEN`/`_URL` before the agent starts, so
-no process the agent can read without root holds them. The agent has sudo on a GitHub-hosted runner and could still
-read them from the runner's memory: let no AWS role other than the Bedrock one below trust this repo's tokens from any
-workflow (`repo:<org>/<repo>:*`). No step after the agent on its runner holds a secret: the CI approval and
-Copilot's review request run as their own jobs. Every outside action is pinned by commit SHA.
-
-- `NPM_TOKEN`: for private npm packages, store a **read-only** granular npm token as this repo secret. Only the
-  step before the agent that runs `.coding-crew/dev-commands.json`'s `install` command sees it, through the repo's
-  own `.npmrc` (`//registry.npmjs.org/:_authToken=${NPM_TOKEN}`). In host mode it runs the command (and skips with
-  no file or no `install` field); with `install_mode: docker` it runs coding-crew's docker install, filling the
-  containers' dependency volumes the agent's checks then use, and stops the compose project afterwards. Neither
-  runs `registry_auth`, `env` or the credential templates (`.npmrc.tpl` and the like) with the token, as any could
-  write it into a file the agent reads (docker mode creates `.env` and expands the templates first, without it): a
-  repo whose registry needs `registry_auth` is not served by this path. An install the agent runs itself (a
-  private package an issue adds, a review round whose branch changed the lockfile) has no token, fails the issue's
-  checks, and the run stops for a person.
-- CI auto-approval: the job approves the PR's held CI runs, so agent-written code runs with whatever secrets the
-  repo's CI workflows hold. Keep deploy and publishing secrets out of workflows that run on `pull_request`, or
-  behind an environment with required reviewers.
-- Setup warns when nothing protects the default branch (no branch protection, no ruleset with a `pull_request` or
-  `update` rule): the workflow's token, with `contents: write`, could push straight to it.
-
-**Claude Code on AWS Bedrock.** With `CREW_AGENT=claude`, set the repo variables `CREW_CLAUDE_PROVIDER=bedrock`,
-`CREW_AWS_ROLE_ARN` (the IAM role to assume) and `CREW_AWS_REGION`. The `solve` job then assumes the role through
-GitHub OIDC (`aws-actions/configure-aws-credentials`, for `timeout-minutes` × 60 seconds, since the agent cannot
-refresh credentials mid-run) and runs Claude Code with `CLAUDE_CODE_USE_BEDROCK=1`; no Anthropic secret is needed.
-`CREW_MODEL` and `solveFeature.models` then name Bedrock model IDs or inference profiles. Bedrock with
-`CREW_AGENT=copilot`, or with either AWS variable empty, fails the job before the agent. Lock the role to this
-workflow:
-
-1. Make the repo's OIDC `sub` claim name the workflow that asks for the token:
-   `gh api -X PUT repos/<owner>/<repo>/actions/oidc/customization/sub -F use_default=false -f 'include_claim_keys[]=repo' -f 'include_claim_keys[]=job_workflow_ref'`.
-   **This breaks the repo's existing OIDC roles** (any whose trust policy matches the default `sub`) until their
-   trust policies are updated to the new shape.
-2. Trust policy: the GitHub OIDC provider as `Federated`, `token.actions.githubusercontent.com:aud` equal to
-   `sts.amazonaws.com`, and `token.actions.githubusercontent.com:sub` matching (`StringLike`)
-   `repo:<org>/*:job_workflow_ref:<owner>/coding-crew/.github/workflows/crew-solve-feature.yml@<sha>`, `<owner>`
-   being the coding-crew copy the callers name and `<sha>` the full commit SHA their `uses:` line pins (a SHA-pinned
-   caller's `job_workflow_ref` ends in the bare SHA, not `@refs/tags/vX.Y.Z`, as in GitHub's
-   [OIDC with reusable workflows](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-with-reusable-workflows)
-   example); for an internal copy's callers that name `@stable`, use `refs/heads/stable` in place of `<sha>`. Update it to the new SHA on each upgrade, together with the caller's bump, or the role refuses the
-   upgraded runs (a list holding both SHAs covers the switch-over). Do not match `@*`: anyone who can push a branch to that copy and add a workflow to an `<org>/*`
-   repo could then assume the role through that branch.
-3. Permissions policy: only `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`, on the named
-   foundation-model and inference-profile ARNs the runs use.
-4. The role's maximum session duration at least the job's `timeout-minutes` (360 by default, so 6 hours).
-5. A budget alarm (AWS Budgets) on the account's Bedrock spend.
+until a person resolves it. Issue and PR bodies are not filtered: running a feature trusts its issues' bodies, so read
+them first.
 
 ---
 
@@ -773,7 +607,7 @@ stops every tracker op with its path, even where the project sets the tracker. T
 status labels itself, before it first applies one.
 
 Commit `.coding-crew/config.json`: it is team state — the tracker choice and solve-feature's models —
-that everyone using the repo needs, so do not add it to `.gitignore`. The Actions runner and your teammates see only
+that everyone using the repo needs, so do not add it to `.gitignore`. A CI runner and your teammates see only
 the project's committed file, never your `~/.coding-crew/config.json`, so team settings belong in the project's.
 Runs read the main checkout's copy before it is committed, from every worktree, so you can try a setting first and
 commit it once satisfied.
@@ -794,7 +628,7 @@ discovers there with the branch.
 A host that runs the checks itself can set `CREW_COMMANDS_FILE` to its own copy, kept outside the checkout: every
 check reads and writes that file instead, and a read-only one stops discovery rather than being rewritten.
 `/setup-coding-crew` discovers them, runs them so you see them pass, and prints the commit line; commit it once
-satisfied to share the commands with your team and with Actions. The installed tooling beside them (`lib/`, `manifest.json`) is what `install.sh` writes, not team
+satisfied to share the commands with your team and with CI. The installed tooling beside them (`lib/`, `manifest.json`) is what `install.sh` writes, not team
 state.
 
 ---

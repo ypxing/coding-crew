@@ -28,7 +28,7 @@ From inside your repo:
 npx skills add ypxing/coding-crew --all      # this project (commit skills-lock.json); add -g for every repo
 ```
 
-Needs git, jq and Node; `gh` too for GitHub Issues or Actions.
+Needs git, jq and Node; `gh` too for GitHub Issues.
 
 Installing only some skills (`-s <name>`)? Add `-s coding-crew-lib` too: every skill runs its scripts from it.
 To update, re-run the same command. The [install guide](docs/guide.md#install) covers `bootstrap.sh`, a pinned
@@ -115,13 +115,11 @@ it in a separate worktree or a container, not the checkout you are working in, o
 
 ### 3. While you're away: a host runs it
 
-A host decides where and when solve-feature runs. Two come built in:
+A host decides where and when solve-feature runs. One comes built in:
 
 - **`/crew-afk <slug>`** starts it in the feature's own worktree and returns at once: a detached session capped at
   an hour, or an [orca or herdr](docs/guide.md#running-a-feature) terminal you can watch. Run one per feature to
   build several in parallel; `/crew-afk status` shows how each ended.
-- **GitHub Actions** runs it when you label an issue `run-agent`
-  ([setup](docs/guide.md#solve-feature-on-github-actions-optional): `/setup-coding-crew redo actions`).
 
 Anything else that can start your agent in a checkout can host it too: a cron job, your CI, another orchestrator.
 
@@ -166,7 +164,7 @@ The process is the product, not the model:
 |            | `/tdd`                 | Red, green, refactor on any change                          |
 | 2. Feature | `/solve-feature`       | Run one feature's issues on one branch, reviewed, in one PR |
 | 3. Hosts   | `/crew-afk`            | Run a feature in its own worktree; see how it ended         |
-| Setup      | `/setup-coding-crew`   | Set up tracker, checks and the optional Actions workflow    |
+| Setup      | `/setup-coding-crew`   | Set up the tracker and checks                               |
 
 </details>
 

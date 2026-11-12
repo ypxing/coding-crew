@@ -148,8 +148,8 @@ commit_file() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"would tag HEAD as v1.0.0"* ]]
   passing_log_at "$(git -C "$R" rev-parse HEAD)"
-  commit_file .github/workflows/crew-solve-feature.yml
+  commit_file .github/workflows/solve.yml
   release --demo-smoke "$LOG"
   [ "$status" -ne 0 ]
-  [[ "$output" == *".github/workflows/crew-solve-feature.yml"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *".github/workflows/solve.yml"* ]] || { echo "$output"; return 1; }
 }

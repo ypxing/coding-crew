@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- setup-coding-crew, solve-feature: coding-crew no longer ships a GitHub Actions workflow. The reusable
+  `crew-solve-feature.yml`, the `actions/install` action and setup's caller template are removed, and
+  `/setup-coding-crew` covers the tracker and the dev commands only (`redo actions` is gone); a repo that still has
+  a `solve-feature.yml` from an earlier setup gets no warning. A failed `gh pr create` stop now says to fix the
+  cause it printed and re-run. Running solve-feature on a CI runner is the host's own business (#766).
 - solve-issue: coders make each TDD step's edits in one turn (several edits sent together, independent files
   included) and re-read only ranges they have not seen or changed, so fewer turns re-bill a large context (#764).
 - solve-feature: a failed `gh pr create` stop now points at the guide's "solve-feature on GitHub Actions" section

@@ -167,6 +167,8 @@ repo_with_worktree() {
 @test "setup offers only redo tracker and redo commands, and no step installs anything under .github/" {
   local skill="$REPO_ROOT/skills/setup-coding-crew/SKILL.md"
   grep -qxF 'argument-hint: "[redo tracker | redo commands]"' "$skill"
-  ! grep -nE 'redo actions|GitHub Actions|\.github/|hosts/' "$skill" || false
+  grep -qF 'Trigger with /setup-coding-crew [redo tracker | redo commands].' "$skill"
+  grep -qF 'When the user names a step ("change the tracker", "redo commands"), that' "$skill"
+  ! grep -nE 'GitHub Actions|\.github/|hosts/' "$skill" || false
   [ "$(grep -c '^## Step ' "$skill")" -eq 3 ]
 }
