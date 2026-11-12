@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.3.14]
+
 - solve-issue: Step 3's narrow read and search are now commands the coder runs instead of prose: one call prints each
   file's line count and its definitions and tests with line numbers (a script call, `scripts/map-definitions.sh
   <files>`, holding one POSIX `grep -E` pattern covering JS/TS, Python, Go, Rust, Ruby, shell and the common test
