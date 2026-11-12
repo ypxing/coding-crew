@@ -156,9 +156,10 @@ fix_ready() {
   run bash "$SCRIPT" fix feat 10 feature/feat
   run bash "$SCRIPT" describe feat 10
   [ -f "$D/result.json" ] && [ -f "$D/pr-10.r1.review.json" ] && [ -f "$D/2.checks.head" ]
+  echo '{}' > "$D/pr-10.summary.json"
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ]
-  [ ! -e "$D/result.json" ]
+  [ ! -e "$D/result.json" ] && [ ! -e "$D/pr-10.summary.json" ]
   [ -z "$(ls "$D" | grep -E '^pr-.*\.r[0-9]+\.|\.checks\.head$')" ]
 
   echo 'stopped: x' > "$D/outcome" && echo '{}' > "$D/result.json"
@@ -573,6 +574,61 @@ summary_file() { printf '%s' "$2" > "$D/pr-$1.summary.md"; }
   [ "$(grep -c '^\*\*Tested:\*\*' "$body")" = 1 ]
   [ "$(grep '^\*\*Tested:\*\*' "$body")" = '**Tested:** test pass' ]
   [[ "$(r .pr_body)" == *'**Tested:** test pass'* ]]
+}
+
+# summary_json <pr> <json> — the PR writer's structured summary.
+summary_json() { printf '%s' "$2" > "$D/pr-$1.summary.json"; }
+
+@test "a valid summary.json gives pr_text, pr_title and pr_summary from it, the body's summary that same rendering, pr still the number" {
+  fix_ready
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  summary_file 10 $'# From the markdown\n\n## Why\n\nmarkdown why\n'
+  summary_json 10 '{"title":"Let users log in","why":"Users need accounts.","changes":["Add a login form","Store sessions"],"risk":"Low: new route only."}'
+  run bash "$SCRIPT" describe feat 10
+  [ "$output" = "ready pr=10" ]
+  result_ok
+  [ "$(r '.pr_text')" = '{"title":"Let users log in","why":"Users need accounts.","changes":["Add a login form","Store sessions"],"risk":"Low: new route only."}' ]
+  [ "$(r '[.pr, .pr_title]')" = '[10,"Let users log in"]' ]
+  [ "$(jq -r .pr_summary "$D/result.json")" = $'## Why\n\nUsers need accounts.\n\n## What changes\n\n- Add a login form\n- Store sessions\n\n## Risk\n\nLow: new route only.' ]
+  # The body holds exactly that rendering, and the markdown summary's text not at all.
+  local s; s=$(jq -r .pr_summary "$D/result.json")
+  [[ "$(cat "$STATE/pr-body")" == *"$s"* ]] || { cat "$STATE/pr-body"; return 1; }
+  ! grep -q 'markdown why\|From the markdown' "$STATE/pr-body"
+}
+
+@test "no, an unparsable or a malformed summary.json leaves no pr_text, and pr_title, pr_summary and the body come from summary.md" {
+  fix_ready
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  summary_file 10 $'# Let users log in\n\n## Why\n\nUsers need accounts.\n'
+  local bad
+  for bad in '' 'not json {' '{"title":"t","why":"w","changes":["c"]}' '{"title":"t","why":"w","changes":"c","risk":"r"}' \
+    '{"title":"t","why":"w","changes":["c",3],"risk":"r"}' '{"title":"t","why":null,"changes":["c"],"risk":"r"}' '["t"]'; do
+    rm -f "$D/pr-10.summary.json"
+    [ -z "$bad" ] || summary_json 10 "$bad"
+    run bash "$SCRIPT" describe feat 10
+    [ "$output" = "ready pr=10" ] || { echo "$bad: $output"; return 1; }
+    result_ok
+    [ "$(r '[has("pr_text"), .pr_title, .pr_summary]')" = '[false,"Let users log in","## Why\n\nUsers need accounts.\n"]' ] || { echo "$bad"; cat "$D/result.json"; return 1; }
+    grep -q '^Users need accounts\.$' "$STATE/pr-body" || { echo "$bad"; cat "$STATE/pr-body"; return 1; }
+  done
+}
+
+@test "the committed result.example.json carries every field the guide calls stable and validates against the schema" {
+  local ex="$REPO_ROOT/tests/fixtures/solve-feature/result.example.json"
+  [ -f "$ex" ]
+  local e; e=$(schema_errors "$ex")
+  [ -z "$e" ] || { echo "$e"; return 1; }
+  # Every D9 field is present somewhere in the example.
+  jq -e '
+    has("status") and has("outcome") and has("pr") and has("pr_title") and has("pr_summary")
+    and (.pr_text | has("title") and has("why") and has("changes") and has("risk"))
+    and any(.issues[]; has("title") and (.checks.results | type) == "array")
+    and any(.rounds[]; has("spec") and has("gaps") and has("checks") and has("re_reviewed")
+          and any(.findings[]; has("severity") and has("location") and has("issue") and has("fix") and has("fixed"))
+          and any(.criteria[]; has("text") and has("met") and any(.tests[]; has("test") and has("red"))))
+    and ([.needs_attention[].type] | unique) == (["fixer_changed_nothing", "note", "reviewer_changed_tree", "spec_unmet", "unfixed"])
+    and ([.needs_attention[] | keys[]] | unique | contains(["author", "finding", "gaps", "paths", "round", "severity", "text", "why"]))' "$ex"
+  grep -q 'tests/fixtures/solve-feature/result.example.json' "$REPO_ROOT/docs/guide.md"
 }
 
 # host_ready <result.json> — the guide's host example jq, taken from the guide's one ```jq block under

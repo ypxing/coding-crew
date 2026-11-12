@@ -4,6 +4,7 @@
 // what the script and its subagents wrote, splitting prose only into lines; any error exits non-zero, leaving the
 // earlier file untouched. With --red-files yes it only prints the red-evidence files of the spec issues next handed
 // out, one path a line. With --tested-line <checks log> it only prints the PR body's one `**Tested:**` line from that log.
+// With --summary <n|local> it only prints the PR writer's summary as describe puts it in the body: `# <title>` first.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -31,6 +32,42 @@ function checkResults(name) {
     if (m) results.set(m[1], m[2]);
   }
   return [...results].map(([key, result]) => ({ key, result }));
+}
+
+// The PR writer's pr-<name>.summary.json, {title, why, changes: [string], risk}; null when absent or off that shape.
+function prText(name) {
+  let t;
+  try {
+    t = JSON.parse(text(`pr-${name}.summary.json`) ?? "null");
+  } catch {
+    return null;
+  }
+  const str = (v) => typeof v === "string";
+  if (!t || typeof t !== "object" || ![t.title, t.why, t.risk].every(str)) return null;
+  if (!Array.isArray(t.changes) || !t.changes.every(str)) return null;
+  return { title: t.title, why: t.why, changes: t.changes, risk: t.risk };
+}
+// The summary as the body carries it, the one rendering of the JSON: its title apart, `summary.md` the fallback, read
+// as the writer left it with its `# <title>` line apart.
+function summaryOf(name) {
+  const t = prText(name);
+  if (t) {
+    const body = ["## Why", "", t.why, "", "## What changes", "", ...t.changes.map((c) => `- ${c}`), "", "## Risk", "", t.risk];
+    return { text: t, title: t.title, summary: body.join("\n") };
+  }
+  const md = text(`pr-${name}.summary.md`);
+  if (md === null) return null;
+  const [first, ...rest] = md.split("\n");
+  const title = /^# (.*)$/.exec(first)?.[1];
+  return { title, summary: (title === undefined ? md : rest.join("\n")).replace(/^(\s*\n)+/, "") };
+}
+
+if (args.summary) {
+  const t = summaryOf(args.summary);
+  // Without the JSON, summary.md as the writer left it, its title line included.
+  if (t?.text) process.stdout.write(`# ${t.title}\n\n${t.summary}\n`);
+  else if (t) process.stdout.write(text(`pr-${args.summary}.summary.md`));
+  process.exit(0);
 }
 
 if (args["tested-line"]) {
@@ -82,13 +119,12 @@ const roundRe = /^pr-(\d+|local)\.r(\d+)\.review\.json$/;
 const pr = /^\d+$/.test(args.pr ?? "") ? args.pr : "";
 if (args.publish === "yes" && pr) result.pr = Number(pr);
 const name = /^(\d+|local)$/.test(args.pr ?? "") ? args.pr : "";
-// The PR writer's summary as it wrote it, its `# <title>` line apart: describe adds its own lines around it.
-const summary = name ? text(`pr-${name}.summary.md`) : null;
-if (summary !== null) {
-  const [first, ...rest] = summary.split("\n");
-  const title = /^# (.*)$/.exec(first)?.[1];
-  if (title !== undefined) result.pr_title = title;
-  result.pr_summary = (title === undefined ? summary : rest.join("\n")).replace(/^(\s*\n)+/, "");
+// The PR writer's summary, its title apart: describe adds its own lines around it.
+const summary = name ? summaryOf(name) : null;
+if (summary) {
+  if (summary.text) result.pr_text = summary.text;
+  if (summary.title !== undefined) result.pr_title = summary.title;
+  result.pr_summary = summary.summary;
 }
 if (args.publish === "no") {
   const body = text(`local-pr-${branch.replace(/\//g, "_")}.md`);

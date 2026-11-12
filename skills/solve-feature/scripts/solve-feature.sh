@@ -92,7 +92,7 @@ fi
 BRANCH_WORK=(. ':!.coding-crew/config.json') SETUP_FILES=(.coding-crew/config.json)
 git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 ||
   { BRANCH_WORK+=(':!.coding-crew/dev-commands.json'); SETUP_FILES+=(.coding-crew/dev-commands.json); }
-[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS/result.json" "$LOGS/spec.md" "$LOGS"/pr-*.r[0-9]*.* "$LOGS"/*.checks.head "$LOGS"/pr-*.unfixed.json "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*attention.json "$LOGS"/pr-*.head \
+[ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS/result.json" "$LOGS/spec.md" "$LOGS"/pr-*.r[0-9]*.* "$LOGS"/*.checks.head "$LOGS"/pr-*.unfixed.json "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*.summary.json "$LOGS"/pr-*attention.json "$LOGS"/pr-*.head \
   "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS"/pr-*.coder-notes.json "$LOGS"/pr-*.prev-fixer-note.md "$LOGS/review.base" "$LOGS/review.since"
 # solveFeature.publish: false keeps the run on this machine: no push, no PR, the body in local_body's file. Read from
 # the user-level config only: an Actions runner has none, so it never keeps commits that vanish with the runner.
@@ -752,7 +752,7 @@ unresolved_threads() {
 # outcome come after it, so a failed write never leaves a ready PR with land's one-line body. A re-run rewrites all of
 # it, text a person added included.
 describe() {
-  local f="$LOGS/pr-$PR.summary.md" att="$LOGS/pr-$PR.attention.json" datt="$LOGS/pr-$PR.describe-attention.json"
+  local summary att="$LOGS/pr-$PR.attention.json" datt="$LOGS/pr-$PR.describe-attention.json"
   local body="$LOGS/pr-$PR.body.md" title="" refs result nf earlier="$LOGS/earlier-$SLUG.md"
   [ -f "$att" ] || die "no review result at $att: run fix $SLUG $PR <branch> first"
   BRANCH=$(git branch --show-current)
@@ -765,7 +765,9 @@ describe() {
   local prd_head="" spec_line="Spec: feature \`$SLUG\`"
   [ ! -f "$LOGS/spec.md" ] || prd_head=$(head -n 1 "$LOGS/spec.md")
   [[ ! "$prd_head" =~ ^'<!-- PRD issue #'([0-9]+): ]] || spec_line="Spec: PRD #${BASH_REMATCH[1]}, feature \`$SLUG\`"
-  [ ! -f "$f" ] || title=$(head -n 1 "$f" | sed -n 's/^# //p')
+  # The PR writer's summary as result.json renders it: from its summary.json, else its summary.md.
+  summary=$(node "$SELF/result.mjs" --logs "$LOGS" --summary "$PR") || die "reading the PR writer's summary in $LOGS failed (see above)"
+  title=$(head -n 1 <<<"$summary" | sed -n 's/^# //p')
   # describe's own item, in its own file so a re-run replaces it: the open review threads.
   jq -n --argjson count "$UNRESOLVED" --arg url "$PR_URL" \
     '[ if $count > 0 then {type: "unresolved_threads", count: $count, url: $url} else empty end ]' >"$datt" ||
@@ -817,7 +819,7 @@ describe() {
     # Written here, not by the writer subagent, so a reviewer always sees that agents wrote this PR.
     printf '> Written by solve-feature (`%s`): its coder, reviewer and fixer were agents; no person has read this body.\n\n' "$SLUG"
     # write-pr's summary minus its title line, which titles the PR instead.
-    if [ -f "$f" ]; then if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d'; echo; fi
+    if [ -n "$summary" ]; then if [ -n "$title" ]; then tail -n +2 <<<"$summary"; else cat <<<"$summary"; fi | sed '/./,$!d'; echo; fi
     printf '%s\n\n' "$tested"
     if [ -n "$need" ]; then printf '## Needs attention\n\n'; sed '/^- /!s/^/- /' <<<"$need"; echo; fi
     [ -z "$sections" ] || printf '%s\n\n' "$sections"
