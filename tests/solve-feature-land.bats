@@ -360,6 +360,18 @@ EOF
   ! grep -nE 'KIND|github|scratch|"\$CLI" config|\$REF" =~' "$SCRIPT" || false
 }
 
+@test "land, sync and fix each gate once, and only the gate merges origin's branch, runs the checks, commits their rewrites and pushes the branch" {
+  local f
+  for f in land sync fix; do
+    [ "$(sed -n "/^$f() {/,/^}/p" "$SCRIPT" | grep -cE '^[[:space:]]*gate ')" = 1 ] || { echo "$f does not call gate once"; return 1; }
+  done
+  [ "$(grep -c 'run-checks.sh" --project-root' "$SCRIPT")" = 1 ]
+  [ "$(grep -cE '(^|[^_])commit_rewrites( |$)' "$SCRIPT")" = 2 ]
+  [ "$(grep -c 'merge_in "origin/\$BRANCH"' "$SCRIPT")" = 1 ]
+  [ "$(grep -c 'push -u origin "\$BRANCH" ||' "$SCRIPT")" = 4 ]
+  sed -n '/^gate() {/,/^}/p' "$SCRIPT" | grep -q 'run-checks.sh'
+}
+
 @test "a refused land push reopens the issue, quotes git's reason and sends the user to re-run where git can push, not to land" {
   land_ready
   refuse_pushes
@@ -402,11 +414,11 @@ pr_stopped() {
   [ "$(node "$LIB/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
 }
 
-@test "a failed gh pr create reopens the issue, quotes gh's reason, names the Actions setting and sends the user to re-run" {
+@test "a failed gh pr create reopens the issue, quotes gh's reason, points at the guide's Actions section and sends the user to re-run" {
   land_ready
   local reason="GraphQL: GitHub Actions is not permitted to create or approve pull requests (createPullRequest)"
   GH_CREATE_FAIL="$reason" run bash "$SCRIPT" land feat 2 feature/feat
-  local tail="2 is ready again with its work pushed to feature/feat: fix the cause (on GitHub Actions, the repo's \"Allow GitHub Actions to create and approve pull requests\" setting, under Settings → Actions → General → Workflow permissions), then re-run"
+  local tail="2 is ready again with its work pushed to feature/feat: fix the cause (on GitHub Actions, the setting coding-crew's guide names under \"solve-feature on GitHub Actions\"), then re-run"
   pr_stopped "gh pr create failed: $reason; $tail"
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 pr failed: gh pr create failed: $reason; $tail" ]
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]

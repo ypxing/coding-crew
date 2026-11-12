@@ -432,7 +432,7 @@ pr_create_failed() {
   local why redo
   why=$(grep -v '^[[:space:]]*$' "$LOGS/pr-create.err" | tail -1 || true)
   why="gh pr create failed${why:+: $why}"
-  redo="fix the cause (on GitHub Actions, the repo's \"Allow GitHub Actions to create and approve pull requests\" setting, under Settings → Actions → General → Workflow permissions), then re-run"
+  redo="fix the cause (on GitHub Actions, the setting coding-crew's guide names under \"solve-feature on GitHub Actions\"), then re-run"
   reopen_ref pr "$why" "Reopen $REF: its PR creation failed" "reopen $REF by hand, then $redo"
   push -u origin "$BRANCH" || stop pr "$why; $REF is ready again but git push failed: $PUSH_WHY; once it can push, $redo"
   stop pr "$why; $REF is ready again with its work pushed to $BRANCH: $redo"
@@ -459,6 +459,48 @@ discard_rewrites() {
     echo "solve-feature: discarding them failed (see above): clean the tree by hand before a re-run" >>"$clog"
 }
 
+# gate <fail> <log> [<ungated>] — merge origin's copy of the branch in, run the checks into <log>, commit their
+# rewrites, push. A failure calls `<fail> <stage> <why>`, stage merge|discover|checks|rewrites|push, which stops; the
+# caller's stops are its own. <ungated>, run after the merge, returning non-zero skips the rest: nothing new to gate.
+# A failed fetch skips the merge: the push owns that failure.
+gate() {
+  local fail=$1 clog=$2 rc=0 why
+  if fetch_branch && ! merge_in "origin/$BRANCH"; then
+    why="merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS"
+    [ -n "$MERGE_CONFLICTS" ] || why="merging origin/$BRANCH into $BRANCH failed (see above)"
+    "$fail" merge "$why"
+  fi
+  [ -z "${3:-}" ] || "$3" || return 0
+  checks_lib
+  bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
+  [ "$rc" = 0 ] || discard_rewrites
+  [ "$rc" != 3 ] || "$fail" discover "no check commands known (DISCOVER)"
+  [ "$rc" = 0 ] || "$fail" checks "run-checks.sh exit $rc"
+  commit_rewrites || "$fail" rewrites "committing the checks' rewrites failed (see above)"
+  push -u origin "$BRANCH" || "$fail" push "git push failed: $PUSH_WHY"
+}
+
+# land_failed <stage> <why> — gate's stops for land: the closed $REF is reopened, so it never counts as landed.
+land_failed() {
+  local redo
+  case $1 in
+    merge)
+      redo="re-run in a fresh clone, which redoes it on origin's branch, or merge it by hand in this checkout, commit, then re-run"
+      # PUBLISH=no: earlier issues' commits exist only here, so a fresh clone would build without them.
+      [ "$PUBLISH" = yes ] || redo="merge it by hand in this checkout, commit, then re-run"
+      reopen_ref merge "$2" "Reopen $REF: its merge failed" "reopen $REF by hand, then $redo"
+      stop merge "$2; $REF is ready again: $redo" ;;
+    discover) hand_back "$2: the coder discovered none" "run /setup-coding-crew, then re-run" "$clog" ;;
+    checks) hand_back "$2" "fix the cause, then re-run" "$clog" ;;
+    rewrites) hand_back "$2" "commit them, then re-run" "$clog" ;;
+    push)
+      # Any failed push reopens the issue, unretried: an Actions runner's commits go with its job, so a closed issue
+      # would count as landed work that exists nowhere. Here a re-run finds the commits, since start never resets a branch.
+      reopen_ref push "$2" "Reopen $REF: its push failed" "reopen $REF by hand, then re-run where git can push"
+      stop push "$2; $REF is ready again: re-run where git can push (a re-run in this checkout starts from its unpushed commits)" ;;
+  esac
+}
+
 # land — the coder left <branch> clean with <ref> closed: merge in origin's branch, gate with the checks, push,
 # open the draft PR if there is none; prints pr=<n>, then runs next as next alone does, its stops and exits included.
 land() {
@@ -481,32 +523,12 @@ land() {
     [ -s "$LOGS/coder.report.md" ] || stop solve "coder ran but did not close $REF and left no report at $LOGS/coder.report.md"
     stop solve "coder ran but did not close $REF; why: $LOGS/coder.report.md"
   fi
-  # A commit someone else pushed to the branch (a bot, a teammate) is merged before the checks, so the gated tree is
-  # the pushed one. A failed fetch skips it: the push owns that failure.
-  if fetch_branch && ! merge_in "origin/$BRANCH"; then
-    local why="merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS"
-    [ -n "$MERGE_CONFLICTS" ] || why="merging origin/$BRANCH into $BRANCH failed (see above)"
-    local redo="re-run in a fresh clone, which redoes it on origin's branch, or merge it by hand in this checkout, commit, then re-run"
-    # PUBLISH=no: earlier issues' commits exist only here, so a fresh clone would build without them.
-    [ "$PUBLISH" = yes ] || redo="merge it by hand in this checkout, commit, then re-run"
-    reopen_ref merge "$why" "Reopen $REF: its merge failed" "reopen $REF by hand, then $redo"
-    stop merge "$why; $REF is ready again: $redo"
-  fi
   # The commit the checks passed on is recorded once the issue has landed: a stop below reopens it, unlanded.
   rm -f "$LOGS/$rs.checks.head"
-  rc=0; bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
-  [ "$rc" = 0 ] || discard_rewrites
-  [ "$rc" != 3 ] || hand_back "no check commands known (DISCOVER): the coder discovered none" "run /setup-coding-crew, then re-run" "$clog"
-  [ "$rc" = 0 ] || hand_back "run-checks.sh exit $rc" "fix the cause, then re-run" "$clog"
-  commit_rewrites || hand_back "committing the checks' rewrites failed (see above)" "commit them, then re-run" "$clog"
+  # A commit someone else pushed to the branch (a bot, a teammate) is merged before the checks, so the gated tree is
+  # the pushed one.
+  gate land_failed "$clog"
   checked=$(git rev-parse HEAD)
-  # Any failed push reopens the issue, unretried: an Actions runner's commits go with its job, so a closed issue
-  # would count as landed work that exists nowhere. Here a re-run finds the commits, since start never resets a branch.
-  if ! push -u origin "$BRANCH"; then
-    local why="git push failed: $PUSH_WHY"
-    reopen_ref push "$why" "Reopen $REF: its push failed" "reopen $REF by hand, then re-run where git can push"
-    stop push "$why; $REF is ready again: re-run where git can push (a re-run in this checkout starts from its unpushed commits)"
-  fi
   pr_view
   if [ -z "$PR_N" ]; then
     # describe writes the whole body at the end; until then it carries the markers address-pr-comments reads.
@@ -522,6 +544,24 @@ land() {
   CMD=next REF="" IN_LAND=yes; next
 }
 
+# sync_failed <stage> <why> — gate's stops for sync.
+sync_failed() {
+  case $1 in
+    merge) [ -z "$MERGE_CONFLICTS" ] || die "$2: merge it by hand, commit, then re-run"; die "$2" ;;
+    discover) die "$2: run /setup-coding-crew, then re-run" ;;
+    checks) die "$2 on $BRANCH merged with origin/$default — log: $clog; once fixed and committed, re-run" ;;
+    rewrites) die "$2: commit them, then re-run" ;;
+    push) die "$2; once it can push, or once you have pushed it, re-run" ;;
+  esac
+}
+# sync_ungated — whether the branch holds work no check has gated: what origin lacks; with nothing pushed, what
+# sync's merges brought in, or what an earlier sync that stopped left. sync_failed and it read sync's locals.
+sync_ungated() {
+  if [ "$PUBLISH" = no ]; then ! { [ "$(git rev-parse HEAD)" = "$before" ] && [[ "$prev" != "stopped: sync failed:"* ]]; }
+  else ! git merge-base --is-ancestor HEAD "origin/$BRANCH" 2>/dev/null
+  fi
+}
+
 # sync — before the first review: merge origin's default branch (then origin's <branch>) into <branch>, gate a merge with the checks, push it,
 # and save HEAD as the head the reviewer starts from. Prints review-base=: start's --review-since commit when origin's
 # default branch is in it and it is in HEAD, else empty — an older base would put the merged-in default branch's
@@ -529,7 +569,7 @@ land() {
 # conflicts=<files>; once someone finishes it, a re-run gates and pushes it. Success is judged here, never from
 # whoever resolved it: no merge in progress, a clean tree, the default branch in HEAD.
 sync() {
-  local default clog="$LOGS/sync.checks.log" rc=0 files before prev
+  local default clog="$LOGS/sync.checks.log" files before prev
   # Read before any stop below rewrites it: a sync that stopped left a merge, or a fix for its checks, ungated.
   prev=$(cat "$LOGS/outcome" 2>/dev/null || true)
   [ "$(git branch --show-current)" = "$BRANCH" ] || die "branch changed to '$(git branch --show-current)'"
@@ -554,26 +594,8 @@ sync() {
     exit 4
   fi
   rm -f "$LOGS/outcome" "$LOGS/result.json"
-  # As in land: a commit someone else pushed to the branch would refuse the push, on every re-run. A branch never
-  # pushed (PUBLISH=no) has no origin copy to merge.
-  if git rev-parse -q --verify "refs/remotes/origin/$BRANCH" >/dev/null && ! merge_in "origin/$BRANCH"; then
-    [ -n "$MERGE_CONFLICTS" ] || die "merging origin/$BRANCH into $BRANCH failed (see above)"
-    die "merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS: merge it by hand, commit, then re-run"
-  fi
-  # Ungated work is what origin lacks; with nothing pushed, what these merges brought in, or what an earlier sync left.
-  local gate=no
-  if [ "$PUBLISH" = no ]; then [ "$(git rev-parse HEAD)" = "$before" ] && [[ "$prev" != "stopped: sync failed:"* ]] || gate=yes
-  elif ! git merge-base --is-ancestor HEAD "origin/$BRANCH" 2>/dev/null; then gate=yes
-  fi
-  if [ "$gate" = yes ]; then
-    checks_lib
-    bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
-    [ "$rc" = 0 ] || discard_rewrites
-    [ "$rc" != 3 ] || die "no check commands known (DISCOVER): run /setup-coding-crew, then re-run"
-    [ "$rc" = 0 ] || die "run-checks.sh exit $rc on $BRANCH merged with origin/$default — log: $clog; once fixed and committed, re-run"
-    commit_rewrites || die "committing the checks' rewrites failed (see above): commit them, then re-run"
-    push -u origin "$BRANCH" || die "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, re-run"
-  fi
+  # As in land: a commit someone else pushed to the branch would refuse the push, on every re-run.
+  gate sync_failed "$clog" sync_ungated
   git rev-parse HEAD >"$LOGS/review.base"
   # This run's coder notes still standing, for the reviewer to judge; fix reads its report's indices against this list.
   pr_view
@@ -646,11 +668,23 @@ settle_notes() {
 # The fixer's edits are committed, then what others pushed to the branch merged in (git refuses a merge over staged
 # changes), then the checks run on that clean tree, so the push carries exactly what was gated.
 # fix — last stdout line `FIX: findings=<k> needs-attention=<a> review-again=yes|no`.
+# fix_failed <stage> <why> — gate's stops for fix, each naming the fix and describe re-runs.
+fix_failed() {
+  local redo="run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" fresh="; or re-run in a fresh clone"
+  [ "$PUBLISH" = yes ] || fresh=""
+  case $1 in
+    merge) stop fix "$2; merge it by hand in this checkout, commit, then $redo$fresh" ;;
+    discover) stop fix "$2: run /setup-coding-crew, then re-run" "$clog" ;;
+    checks) stop fix "$2; once fixed and committed, $redo" "$clog" ;;
+    rewrites) stop fix "$2: commit them, then $redo" "$clog" ;;
+    push) stop fix "$2; once it can push, or once you have pushed it, $redo" ;;
+  esac
+}
+
 fix() {
   local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.json" clog="$LOGS/pr-$PR.checks.log"
-  local discarded="$LOGS/pr-$PR.discarded.md" headf="$LOGS/pr-$PR.head" head_oid spec rc=0 total severe moved=no again=no
-  local fixer_notes="$LOGS/pr-$PR.notes.md" fresh="; or re-run in a fresh clone"
-  [ "$PUBLISH" = yes ] || fresh=""
+  local discarded="$LOGS/pr-$PR.discarded.md" headf="$LOGS/pr-$PR.head" head_oid spec total severe moved=no again=no
+  local fixer_notes="$LOGS/pr-$PR.notes.md"
   # The fixer's list in the one shape every reader takes as written, [{finding?, why}], rewritten before any stop below
   # so a stopped fix's result.json renders it as a finished one's; a file off that shape is kept whole as one why.
   if [ -f "$unfixed" ]; then
@@ -695,18 +729,7 @@ fix() {
       | map(select(.author != "fixer")) + (if $x == "" then [] else [{author: "fixer", round: $round, text: $x}] end)' ||
       stop fix "recording $fixer_notes in $(notes_file) failed (see above): run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   fi
-  # A failed fetch skips the merge: the push owns that failure.
-  if fetch_branch && ! merge_in "origin/$BRANCH"; then
-    local why="merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS"
-    [ -n "$MERGE_CONFLICTS" ] || why="merging origin/$BRANCH into $BRANCH failed (see above)"
-    stop fix "$why; merge it by hand in this checkout, commit, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR$fresh"
-  fi
-  bash "$CHECKS/run-checks.sh" --project-root "$ROOT" >"$clog" 2>&1 || rc=$?
-  [ "$rc" = 0 ] || discard_rewrites
-  [ "$rc" != 3 ] || stop fix "no check commands known (DISCOVER): run /setup-coding-crew, then re-run" "$clog"
-  [ "$rc" = 0 ] || stop fix "run-checks.sh exit $rc; once fixed and committed, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
-  commit_rewrites || stop fix "committing the checks' rewrites failed (see above): commit them, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR" "$clog"
-  push -u origin "$BRANCH" || stop fix "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
+  gate fix_failed "$clog"
   git rev-parse HEAD >"$LOGS/review.base"
 
   # "Changed nothing" is no commit on the branch's own line past the round's head: what merge_in brought in sits
