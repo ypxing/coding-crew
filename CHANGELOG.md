@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: a failed `gh pr create` stop now points at the guide's "solve-feature on GitHub Actions" section
+  for the Actions setting instead of spelling out its settings path; `land`, `sync` and `fix` share one gate (merge
+  origin's branch, run the checks, commit their rewrites, push) with their stop messages unchanged (#762).
 - solve-feature: fewer orchestrator turns. `land` runs `next` itself and prints `next=<ref>`, or `next`'s exit-3
   lines and `next-exit=3`; `next`'s exit 3 with a PR open merges the default branch in as `sync` does and prints
   `review-base=` (exit 4 with `conflicts=` on a conflict), so `sync` is called only after the conflict resolver. The PR
