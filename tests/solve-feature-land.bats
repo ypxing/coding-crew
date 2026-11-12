@@ -414,11 +414,11 @@ pr_stopped() {
   [ "$(node "$LIB/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
 }
 
-@test "a failed gh pr create reopens the issue, quotes gh's reason, points at the guide's Actions section and sends the user to re-run" {
+@test "a failed gh pr create reopens the issue, quotes gh's reason and sends the user to fix that cause and re-run, naming no guide section" {
   land_ready
-  local reason="GraphQL: GitHub Actions is not permitted to create or approve pull requests (createPullRequest)"
+  local reason="GraphQL: Resource not accessible by integration (createPullRequest)"
   GH_CREATE_FAIL="$reason" run bash "$SCRIPT" land feat 2 feature/feat
-  local tail="2 is ready again with its work pushed to feature/feat: fix the cause (on GitHub Actions, the setting coding-crew's guide names under \"solve-feature on GitHub Actions\"), then re-run"
+  local tail="2 is ready again with its work pushed to feature/feat: fix the cause gh pr create printed, then re-run"
   pr_stopped "gh pr create failed: $reason; $tail"
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 pr failed: gh pr create failed: $reason; $tail" ]
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]

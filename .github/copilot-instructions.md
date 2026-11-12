@@ -115,7 +115,7 @@ The tracker is `.coding-crew/config.json`'s `tracker` section (`github` today); 
 
 | Skill | Description |
 |-------|-------------|
-| `setup-coding-crew` | Take a repo from a fresh install to a working /solve-feature: tracker, check commands, and the Actions workflow with the github tracker |
+| `setup-coding-crew` | Take a repo from a fresh install to a working /solve-feature: tracker and check commands |
 | `configure-tracker` | Choose where the project's issues live: local markdown files or GitHub Issues |
 | `crew-afk` | Start one feature's solve-feature run unattended in its own worktree, locally, in orca or in herdr |
 | `solve-feature` | Run one feature's issues on one branch, each by a fresh coder subagent gated by the checks, then review, fix and describe its PR |

@@ -78,8 +78,6 @@ HOME/.copilot/skills/domain-modeling/references/adr-format.md exec=0
 HOME/.copilot/skills/domain-modeling/references/context-format.md exec=0
 HOME/.copilot/skills/setup-coding-crew/ /
 HOME/.copilot/skills/setup-coding-crew/SKILL.md exec=0 unrendered=0
-HOME/.copilot/skills/setup-coding-crew/hosts/ /
-HOME/.copilot/skills/setup-coding-crew/hosts/github-actions.yml exec=0
 HOME/.copilot/skills/solve-feature/ /
 HOME/.copilot/skills/solve-feature/SKILL.md exec=0 unrendered=0
 HOME/.copilot/skills/solve-feature/result.schema.json exec=0

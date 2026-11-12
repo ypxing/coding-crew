@@ -6,11 +6,18 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- **Breaking** — setup-coding-crew, solve-feature: coding-crew no longer ships a GitHub Actions workflow. The reusable
+  `crew-solve-feature.yml`, the `actions/install` action and setup's caller template are removed, and
+  `/setup-coding-crew` covers the tracker and the dev commands only (`redo actions` is gone); a repo that still has
+  a `solve-feature.yml` from an earlier setup gets no warning. A failed `gh pr create` stop now says to fix the
+  cause it printed and re-run. Running solve-feature on a CI runner is the host's own business (#766).
+  **Upgrading:** a repo whose `.github/workflows/solve-feature.yml` calls
+  `ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@vX` breaks once its pin moves past `v2.3.14`
+  (a Dependabot bump included): delete that file, or keep its pin at `@v2.3.14` or earlier.
 - solve-issue: coders make each TDD step's edits in one turn (several edits sent together, independent files
   included) and re-read only ranges they have not seen or changed, so fewer turns re-bill a large context (#764).
-- solve-feature: a failed `gh pr create` stop now points at the guide's "solve-feature on GitHub Actions" section
-  for the Actions setting instead of spelling out its settings path; `land`, `sync` and `fix` share one gate (merge
-  origin's branch, run the checks, commit their rewrites, push) with their stop messages unchanged (#762).
+- solve-feature: `land`, `sync` and `fix` share one gate (merge origin's branch, run the checks, commit their
+  rewrites, push) with their stop messages unchanged (#762).
 - solve-feature: fewer orchestrator turns. `land` runs `next` itself and prints `next=<ref>`, or `next`'s exit-3
   lines and `next-exit=3`; `next`'s exit 3 with a PR open merges the default branch in as `sync` does and prints
   `review-base=` (exit 4 with `conflicts=` on a conflict), so `sync` is called only after the conflict resolver. The PR

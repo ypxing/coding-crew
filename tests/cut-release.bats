@@ -14,7 +14,6 @@ setup() {
   cp "$REPO_ROOT/scripts/cut-release.sh" "$R/scripts/"
   printf '# Changelog\n\n## [Unreleased]\n\n## [1.0.0]\n\n- first\n' > "$R/CHANGELOG.md"
   echo '{"skills": {}}' > "$R/registry.json"
-  pin_refs v1.0.0
   git -C "$R" add -A
   git -C "$R" -c user.email=t@t -c user.name=t commit -qm init
   git -C "$R" remote add origin "$BATS_TEST_TMPDIR/remote.git"
@@ -23,15 +22,6 @@ setup() {
 }
 
 release() { run bash "$R/scripts/cut-release.sh" --dry-run "$@"; }
-
-# pin_refs <wf ref> [<caller ref>] — the reusable workflow's install step and the caller template's job at those refs.
-pin_refs() {
-  mkdir -p "$R/.github/workflows" "$R/skills/setup-coding-crew/hosts"
-  printf 'jobs:\n  solve:\n    steps:\n      - uses: actions/checkout@v4\n      - name: Install\n        uses: ypxing/coding-crew/actions/install@%s\n        with:\n          agent: x\n' \
-    "$1" > "$R/.github/workflows/crew-solve-feature.yml"
-  printf '# `uses: ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@vX.Y.Z` in prose is no ref.\njobs:\n  run:\n    uses: ypxing/coding-crew/.github/workflows/crew-solve-feature.yml@%s\n' \
-    "${2:-$1}" > "$R/skills/setup-coding-crew/hosts/github-actions.yml"
-}
 
 @test "neither --demo-smoke nor --no-demo-smoke is refused, naming both and the smoke script" {
   release
@@ -152,37 +142,14 @@ commit_file() {
   [[ "$output" == *"would tag HEAD as v1.0.0"* ]]
 }
 
-@test "a coding-crew uses: ref other than the release's tag, in either pinned file, is refused naming the file and the ref; both at the tag pass" {
-  pin_refs v0.9.0 v1.0.0
-  git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm old-wf
-  release --no-demo-smoke "x"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *".github/workflows/crew-solve-feature.yml"*"@v0.9.0"*"@v1.0.0"* ]] || { echo "$output"; return 1; }
-  [[ "$output" != *"would tag"* ]]
-  pin_refs v1.0.0 main
-  git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm old-caller
-  release --no-demo-smoke "x"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"skills/setup-coding-crew/hosts/github-actions.yml"*"@main"* ]] || { echo "$output"; return 1; }
-  rm "$R/skills/setup-coding-crew/hosts/github-actions.yml"
-  git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm no-caller
-  release --no-demo-smoke "x"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"skills/setup-coding-crew/hosts/github-actions.yml"* ]]
-  pin_refs v1.0.0
-  git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm bumped
+@test "a tree with no workflow files cuts; a workflow file changed after the smoke log is refused like any other" {
+  [ ! -e "$R/.github" ]
   release --no-demo-smoke "x"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [[ "$output" == *"would tag HEAD as v1.0.0"* ]]
-}
-
-@test "a passing log at a commit followed only by the tag bump in the two pinned files is accepted" {
-  pin_refs v0.9.0
-  git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm old
   passing_log_at "$(git -C "$R" rev-parse HEAD)"
-  pin_refs v1.0.0
-  git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm bump
+  commit_file .github/workflows/solve.yml
   release --demo-smoke "$LOG"
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [[ "$output" == *"would tag HEAD as v1.0.0"* ]]
+  [ "$status" -ne 0 ]
+  [[ "$output" == *".github/workflows/solve.yml"* ]] || { echo "$output"; return 1; }
 }

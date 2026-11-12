@@ -139,13 +139,13 @@ Ask the user to confirm or override any **Debatable** or **Dismiss** entries bef
   `copilot-pull-request-reviewer`, as GraphQL names it); a person's or an allowlisted bot's (`github.trustedBots`)
   stays open for a person.
 
-On a solve-feature PR, a reply that leaves a thread open for a person asks them to answer by replying on it: a reply
-starts the next round on GitHub Actions, resolving the thread alone does not.
+On a solve-feature PR, a reply that leaves a thread open for a person asks them to answer by replying on it and to
+ask for another round.
 
 **Non-interactive on any other PR**, the PR's body stands in for the feature's spec. A request in the areas the ground rules guard
 gets the reply above and no edit in Step 4, with the thread left open. Every reply that leaves a thread open for a
 person @mentions the PR's author, in place of the feature root's assignees, and says to answer by replying on the
-thread and to ask for another round: a reply starts a round by itself only on a solve-feature PR on GitHub Actions.
+thread and to ask for another round.
 
 Every reply, resolve and unresolve goes through `gh api graphql` (`addPullRequestReviewThreadReply`,
 `resolveReviewThread`, `unresolveReviewThread`, each on the thread's node `id`).
@@ -157,7 +157,7 @@ or push code yourself. solve-feature codes, checks and reviews the fix on the sa
 one writer of the PR body and its ready state. On any other PR skip this step.
 
 1. **No accepted thread** → file nothing, and go to 4 anyway when the feature has a ready issue (`node "$TRACKER"
-   next --feature-slug <slug>` exits 0: a run this round's own displaced, on GitHub Actions, left it unworked) or
+   next --feature-slug <slug>` exits 0: a run this round's own displaced left it unworked) or
    the round leaves no unresolved thread on a PR that is a draft (a person's decision closed the last one, so
    solve-feature marks it ready), or leaves one on a PR that is not a draft (solve-feature turns it back into a
    draft and lists the open threads). Otherwise go to Step 6.

@@ -220,7 +220,7 @@ _skills_copied() {
   [ -z "$(find "$ALL/.claude/skills" -path '*/scripts/*' \( -name write-commands-cache.sh -o -name cli.mjs \) | grep -v '/coding-crew-lib/scripts/')" ]
 }
 
-@test "the Actions workflow's skill subset installs coding-crew-lib with it, on every platform" {
+@test "a --skills subset installs coding-crew-lib with it, on every platform" {
   cd "$SCRIPT_DIR"
   local p
   for p in "${PLATFORMS[@]}"; do
@@ -267,7 +267,7 @@ _skills_copied() {
   [ -z "$(ls -A "$home")" ]
   _skills_copied "$repo/.claude/skills"
   # The libraries once, in coding-crew-lib, not a copy per skill.
-  [ "$(find "$repo/.claude/skills" -type f | wc -l | tr -d ' ')" -eq 72 ] || { find "$repo/.claude/skills" -type f | wc -l; return 1; }
+  [ "$(find "$repo/.claude/skills" -type f | wc -l | tr -d ' ')" -eq 71 ] || { find "$repo/.claude/skills" -type f | wc -l; return 1; }
   [ ! -e "$repo/.coding-crew/lib" ]
   [ "$(jq 'has("libs")' "$repo/.coding-crew/manifest.json")" = false ]
 
