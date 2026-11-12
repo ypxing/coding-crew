@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-issue: coders make each TDD step's edits in one turn (several edits sent together, independent files
+  included) and re-read only ranges they have not seen or changed, so fewer turns re-bill a large context (#764).
 - solve-feature: a failed `gh pr create` stop now points at the guide's "solve-feature on GitHub Actions" section
   for the Actions setting instead of spelling out its settings path; `land`, `sync` and `fix` share one gate (merge
   origin's branch, run the checks, commit their rewrites, push) with their stop messages unchanged (#762).

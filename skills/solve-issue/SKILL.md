@@ -231,6 +231,12 @@ what your change touches (one test file, not the suite); before committing, the 
 affects. Other workers share this machine: temp files go under `$PROJECT_ROOT`, never a shared path
 such as `/tmp/<name>`; never kill a process you did not start.
 
+**Batch your edits.** Each tool call re-bills your whole context, so one TDD step's edits — one red,
+one green, or one docs or refactor pass — go in one turn: several edit calls sent together, or one
+script that applies every replacement to a file. Edits to different files that do not depend on each
+other (docs, tests) go in that same turn. Re-read only a range you have not seen or that your own edit
+changed. A red and its green stay separate turns: one test, then its implementation.
+
 STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
 
 **Red evidence.** When your caller names a red-evidence file, each new test's red run appends one line per test to
