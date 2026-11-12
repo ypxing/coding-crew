@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+## [2.4.0]
+
 - **Breaking** — setup-coding-crew, solve-feature: coding-crew no longer ships a GitHub Actions workflow. The reusable
   `crew-solve-feature.yml`, the `actions/install` action and setup's caller template are removed, and
   `/setup-coding-crew` covers the tracker and the dev commands only (`redo actions` is gone); a repo that still has
