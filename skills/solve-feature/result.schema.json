@@ -10,8 +10,19 @@
     "branch": { "type": "string" },
     "head": { "type": "string", "description": "HEAD when the file was written." },
     "pr": { "type": "integer", "description": "The PR's number; absent with solveFeature.publish false, or before a PR exists." },
-    "pr_title": { "type": "string", "description": "The PR writer's title, from its summary file's `# <title>` line; with solveFeature.publish false, the local PR body file's title. Absent until either file exists." },
-    "pr_summary": { "type": "string", "description": "The PR writer's summary file without its `# <title>` line, as it wrote it: none of the banner, markers, Needs attention lines, notes section or script-written Tested line describe adds around it. Absent until that file exists." },
+    "pr_text": {
+      "type": "object",
+      "description": "The PR writer's pr-<n>.summary.json as it wrote it. Absent when that file is missing, unparsable, lacks a field or has changes other than a list of strings.",
+      "required": ["title", "why", "changes", "risk"],
+      "properties": {
+        "title": { "type": "string" },
+        "why": { "type": "string" },
+        "changes": { "type": "array", "items": { "type": "string" } },
+        "risk": { "type": "string" }
+      }
+    },
+    "pr_title": { "type": "string", "description": "pr_text.title when pr_text is present, else the PR writer's summary.md `# <title>` line; with solveFeature.publish false, the local PR body file's title. Absent until any of those exists." },
+    "pr_summary": { "type": "string", "description": "The PR's summary as describe writes it into the body: rendered from pr_text (## Why, ## What changes as one `- ` line per change, ## Risk) when present, else the writer's summary.md without its `# <title>` line, as it wrote it. None of the banner, markers, Needs attention lines, notes section or script-written Tested line describe adds around it. Absent until either file exists." },
     "pr_body": { "type": "string", "description": "With solveFeature.publish false: the local PR body file's body; absent until that file exists." },
     "issues": {
       "type": "array",
@@ -58,6 +69,10 @@
             "items": {
               "type": "object",
               "properties": {
+                "severity": { "type": "string" },
+                "location": { "type": "string" },
+                "issue": { "type": "string" },
+                "fix": { "type": "string" },
                 "fixed": { "type": "boolean", "description": "True when this round's fixer_changed_code is true and no unfixed entry names this finding. Absent on every finding of a round whose fix stopped (fixer_changed_code null) or whose unfixed holds an entry naming no finding, and on an entry that was not an object." }
               }
             }

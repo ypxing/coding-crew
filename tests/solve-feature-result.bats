@@ -618,17 +618,24 @@ summary_json() { printf '%s' "$2" > "$D/pr-$1.summary.json"; }
   [ -f "$ex" ]
   local e; e=$(schema_errors "$ex")
   [ -z "$e" ] || { echo "$e"; return 1; }
-  # Every D9 field is present somewhere in the example.
-  jq -e '
+  # Every D9 field is present somewhere in the example, and one needs_attention item of each type the schema names.
+  jq -e --slurpfile s "$SCHEMA" '
     has("status") and has("outcome") and has("pr") and has("pr_title") and has("pr_summary")
     and (.pr_text | has("title") and has("why") and has("changes") and has("risk"))
     and any(.issues[]; has("title") and (.checks.results | type) == "array")
     and any(.rounds[]; has("spec") and has("gaps") and has("checks") and has("re_reviewed")
           and any(.findings[]; has("severity") and has("location") and has("issue") and has("fix") and has("fixed"))
           and any(.criteria[]; has("text") and has("met") and any(.tests[]; has("test") and has("red"))))
-    and ([.needs_attention[].type] | unique) == (["fixer_changed_nothing", "note", "reviewer_changed_tree", "spec_unmet", "unfixed"])
+    and ([.needs_attention[].type] | unique) == ($s[0].properties.needs_attention.items.properties.type.enum | unique)
     and ([.needs_attention[] | keys[]] | unique | contains(["author", "finding", "gaps", "paths", "round", "severity", "text", "why"]))' "$ex"
-  grep -q 'tests/fixtures/solve-feature/result.example.json' "$REPO_ROOT/docs/guide.md"
+  # The guide calls the fields stable, names the example, and its table lists each D9 field.
+  local guide="$REPO_ROOT/docs/guide.md" f
+  grep -q 'tests/fixtures/solve-feature/result.example.json' "$guide"
+  grep -q 'The fields below are stable' "$guide"
+  for f in status outcome pr pr_text pr_title pr_summary 'issues\[\]\.title' 'issues\[\]\.checks\.results' 'rounds\[\]\.spec' 'rounds\[\]\.gaps' \
+    'rounds\[\]\.findings\[\]' 'rounds\[\]\.criteria\[\]' 'rounds\[\]\.checks' 'rounds\[\]\.re_reviewed' 'needs_attention\[\]'; do
+    grep -qE "^\| [^|]*\`$f\`" "$guide" || { echo "no table row for $f"; return 1; }
+  done
 }
 
 # host_ready <result.json> — the guide's host example jq, taken from the guide's one ```jq block under

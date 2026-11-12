@@ -81,7 +81,9 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    4. Run a **fresh subagent** — none of this conversation, the repo's working directory — with exactly
      this prompt: `Use the write-pr skill on PR #<n>; its intent is the spec in <repo>/.coding-crew/solve-feature/spec.md
      and its checks passed (<repo>/.coding-crew/solve-feature/pr-<n>.checks.log). Write it to
-     <repo>/.coding-crew/solve-feature/pr-<n>.summary.md, leaving out its **Tested:** line: the script writes that line from the checks`; when `<n>` is `local`, the same prompt with `Use the
+     <repo>/.coding-crew/solve-feature/pr-<n>.summary.md, leaving out its **Tested:** line: the script writes that line from the checks.
+     Also write the same title and summary to <repo>/.coding-crew/solve-feature/pr-<n>.summary.json as
+     {"title": "<the title>", "why": "<the Why text>", "changes": ["<one What changes bullet>", …], "risk": "<the Risk line>"}`; when `<n>` is `local`, the same prompt with `Use the
      write-pr skill on branch <branch>` in place of `Use the write-pr skill on PR #<n>`. Wait for it to finish.
    5. `bash "<skill-dir>/scripts/solve-feature.sh" describe <slug> <n>` — writes the PR's body (its `**Tested:**` line included) and title, marks the
      draft ready when nothing needs a person, and prints the run's outcome, `ready pr=<n>` or
@@ -102,9 +104,7 @@ the user works in. Nothing takes a lock: never start a second run on a slug whos
 | ----------------------------------------------- | -------------------------------------------------------------- |
 | `--branch <name>`                               | The branch the run uses, never the default branch (default: one named after the slug) |
 | `--review-since <sha>`                          | Scopes the review's findings to the commits since `<sha>` (a follow-up run's), while spec and gaps are judged on the whole code; used only when `<sha>` holds the default branch and is in the branch after `sync`'s merge, else the whole branch is reviewed. Not a commit: `start` stops |
-| `CREW_COMMANDS_FILE`                            | The dev commands file every check reads and writes, in place of the repo's; keep it outside the checkout, where a coder cannot commit it. One that is not writable is never rewritten: discovery stops instead. A keyed check may be slower than its raw command (a host's may go through a broker and run in containers): that is expected, and no reason to fall back to raw commands |
 | `solveFeature.models.coder` / `.reviewer`       | The coder and fixer / reviewer model name; `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` override it, and `start` prints the one it resolved |
-| `--spec <file> --issue <n>`                     | Builds the spec in `<file>` as the one-issue local feature `issue-<n>`, with no tracker set up beforehand: every `start` rebuilds it from the file. Keep the file outside the checkout (an untracked one inside stops `start` as a dirty tree does), and its `## Blocked by` section is dropped. Needs the local tracker in effect |
-| `CREW_PUBLISH`                                  | `false` turns publishing off as `solveFeature.publish: false` does, with no user config; any other value leaves that config's answer |
-| `CREW_TRACKER`                                  | `local` or `github`: the tracker every process of the run uses, ahead of the project's and the user-level config. Empty counts as unset |
 | `solveFeature.publish`                          | `false` keeps the run on this machine: no `git push` and no `gh pr` call, the body in the local file of step 3. Read from the user-level `~/.coding-crew/config.json` only, never the project's, so an Actions run always pushes |
+
+`--spec <file> --issue <n>`, `CREW_PUBLISH`, `CREW_TRACKER` and `CREW_COMMANDS_FILE`, the settings of a host that embeds this skill, and the `result.json` fields such a host may rely on: coding-crew's guide, "Embedding solve-feature".

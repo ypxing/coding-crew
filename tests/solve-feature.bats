@@ -853,7 +853,16 @@ EOF
   grep -qF 'When `review-base=` is non-empty, `<sha>` its value, the prompt reads `…on branch <branch> base <sha> against the spec…`' "$skill"
   grep -qF '`; Findings cover <sha>..HEAD; judge spec, gaps and criteria on the code at HEAD: the commits before <sha> were already reviewed`' "$skill"
   grep -qE '^\| `--review-since <sha>` +\|' "$skill"
-  grep -qE '^\| `CREW_COMMANDS_FILE` +\|.*outside the checkout' "$skill"
+}
+
+@test "SKILL.md's host settings are one line pointing at the guide, which documents them; its PR writer prompt asks for summary.json's four fields" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md" guide="$REPO_ROOT/docs/guide.md"
+  ! grep -qE '^\| `(CREW_COMMANDS_FILE|CREW_PUBLISH|CREW_TRACKER|--spec <file> --issue <n>)` +\|' "$skill" || false
+  grep -qF '`--spec <file> --issue <n>`, `CREW_PUBLISH`, `CREW_TRACKER` and `CREW_COMMANDS_FILE`, the settings of a host that embeds this skill' "$skill"
+  grep -qF 'guide, "Embedding solve-feature"' "$skill"
+  grep -qE '^- `CREW_COMMANDS_FILE` .*outside$' "$guide"
+  grep -qF '<repo>/.coding-crew/solve-feature/pr-<n>.summary.json as' "$skill"
+  grep -qF '{"title": "<the title>", "why": "<the Why text>", "changes": ["<one What changes bullet>", …], "risk": "<the Risk line>"}' "$skill"
 }
 
 @test "SKILL.md's fixer prompt asks for pr-<n>.unfixed.json, a list of finding indices with why; no code reads the old unfixed.md or attention.md" {
