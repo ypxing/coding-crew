@@ -129,7 +129,7 @@
     },
     "needs_attention": {
       "type": "array",
-      "description": "What needs a person, one typed item per reason: the last finished fix round's items, then describe's, then this run's standing notes. The run ends needs-attention exactly when this is non-empty, and the body's Needs attention lines are rendered from it; [] when the run ends ready or no review round ran. round is the 0-based index into rounds.",
+      "description": "What needs a person, one typed item per reason: the last finished fix round's items, then describe's, then this run's standing notes. The run ends needs-attention exactly when this is non-empty, and the body's Needs attention lines are rendered from it; [] when the run ends ready, or stops with no note before any review round. round is the 0-based index into rounds.",
       "items": {
         "type": "object",
         "required": ["type"],

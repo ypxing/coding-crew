@@ -136,6 +136,21 @@ clean_review() { echo '[]' > "$D/pr-${1:-10}.attention.json"; }
   [ ! -e "$D/pr-10.prev-fixer-note.md" ]
 }
 
+@test "a re-run's first round hands its fixer the note a stopped fix left, so the note is kept, edited or dropped, not lost" {
+  fix_ready
+  echo '- rotate the CI token after merge' > "$D/pr-10.notes.md"
+  CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+  [ "$(jq -c . "$NF")" = '[{"author":"fixer","round":0,"text":"- rotate the CI token after merge"}]' ]
+  run bash "$SCRIPT" start feat; [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" sync feat feature/feat; [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  report '{"spec":"met","gaps":[],"findings":[{"severity":"LOW","location":"a:1","issue":"i","fix":"f"}]}'
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "$(printf 'fixer-note=%s\nfindings=1' "$WORK/$D/pr-10.prev-fixer-note.md")" ] || { echo "$output"; return 1; }
+  [ "$(cat "$D/pr-10.prev-fixer-note.md")" = '- rotate the CI token after merge' ]
+}
+
 @test "a second round with no findings runs no fixer, so the first round's fixer note stands" {
   fix_ready
   echo '- decide whether to check each comment author' > "$D/pr-10.notes.md"

@@ -58,7 +58,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      When `reviewer-model=` (as `next` or `land` last printed it) is non-empty, run it on the model in your own list that
      matches that name, as for `coder-model=`, naming that model in the call; when it is empty, on your own. Wait for it to finish.
    2. `bash "<skill-dir>/scripts/solve-feature.sh" reviewed <slug> <n> <branch>` — always: it discards what the
-     reviewer changed in the tree, flags it for the PR, and prints `findings=<k>` last; from the second round, `fixer-note=<path>` before it when the first round's fixer left a note. Only when it prints `findings=` greater than 0:
+     reviewer changed in the tree, flags it for the PR, and prints `findings=<k>` last; `fixer-note=<path>` before it when a fixer note stands (an earlier round's, or a stopped run's). Only when it prints `findings=` greater than 0:
      run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Judge each finding in <repo>/.coding-crew/solve-feature/pr-<n>.review.json
      against the code and the spec in <repo>/.coding-crew/solve-feature/spec.md before acting on it: its fix is a
@@ -71,7 +71,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      only changing a spec decision fixes it (quote the decision) — in <repo>/.coding-crew/solve-feature/pr-<n>.unfixed.json as a
      JSON list, [{"finding": <its 0-based index in the report's findings>, "why": "<why>"}], and leave that file absent if you fixed them all. Anything else a person must do or decide goes in
      <repo>/.coding-crew/solve-feature/pr-<n>.notes.md, left absent when there is none. This run is non-interactive; ask no questions`;
-     when `reviewed` printed `fixer-note=<path>`, `; the previous round's note for a person is in <path>: keep, edit or drop this note, writing what still applies to pr-<n>.notes.md` is inserted before `. This run is non-interactive`. Run it on `coder-model=` as for each issue's coder.
+     when `reviewed` printed `fixer-note=<path>`, `; an earlier fixer's note for a person is in <path>: keep, edit or drop this note, writing what still applies to pr-<n>.notes.md` is inserted before `. This run is non-interactive`. Run it on `coder-model=` as for each issue's coder.
      Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" fix <slug> <n> <branch>` — always, whatever the subagents
      reported. It records the fixer's note in place of the previous round's, gates the fixes with the checks, commits and pushes them,

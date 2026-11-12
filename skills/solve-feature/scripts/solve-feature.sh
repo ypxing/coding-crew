@@ -628,10 +628,11 @@ reviewed() {
   fi
   [ -f "$report" ] || stop reviewer "no review report at $report"
   jq -e . "$report" >/dev/null 2>&1 || stop reviewer "unreadable review report $report"
-  # From the second round, the fixer note standing from the first, for this round's fixer to keep, edit or drop.
-  local prev="$LOGS/pr-$PR.prev-fixer-note.md" kept=("$LOGS/pr-$PR".r[0-9]*.review.json)
+  # When a fixer note stands (an earlier round's, or one a stopped fix left for this re-run), for this round's fixer
+  # to keep, edit or drop: its fix replaces every fixer entry.
+  local prev="$LOGS/pr-$PR.prev-fixer-note.md"
   rm -f "$prev"
-  if [ -e "${kept[0]}" ] && [ -s "$(notes_file)" ]; then
+  if [ -s "$(notes_file)" ]; then
     jq -j '[.[] | select(.author == "fixer")][0].text // empty' "$(notes_file)" >"$prev" || stop reviewer "reading $(notes_file) failed (see above)"
     if [ -s "$prev" ]; then echo "fixer-note=$prev"; else rm -f "$prev"; fi
   fi
