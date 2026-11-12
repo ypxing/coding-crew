@@ -4,6 +4,8 @@
 
 load helpers/solve-feature
 
+bats_require_minimum_version 1.5.0
+
 # --- land: guards ----------------------------------------------------------------------
 
 # stops_at <step> <reason> — land just exited 1: nothing pushed, the stop in .coding-crew/solve-feature/outcome.
@@ -100,14 +102,14 @@ stops_at() {
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 land failed: 2 is done but its land never finished: if its coder finished it, run land feat 2 feature/feat; otherwise reopen 2; then re-run" ]
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$output" = pr=10 ]
+  [ "${lines[0]}" = pr=10 ]
   run bash "$SCRIPT" next feat
   [ "$output" = 3 ]
 }
 
 @test "with a PR open, a re-run after a later issue's interrupted land names that land too, not the review" {
   land_ready
-  run bash "$SCRIPT" land feat 2 feature/feat; [ "$output" = pr=10 ]
+  run bash "$SCRIPT" land feat 2 feature/feat; [ "${lines[0]}" = pr=10 ]
   run bash "$SCRIPT" next feat; [ "$output" = 3 ]
   coder 3
   run bash "$SCRIPT" next feat
@@ -117,7 +119,7 @@ stops_at() {
   run bash "$SCRIPT" land feat 3 feature/feat; [ "$status" -eq 0 ]
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=\nreview-base=')" ]
 }
 
 @test "a re-run on another branch after an interrupted land names the branch the coder worked on, not the current one" {
@@ -285,7 +287,7 @@ handed_back() {
   land_ready
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ]
-  [ "$output" = pr=10 ]
+  [ "${lines[0]}" = pr=10 ]
   [ "$(git rev-parse origin/feature/feat)" = "$(git rev-parse feature/feat)" ]
   grep -qx -- --draft "$STATE/pr-create.1"
   [ "$(cat "$STATE/pr-title")" = Feat ]
@@ -300,7 +302,7 @@ EOF
   coder 3
   run bash "$SCRIPT" land feat 3 feature/feat
   [ "$status" -eq 0 ]
-  [ "$output" = pr=10 ]
+  [ "${lines[0]}" = pr=10 ]
   [ ! -f "$STATE/pr-create.2" ]
   ! grep -qE '^pr (edit|ready|comment)|^api' "$STATE/gh.log" || false
   [ "$(git rev-parse origin/feature/feat)" = "$(git rev-parse feature/feat)" ]
@@ -358,6 +360,18 @@ EOF
   ! grep -nE 'KIND|github|scratch|"\$CLI" config|\$REF" =~' "$SCRIPT" || false
 }
 
+@test "land, sync and fix each gate once, and only the gate merges origin's branch, runs the checks, commits their rewrites and pushes the branch" {
+  local f
+  for f in land sync fix; do
+    [ "$(sed -n "/^$f() {/,/^}/p" "$SCRIPT" | grep -cE '^[[:space:]]*gate ')" = 1 ] || { echo "$f does not call gate once"; return 1; }
+  done
+  [ "$(grep -c 'run-checks.sh" --project-root' "$SCRIPT")" = 1 ]
+  [ "$(grep -cE '(^|[^_])commit_rewrites( |$)' "$SCRIPT")" = 2 ]
+  [ "$(grep -c 'merge_in "origin/\$BRANCH"' "$SCRIPT")" = 1 ]
+  [ "$(grep -c 'push -u origin "\$BRANCH" ||' "$SCRIPT")" = 4 ]
+  sed -n '/^gate() {/,/^}/p' "$SCRIPT" | grep -q 'run-checks.sh'
+}
+
 @test "a refused land push reopens the issue, quotes git's reason and sends the user to re-run where git can push, not to land" {
   land_ready
   refuse_pushes
@@ -400,11 +414,11 @@ pr_stopped() {
   [ "$(node "$LIB/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
 }
 
-@test "a failed gh pr create reopens the issue, quotes gh's reason, names the Actions setting and sends the user to re-run" {
+@test "a failed gh pr create reopens the issue, quotes gh's reason, points at the guide's Actions section and sends the user to re-run" {
   land_ready
   local reason="GraphQL: GitHub Actions is not permitted to create or approve pull requests (createPullRequest)"
   GH_CREATE_FAIL="$reason" run bash "$SCRIPT" land feat 2 feature/feat
-  local tail="2 is ready again with its work pushed to feature/feat: fix the cause (on GitHub Actions, the repo's \"Allow GitHub Actions to create and approve pull requests\" setting, under Settings → Actions → General → Workflow permissions), then re-run"
+  local tail="2 is ready again with its work pushed to feature/feat: fix the cause (on GitHub Actions, the setting coding-crew's guide names under \"solve-feature on GitHub Actions\"), then re-run"
   pr_stopped "gh pr create failed: $reason; $tail"
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 pr failed: gh pr create failed: $reason; $tail" ]
   [ "$(git ls-remote origin feature/feat | cut -f1)" = "$(git rev-parse HEAD)" ]
@@ -445,7 +459,7 @@ pr_stopped() {
   coder 2
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$output" = pr=10 ]
+  [ "${lines[0]}" = pr=10 ]
 }
 
 @test "land merges a commit others pushed to the branch before its checks, then pushes; nothing new makes no merge commit" {
@@ -519,168 +533,9 @@ pr_stopped() {
   grep -q 'checks library not found' .coding-crew/solve-feature/outcome
 }
 
-# --- land: the coder's notes for a person ------------------------------------------------
+# --- land: the coder's notes for a person (the run file: solve-feature-notes.bats) ---------
 
 notes() { printf '%s\n' "- tag a release once this merges" "" "- set the CREW_X repo variable" > .coding-crew/solve-feature/coder.notes.md; }
-# notes_section — the body's notes section, its markers included.
-notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-feature:notes:end -->$/p' "$STATE/pr-body"; }
-
-@test "land writes a non-empty coder.notes.md into the PR body's notes section under the issue's ref and the date, posts no comment, then deletes it; pr= stays last" {
-  land_ready
-  notes
-  run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$output" = pr=10 ]
-  ! grep -q '^pr comment' "$STATE/gh.log" || false
-  [ "$(cat "$STATE/pr-body")" = "$(cat <<EOF
-<!-- solve-feature:begin -->
-Implemented by solve-feature (\`feat\`) — in progress.
-<!-- solve-feature:notes:begin -->
-## Notes for a person
-
-Delete a note here once it is handled.
-
-### the coder of 2 · $(date +%F)
-
-- tag a release once this merges
-
-- set the CREW_X repo variable
-
-<!-- solve-feature:notes:end -->
-<!-- solve-feature:slug feat -->
-<!-- solve-feature:end -->
-EOF
-)" ]
-  [ ! -e .coding-crew/solve-feature/coder.notes.md ]
-  # The PR exists before the notes: created first.
-  [ "$(grep -nE '^pr (create|edit)' "$STATE/gh.log" | cut -d' ' -f2 | paste -sd' ' -)" = "create edit" ]
-}
-
-@test "a later land appends its notes to the section, keeping the body's other text and the notes already there" {
-  land_ready
-  notes
-  run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$status" -eq 0 ]
-  printf 'a person added this\n' >> "$STATE/pr-body"
-  run bash "$SCRIPT" next feat
-  coder 3
-  echo '- rotate the key' > .coding-crew/solve-feature/coder.notes.md
-  run bash "$SCRIPT" land feat 3 feature/feat
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$output" = pr=10 ]
-  [ "$(grep -c '^<!-- solve-feature:notes:begin -->$' "$STATE/pr-body")" = 1 ]
-  [ "$(grep '^### ' "$STATE/pr-body")" = "$(printf '### the coder of 2 · %s\n### the coder of 3 · %s' "$(date +%F)" "$(date +%F)")" ]
-  [ "$(notes_section | tail -3)" = "$(printf -- '- rotate the key\n\n<!-- solve-feature:notes:end -->')" ]
-  grep -qx 'a person added this' "$STATE/pr-body"
-  grep -qx -- '- set the CREW_X repo variable' "$STATE/pr-body"
-}
-
-@test "land with no or an empty coder.notes.md makes no body edit for notes" {
-  land_ready
-  run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$status" -eq 0 ]
-  run bash "$SCRIPT" next feat
-  coder 3
-  : > .coding-crew/solve-feature/coder.notes.md
-  run bash "$SCRIPT" land feat 3 feature/feat
-  [ "$status" -eq 0 ]
-  [ "$output" = pr=10 ]
-  ! grep -qE '^pr (comment|edit)' "$STATE/gh.log" || false
-  ! grep -q 'solve-feature:notes' "$STATE/pr-body" || false
-}
-
-@test "with a PR open, a coder's note reaches the body before land's checks and push, so a stop and a fresh runner keep it" {
-  land_ready
-  run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$output" = pr=10 ]
-  run bash "$SCRIPT" next feat
-  [ "$output" = 3 ]
-  coder 3
-  local f=.coding-crew/solve-feature/coder.notes.md
-  echo '- a note before the checks stop' > "$f"
-  CHECKS_RC=1 run bash "$SCRIPT" land feat 3 feature/feat
-  [ "$status" -eq 1 ]
-  [ ! -e "$f" ]
-  grep -qx -- '- a note before the checks stop' "$STATE/pr-body"
-  run bash "$SCRIPT" next feat
-  [ "$output" = 3 ]
-  coder 3
-  echo '- a note before the push stop' > "$f"
-  refuse_pushes
-  run bash "$SCRIPT" land feat 3 feature/feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"3 push failed"* ]] || { echo "$output"; return 1; }
-  [ ! -e "$f" ]
-  grep -qx -- '- a note before the push stop' "$STATE/pr-body"
-  grep -qx -- '- a note before the checks stop' "$STATE/pr-body"
-}
-
-@test "with a PR open, a failed notes write before land's checks and push says to run land after adding the note, and doing so lands the issue" {
-  land_ready
-  run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$output" = pr=10 ]
-  run bash "$SCRIPT" next feat
-  coder 3
-  local f="$WORK/.coding-crew/solve-feature/coder.notes.md"
-  echo '- a note whose write fails' > "$f"
-  GH_EDIT_FAIL=1 run bash "$SCRIPT" land feat 3 feature/feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"rm $f before a re-run"*"; then run land feat 3 feature/feat"* ]] || { echo "$output"; return 1; }
-  grep -q "then run land feat 3 feature/feat" .coding-crew/solve-feature/outcome
-  rm "$f"
-  run bash "$SCRIPT" land feat 3 feature/feat
-  [ "$output" = pr=10 ] || { echo "$output"; return 1; }
-  [ -z "$(git rev-list origin/feature/feat..feature/feat)" ]
-}
-
-@test "with no PR yet, a coder's note left by a land that stopped stays for the same issue's next land" {
-  land_ready
-  notes
-  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$status" -eq 1 ]
-  run bash "$SCRIPT" next feat
-  [ "$output" = 2 ]
-  [ -s .coding-crew/solve-feature/coder.notes.md ]
-  coder 2
-  run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$output" = pr=10 ] || { echo "$output"; return 1; }
-  grep -qx -- '- set the CREW_X repo variable' "$STATE/pr-body"
-}
-
-@test "with no PR yet, land that stops at its checks or its push writes no notes and leaves coder.notes.md in place" {
-  land_ready
-  notes
-  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$status" -eq 1 ]
-  [ -s .coding-crew/solve-feature/coder.notes.md ]
-  coder 2
-  refuse_pushes
-  run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"2 push failed"* ]]
-  [ -s .coding-crew/solve-feature/coder.notes.md ]
-  ! grep -qE '^pr (comment|edit)' "$STATE/gh.log" || false
-}
-
-@test "a failed gh pr view or gh pr edit stops land naming the notes file, the by-hand way to add it and the Actions artifact, the tag already in the file" {
-  land_ready
-  notes
-  local f="$WORK/.coding-crew/solve-feature/coder.notes.md"
-  GH_EDIT_FAIL=1 run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"solve-feature: "*"$f"*"Notes for a person"*"gh pr edit 10"*"rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
-  [ "$(head -n1 "$f")" = "### the coder of 2 · $(date +%F)" ]
-  grep -qx -- '- set the CREW_X repo variable' "$f"
-  grep -q "gh pr edit 10" .coding-crew/solve-feature/outcome
-  # A failed read of the body stops the same way.
-  run bash "$SCRIPT" next feat
-  coder 3
-  notes
-  GH_BODY_FAIL=1 run bash "$SCRIPT" land feat 3 feature/feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"solve-feature: "*"$f"*"gh pr edit 10"*"rm $f"*"artifact"* ]] || { echo "$output"; return 1; }
-  [ "$(head -n1 "$f")" = "### the coder of 3 · $(date +%F)" ]
-}
 
 @test "next deletes a leftover coder.notes.md, so an earlier coder's notes never post under the next issue" {
   run bash "$SCRIPT" start feat
@@ -688,4 +543,74 @@ EOF
   run bash "$SCRIPT" next feat
   [ "$output" = 2 ]
   [ ! -e .coding-crew/solve-feature/coder.notes.md ]
+}
+
+# --- land and next: next's work done in land, sync's in next's exit 3 ----------------------
+
+@test "land prints pr= then next=<ref> when an issue is ready, and next's exit-3 lines plus next-exit=3 when none is, exiting 0" {
+  land_ready
+  run --separate-stderr bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output $stderr"; return 1; }
+  [ "$output" = "$(printf 'pr=10\nnext=3')" ]
+  # next's own work: the handed-out issue saved for its land.
+  [ -s .coding-crew/solve-feature/3.issue.md ]
+  coder 3
+  run --separate-stderr bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output $stderr"; return 1; }
+  [ "$output" = "$(printf 'pr=10\nred-files=\nreviewer-model=\nreview-base=\nnext-exit=3')" ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+}
+
+@test "next's exit 3 with an open PR merges the default branch as sync does and prints red-files=, reviewer-model= and review-base=" {
+  loop
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  run --separate-stderr bash "$SCRIPT" next feat
+  [ "$status" -eq 3 ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=\nreview-base=')" ]
+  git merge-base --is-ancestor origin/main HEAD
+  [ "$(cat "$STATE/checks.head")" = "$(git rev-parse HEAD)" ]
+  pushed
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+}
+
+# conflicting_main — the branch and origin's main both change shared.txt.
+conflicting_main() {
+  echo mine > shared.txt && git add shared.txt && git commit -q -m "branch's shared"
+  main_moves shared.txt "main's version" && git checkout -q feature/feat
+}
+sync_conflict="stopped: sync failed: merging origin/main into feature/feat conflicts in shared.txt: the resolver did not finish it; finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run"
+
+@test "next's exit 3 whose merge conflicts exits 4 printing conflicts= with sync's outcome and the merge in progress" {
+  loop
+  conflicting_main
+  run --separate-stderr bash "$SCRIPT" next feat
+  [ "$status" -eq 4 ]
+  [ "$(tail -1 <<<"$output")" = "conflicts=shared.txt" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "$sync_conflict" ]
+  git rev-parse -q --verify MERGE_HEAD >/dev/null
+}
+
+@test "land whose embedded sync conflicts exits 4 printing conflicts=, with sync's outcome" {
+  land_ready
+  run bash "$SCRIPT" land feat 2 feature/feat; [ "$status" -eq 0 ]
+  conflicting_main
+  coder 3
+  run --separate-stderr bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 4 ] || { echo "$output $stderr"; return 1; }
+  [ "$(head -1 <<<"$output")" = pr=10 ]
+  [ "$(tail -1 <<<"$output")" = "conflicts=shared.txt" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "$sync_conflict" ]
+}
+
+@test "land whose embedded next fails exits 1 with the stop message and outcome next alone gives" {
+  land_ready
+  rm "$STATE/3.md"
+  run --separate-stderr bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  local said="$stderr" ended; ended=$(cat .coding-crew/solve-feature/outcome)
+  [ "$ended" = "stopped: next failed: fetch 3 failed (see above)" ] || { echo "$ended"; return 1; }
+  run --separate-stderr bash "$SCRIPT" next feat
+  [ "$status" -eq 1 ]
+  [[ "$said" == *"$stderr" ]] || { echo "$said"; return 1; }
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "$ended" ]
 }

@@ -6,6 +6,26 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: a failed `gh pr create` stop now points at the guide's "solve-feature on GitHub Actions" section
+  for the Actions setting instead of spelling out its settings path; `land`, `sync` and `fix` share one gate (merge
+  origin's branch, run the checks, commit their rewrites, push) with their stop messages unchanged (#762).
+- solve-feature: fewer orchestrator turns. `land` runs `next` itself and prints `next=<ref>`, or `next`'s exit-3
+  lines and `next-exit=3`; `next`'s exit 3 with a PR open merges the default branch in as `sync` does and prints
+  `review-base=` (exit 4 with `conflicts=` on a conflict), so `sync` is called only after the conflict resolver. The PR
+  writer runs on `coder-model=`. `fix` rewrites `pr-<n>.unfixed.json` to `[{finding?, why}]` before its first stop, and
+  `result.json` reads it as written (#761).
+- solve-feature: `result.json` gains `pr_text`, `{title, why, changes, risk}`, from a `pr-<n>.summary.json` the PR
+  writer now also writes, so an embedding CI host reads the summary without parsing markdown; `pr_title`,
+  `pr_summary` and the PR body's summary are rendered from it (falling back to `summary.md` as before). The guide's
+  "Embedding solve-feature" section lists the `result.json` fields a host may rely on as stable, with a committed
+  example, `tests/fixtures/solve-feature/result.example.json`; SKILL.md's host settings now point there (#760).
+- solve-feature: the run's notes for a person live in `.coding-crew/solve-feature/notes-<slug>.json`, which only the
+  script writes; `describe` is the only writer of the PR body and renders the notes, the settled notes and one flat
+  `Earlier runs' notes` section (a re-run's copy of the previous body's notes, a record that holds no draft) from it.
+  `result.json` carries the notes as `note` items on every ending, stops included; a second fix round's fixer is
+  handed the first round's note to keep, edit or drop, so one fixer note stands. Text typed into the notes section
+  no longer holds the draft (`author: "person"` is gone) (#759).
+
 ## [2.3.14]
 
 - solve-issue: Step 3's narrow read and search are now commands the coder runs instead of prose: one call prints each

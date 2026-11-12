@@ -22,9 +22,10 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
 1. **Start.** `bash "<skill-dir>/scripts/solve-feature.sh" start <slug> [--branch <name>] [--review-since <sha>]`, passing on the flags the user gave;
    given `--spec <file> --issue <n>`, pass those in place of `<slug>`. It prints `branch=`,
    `coder-model=`, `reviewer-model=` and `pr=`; keep them. With `--spec` it prints `slug=` first: that value is `<slug>` in every step below.
-2. **Per issue**, until `next` exits 3:
-   1. `bash "<skill-dir>/scripts/solve-feature.sh" next <slug>` — prints the issue's ref. Exit 3: no ready issue is
-     left, go to step 3; it prints `red-files=` and `reviewer-model=` again, for step 3.
+2. **Per issue**, until no ready issue is left:
+   1. Once, before the first issue: `bash "<skill-dir>/scripts/solve-feature.sh" next <slug>` — prints the issue's ref.
+     Exit 3: no ready issue is left, go to step 3; with a PR open it prints `red-files=`, `reviewer-model=` and
+     `review-base=` for step 3, having merged the default branch in (exit 4: step 3's conflict).
    2. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Use the solve-issue skill on <ref>; write your outcome and
      report to <repo>/.coding-crew/solve-feature/coder.report.md, and anything a person must do or decide before
@@ -35,29 +36,29 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      version): a version you do not offer → the closest model of the same family; a family you do not offer → your
      own model. When it is empty, on your own. Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" land <slug> <ref> <branch>`, with `start`'s `branch=` — always,
-     whatever the subagent reported: `land` is what checks and records its result. It prints `pr=<n>`, and adds the coder's notes to the PR body's notes section.
+     whatever the subagent reported: `land` is what checks and records its result. It prints `pr=<n>`, then `next=<ref>`: the next issue, back to 2.2 with it. When none is left it prints instead what `next`'s exit 3 does, then `next-exit=3`, and exits 0: go to step 3. Exit 4 is step 3's conflict. It records the coder's notes in the run's notes file.
 3. **Review, fix and describe**, on `<n>`, the last `pr=` printed (by `land`, else `start`). With none, `next`
    printed why nothing landed: report it and end. `pr=local` means `solveFeature.publish` is `false`: there is no
    PR, `<n>` is `local` throughout, and the body is kept in `<repo>/.coding-crew/solve-feature/local-pr-<branch, / → _>.md`.
-   Before 3.1, once (a second review round does not sync): `bash "<skill-dir>/scripts/solve-feature.sh" sync <slug> <branch>`.
-   It merges the default branch in, gating and pushing that merge, and prints `review-base=`; keep it for both review rounds. Exit 4: the merge conflicts, left in progress,
-   and it prints `conflicts=<files>`. Then run a **fresh subagent** — none of this conversation, full tool access,
+   The exit 3 of `next` (or `land`'s `next-exit=3`) merged the default branch in, gating and pushing that merge, and
+   printed `review-base=`; keep it for both review rounds. Exit 4 of `next` or `land`: the merge conflicts, left in progress,
+   and it printed `conflicts=<files>`. Then run a **fresh subagent** — none of this conversation, full tool access,
    the repo's working directory, on `coder-model=` as for each issue's coder — with exactly this prompt: `Finish the
    merge in progress in <repo>, resolving the conflicts in <files> so that both sides' intent is kept, reading
    <repo>/.coding-crew/solve-feature/spec.md and the commits being merged in (git log HEAD..MERGE_HEAD); commit with
-   git commit --no-edit. This run is non-interactive; ask no questions`. Wait for it to finish, then run `sync`
-   again, once: any non-zero exit of that run, 4 included, stops the run like any other.
+   git commit --no-edit. This run is non-interactive; ask no questions`. Wait for it to finish, then run `bash "<skill-dir>/scripts/solve-feature.sh" sync <slug> <branch>`,
+   once, keeping its `review-base=`: any non-zero exit of that run, 4 included, stops the run like any other.
    1. Run a **fresh subagent** — none of this conversation, full tool access, the repo's working directory —
      with exactly this prompt: `Use the crew-review skill on branch <branch> against the spec in <repo>/.coding-crew/solve-feature/spec.md; write the report to <repo>/.coding-crew/solve-feature/pr-<n>.review.json; the tests named in <red files> are the coders' new tests`,
-     `<red files>` being `next`'s last `red-files=` value; when that is empty, the `; the tests named…` clause is left out.
+     `<red files>` being the last `red-files=` value `next` or `land` printed; when that is empty, the `; the tests named…` clause is left out.
      When `review-base=` is non-empty, `<sha>` its value, the prompt reads `…on branch <branch> base <sha> against the spec…`
      and `; Findings cover <sha>..HEAD; judge spec, gaps and criteria on the code at HEAD: the commits before <sha> were already reviewed` is appended.
      When `<repo>/.coding-crew/solve-feature/pr-<n>.coder-notes.json` exists, `; the notes the change's author left for a person are in <repo>/.coding-crew/solve-feature/pr-<n>.coder-notes.json` is appended last:
-     `fix` moves each note the review settles out of the notes that hold the draft.
-     When `reviewer-model=` (as `next` last printed it) is non-empty, run it on the model in your own list that
+     `fix` marks each note the review settles, so it no longer holds the draft.
+     When `reviewer-model=` (as `next` or `land` last printed it) is non-empty, run it on the model in your own list that
      matches that name, as for `coder-model=`, naming that model in the call; when it is empty, on your own. Wait for it to finish.
    2. `bash "<skill-dir>/scripts/solve-feature.sh" reviewed <slug> <n> <branch>` — always: it discards what the
-     reviewer changed in the tree, flags it for the PR, and prints `findings=<k>` last. Only when it prints `findings=` greater than 0:
+     reviewer changed in the tree, flags it for the PR, and prints `findings=<k>` last; `fixer-note=<path>` before it when a fixer note stands (an earlier round's, or a stopped run's). Only when it prints `findings=` greater than 0:
      run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Judge each finding in <repo>/.coding-crew/solve-feature/pr-<n>.review.json
      against the code and the spec in <repo>/.coding-crew/solve-feature/spec.md before acting on it: its fix is a
@@ -69,10 +70,11 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      permission, input or path the spec does not name. List each finding you did not fix, with why — it is wrong, or
      only changing a spec decision fixes it (quote the decision) — in <repo>/.coding-crew/solve-feature/pr-<n>.unfixed.json as a
      JSON list, [{"finding": <its 0-based index in the report's findings>, "why": "<why>"}], and leave that file absent if you fixed them all. Anything else a person must do or decide goes in
-     <repo>/.coding-crew/solve-feature/pr-<n>.notes.md, left absent when there is none. This run is non-interactive; ask no questions`. Run it on `coder-model=` as for each issue's coder.
+     <repo>/.coding-crew/solve-feature/pr-<n>.notes.md, left absent when there is none. This run is non-interactive; ask no questions`;
+     when `reviewed` printed `fixer-note=<path>`, `; an earlier fixer's note for a person is in <path>: keep, edit or drop this note, writing what still applies to pr-<n>.notes.md` is inserted before `. This run is non-interactive`. Run it on `coder-model=` as for each issue's coder.
      Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" fix <slug> <n> <branch>` — always, whatever the subagents
-     reported. It adds the fixer's notes to the PR body's notes section, gates the fixes with the checks, commits and pushes them,
+     reported. It records the fixer's note in place of the previous round's, gates the fixes with the checks, commits and pushes them,
      and records what needs a person.
      Report its last line, `FIX: findings=<k> needs-attention=<a> review-again=yes|no`. After the first review,
      `review-again=yes` means run 3.1–3.3 once more; after the second review, go on to 3.4 whatever it prints.
@@ -80,8 +82,10 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
    4. Run a **fresh subagent** — none of this conversation, the repo's working directory — with exactly
      this prompt: `Use the write-pr skill on PR #<n>; its intent is the spec in <repo>/.coding-crew/solve-feature/spec.md
      and its checks passed (<repo>/.coding-crew/solve-feature/pr-<n>.checks.log). Write it to
-     <repo>/.coding-crew/solve-feature/pr-<n>.summary.md, leaving out its **Tested:** line: the script writes that line from the checks`; when `<n>` is `local`, the same prompt with `Use the
-     write-pr skill on branch <branch>` in place of `Use the write-pr skill on PR #<n>`. Wait for it to finish.
+     <repo>/.coding-crew/solve-feature/pr-<n>.summary.md, leaving out its **Tested:** line: the script writes that line from the checks.
+     Also write the same title and summary to <repo>/.coding-crew/solve-feature/pr-<n>.summary.json as
+     {"title": "<the title>", "why": "<the Why text>", "changes": ["<one What changes bullet>", …], "risk": "<the Risk line>"}`; when `<n>` is `local`, the same prompt with `Use the
+     write-pr skill on branch <branch>` in place of `Use the write-pr skill on PR #<n>`. Run it on `coder-model=` as for each issue's coder. Wait for it to finish.
    5. `bash "<skill-dir>/scripts/solve-feature.sh" describe <slug> <n>` — writes the PR's body (its `**Tested:**` line included) and title, marks the
      draft ready when nothing needs a person, and prints the run's outcome, `ready pr=<n>` or
      `needs-attention pr=<n>`. Report it. When `<n>` is `local` it writes the local body file instead (its first
@@ -101,9 +105,7 @@ the user works in. Nothing takes a lock: never start a second run on a slug whos
 | ----------------------------------------------- | -------------------------------------------------------------- |
 | `--branch <name>`                               | The branch the run uses, never the default branch (default: one named after the slug) |
 | `--review-since <sha>`                          | Scopes the review's findings to the commits since `<sha>` (a follow-up run's), while spec and gaps are judged on the whole code; used only when `<sha>` holds the default branch and is in the branch after `sync`'s merge, else the whole branch is reviewed. Not a commit: `start` stops |
-| `CREW_COMMANDS_FILE`                            | The dev commands file every check reads and writes, in place of the repo's; keep it outside the checkout, where a coder cannot commit it. One that is not writable is never rewritten: discovery stops instead. A keyed check may be slower than its raw command (a host's may go through a broker and run in containers): that is expected, and no reason to fall back to raw commands |
 | `solveFeature.models.coder` / `.reviewer`       | The coder and fixer / reviewer model name; `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` override it, and `start` prints the one it resolved |
-| `--spec <file> --issue <n>`                     | Builds the spec in `<file>` as the one-issue local feature `issue-<n>`, with no tracker set up beforehand: every `start` rebuilds it from the file. Keep the file outside the checkout (an untracked one inside stops `start` as a dirty tree does), and its `## Blocked by` section is dropped. Needs the local tracker in effect |
-| `CREW_PUBLISH`                                  | `false` turns publishing off as `solveFeature.publish: false` does, with no user config; any other value leaves that config's answer |
-| `CREW_TRACKER`                                  | `local` or `github`: the tracker every process of the run uses, ahead of the project's and the user-level config. Empty counts as unset |
 | `solveFeature.publish`                          | `false` keeps the run on this machine: no `git push` and no `gh pr` call, the body in the local file of step 3. Read from the user-level `~/.coding-crew/config.json` only, never the project's, so an Actions run always pushes |
+
+`--spec <file> --issue <n>`, `CREW_PUBLISH`, `CREW_TRACKER` and `CREW_COMMANDS_FILE`, the settings of a host that embeds this skill, and the `result.json` fields such a host may rely on: coding-crew's guide, "Embedding solve-feature".

@@ -4,6 +4,7 @@
 // what the script and its subagents wrote, splitting prose only into lines; any error exits non-zero, leaving the
 // earlier file untouched. With --red-files yes it only prints the red-evidence files of the spec issues next handed
 // out, one path a line. With --tested-line <checks log> it only prints the PR body's one `**Tested:**` line from that log.
+// With --summary <n|local> it only prints the PR writer's summary as describe puts it in the body: `# <title>` first.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -31,6 +32,42 @@ function checkResults(name) {
     if (m) results.set(m[1], m[2]);
   }
   return [...results].map(([key, result]) => ({ key, result }));
+}
+
+// The PR writer's pr-<name>.summary.json, {title, why, changes: [string], risk}; null when absent or off that shape.
+function prText(name) {
+  let t;
+  try {
+    t = JSON.parse(text(`pr-${name}.summary.json`) ?? "null");
+  } catch {
+    return null;
+  }
+  const str = (v) => typeof v === "string";
+  if (!t || typeof t !== "object" || ![t.title, t.why, t.risk].every(str)) return null;
+  if (!Array.isArray(t.changes) || !t.changes.every(str)) return null;
+  return { title: t.title, why: t.why, changes: t.changes, risk: t.risk };
+}
+// The summary as the body carries it, the one rendering of the JSON: its title apart, `summary.md` the fallback, read
+// as the writer left it with its `# <title>` line apart.
+function summaryOf(name) {
+  const t = prText(name);
+  if (t) {
+    const body = ["## Why", "", t.why, "", "## What changes", "", ...t.changes.map((c) => `- ${c}`), "", "## Risk", "", t.risk];
+    return { text: t, title: t.title, summary: body.join("\n") };
+  }
+  const md = text(`pr-${name}.summary.md`);
+  if (md === null) return null;
+  const [first, ...rest] = md.split("\n");
+  const title = /^# (.*)$/.exec(first)?.[1];
+  return { title, summary: (title === undefined ? md : rest.join("\n")).replace(/^(\s*\n)+/, "") };
+}
+
+if (args.summary) {
+  const t = summaryOf(args.summary);
+  // Without the JSON, summary.md as the writer left it, its title line included.
+  if (t?.text) process.stdout.write(`# ${t.title}\n\n${t.summary}\n`);
+  else if (t) process.stdout.write(text(`pr-${args.summary}.summary.md`));
+  process.exit(0);
 }
 
 if (args["tested-line"]) {
@@ -82,13 +119,12 @@ const roundRe = /^pr-(\d+|local)\.r(\d+)\.review\.json$/;
 const pr = /^\d+$/.test(args.pr ?? "") ? args.pr : "";
 if (args.publish === "yes" && pr) result.pr = Number(pr);
 const name = /^(\d+|local)$/.test(args.pr ?? "") ? args.pr : "";
-// The PR writer's summary as it wrote it, its `# <title>` line apart: describe adds its own lines around it.
-const summary = name ? text(`pr-${name}.summary.md`) : null;
-if (summary !== null) {
-  const [first, ...rest] = summary.split("\n");
-  const title = /^# (.*)$/.exec(first)?.[1];
-  if (title !== undefined) result.pr_title = title;
-  result.pr_summary = (title === undefined ? summary : rest.join("\n")).replace(/^(\s*\n)+/, "");
+// The PR writer's summary, its title apart: describe adds its own lines around it.
+const summary = name ? summaryOf(name) : null;
+if (summary) {
+  if (summary.text) result.pr_text = summary.text;
+  if (summary.title !== undefined) result.pr_title = summary.title;
+  result.pr_summary = summary.summary;
 }
 if (args.publish === "no") {
   const body = text(`local-pr-${branch.replace(/\//g, "_")}.md`);
@@ -156,22 +192,8 @@ const readReport = (name) => {
   }
 };
 
-// The fixer's unfixed.json, as fix reads it: `[{finding?, why}]`, else the whole file as one entry's why.
-const whole = (n) => Number.isInteger(n) && n >= 0;
-const readUnfixed = (name) => {
-  const raw = text(name);
-  if (raw === null) return [];
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    parsed = null;
-  }
-  const ok =
-    Array.isArray(parsed) &&
-    parsed.every((u) => u && typeof u === "object" && !Array.isArray(u) && typeof u.why === "string" && (!("finding" in u) || whole(u.finding)));
-  return ok ? parsed.map((u) => ("finding" in u ? { finding: u.finding, why: u.why } : { why: u.why })) : [{ why: raw }];
-};
+// The fixer's unfixed.json, as fix rewrote it: `[{finding?, why}]`.
+const readUnfixed = (name) => JSON.parse(text(name) ?? "[]");
 
 result.rounds = rounds.map((r, i) => {
   const report = readReport(r.review);
@@ -205,10 +227,16 @@ result.rounds = rounds.map((r, i) => {
   };
 });
 
-// The items fix and describe wrote for the PR, the one list its draft hold and Needs attention lines come from.
-result.needs_attention = name
-  ? [`pr-${name}.attention.json`, `pr-${name}.describe-attention.json`].flatMap((f) => (text(f) === null ? [] : JSON.parse(text(f))))
-  : [];
+// The items fix and describe wrote for the PR, then this feature's standing notes from the run file, on every ending:
+// the one list the draft hold and Needs attention lines come from.
+result.needs_attention = [
+  ...(name
+    ? [`pr-${name}.attention.json`, `pr-${name}.describe-attention.json`].flatMap((f) => (text(f) === null ? [] : JSON.parse(text(f))))
+    : []),
+  ...list(JSON.parse(text(`notes-${args.slug}.json`) ?? "[]"))
+    .filter((n) => n.settled !== true)
+    .map((n) => ({ type: "note", author: n.author, text: n.text })),
+];
 
 writeFileSync(at("result.json.tmp"), `${JSON.stringify(result, null, 2)}\n`);
 renameSync(at("result.json.tmp"), at("result.json"));

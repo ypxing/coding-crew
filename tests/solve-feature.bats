@@ -171,11 +171,6 @@ bats_require_minimum_version 1.5.0
   [ "$(git rev-parse --abbrev-ref '@{upstream}')" = origin/remote-only ]
 }
 
-# main_moves <file> <text> — a commit on origin's main after the branch was made
-main_moves() {
-  git checkout -q main && echo "$2" > "$1" && git add "$1" && git commit -q -m "main: $1" && git push -q origin main
-}
-
 @test "start merges origin's default branch into an existing branch and pushes the merge" {
   git checkout -q -b mine origin/main && echo mine > mine.txt && git add mine.txt && git commit -q -m "earlier run"
   git push -q -u origin mine
@@ -374,7 +369,8 @@ main_moves() {
   echo old > .coding-crew/solve-feature/pr-7.summary.md && echo old > .coding-crew/solve-feature/pr-7.attention.json
   echo old > .coding-crew/solve-feature/pr-7.describe-attention.json
   echo old > .coding-crew/solve-feature/pr-7.discarded.md && echo old > .coding-crew/solve-feature/review.base
-  echo old > .coding-crew/solve-feature/pr-7.notes.md
+  echo old > .coding-crew/solve-feature/pr-7.notes.md && echo old > .coding-crew/solve-feature/pr-7.coder-notes.json
+  echo old > .coding-crew/solve-feature/pr-7.prev-fixer-note.md
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ ! -e .coding-crew/solve-feature/outcome ]
@@ -386,6 +382,8 @@ main_moves() {
   [ ! -e .coding-crew/solve-feature/pr-7.head ]
   [ ! -e .coding-crew/solve-feature/pr-7.discarded.md ]
   [ ! -e .coding-crew/solve-feature/pr-7.notes.md ]
+  [ ! -e .coding-crew/solve-feature/pr-7.coder-notes.json ]
+  [ ! -e .coding-crew/solve-feature/pr-7.prev-fixer-note.md ]
   [ ! -e .coding-crew/solve-feature/review.base ]
 }
 
@@ -402,13 +400,13 @@ main_moves() {
   echo extra > extra.txt && git add extra.txt && git commit -q -m extra
   PR_EXISTS=1 run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=\nreview-base=')" ]
   # Printed again beside the review step, resolved as start resolves it.
   PR_EXISTS=1 CREW_REVIEWER_MODEL=opus run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "$(printf 'red-files=\nreviewer-model=opus')" ]
-  # sync saves the reviewer's starting head, not next.
-  [ ! -e .coding-crew/solve-feature/review.base ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=opus\nreview-base=')" ]
+  # Its sync saved the reviewer's starting head.
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
   [ ! -e .coding-crew/solve-feature/outcome ]
   NEXT_PRINTS='2; rm -rf /' run bash "$SCRIPT" next feat
   [ "$status" -eq 1 ]
@@ -846,11 +844,20 @@ EOF
 @test "SKILL.md passes --review-since to start, and a non-empty review-base= scopes both review rounds' prompt" {
   local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
   grep -qF 'start <slug> [--branch <name>] [--review-since <sha>]`' "$skill"
-  grep -qF 'prints `review-base=`; keep it for both review rounds' "$skill"
+  grep -qF 'printed `review-base=`; keep it for both review rounds' "$skill"
   grep -qF 'When `review-base=` is non-empty, `<sha>` its value, the prompt reads `…on branch <branch> base <sha> against the spec…`' "$skill"
   grep -qF '`; Findings cover <sha>..HEAD; judge spec, gaps and criteria on the code at HEAD: the commits before <sha> were already reviewed`' "$skill"
   grep -qE '^\| `--review-since <sha>` +\|' "$skill"
-  grep -qE '^\| `CREW_COMMANDS_FILE` +\|.*outside the checkout' "$skill"
+}
+
+@test "SKILL.md's host settings are one line pointing at the guide, which documents them; its PR writer prompt asks for summary.json's four fields" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md" guide="$REPO_ROOT/docs/guide.md"
+  ! grep -qE '^\| `(CREW_COMMANDS_FILE|CREW_PUBLISH|CREW_TRACKER|--spec <file> --issue <n>)` +\|' "$skill" || false
+  grep -qF '`--spec <file> --issue <n>`, `CREW_PUBLISH`, `CREW_TRACKER` and `CREW_COMMANDS_FILE`, the settings of a host that embeds this skill' "$skill"
+  grep -qF 'guide, "Embedding solve-feature"' "$skill"
+  grep -qE '^- `CREW_COMMANDS_FILE` .*outside$' "$guide"
+  grep -qF '<repo>/.coding-crew/solve-feature/pr-<n>.summary.json as' "$skill"
+  grep -qF '{"title": "<the title>", "why": "<the Why text>", "changes": ["<one What changes bullet>", …], "risk": "<the Risk line>"}' "$skill"
 }
 
 @test "SKILL.md's fixer prompt asks for pr-<n>.unfixed.json, a list of finding indices with why; no code reads the old unfixed.md or attention.md" {
@@ -866,13 +873,23 @@ EOF
   grep -qF '`review-again=yes` means run 3.1–3.3 once more; after the second review, go on to 3.4 whatever it prints' "$skill"
 }
 
-@test "SKILL.md syncs once before the first review, resolving an exit 4 with one subagent on coder-model= before one re-run" {
+@test "SKILL.md calls next once, then takes the next issue from land; it syncs only after a resolver, and runs the PR writer on coder-model=" {
   local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
-  grep -qF 'Before 3.1, once (a second review round does not sync): `bash "<skill-dir>/scripts/solve-feature.sh" sync <slug> <branch>`' "$skill"
+  [ "$(grep -cF 'solve-feature.sh" next <slug>' "$skill")" = 1 ]
+  grep -qF 'It prints `pr=<n>`, then `next=<ref>`' "$skill"
+  grep -qF '`next-exit=3`' "$skill"
+  [ "$(grep -cF 'solve-feature.sh" sync <slug> <branch>' "$skill")" = 1 ]
+  ! grep -qF 'Before 3.1, once' "$skill" || false
+  grep -qF 'Wait for it to finish, then run `bash "<skill-dir>/scripts/solve-feature.sh" sync <slug> <branch>`' "$skill"
+  awk '/^   4\. Run a \*\*fresh subagent\*\*/{f=1} f && /^   5\./{exit} f' "$skill" | grep -qF 'Run it on `coder-model=` as for each issue'"'"'s coder'
+}
+
+@test "SKILL.md resolves an exit 4 with one subagent on coder-model= before one sync re-run" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
   grep -qF 'the repo'"'"'s working directory, on `coder-model=` as for each issue'"'"'s coder — with exactly this prompt: `Finish the' "$skill"
   local prompt; prompt=$(awk '/with exactly this prompt: `Finish the/{f=1} f; f && /ask no questions`/{exit}' "$skill" | tr '\n' ' ' | sed 's/^.*prompt: `//; s/`.*//; s/  */ /g')
   [ "$prompt" = "Finish the merge in progress in <repo>, resolving the conflicts in <files> so that both sides' intent is kept, reading <repo>/.coding-crew/solve-feature/spec.md and the commits being merged in (git log HEAD..MERGE_HEAD); commit with git commit --no-edit. This run is non-interactive; ask no questions" ] || { echo "$prompt"; return 1; }
-  grep -qF 'again, once: any non-zero exit of that run, 4 included, stops the run like any other' "$skill"
+  grep -qF 'once, keeping its `review-base=`: any non-zero exit of that run, 4 included, stops the run like any other' "$skill"
 }
 
 @test "SKILL.md starts the fixer on reviewed's findings=, and a stop's recovery is for a person, never the agent" {

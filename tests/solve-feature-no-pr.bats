@@ -14,9 +14,8 @@ no_pr_calls() { ! grep -E '^(pr (create|view|edit|ready)|api graphql)' "$STATE/g
 on_origin() { git ls-remote --exit-code origin "$1" >/dev/null; }
 coder_notes() { printf '%s\n' "- tag a release once this merges" > .coding-crew/solve-feature/coder.notes.md; }
 
-@test "a full run with publish false pushes nothing, calls no gh PR command and ends needs-attention branch=<b> on a note, ready branch=<b> with none, the body in the local file" {
+@test "a full run with publish false pushes nothing, calls no gh PR command and ends needs-attention branch=<b> on a note, ready branch=<b> once only earlier notes are left, the body in the local file" {
   no_publish
-  # A coder's note lands in the local body's notes section as post_notes adds it to a PR body.
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(out pr)" = "" ]
@@ -24,23 +23,12 @@ coder_notes() { printf '%s\n' "- tag a release once this merges" > .coding-crew/
   coder 2; coder_notes
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$output" = pr=local ] || { echo "$output"; return 1; }
-  [ ! -e .coding-crew/solve-feature/coder.notes.md ]
+  [ "${lines[0]}" = pr=local ] || { echo "$output"; return 1; }
   [ "$(cat "$LOCAL")" = "$(cat <<EOF
 # Feat
 
 <!-- solve-feature:begin -->
 Implemented by solve-feature (\`feat\`) — in progress.
-<!-- solve-feature:notes:begin -->
-## Notes for a person
-
-Delete a note here once it is handled.
-
-### the coder of 2 · $(date +%F)
-
-- tag a release once this merges
-
-<!-- solve-feature:notes:end -->
 <!-- solve-feature:slug feat -->
 <!-- solve-feature:end -->
 EOF
@@ -51,7 +39,7 @@ EOF
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=\nreview-base=')" ]
   run bash "$SCRIPT" sync feat feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '{"spec":"met","gaps":[],"findings":[{"severity":"LOW","location":"a:1","issue":"i","fix":"f"}]}\n' > .coding-crew/solve-feature/pr-local.review.json
@@ -65,15 +53,12 @@ EOF
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=1 needs-attention=0 review-again=no" ]
   [ "$(git log -1 --format=%s)" = "Fix the review's findings" ]
   [ ! -e .coding-crew/solve-feature/pr-local.notes.md ]
-  grep -qxF "### the fixer of feature/feat's review · $(date +%F)" "$LOCAL"
-  # A person deletes the coder's note; describe keeps it deleted.
-  perl -0pi -e 's/### the coder of 2[^\n]*\n\n- tag a release once this merges\n\n//' "$LOCAL"
   printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n' > .coding-crew/solve-feature/pr-local.summary.md
   run bash "$SCRIPT" describe feat local
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$output" = "needs-attention branch=feature/feat" ]
   [ "$(cat .coding-crew/solve-feature/outcome)" = "needs-attention branch=feature/feat" ]
-  [ "$(jq -c .needs_attention .coding-crew/solve-feature/result.json)" = '[{"type":"note","author":"fixer","text":"- rotate the key"}]' ]
+  [ "$(jq -c .needs_attention .coding-crew/solve-feature/result.json)" = '[{"type":"note","author":"coder","text":"- tag a release once this merges"},{"type":"note","author":"fixer","text":"- rotate the key"}]' ]
   [ "$(cat "$LOCAL")" = "$(cat <<EOF
 # Let users log in
 
@@ -95,7 +80,11 @@ Users need accounts.
 
 Delete a note here once it is handled.
 
-### the fixer of feature/feat's review · $(date +%F)
+### the coder of 2
+
+- tag a release once this merges
+
+### the fixer of feature/feat's review
 
 - rotate the key
 
@@ -109,12 +98,16 @@ Closes #3
 <!-- solve-feature:end -->
 EOF
 )" ]
-  # The last note deleted, nothing needs a person any more.
-  perl -0pi -e 's/### the fixer of[^\n]*\n\n- rotate the key\n\n//' "$LOCAL"
+  # A re-run with nothing new: the notes are earlier runs' now, a record that holds no draft.
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  echo '[]' > .coding-crew/solve-feature/pr-local.attention.json
   run bash "$SCRIPT" describe feat local
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$output" = "ready branch=feature/feat" ]
   [ "$(cat .coding-crew/solve-feature/outcome)" = "ready branch=feature/feat" ]
+  grep -qx "## Earlier runs' notes" "$LOCAL"
+  grep -qx -- '- rotate the key' "$LOCAL"
   ! on_origin feature/feat || false
   no_pr_calls
 }
@@ -138,7 +131,7 @@ EOF
   [ "$(out pr)" = "" ]
   run bash "$SCRIPT" next feat; coder 2
   run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$output" = pr=local ] || { echo "$output"; return 1; }
+  [ "${lines[0]}" = pr=local ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(out pr)" = local ]
@@ -158,7 +151,7 @@ EOF
   rm .coding-crew/solve-feature/outcome
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=\nreview-base=')" ]
   no_pr_calls
 }
 
@@ -173,13 +166,13 @@ EOF
   [[ "$output" == *"run land feat 2 feature/feat; otherwise reopen 2; then re-run"* ]] || { echo "$output"; return 1; }
   [ ! -e "$LOCAL" ]
   run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$output" = pr=local ] || { echo "$output"; return 1; }
+  [ "${lines[0]}" = pr=local ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" next feat; [ "$output" = 3 ]
   coder 3
-  run bash "$SCRIPT" land feat 3 feature/feat; [ "$output" = pr=local ]
+  run bash "$SCRIPT" land feat 3 feature/feat; [ "${lines[0]}" = pr=local ]
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=\nreview-base=')" ]
   no_pr_calls
 }
 
@@ -244,21 +237,6 @@ EOF
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 pr failed: cannot write $WORK/$LOCAL; 2 is ready again with its work committed on feature/feat: fix the cause, then re-run" ]
   [ "$(node "$LIB/tracker/cli.mjs" next --feature-slug feat)" = 2 ]
   ! on_origin feature/feat || false
-}
-
-@test "describe with publish false keeps the notes of a local body a person saved with CRLF line endings" {
-  no_publish
-  land_ready
-  coder_notes
-  run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$output" = pr=local ] || { echo "$output"; return 1; }
-  perl -pi -e 's/\n/\r\n/' "$LOCAL"
-  echo '[]' > .coding-crew/solve-feature/pr-local.attention.json
-  printf '# Let users log in\n\n## Why\n\nUsers need accounts.\n' > .coding-crew/solve-feature/pr-local.summary.md
-  run bash "$SCRIPT" describe feat local
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  grep -qxF -- "- tag a release once this merges" "$LOCAL"
-  ! grep -q $'\r' "$LOCAL" || false
 }
 
 @test "land with publish false whose merge of a person-pushed origin branch conflicts says to merge by hand, not to re-run in a fresh clone" {

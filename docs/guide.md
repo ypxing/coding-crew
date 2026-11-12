@@ -102,12 +102,15 @@ finding with `tdd`; `solve-feature.sh fix` gates the fixes with the project's ch
 review had a CRITICAL, HIGH or MEDIUM finding and the fixer changed something, `fix` prints
 `review-again=yes` and the run reviews and fixes once more; the second fix is not reviewed again. What
 the last round did not fix is listed under `Needs attention` in the PR body, which keeps the PR a draft.
-Anything else a coder or the fixer says a person must do or decide goes into the PR body's `Notes for a person`
-section before its work is gated (a first coder's once its land opens the PR), so a stop never loses it, and `Needs attention` names the section. A note keeps the PR a draft, as the run
-ends `needs-attention`, until a person handles it: delete a note there once it is handled, and later runs keep it
-deleted; then mark the PR ready yourself, or re-run and let the run do it. The reviewer also judges each coder's note on the
-code at HEAD: one it finds settled moves to a `Settled by the review` section with its reason, where it no longer
-holds the draft; a fixer's note and your own text are never judged.
+Anything else a coder or the fixer says a person must do or decide is kept in the run's notes file,
+`.coding-crew/solve-feature/notes-<slug>.json`, as soon as its work lands (so a stop's `result.json` has it, and the
+stop names the file); `describe` renders it into the PR body's `Notes for a person` section, and `Needs attention`
+names the section. A note holds the draft for the run that wrote it: the run ends `needs-attention`, and a person handles
+it, then marks the PR ready themselves or re-runs, which counts it as an earlier note. The reviewer judges each coder's note on the code at HEAD: one it finds settled
+moves to a `Settled by the review` section with its reason, where it no longer holds the draft. When a fixer note
+stands (an earlier round's, or one a stopped run left), the fixer is handed it to keep, edit or drop, so the run keeps one fixer note. A
+re-run turns the previous body's notes, settled notes and earlier notes into one `Earlier runs' notes` section,
+copied verbatim (a note you deleted stays deleted, and your own text there is kept) as a record that holds no draft.
 
 ---
 
@@ -506,20 +509,31 @@ CREW_PUBLISH=false CREW_TRACKER=local CREW_COMMANDS_FILE=/runner/dev-commands.js
 - `CREW_PUBLISH=false` — no `git push` and no `gh pr` call; the host pushes the branch and opens the PR itself.
 - `CREW_TRACKER=local` — every process of the run uses the local tracker, whatever the repo's committed
   `.coding-crew/config.json` says. `--spec` stops without it on a repo whose tracker is `github`.
-- `CREW_COMMANDS_FILE` — the dev commands file every check reads, kept outside the checkout.
+- `CREW_COMMANDS_FILE` — the dev commands file every check reads and writes, in place of the repo's; keep it outside
+  the checkout, where a coder cannot commit it. One that is not writable is never rewritten: discovery stops instead.
+  A keyed check may be slower than its raw command (a host's may go through a broker and run in containers): that is
+  expected, and no reason to fall back to raw commands.
 - `CREW_CODER_MODEL` / `CREW_REVIEWER_MODEL` — the coder and fixer / reviewer model, ahead of any config.
 
 When the run ends, `.coding-crew/solve-feature/result.json` (schema: `skills/solve-feature/result.schema.json`) holds
-what a host renders, with no prose to parse:
+what a host renders, with no prose to parse. The fields below are stable: a host may rely on them, and a release only
+adds to them. `tests/fixtures/solve-feature/result.example.json` is the contract's example, every field filled in and
+checked against the schema by the result tests; copy it as a host's own fixture.
 
 | Field | What it is |
 | --- | --- |
 | `status` | `ready`, `needs-attention` or `stopped`: the outcome line's first word |
-| `pr_title`, `pr_summary` | The PR writer's title and summary (Why, What changes, Risk), with no `**Tested:**` line, banner or Needs attention; present once the writer has run |
-| `rounds[].findings[].fixed` | Whether that round's fixer fixed the finding; absent when that cannot be told (the fix stopped, or the fixer's list named no finding) |
+| `outcome` | The outcome line, verbatim |
+| `pr` | The PR's number; absent with `CREW_PUBLISH=false` or before a PR exists |
+| `pr_text` | The PR writer's `{title, why, changes, risk}`, `changes` a list of strings; absent when the writer left no valid JSON |
+| `pr_title`, `pr_summary` | The PR writer's title and summary (Why, What changes, Risk) as the body carries it, rendered from `pr_text` when present, with no `**Tested:**` line, banner or Needs attention; present once the writer has run |
+| `issues[].title`, `issues[].checks.results` | Each spec issue's title, and the checks its land ran (`null` checks when this run did not land it) |
+| `rounds[].spec`, `rounds[].gaps` | That review's spec verdict (`met`, `unmet`, `none`) and its gaps |
+| `rounds[].findings[]` | `severity`, `location`, `issue`, `fix`, and `fixed`: whether that round's fixer fixed it, absent when that cannot be told (the fix stopped, or the fixer's list named no finding) |
+| `rounds[].criteria[]` | `text`, `met` and `tests[]` of `{test, red}`: each criterion the reviewer judged, its tests and the red line of each |
 | `rounds[].checks` | Each check key of that round's gate and its result; the last round's are what the PR body's script-written `**Tested:**` line lists |
 | `rounds[].re_reviewed` | Whether a later round reviewed that round's fixes |
-| `needs_attention` | One typed item per reason the run needs a person: `spec_unmet`, `unfixed` (with its `severity`), `note`, … |
+| `needs_attention[]` | One typed item per reason the run needs a person: `type` is `note`, `unfixed`, `spec_unmet`, `reviewer_changed_tree` or `fixer_changed_nothing`, with `author`, `round`, `finding`, `why`, `gaps`, `paths`, `text` and `severity` as the type has them |
 
 coding-crew's own verdict holds the draft on any `needs_attention` item. A host with its own ready bar computes it
 from the file, with the severities as arguments: the unfixed severities it counts as notes, and the fixed severities

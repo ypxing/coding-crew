@@ -191,26 +191,25 @@ coder() {
 }
 # out <key> — the value of start's or land's `<key>=` line in $output.
 out() { sed -n "s/^$1=//p" <<<"$output" | tail -1; }
-# loop — SKILL.md's loop: start, then next → coder → land until next exits 3, then sync when a PR was opened. CODED
-# collects the refs, LAST_PR is the last `pr=` printed.
+# loop — SKILL.md's loop: start and next, then coder → land until land prints next-exit=3, whose next has synced the
+# branch for the review; a first next's exit 3 with no PR ends it too. CODED collects the refs, LAST_PR is the last
+# `pr=` printed.
 loop() {
   run bash "$SCRIPT" start feat "$@"
   [ "$status" -eq 0 ] || { echo "start: $output"; return 1; }
   local branch ref; branch=$(out branch); CODED="" LAST_PR=$(out pr)
+  run bash "$SCRIPT" next feat
+  [ "$status" -ne 3 ] || return 0
+  [ "$status" -eq 0 ] || { echo "next: $output"; return 1; }
+  ref="$output"
   while :; do
-    run bash "$SCRIPT" next feat
-    if [ "$status" -eq 3 ]; then
-      [ -n "$LAST_PR" ] || return 0
-      run bash "$SCRIPT" sync feat "$branch"
-      [ "$status" -eq 0 ] || { echo "sync: $output"; return 1; }
-      return 0
-    fi
-    [ "$status" -eq 0 ] || { echo "next: $output"; return 1; }
-    ref="$output"; CODED="${CODED:+$CODED }$ref"
+    CODED="${CODED:+$CODED }$ref"
     coder "$ref"
     run bash "$SCRIPT" land feat "$ref" "$branch"
     [ "$status" -eq 0 ] || { echo "land $ref: $output"; return 1; }
     LAST_PR=$(out pr)
+    [ "$(out next-exit)" != 3 ] || return 0
+    ref=$(out next)
   done
 }
 # body_of <pr-create.k|pr-edit.k> — the body file that call was given.
@@ -220,6 +219,11 @@ land_ready() {
   run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
   run bash "$SCRIPT" next feat; [ "$output" = 2 ]
   coder 2
+}
+
+# main_moves <file> <text> — a commit on origin's main after the branch was made
+main_moves() {
+  git checkout -q main && echo "$2" > "$1" && git add "$1" && git commit -q -m "main: $1" && git push -q origin main
 }
 
 # refuse_pushes — origin's pre-receive hook declines every push, so git prints ` ! [remote rejected] … (pre-receive hook declined)`.

@@ -156,9 +156,10 @@ fix_ready() {
   run bash "$SCRIPT" fix feat 10 feature/feat
   run bash "$SCRIPT" describe feat 10
   [ -f "$D/result.json" ] && [ -f "$D/pr-10.r1.review.json" ] && [ -f "$D/2.checks.head" ]
+  echo '{}' > "$D/pr-10.summary.json"
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ]
-  [ ! -e "$D/result.json" ]
+  [ ! -e "$D/result.json" ] && [ ! -e "$D/pr-10.summary.json" ]
   [ -z "$(ls "$D" | grep -E '^pr-.*\.r[0-9]+\.|\.checks\.head$')" ]
 
   echo 'stopped: x' > "$D/outcome" && echo '{}' > "$D/result.json"
@@ -316,7 +317,7 @@ fix_ready() {
   run bash "$SCRIPT" land feat 3 feature/feat
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "$(printf 'red-files=%s\nreviewer-model=' "$WORK/$D/2.red.md")" ]
+  [ "$output" = "$(printf 'red-files=%s\nreviewer-model=\nreview-base=' "$WORK/$D/2.red.md")" ]
 }
 
 @test "a local ref whose path has an ancestor directory named issues is still its own feature's" {
@@ -389,6 +390,28 @@ fix_ready() {
   [ "$(r .needs_attention)" = '[{"type":"unfixed","round":1,"severity":null,"why":"[{\"finding\": \"1\", \"why\": \"w\"}]\n"}]' ]
 }
 
+@test "fix rewrites unfixed.json to [{finding?, why}] before its first stop, so a stopped fix renders it as a finished one" {
+  fix_ready
+  printf '[{"finding": 0, "why": "w", "extra": 1}, {"why": "v"}]\n' > "$D/pr-10.unfixed.json"
+  git checkout -q -b elsewhere
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(cat "$D/pr-10.unfixed.json")" = '[{"finding":0,"why":"w"},{"why":"v"}]' ]
+  result_ok
+  [ "$(r '.rounds[0].unfixed')" = '[{"finding":0,"why":"w"},{"why":"v"}]' ]
+  # Off its shape: one entry holding the raw text; a re-run keeps it so.
+  printf 'not json\n' > "$D/pr-10.unfixed.json"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$(cat "$D/pr-10.unfixed.json")" = '[{"why":"not json\n"}]' ]
+  [ "$(r '.rounds[0].unfixed')" = '[{"why":"not json\n"}]' ]
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$(cat "$D/pr-10.unfixed.json")" = '[{"why":"not json\n"}]' ]
+}
+
+@test "result.mjs reads unfixed.json as fix wrote it, with no shape check of its own" {
+  ! grep -qE 'whole|typeof u\.why' "$REPO_ROOT/skills/solve-feature/scripts/result.mjs" || false
+}
+
 @test "rounds[].findings keeps a non-object entry as {} at its index, so an unfixed finding index names the same finding" {
   fix_ready '{"spec":"met","gaps":[],"findings":["junk",{"severity":"HIGH","location":"a:1","issue":"i","fix":"f"}]}'
   echo '[{"finding": 1, "why": "w"}]' > "$D/pr-10.unfixed.json"
@@ -400,7 +423,7 @@ fix_ready() {
   [ "$(r .needs_attention)" = '[{"type":"unfixed","round":0,"finding":1,"severity":"HIGH","why":"w"}]' ]
 }
 
-@test "needs_attention: one note per block of the body's notes section, its author from the script's tag or person, the same on a second describe" {
+@test "needs_attention: one note per standing entry of the feature's run file, after fix's items, the same on a second describe" {
   run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
   run bash "$SCRIPT" next feat; [ "$output" = 2 ]
   coder 2
@@ -411,25 +434,18 @@ fix_ready() {
   coder 3
   run bash "$SCRIPT" land feat 3 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  report '{"spec":"met","gaps":[],"findings":[]}'
+  report '{"spec":"met","gaps":["a gap"],"findings":[]}'
   echo '- rotate the key' > "$D/pr-10.notes.md"
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  # A person types a note of their own under no tag.
-  perl -0pi -e 's/(Delete a note here once it is handled\.\n\n)/$1check the docs page\n\n/' "$STATE/pr-body"
   run bash "$SCRIPT" describe feat 10
   [ "$output" = "needs-attention pr=10" ] || { echo "$output"; return 1; }
   result_ok
-  local want='[{"type":"note","author":"person","text":"check the docs page"},{"type":"note","author":"coder","text":"- set the CREW_X repo variable"},{"type":"note","author":"fixer","text":"- rotate the key"}]'
+  local want='[{"type":"spec_unmet","round":0,"gaps":[0]},{"type":"note","author":"coder","text":"- set the CREW_X repo variable"},{"type":"note","author":"fixer","text":"- rotate the key"}]'
   [ "$(r .needs_attention)" = "$want" ] || { r .needs_attention; return 1; }
   run bash "$SCRIPT" describe feat 10
   result_ok
   [ "$(r .needs_attention)" = "$want" ]
-  # A note a person deleted gives no item; its tag left behind is no note.
-  perl -0pi -e 's/- set the CREW_X repo variable\n//' "$STATE/pr-body"
-  run bash "$SCRIPT" describe feat 10
-  result_ok
-  [ "$(r '[.needs_attention[].author]')" = '["person","fixer"]' ]
 }
 
 @test "needs_attention: a published run's unresolved review threads are one item with their count and the PR's URL" {
@@ -580,6 +596,68 @@ summary_file() { printf '%s' "$2" > "$D/pr-$1.summary.md"; }
   [ "$(grep -c '^\*\*Tested:\*\*' "$body")" = 1 ]
   [ "$(grep '^\*\*Tested:\*\*' "$body")" = '**Tested:** test pass' ]
   [[ "$(r .pr_body)" == *'**Tested:** test pass'* ]]
+}
+
+# summary_json <pr> <json> — the PR writer's structured summary.
+summary_json() { printf '%s' "$2" > "$D/pr-$1.summary.json"; }
+
+@test "a valid summary.json gives pr_text, pr_title and pr_summary from it, the body's summary that same rendering, pr still the number" {
+  fix_ready
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  summary_file 10 $'# From the markdown\n\n## Why\n\nmarkdown why\n'
+  summary_json 10 '{"title":"Let users log in","why":"Users need accounts.","changes":["Add a login form","Store sessions"],"risk":"Low: new route only."}'
+  run bash "$SCRIPT" describe feat 10
+  [ "$output" = "ready pr=10" ]
+  result_ok
+  [ "$(r '.pr_text')" = '{"title":"Let users log in","why":"Users need accounts.","changes":["Add a login form","Store sessions"],"risk":"Low: new route only."}' ]
+  [ "$(r '[.pr, .pr_title]')" = '[10,"Let users log in"]' ]
+  [ "$(jq -r .pr_summary "$D/result.json")" = $'## Why\n\nUsers need accounts.\n\n## What changes\n\n- Add a login form\n- Store sessions\n\n## Risk\n\nLow: new route only.' ]
+  # The body holds exactly that rendering, and the markdown summary's text not at all.
+  local s; s=$(jq -r .pr_summary "$D/result.json")
+  [[ "$(cat "$STATE/pr-body")" == *"$s"* ]] || { cat "$STATE/pr-body"; return 1; }
+  ! grep -q 'markdown why\|From the markdown' "$STATE/pr-body"
+}
+
+@test "no, an unparsable or a malformed summary.json leaves no pr_text, and pr_title, pr_summary and the body come from summary.md" {
+  fix_ready
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  summary_file 10 $'# Let users log in\n\n## Why\n\nUsers need accounts.\n'
+  local bad
+  for bad in '' 'not json {' '{"title":"t","why":"w","changes":["c"]}' '{"title":"t","why":"w","changes":"c","risk":"r"}' \
+    '{"title":"t","why":"w","changes":["c",3],"risk":"r"}' '{"title":"t","why":null,"changes":["c"],"risk":"r"}' '["t"]'; do
+    rm -f "$D/pr-10.summary.json"
+    [ -z "$bad" ] || summary_json 10 "$bad"
+    run bash "$SCRIPT" describe feat 10
+    [ "$output" = "ready pr=10" ] || { echo "$bad: $output"; return 1; }
+    result_ok
+    [ "$(r '[has("pr_text"), .pr_title, .pr_summary]')" = '[false,"Let users log in","## Why\n\nUsers need accounts.\n"]' ] || { echo "$bad"; cat "$D/result.json"; return 1; }
+    grep -q '^Users need accounts\.$' "$STATE/pr-body" || { echo "$bad"; cat "$STATE/pr-body"; return 1; }
+  done
+}
+
+@test "the committed result.example.json carries every field the guide calls stable and validates against the schema" {
+  local ex="$REPO_ROOT/tests/fixtures/solve-feature/result.example.json"
+  [ -f "$ex" ]
+  local e; e=$(schema_errors "$ex")
+  [ -z "$e" ] || { echo "$e"; return 1; }
+  # Every D9 field is present somewhere in the example, and one needs_attention item of each type the schema names.
+  jq -e --slurpfile s "$SCHEMA" '
+    has("status") and has("outcome") and has("pr") and has("pr_title") and has("pr_summary")
+    and (.pr_text | has("title") and has("why") and has("changes") and has("risk"))
+    and any(.issues[]; has("title") and (.checks.results | type) == "array")
+    and any(.rounds[]; has("spec") and has("gaps") and has("checks") and has("re_reviewed")
+          and any(.findings[]; has("severity") and has("location") and has("issue") and has("fix") and has("fixed"))
+          and any(.criteria[]; has("text") and has("met") and any(.tests[]; has("test") and has("red"))))
+    and ([.needs_attention[].type] | unique) == ($s[0].properties.needs_attention.items.properties.type.enum | unique)
+    and ([.needs_attention[] | keys[]] | unique | contains(["author", "finding", "gaps", "paths", "round", "severity", "text", "why"]))' "$ex"
+  # The guide calls the fields stable, names the example, and its table lists each D9 field.
+  local guide="$REPO_ROOT/docs/guide.md" f
+  grep -q 'tests/fixtures/solve-feature/result.example.json' "$guide"
+  grep -q 'The fields below are stable' "$guide"
+  for f in status outcome pr pr_text pr_title pr_summary 'issues\[\]\.title' 'issues\[\]\.checks\.results' 'rounds\[\]\.spec' 'rounds\[\]\.gaps' \
+    'rounds\[\]\.findings\[\]' 'rounds\[\]\.criteria\[\]' 'rounds\[\]\.checks' 'rounds\[\]\.re_reviewed' 'needs_attention\[\]'; do
+    grep -qE "^\| [^|]*\`$f\`" "$guide" || { echo "no table row for $f"; return 1; }
+  done
 }
 
 # host_ready <result.json> — the guide's host example jq, taken from the guide's one ```jq block under
