@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: `result.json` gains `pr_text`, `{title, why, changes, risk}`, from a `pr-<n>.summary.json` the PR
+  writer now also writes, so an embedding CI host reads the summary without parsing markdown; `pr_title`,
+  `pr_summary` and the PR body's summary are rendered from it (falling back to `summary.md` as before). The guide's
+  "Embedding solve-feature" section lists the `result.json` fields a host may rely on as stable, with a committed
+  example, `tests/fixtures/solve-feature/result.example.json`; SKILL.md's host settings now point there (#760).
 - solve-feature: the run's notes for a person live in `.coding-crew/solve-feature/notes-<slug>.json`, which only the
   script writes; `describe` is the only writer of the PR body and renders the notes, the settled notes and one flat
   `Earlier runs' notes` section (a re-run's copy of the previous body's notes, a record that holds no draft) from it.
