@@ -306,6 +306,18 @@ clean_review() { echo '[]' > "$D/pr-${1:-10}.attention.json"; }
   [ "$(section earlier | sed -n 2p)" = "## Earlier runs' notes" ]
 }
 
+@test "a start that stops before its first step drops the rendered entries, so its result.json lists no note the body holds" {
+  coded_with_notes
+  clean_review
+  run bash "$SCRIPT" describe feat 10; [ "$output" = "needs-attention pr=10" ]
+  touch stray
+  run bash "$SCRIPT" start feat
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"$NF"* ]] || { echo "$output"; return 1; }
+  [ ! -e "$NF" ]
+  [ "$(jq -c .needs_attention "$D/result.json")" = '[]' ] || { cat "$D/result.json"; return 1; }
+}
+
 @test "a note a person deleted from the previous body does not come back, and a new note of this run holds the draft beside the earlier ones" {
   coded_with_notes
   clean_review

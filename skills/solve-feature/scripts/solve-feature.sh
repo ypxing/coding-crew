@@ -278,6 +278,9 @@ earlier_notes() {
 # start — preconditions, --spec's feature, the branch (--branch, else feature/<slug>), spec.md, --review-since's
 # commit for sync; prints slug= (with --spec), branch=, coder-model=, reviewer-model= and pr= (empty with no open PR).
 start() {
+  # What an earlier describe rendered is in the body now, which earlier_notes copies; the rest a stop left unrendered.
+  # First, so a stop of this start lists none of them in its result.json.
+  notes_edit 'map(select(.rendered != true))' || die "dropping the rendered notes from $(notes_file) failed (see above)"
   [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || die "working tree is not clean: commit or stash first"
   [ -z "$SPEC" ] || publish_spec
   local features; features=$(node "$CLI" features | cut -f1) || die "features failed (see above)"
@@ -309,8 +312,6 @@ start() {
   [ "$(git rev-parse HEAD)" = "$before" ] || push origin "$BRANCH" || die "cannot push $BRANCH after merging origin/$default into it: $PUSH_WHY"
   write_spec
   pr_view
-  # What an earlier describe rendered is in the body now, which earlier_notes copies; the rest a stop left unrendered.
-  notes_edit 'map(select(.rendered != true))' || die "dropping the rendered notes from $(notes_file) failed (see above)"
   earlier_notes
   # A ready PR would read as reviewed while coders and the review change it; describe marks it ready again.
   [ -z "$PR_N" ] || [ "$PR_IS_DRAFT" != false ] || gh pr ready "$PR_N" --undo >/dev/null ||

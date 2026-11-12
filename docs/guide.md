@@ -107,8 +107,8 @@ Anything else a coder or the fixer says a person must do or decide is kept in th
 stop names the file); `describe` renders it into the PR body's `Notes for a person` section, and `Needs attention`
 names the section. A note holds the draft for the run that wrote it: the run ends `needs-attention`, and a person handles
 it, then marks the PR ready themselves or re-runs, which counts it as an earlier note. The reviewer judges each coder's note on the code at HEAD: one it finds settled
-moves to a `Settled by the review` section with its reason, where it no longer holds the draft. From the second
-review round the fixer is handed the first round's note to keep, edit or drop, so the run keeps one fixer note. A
+moves to a `Settled by the review` section with its reason, where it no longer holds the draft. When a fixer note
+stands (an earlier round's, or one a stopped run left), the fixer is handed it to keep, edit or drop, so the run keeps one fixer note. A
 re-run turns the previous body's notes, settled notes and earlier notes into one `Earlier runs' notes` section,
 copied verbatim (a note you deleted stays deleted, and your own text there is kept) as a record that holds no draft.
 
