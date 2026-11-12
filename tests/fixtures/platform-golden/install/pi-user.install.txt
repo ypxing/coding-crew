@@ -91,6 +91,7 @@ HOME/.pi/agent/skills/solve-feature/scripts/solve-feature.sh exec=0
 HOME/.pi/agent/skills/solve-issue/ /
 HOME/.pi/agent/skills/solve-issue/SKILL.md exec=0 unrendered=0
 HOME/.pi/agent/skills/solve-issue/scripts/ /
+HOME/.pi/agent/skills/solve-issue/scripts/map-definitions.sh exec=1
 HOME/.pi/agent/skills/solve-issue/scripts/preflight.sh exec=1
 HOME/.pi/agent/skills/tdd/ /
 HOME/.pi/agent/skills/tdd/SKILL.md exec=0 unrendered=0

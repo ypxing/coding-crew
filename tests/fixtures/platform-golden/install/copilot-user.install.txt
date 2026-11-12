@@ -90,6 +90,7 @@ HOME/.copilot/skills/solve-feature/scripts/solve-feature.sh exec=0
 HOME/.copilot/skills/solve-issue/ /
 HOME/.copilot/skills/solve-issue/SKILL.md exec=0 unrendered=0
 HOME/.copilot/skills/solve-issue/scripts/ /
+HOME/.copilot/skills/solve-issue/scripts/map-definitions.sh exec=1
 HOME/.copilot/skills/solve-issue/scripts/preflight.sh exec=1
 HOME/.copilot/skills/tdd/ /
 HOME/.copilot/skills/tdd/SKILL.md exec=0 unrendered=0
