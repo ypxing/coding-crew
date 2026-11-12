@@ -400,7 +400,7 @@ fix_ready() {
   [ "$(r .needs_attention)" = '[{"type":"unfixed","round":0,"finding":1,"severity":"HIGH","why":"w"}]' ]
 }
 
-@test "needs_attention: one note per block of the body's notes section, its author from the script's tag or person, the same on a second describe" {
+@test "needs_attention: one note per standing entry of the feature's run file, after fix's items, the same on a second describe" {
   run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
   run bash "$SCRIPT" next feat; [ "$output" = 2 ]
   coder 2
@@ -411,25 +411,18 @@ fix_ready() {
   coder 3
   run bash "$SCRIPT" land feat 3 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  report '{"spec":"met","gaps":[],"findings":[]}'
+  report '{"spec":"met","gaps":["a gap"],"findings":[]}'
   echo '- rotate the key' > "$D/pr-10.notes.md"
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  # A person types a note of their own under no tag.
-  perl -0pi -e 's/(Delete a note here once it is handled\.\n\n)/$1check the docs page\n\n/' "$STATE/pr-body"
   run bash "$SCRIPT" describe feat 10
   [ "$output" = "needs-attention pr=10" ] || { echo "$output"; return 1; }
   result_ok
-  local want='[{"type":"note","author":"person","text":"check the docs page"},{"type":"note","author":"coder","text":"- set the CREW_X repo variable"},{"type":"note","author":"fixer","text":"- rotate the key"}]'
+  local want='[{"type":"spec_unmet","round":0,"gaps":[0]},{"type":"note","author":"coder","text":"- set the CREW_X repo variable"},{"type":"note","author":"fixer","text":"- rotate the key"}]'
   [ "$(r .needs_attention)" = "$want" ] || { r .needs_attention; return 1; }
   run bash "$SCRIPT" describe feat 10
   result_ok
   [ "$(r .needs_attention)" = "$want" ]
-  # A note a person deleted gives no item; its tag left behind is no note.
-  perl -0pi -e 's/- set the CREW_X repo variable\n//' "$STATE/pr-body"
-  run bash "$SCRIPT" describe feat 10
-  result_ok
-  [ "$(r '[.needs_attention[].author]')" = '["person","fixer"]' ]
 }
 
 @test "needs_attention: a published run's unresolved review threads are one item with their count and the PR's URL" {

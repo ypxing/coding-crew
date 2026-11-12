@@ -1,16 +1,20 @@
 #!/usr/bin/env bats
 
-# solve-feature.sh's coder notes judged by the review: sync writes the body's coder blocks to pr-<n>.coder-notes.json,
-# fix moves each one the report marks settled to the body's settled section, and describe keeps that section but
-# never counts it. Setup and the stubs: helpers/solve-feature.bash.
+# solve-feature.sh's notes for a person, kept in the run file .coding-crew/solve-feature/notes-<slug>.json that only the
+# script writes: land adds the coder's, fix the fixer's, sync hands the reviewer the coder notes still standing, fix
+# marks the ones the review settled, describe renders the PR body from the file (and the earlier runs' notes start
+# copied from the previous body) and marks every entry rendered, and the next run's start drops those. Setup and the
+# stubs: helpers/solve-feature.bash.
 
 load helpers/solve-feature
 
 D=.coding-crew/solve-feature
+NF=.coding-crew/solve-feature/notes-feat.json
 NOTES=.coding-crew/solve-feature/pr-10.coder-notes.json
 LOCAL=.coding-crew/solve-feature/local-pr-feature_feat.md
 
-# coded_with_notes — #2's coder leaves a note with a ### heading of its own, #3's a plain one; both land, then sync.
+no_publish() { mkdir -p "$HOME/.coding-crew" && echo '{"solveFeature":{"publish":false}}' > "$HOME/.coding-crew/config.json"; }
+# coded_with_notes — #2's coder leaves a note with a ### heading of its own, #3's a plain one; both land.
 coded_with_notes() {
   run bash "$SCRIPT" start feat; [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" next feat; [ "$output" = 2 ]
@@ -23,179 +27,314 @@ coded_with_notes() {
   run bash "$SCRIPT" land feat 3 feature/feat; [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$output" = pr=10 ]
 }
-block2() { printf '%s\n\n%s\n\n%s' "### the coder of 2 · $(date +%F)" '### Merge order' '- merge after the infra PR'; }
-block3() { printf '%s\n\n%s' "### the coder of 3 · $(date +%F)" '- set the CREW_X repo variable'; }
-settled_section() { sed -n '/^<!-- solve-feature:settled:begin -->$/,/^<!-- solve-feature:settled:end -->$/p' "${1:-$STATE/pr-body}"; }
-notes_section() { sed -n '/^<!-- solve-feature:notes:begin -->$/,/^<!-- solve-feature:notes:end -->$/p' "${1:-$STATE/pr-body}"; }
+note2=$'### Merge order\n\n- merge after the infra PR'
+note3='- set the CREW_X repo variable'
+section() { sed -n "/^<!-- solve-feature:$1:begin -->\$/,/^<!-- solve-feature:$1:end -->\$/p" "${2:-$STATE/pr-body}"; }
+# clean_review — a review round with nothing to fix, as fix leaves it for describe.
+clean_review() { echo '[]' > "$D/pr-${1:-10}.attention.json"; }
 
-@test "sync writes the body's coder blocks, a coder's own ### heading kept inside its block, verbatim and in order, leaving out fixer and person blocks" {
+# --- land ------------------------------------------------------------------------------------
+
+@test "land adds a non-empty coder.notes.md to the run file as one coder entry under its ref and makes no gh pr edit call; pr= stays last" {
   coded_with_notes
-  # A fixer's block from an earlier run and a person's text are in the body too.
-  perl -0pi -e 's/(Delete a note here once it is handled\.\n\n)/$1check the docs page\n\n/' "$STATE/pr-body"
-  perl -0pi -e "s/(<!-- solve-feature:notes:end -->)/### the fixer of PR #10's review · 2026-01-01\n\n- rotate the key\n\n\$1/" "$STATE/pr-body"
-  run bash "$SCRIPT" sync feat feature/feat
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(jq -c . "$NOTES")" = "$(jq -cn --arg a "$(block2)" --arg b "$(block3)" '[$a, $b]')" ] || { cat "$NOTES"; return 1; }
+  [ "$(jq -c . "$NF")" = "$(jq -cn --arg a "$note2" --arg b "$note3" '[{author: "coder", ref: "2", text: $a}, {author: "coder", ref: "3", text: $b}]')" ] || { cat "$NF"; return 1; }
+  ! grep -q '^pr edit' "$STATE/gh.log" || false
+  ! grep -q 'solve-feature:notes' "$STATE/pr-body" || false
 }
 
-@test "sync with no coder block leaves no notes file, removing a stale one; a note a person deleted is not written" {
+@test "land re-run for the same ref after a stop leaves one coder entry for it, the coder's latest text" {
+  land_ready
+  echo '- first draft' > "$D/coder.notes.md"
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(jq -c '[.[] | .text]' "$NF")" = '["- first draft"]' ]
+  run bash "$SCRIPT" next feat; [ "$output" = 2 ]
+  # The reopened issue's coder keeps the file, and rewrites it.
+  [ -s "$D/coder.notes.md" ]
+  coder 2
+  echo '- second draft' > "$D/coder.notes.md"
+  run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(jq -c . "$NF")" = '[{"author":"coder","ref":"2","text":"- second draft"}]' ]
+}
+
+@test "land with no or an empty coder.notes.md adds no entry" {
+  land_ready
+  run bash "$SCRIPT" land feat 2 feature/feat; [ "$status" -eq 0 ]
+  run bash "$SCRIPT" next feat; coder 3
+  : > "$D/coder.notes.md"
+  run bash "$SCRIPT" land feat 3 feature/feat; [ "$status" -eq 0 ]
+  [ ! -e "$NF" ]
+}
+
+@test "a land that stops after its coder wrote a note writes result.json with that note, the stop names the run file, and start keeps it" {
+  land_ready
+  echo '- set the CREW_X repo variable' > "$D/coder.notes.md"
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$WORK/$NF"* ]] || { echo "$output"; return 1; }
+  [ "$(jq -c .needs_attention "$D/result.json")" = '[{"type":"note","author":"coder","text":"- set the CREW_X repo variable"}]' ]
+  # Another feature's notes in the shared directory never reach this feature's result.json.
+  echo '[{"author":"coder","ref":"9","text":"other"}]' > "$D/notes-other.json"
+  run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
+  [ "$(jq -c '[.[] | .text]' "$NF")" = '["- set the CREW_X repo variable"]' ]
+  run bash "$SCRIPT" next feat; [ "$output" = 2 ]
+  coder 2
+  run bash "$SCRIPT" land feat 2 feature/feat; [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" next feat; coder 3
+  refuse_pushes
+  run bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(jq -c .needs_attention "$D/result.json")" = '[{"type":"note","author":"coder","text":"- set the CREW_X repo variable"}]' ]
+}
+
+@test "a stop with no note names no run file" {
+  land_ready
+  CHECKS_RC=1 run bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"notes-feat.json"* ]] || { echo "$output"; return 1; }
+}
+
+# --- fix and reviewed ------------------------------------------------------------------------
+
+@test "fix keeps exactly one fixer entry, the newest; a round-2 fixer that leaves no note drops it; reviewed names the standing note from round 2" {
+  fix_ready
+  echo '- rotate the CI token after merge' > "$D/pr-10.notes.md"
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$output" = findings=2 ] || { echo "$output"; return 1; }
+  : > "$STATE/gh.log"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  ! grep -q '^pr edit' "$STATE/gh.log" || false
+  [ "$(jq -c . "$NF")" = '[{"author":"fixer","round":0,"text":"- rotate the CI token after merge"}]' ]
+  [ ! -e "$D/pr-10.notes.md" ]
+  # Round 2: reviewed hands the fixer the standing note to keep, edit or drop.
+  rereview
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$output" = "$(printf 'fixer-note=%s\nfindings=2' "$WORK/$D/pr-10.prev-fixer-note.md")" ] || { echo "$output"; return 1; }
+  [ "$(cat "$D/pr-10.prev-fixer-note.md")" = '- rotate the CI token after merge' ]
+  echo '- rotate the CI token, then the deploy key' > "$D/pr-10.notes.md"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(jq -c . "$NF")" = '[{"author":"fixer","round":1,"text":"- rotate the CI token, then the deploy key"}]' ]
+  # A third fix with findings and no note: the fixer dropped it.
+  rereview
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ ! -e "$NF" ] || [ "$(jq -c '[.[] | select(.author == "fixer")]' "$NF")" = '[]' ]
+}
+
+@test "reviewed names no fixer note in round 1, nor once none stands" {
+  fix_ready
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$output" = findings=2 ]
+  run bash "$SCRIPT" fix feat 10 feature/feat; [ "$status" -eq 0 ]
+  rereview
+  run bash "$SCRIPT" reviewed feat 10 feature/feat
+  [ "$output" = findings=2 ] || { echo "$output"; return 1; }
+  [ ! -e "$D/pr-10.prev-fixer-note.md" ]
+}
+
+@test "a second round with no findings runs no fixer, so the first round's fixer note stands" {
+  fix_ready
+  echo '- decide whether to check each comment author' > "$D/pr-10.notes.md"
+  run bash "$SCRIPT" fix feat 10 feature/feat; [ "$status" -eq 0 ]
+  report '{"spec":"met","gaps":[],"findings":[]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat; [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(jq -c '[.[] | .text]' "$NF")" = '["- decide whether to check each comment author"]' ]
+}
+
+@test "SKILL.md's fixer prompt names reviewed's fixer-note file to keep, edit or drop" {
+  local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"
+  grep -qF 'fixer-note=<path>' "$skill"
+  grep -qF 'keep, edit or drop this note' "$skill"
+}
+
+# --- sync and the review's settled notes -----------------------------------------------------
+
+@test "sync writes the standing coder notes' texts from the run file, never reading the PR body; with none it leaves no file" {
   coded_with_notes
-  echo '["stale"]' > "$NOTES"
-  perl -0pi -e 's/### the coder of [^\n]*\n\n(### Merge order\n\n)?- [^\n]*\n\n//g' "$STATE/pr-body"
-  ! grep -q 'the coder of' "$STATE/pr-body" || false
+  # A fixer's entry is no coder note.
+  jq '. + [{author: "fixer", round: 0, text: "- rotate the key"}]' "$NF" > "$NF.new" && mv "$NF.new" "$NF"
+  : > "$STATE/gh.log"
+  run bash "$SCRIPT" sync feat feature/feat
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(jq -c . "$NOTES")" = "$(jq -cn --arg a "$note2" --arg b "$note3" '[$a, $b]')" ] || { cat "$NOTES"; return 1; }
+  ! grep -q -- '--json body' "$STATE/gh.log" || false
+  # None standing: a stale file goes.
+  echo '[{"author":"fixer","round":0,"text":"x"}]' > "$NF"
   run bash "$SCRIPT" sync feat feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ ! -e "$NOTES" ]
 }
 
-@test "with publish false sync writes pr-local.coder-notes.json from the local body" {
-  mkdir -p "$HOME/.coding-crew" && echo '{"solveFeature":{"publish":false}}' > "$HOME/.coding-crew/config.json"
-  run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
-  run bash "$SCRIPT" next feat; [ "$output" = 2 ]
-  coder 2
-  printf '%s\n' '- set the CREW_X repo variable' > "$D/coder.notes.md"
-  run bash "$SCRIPT" land feat 2 feature/feat; [ "$output" = pr=local ] || { echo "$output"; return 1; }
-  run bash "$SCRIPT" sync feat feature/feat
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(jq -c . "$D/pr-local.coder-notes.json")" = "$(jq -cn --arg a "$(printf '%s\n\n%s' "### the coder of 2 · $(date +%F)" '- set the CREW_X repo variable')" '[$a]')" ]
-}
-
-@test "fix moves a settled note to the settled section with its why, keeps an unsettled one, and rewrites the notes file to what stands" {
+@test "fix marks the k-th note of pr-<n>.coder-notes.json settled with its why, then that file lists only the notes still standing, for round 2" {
   coded_with_notes
   run bash "$SCRIPT" sync feat feature/feat; [ "$status" -eq 0 ]
   report '{"spec":"met","gaps":[],"findings":[],"notes":[{"note":0,"settled":true,"why":"both issues landed on this branch"},{"note":1,"settled":false,"why":"a repo variable only a person can set"}]}'
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(settled_section)" = "$(printf '%s\n' '<!-- solve-feature:settled:begin -->' '## Settled by the review' '' "$(block2)" '' 'Settled by the review: both issues landed on this branch' '' '<!-- solve-feature:settled:end -->')" ] || { cat "$STATE/pr-body"; return 1; }
-  ! notes_section | grep -q 'Merge order' || false
-  notes_section | grep -qx -- '- set the CREW_X repo variable'
-  [ "$(jq -c . "$NOTES")" = "$(jq -cn --arg b "$(block3)" '[$b]')" ]
-  run bash "$SCRIPT" describe feat 10
-  [ "$output" = "needs-attention pr=10" ] || { echo "$output"; return 1; }
-  [ "$(jq -c .needs_attention "$D/result.json")" = '[{"type":"note","author":"coder","text":"- set the CREW_X repo variable"}]' ]
-  # Kept after the notes section, verbatim.
-  [ "$(settled_section)" = "$(printf '%s\n' '<!-- solve-feature:settled:begin -->' '## Settled by the review' '' "$(block2)" '' 'Settled by the review: both issues landed on this branch' '' '<!-- solve-feature:settled:end -->')" ]
-  [ "$(grep -n '^<!-- solve-feature:notes:end -->$' "$STATE/pr-body" | cut -d: -f1)" -lt "$(grep -n '^<!-- solve-feature:settled:begin -->$' "$STATE/pr-body" | cut -d: -f1)" ]
-
-  # A second round judges only the note still standing, by its index in the rewritten file.
+  [ "$(jq -c '[.[] | [.ref, .settled, .why]]' "$NF")" = '[["2",true,"both issues landed on this branch"],["3",null,null]]' ]
+  [ "$(jq -c . "$NOTES")" = "$(jq -cn --arg b "$note3" '[$b]')" ]
+  # Round 2 judges only the note still standing, by its index in the rewritten file.
   report '{"spec":"met","gaps":[],"findings":[],"notes":[{"note":0,"settled":true,"why":"the variable is set by the workflow"}]}'
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ ! -e "$NOTES" ]
-  [ "$(grep -c '^Settled by the review: ' "$STATE/pr-body")" = 2 ]
-  grep -qx 'Settled by the review: the variable is set by the workflow' "$STATE/pr-body"
-  [ "$(grep -c '^<!-- solve-feature:settled:begin -->$' "$STATE/pr-body")" = 1 ]
+  [ "$(jq -c '[.[] | .why]' "$NF")" = '["both issues landed on this branch","the variable is set by the workflow"]' ]
 }
 
-@test "a run whose only notes were all settled ends ready, its settled section kept verbatim across describes" {
+@test "an entry off its shape or out of range settles nothing" {
   coded_with_notes
   run bash "$SCRIPT" sync feat feature/feat; [ "$status" -eq 0 ]
-  report '{"spec":"met","gaps":[],"findings":[],"notes":[{"note":0,"settled":true,"why":"w0"},{"note":1,"settled":true,"why":"w1"}]}'
-  run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  local section; section=$(settled_section)
-  run bash "$SCRIPT" describe feat 10
-  [ "$output" = "ready pr=10" ] || { echo "$output"; cat "$STATE/pr-body"; return 1; }
-  [ "$(jq -c .needs_attention "$D/result.json")" = '[]' ]
-  ! grep -q '^## Needs attention$' "$STATE/pr-body" || false
-  [ "$(settled_section)" = "$section" ]
-  run bash "$SCRIPT" describe feat 10
-  [ "$output" = "ready pr=10" ]
-  [ "$(settled_section)" = "$section" ]
-}
-
-@test "with publish false a run whose only note was settled ends ready branch=<b>" {
-  mkdir -p "$HOME/.coding-crew" && echo '{"solveFeature":{"publish":false}}' > "$HOME/.coding-crew/config.json"
-  run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
-  run bash "$SCRIPT" next feat; [ "$output" = 2 ]
-  coder 2
-  printf '%s\n' '- tag a release once this merges' > "$D/coder.notes.md"
-  run bash "$SCRIPT" land feat 2 feature/feat; [ "$output" = pr=local ]
-  run bash "$SCRIPT" next feat; coder 3
-  run bash "$SCRIPT" land feat 3 feature/feat
-  run bash "$SCRIPT" sync feat feature/feat; [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  printf '%s\n' '{"spec":"met","gaps":[],"findings":[],"notes":[{"note":0,"settled":true,"why":"the release is cut by CI"}]}' > "$D/pr-local.review.json"
-  run bash "$SCRIPT" fix feat local feature/feat
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  run bash "$SCRIPT" describe feat local
-  [ "$output" = "ready branch=feature/feat" ] || { echo "$output"; return 1; }
-  grep -qx 'Settled by the review: the release is cut by CI' "$LOCAL"
-}
-
-@test "a coder note stands, and the run ends needs-attention, on a report with no notes key, no entry, an entry off its shape or out of range, settled false, or a block that no longer matches" {
-  coded_with_notes
-  run bash "$SCRIPT" sync feat feature/feat; [ "$status" -eq 0 ]
-  cp "$STATE/pr-body" "$STATE/synced-body"; cp "$NOTES" "$STATE/synced-notes"
+  cp "$NF" "$STATE/synced-nf"; cp "$NOTES" "$STATE/synced-notes"
   local rep
   for rep in '' ',"notes":[]' ',"notes":"all settled"' ',"notes":[{"note":"0","settled":true,"why":"w"}]' \
     ',"notes":[{"note":5,"settled":true,"why":"w"}]' ',"notes":[{"note":-1,"settled":true,"why":"w"}]' \
     ',"notes":[{"note":0,"settled":"true","why":"w"}]' ',"notes":[{"note":0,"settled":true}]' \
-    ',"notes":[{"note":0,"settled":false,"why":"w"}]' ',"notes":[{"note":0.5,"settled":true,"why":"w"}]' ',"notes":["0"]' edited; do
-    cp "$STATE/synced-body" "$STATE/pr-body"; cp "$STATE/synced-notes" "$NOTES"
-    if [ "$rep" = edited ]; then
-      sed -i.bak 's/^- merge after the infra PR$/- merge after the infra PR lands/' "$STATE/pr-body"
-      report '{"spec":"met","gaps":[],"findings":[],"notes":[{"note":0,"settled":true,"why":"w"}]}'
-    else
-      report "{\"spec\":\"met\",\"gaps\":[],\"findings\":[]$rep}"
-    fi
+    ',"notes":[{"note":0,"settled":false,"why":"w"}]' ',"notes":[{"note":0.5,"settled":true,"why":"w"}]' ',"notes":["0"]'; do
+    cp "$STATE/synced-nf" "$NF"; cp "$STATE/synced-notes" "$NOTES"
+    report "{\"spec\":\"met\",\"gaps\":[],\"findings\":[]$rep}"
     run bash "$SCRIPT" fix feat 10 feature/feat
     [ "$status" -eq 0 ] || { echo "$rep fix: $output"; return 1; }
-    ! grep -q 'solve-feature:settled' "$STATE/pr-body" || { echo "$rep: settled"; return 1; }
+    [ "$(jq '[.[] | select(.settled)] | length' "$NF")" = 0 ] || { echo "$rep: settled"; return 1; }
     run bash "$SCRIPT" describe feat 10
     [ "$output" = "needs-attention pr=10" ] || { echo "$rep: $output"; return 1; }
     [ "$(jq -c '[.needs_attention[] | .author]' "$D/result.json")" = '["coder","coder"]' ] || { echo "$rep"; jq -c .needs_attention "$D/result.json"; return 1; }
   done
 }
 
-@test "a fix re-run after a stop moves each settled note once, with its own why" {
+@test "a fix re-run after a stop settles each note once" {
   coded_with_notes
   run bash "$SCRIPT" sync feat feature/feat; [ "$status" -eq 0 ]
   report '{"spec":"met","gaps":[],"findings":[],"notes":[{"note":0,"settled":true,"why":"merged together"}]}'
-  local before; before=$(cat "$NOTES")
   echo fixed > fixed.txt
   CHECKS_RC=1 run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 1 ]
-  ! grep -q 'solve-feature:settled' "$STATE/pr-body" || false
-  [ "$(cat "$NOTES")" = "$before" ]
-  refuse_pushes
-  run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 1 ]
-  ! grep -q 'solve-feature:settled' "$STATE/pr-body" || false
-  rm "$TEMP_DIR/origin.git/hooks/pre-receive"
+  [ "$(jq '[.[] | select(.settled)] | length' "$NF")" = 0 ]
   run bash "$SCRIPT" fix feat 10 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(grep -c '^Settled by the review: ' "$STATE/pr-body")" = 1 ]
-  grep -qx 'Settled by the review: merged together' "$STATE/pr-body"
-  [ "$(grep -c 'Merge order' "$STATE/pr-body")" = 1 ]
+  [ "$(jq -c '[.[] | .settled]' "$NF")" = '[true,null]' ]
 }
 
-@test "a failed body write stops fix naming the recovery, moving nothing and keeping the notes file" {
-  coded_with_notes
-  run bash "$SCRIPT" sync feat feature/feat; [ "$status" -eq 0 ]
-  report '{"spec":"met","gaps":[],"findings":[],"notes":[{"note":0,"settled":true,"why":"w"}]}'
-  local before; before=$(cat "$NOTES")
-  GH_EDIT_FAIL=1 run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"run fix feat 10 feature/feat, then describe feat 10"* ]] || { echo "$output"; return 1; }
-  [ "$(cat "$NOTES")" = "$before" ]
-  [ -f "$D/pr-10.review.json" ]
-  run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(grep -c '^Settled by the review: w$' "$STATE/pr-body")" = 1 ]
-}
+# --- describe --------------------------------------------------------------------------------
 
-@test "a note a person deleted before sync is neither judged nor brought back by fix or describe" {
+@test "describe renders the standing notes, then the settled ones with their why, holds the draft on a standing note, and marks every entry rendered" {
   coded_with_notes
-  perl -0pi -e 's/### the coder of 3[^\n]*\n\n- set the CREW_X repo variable\n\n//' "$STATE/pr-body"
   run bash "$SCRIPT" sync feat feature/feat; [ "$status" -eq 0 ]
-  [ "$(jq -c . "$NOTES")" = "$(jq -cn --arg a "$(block2)" '[$a]')" ]
-  report '{"spec":"met","gaps":[],"findings":[],"notes":[{"note":0,"settled":true,"why":"w"}]}'
-  run bash "$SCRIPT" fix feat 10 feature/feat
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  report '{"spec":"met","gaps":[],"findings":[],"notes":[{"note":0,"settled":true,"why":"both issues\nlanded here"}]}'
+  echo '- rotate the key' > "$D/pr-10.notes.md"
+  run bash "$SCRIPT" fix feat 10 feature/feat; [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" describe feat 10
-  [ "$output" = "ready pr=10" ] || { echo "$output"; return 1; }
-  ! grep -q 'CREW_X' "$STATE/pr-body" || false
+  [ "$output" = "needs-attention pr=10" ] || { echo "$output"; return 1; }
+  ! grep -q '^pr ready 10' "$STATE/gh.log" || false
+  [ "$(section notes)" = "$(printf '%s\n' '<!-- solve-feature:notes:begin -->' '## Notes for a person' '' 'Delete a note here once it is handled.' '' \
+    '### the coder of 3' '' "$note3" '' "### the fixer of PR #10's review" '' '- rotate the key' '' '<!-- solve-feature:notes:end -->')" ] || { cat "$STATE/pr-body"; return 1; }
+  [ "$(section settled)" = "$(printf '%s\n' '<!-- solve-feature:settled:begin -->' '## Settled by the review' '' \
+    '### the coder of 2' '' "$note2" '' 'Settled by the review: both issues landed here' '' '<!-- solve-feature:settled:end -->')" ] || { cat "$STATE/pr-body"; return 1; }
+  grep -qx -- '- notes for a person, in the section below: delete each once it is handled' "$STATE/pr-body"
+  [ "$(jq -c '[.needs_attention[] | [.author, .text]]' "$D/result.json")" = "$(jq -cn --arg b "$note3" '[["coder", $b], ["fixer", "- rotate the key"]]')" ]
+  [ "$(jq '[.[] | select(.rendered != true)] | length' "$NF")" = 0 ]
+  # A second describe writes the same body, and result.json still carries the notes.
+  cp "$STATE/pr-body" "$STATE/first-body"
+  run bash "$SCRIPT" describe feat 10
+  [ "$output" = "needs-attention pr=10" ]
+  diff "$STATE/first-body" "$STATE/pr-body"
+  [ "$(jq '[.needs_attention[] | select(.type == "note")] | length' "$D/result.json")" = 2 ]
 }
+
+@test "a run whose notes were all settled ends ready" {
+  coded_with_notes
+  run bash "$SCRIPT" sync feat feature/feat; [ "$status" -eq 0 ]
+  report '{"spec":"met","gaps":[],"findings":[],"notes":[{"note":0,"settled":true,"why":"w0"},{"note":1,"settled":true,"why":"w1"}]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat; [ "$status" -eq 0 ]
+  run bash "$SCRIPT" describe feat 10
+  [ "$output" = "ready pr=10" ] || { echo "$output"; cat "$STATE/pr-body"; return 1; }
+  [ "$(jq -c .needs_attention "$D/result.json")" = '[]' ]
+  ! grep -q '^## Needs attention$\|solve-feature:notes' "$STATE/pr-body" || false
+  [ "$(grep -c '^Settled by the review: ' "$STATE/pr-body")" = 2 ]
+}
+
+@test "a failed body write marks nothing rendered, so the next start keeps the notes" {
+  coded_with_notes
+  clean_review
+  GH_EDIT_FAIL=1 run bash "$SCRIPT" describe feat 10
+  [ "$status" -eq 1 ]
+  [ "$(jq '[.[] | select(.rendered)] | length' "$NF")" = 0 ]
+  run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
+  [ "$(jq length "$NF")" = 2 ]
+}
+
+@test "the next run's start drops rendered entries and carries the previous body's notes, settled and earlier sections into one flat Earlier runs' notes section that holds no draft" {
+  coded_with_notes
+  run bash "$SCRIPT" sync feat feature/feat; [ "$status" -eq 0 ]
+  report '{"spec":"met","gaps":[],"findings":[],"notes":[{"note":0,"settled":true,"why":"w0"}]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat; [ "$status" -eq 0 ]
+  run bash "$SCRIPT" describe feat 10; [ "$output" = "needs-attention pr=10" ]
+  # Two more runs, each with nothing new: no heading nests, each note's text appears once.
+  local n
+  for n in 1 2; do
+    run bash "$SCRIPT" start feat; [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ ! -e "$NF" ]
+    clean_review
+    run bash "$SCRIPT" describe feat 10
+    [ "$output" = "ready pr=10" ] || { echo "run $n: $output"; cat "$STATE/pr-body"; return 1; }
+    [ "$(grep -c "^## Earlier runs' notes\$" "$STATE/pr-body")" = 1 ]
+    ! grep -q '^## Notes for a person$\|^## Settled by the review$\|^Delete a note here' "$STATE/pr-body" || { cat "$STATE/pr-body"; return 1; }
+    [ "$(grep -c -- '^- merge after the infra PR$' "$STATE/pr-body")" = 1 ]
+    [ "$(grep -c -- "^$note3\$" "$STATE/pr-body")" = 1 ]
+    [ "$(grep -c '^Settled by the review: w0$' "$STATE/pr-body")" = 1 ]
+    [ "$(grep -c '^<!-- solve-feature:earlier:begin -->$' "$STATE/pr-body")" = 1 ]
+    [ "$(jq -c .needs_attention "$D/result.json")" = '[]' ]
+  done
+  [ "$(section earlier | sed -n 2p)" = "## Earlier runs' notes" ]
+}
+
+@test "a note a person deleted from the previous body does not come back, and a new note of this run holds the draft beside the earlier ones" {
+  coded_with_notes
+  clean_review
+  run bash "$SCRIPT" describe feat 10; [ "$output" = "needs-attention pr=10" ]
+  perl -0pi -e 's/### the coder of 3\n\n- set the CREW_X repo variable\n\n//' "$STATE/pr-body"
+  run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
+  echo '- a note of this run' > "$D/pr-10.notes.md"
+  report '{"spec":"met","gaps":[],"findings":[]}'
+  run bash "$SCRIPT" fix feat 10 feature/feat; [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" describe feat 10
+  [ "$output" = "needs-attention pr=10" ] || { echo "$output"; return 1; }
+  ! grep -q 'CREW_X' "$STATE/pr-body" || false
+  section earlier | grep -qx -- '- merge after the infra PR'
+  section notes | grep -qx -- '- a note of this run'
+  [ "$(jq -c '[.needs_attention[] | .text]' "$D/result.json")" = '["- a note of this run"]' ]
+}
+
+@test "with publish false start calls no gh and copies earlier notes from the local body file only" {
+  no_publish
+  run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
+  run bash "$SCRIPT" next feat; coder 2
+  echo '- tag a release once this merges' > "$D/coder.notes.md"
+  run bash "$SCRIPT" land feat 2 feature/feat; [ "$output" = pr=local ] || { echo "$output"; return 1; }
+  clean_review local
+  run bash "$SCRIPT" describe feat local; [ "$output" = "needs-attention branch=feature/feat" ] || { echo "$output"; return 1; }
+  section notes "$LOCAL" | grep -qx -- '- tag a release once this merges'
+  # A person saved the local body with CRLF line endings.
+  perl -pi -e 's/\n/\r\n/' "$LOCAL"
+  : > "$STATE/gh.log"
+  run bash "$SCRIPT" start feat; [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ ! -s "$STATE/gh.log" ]
+  [ "$(cat "$D/earlier-feat.md" | grep -v '^$')" = "$(printf '%s\n' '### the coder of 2' '- tag a release once this merges')" ] || { cat -A "$D/earlier-feat.md"; return 1; }
+  clean_review local
+  run bash "$SCRIPT" describe feat local
+  [ "$output" = "ready branch=feature/feat" ] || { echo "$output"; return 1; }
+  section earlier "$LOCAL" | grep -qx -- '- tag a release once this merges'
+}
+
+@test "post_notes, NOTE_BLOCKS and settle_notes' body matching are gone" {
+  local s="$REPO_ROOT/skills/solve-feature/scripts/solve-feature.sh"
+  ! grep -qE 'post_notes|NOTE_BLOCKS|settled-body|notes-body' "$s" || false
+}
+
+# --- the prompts -----------------------------------------------------------------------------
 
 @test "SKILL.md names pr-<n>.coder-notes.json as the reviewer's notes input only when that file exists" {
   local skill="$REPO_ROOT/skills/solve-feature/SKILL.md"

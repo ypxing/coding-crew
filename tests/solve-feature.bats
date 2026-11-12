@@ -374,7 +374,8 @@ main_moves() {
   echo old > .coding-crew/solve-feature/pr-7.summary.md && echo old > .coding-crew/solve-feature/pr-7.attention.json
   echo old > .coding-crew/solve-feature/pr-7.describe-attention.json
   echo old > .coding-crew/solve-feature/pr-7.discarded.md && echo old > .coding-crew/solve-feature/review.base
-  echo old > .coding-crew/solve-feature/pr-7.notes.md
+  echo old > .coding-crew/solve-feature/pr-7.notes.md && echo old > .coding-crew/solve-feature/pr-7.coder-notes.json
+  echo old > .coding-crew/solve-feature/pr-7.prev-fixer-note.md
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ ! -e .coding-crew/solve-feature/outcome ]
@@ -386,6 +387,8 @@ main_moves() {
   [ ! -e .coding-crew/solve-feature/pr-7.head ]
   [ ! -e .coding-crew/solve-feature/pr-7.discarded.md ]
   [ ! -e .coding-crew/solve-feature/pr-7.notes.md ]
+  [ ! -e .coding-crew/solve-feature/pr-7.coder-notes.json ]
+  [ ! -e .coding-crew/solve-feature/pr-7.prev-fixer-note.md ]
   [ ! -e .coding-crew/solve-feature/review.base ]
 }
 

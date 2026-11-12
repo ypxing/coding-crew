@@ -35,7 +35,7 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      version): a version you do not offer → the closest model of the same family; a family you do not offer → your
      own model. When it is empty, on your own. Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" land <slug> <ref> <branch>`, with `start`'s `branch=` — always,
-     whatever the subagent reported: `land` is what checks and records its result. It prints `pr=<n>`, and adds the coder's notes to the PR body's notes section.
+     whatever the subagent reported: `land` is what checks and records its result. It prints `pr=<n>`, and records the coder's notes in the run's notes file.
 3. **Review, fix and describe**, on `<n>`, the last `pr=` printed (by `land`, else `start`). With none, `next`
    printed why nothing landed: report it and end. `pr=local` means `solveFeature.publish` is `false`: there is no
    PR, `<n>` is `local` throughout, and the body is kept in `<repo>/.coding-crew/solve-feature/local-pr-<branch, / → _>.md`.
@@ -53,11 +53,11 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      When `review-base=` is non-empty, `<sha>` its value, the prompt reads `…on branch <branch> base <sha> against the spec…`
      and `; Findings cover <sha>..HEAD; judge spec, gaps and criteria on the code at HEAD: the commits before <sha> were already reviewed` is appended.
      When `<repo>/.coding-crew/solve-feature/pr-<n>.coder-notes.json` exists, `; the notes the change's author left for a person are in <repo>/.coding-crew/solve-feature/pr-<n>.coder-notes.json` is appended last:
-     `fix` moves each note the review settles out of the notes that hold the draft.
+     `fix` marks each note the review settles, so it no longer holds the draft.
      When `reviewer-model=` (as `next` last printed it) is non-empty, run it on the model in your own list that
      matches that name, as for `coder-model=`, naming that model in the call; when it is empty, on your own. Wait for it to finish.
    2. `bash "<skill-dir>/scripts/solve-feature.sh" reviewed <slug> <n> <branch>` — always: it discards what the
-     reviewer changed in the tree, flags it for the PR, and prints `findings=<k>` last. Only when it prints `findings=` greater than 0:
+     reviewer changed in the tree, flags it for the PR, and prints `findings=<k>` last; from the second round, `fixer-note=<path>` before it when the first round's fixer left a note. Only when it prints `findings=` greater than 0:
      run a **fresh subagent** — none of this conversation, full tool access, the repo's working
      directory — with exactly this prompt: `Judge each finding in <repo>/.coding-crew/solve-feature/pr-<n>.review.json
      against the code and the spec in <repo>/.coding-crew/solve-feature/spec.md before acting on it: its fix is a
@@ -69,10 +69,11 @@ A bare word the user gave is the slug: pass it as is; `start` stops on a slug th
      permission, input or path the spec does not name. List each finding you did not fix, with why — it is wrong, or
      only changing a spec decision fixes it (quote the decision) — in <repo>/.coding-crew/solve-feature/pr-<n>.unfixed.json as a
      JSON list, [{"finding": <its 0-based index in the report's findings>, "why": "<why>"}], and leave that file absent if you fixed them all. Anything else a person must do or decide goes in
-     <repo>/.coding-crew/solve-feature/pr-<n>.notes.md, left absent when there is none. This run is non-interactive; ask no questions`. Run it on `coder-model=` as for each issue's coder.
+     <repo>/.coding-crew/solve-feature/pr-<n>.notes.md, left absent when there is none. This run is non-interactive; ask no questions`;
+     when `reviewed` printed `fixer-note=<path>`, `; the previous round's note for a person is in <path>: keep, edit or drop this note, writing what still applies to pr-<n>.notes.md` is inserted before `. This run is non-interactive`. Run it on `coder-model=` as for each issue's coder.
      Wait for it to finish.
    3. `bash "<skill-dir>/scripts/solve-feature.sh" fix <slug> <n> <branch>` — always, whatever the subagents
-     reported. It adds the fixer's notes to the PR body's notes section, gates the fixes with the checks, commits and pushes them,
+     reported. It records the fixer's note in place of the previous round's, gates the fixes with the checks, commits and pushes them,
      and records what needs a person.
      Report its last line, `FIX: findings=<k> needs-attention=<a> review-again=yes|no`. After the first review,
      `review-again=yes` means run 3.1–3.3 once more; after the second review, go on to 3.4 whatever it prints.

@@ -205,10 +205,16 @@ result.rounds = rounds.map((r, i) => {
   };
 });
 
-// The items fix and describe wrote for the PR, the one list its draft hold and Needs attention lines come from.
-result.needs_attention = name
-  ? [`pr-${name}.attention.json`, `pr-${name}.describe-attention.json`].flatMap((f) => (text(f) === null ? [] : JSON.parse(text(f))))
-  : [];
+// The items fix and describe wrote for the PR, then this feature's standing notes from the run file, on every ending:
+// the one list the draft hold and Needs attention lines come from.
+result.needs_attention = [
+  ...(name
+    ? [`pr-${name}.attention.json`, `pr-${name}.describe-attention.json`].flatMap((f) => (text(f) === null ? [] : JSON.parse(text(f))))
+    : []),
+  ...list(JSON.parse(text(`notes-${args.slug}.json`) ?? "[]"))
+    .filter((n) => n.settled !== true)
+    .map((n) => ({ type: "note", author: n.author, text: n.text })),
+];
 
 writeFileSync(at("result.json.tmp"), `${JSON.stringify(result, null, 2)}\n`);
 renameSync(at("result.json.tmp"), at("result.json"));

@@ -34,7 +34,12 @@ outcome() {
   node "$SELF/result.mjs" --logs "$LOGS" --slug "$SLUG" --cli "${CLI:-}" --default "$(default_branch)" --publish "${PUBLISH:-yes}" --pr "${PR:-${PR_N:-}}" --main-root "$MAIN_ROOT" ||
     echo "solve-feature: writing $LOGS/result.json failed (see above)" >&2
 }
-die() { echo "solve-feature: $*" >&2; outcome "stopped: $CMD failed: $*"; exit 1; }
+# notes_named — on a stop, where the run's notes for a person are: a stop writes no PR body, so only that file has them.
+notes_named() {
+  [ -n "$LOGS" ] && [ -n "$SLUG" ] && [ -s "$LOGS/notes-$SLUG.json" ] || return 0
+  echo "solve-feature: the run's notes for a person are in $LOGS/notes-$SLUG.json" >&2
+}
+die() { echo "solve-feature: $*" >&2; notes_named; outcome "stopped: $CMD failed: $*"; exit 1; }
 usage() {
   [ -z "${1:-}" ] || echo "solve-feature: $1" >&2
   echo "usage: solve-feature.sh start <slug> [--branch <name>] [--review-since <sha>] | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch> | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr> | start --spec <file> --issue <n> [--branch <name>] [--review-since <sha>]" >&2; exit 2
@@ -88,7 +93,7 @@ BRANCH_WORK=(. ':!.coding-crew/config.json') SETUP_FILES=(.coding-crew/config.js
 git ls-files --error-unmatch -- .coding-crew/dev-commands.json >/dev/null 2>&1 ||
   { BRANCH_WORK+=(':!.coding-crew/dev-commands.json'); SETUP_FILES+=(.coding-crew/dev-commands.json); }
 [ "$CMD" != start ] || rm -f "$LOGS/outcome" "$LOGS/result.json" "$LOGS/spec.md" "$LOGS"/pr-*.r[0-9]*.* "$LOGS"/*.checks.head "$LOGS"/pr-*.unfixed.json "$LOGS"/pr-*.review.json "$LOGS"/pr-*.summary.md "$LOGS"/pr-*attention.json "$LOGS"/pr-*.head \
-  "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS/review.base" "$LOGS/review.since"
+  "$LOGS"/pr-*.discarded.md "$LOGS"/pr-*.notes.md "$LOGS"/pr-*.coder-notes.json "$LOGS"/pr-*.prev-fixer-note.md "$LOGS/review.base" "$LOGS/review.since"
 # solveFeature.publish: false keeps the run on this machine: no push, no PR, the body in local_body's file. Read from
 # the user-level config only: an Actions runner has none, so it never keeps commits that vanish with the runner.
 # CREW_PUBLISH=false does the same for a host that pushes the commits itself and has no user config to write.
@@ -99,6 +104,18 @@ PUBLISH=yes
 local_body() { echo "$LOGS/local-pr-${BRANCH//\//_}.md"; }
 # The issue next handed out for this feature until its land records it: per feature, as runs share this directory.
 landing() { echo "$LOGS/landing-$SLUG"; }
+# The run's notes for a person, per feature for the same reason, written only here:
+# [{author: coder|fixer, ref?, round?, text, settled?, why?, rendered?}]. describe renders the PR body's notes from it.
+notes_file() { echo "$LOGS/notes-$SLUG.json"; }
+# notes_edit <jq args…> <filter> — rewrites the notes file through <filter>, read as [] when absent; an empty result
+# removes it.
+notes_edit() {
+  local f tmp; f=$(notes_file); tmp="$f.tmp"
+  jq "$@" <(if [ -s "$f" ]; then cat "$f"; else echo '[]'; fi) >"$tmp" || { rm -f "$tmp"; return 1; }
+  if [ "$(jq length "$tmp")" = 0 ]; then rm -f "$f" "$tmp"; else mv "$tmp" "$f"; fi
+}
+# The text a subagent's notes file holds, blank lines around it trimmed; empty for an absent or blank file.
+NOTE_TEXT='$t | sub("^(\\s*\n)+"; "") | sub("\\s+$"; "")'
 # The tracker and checks libraries, in the coding-crew-lib skill installed beside this one.
 CLI="$SELF/../../coding-crew-lib/scripts/tracker/cli.mjs" CHECKS="$SELF/../../coding-crew-lib/scripts/checks"
 [ -f "$CLI" ] || die "tracker CLI not found ($CLI): install the coding-crew-lib skill beside solve-feature, from the source you installed solve-feature from (npx skills add <that source> -s coding-crew-lib, adding -g at user level) or re-run install.sh"
@@ -241,6 +258,22 @@ publish_spec() {
   rm -f "$(landing)"
 }
 
+# earlier_notes — the text of the open PR's (or local body's) notes, settled and earlier sections, verbatim but for their
+# markers and headings, into earlier-<slug>.md, which describe renders as one flat section: a note a person deleted
+# stays deleted, and no heading nests per run. With PUBLISH=no only the local body file is read, never a host's PR.
+earlier_notes() {
+  local e="$LOGS/earlier-$SLUG.md" body
+  rm -f "$e"
+  [ -n "$PR_N" ] || return 0
+  body=$(pr_body_read "$PR_N") || die "reading the body of $([ "$PUBLISH" = yes ] && echo "PR #$PR_N" || local_body) for its earlier notes failed (see above)"
+  # Any solve-feature marker ends a section, so a section a person stripped of its end marker stops at the next one.
+  awk -v nb="$NOTES_BEGIN" -v sb="$SETTLED_BEGIN" -v eb="$EARLIER_BEGIN" '
+    index($0, "<!-- solve-feature:") == 1 { on = ($0 == nb || $0 == sb || $0 == eb); next }
+    on && $0 != "## Notes for a person" && $0 != "## Settled by the review" && $0 != "## Earlier runs'"'"' notes" &&
+      $0 != "Delete a note here once it is handled." { print }' <<<"$body" | cat -s >"$e"
+  grep -q '[^[:space:]]' "$e" || rm -f "$e"
+}
+
 # start — preconditions, --spec's feature, the branch (--branch, else feature/<slug>), spec.md, --review-since's
 # commit for sync; prints slug= (with --spec), branch=, coder-model=, reviewer-model= and pr= (empty with no open PR).
 start() {
@@ -275,6 +308,9 @@ start() {
   [ "$(git rev-parse HEAD)" = "$before" ] || push origin "$BRANCH" || die "cannot push $BRANCH after merging origin/$default into it: $PUSH_WHY"
   write_spec
   pr_view
+  # What an earlier describe rendered is in the body now, which earlier_notes copies; the rest a stop left unrendered.
+  notes_edit 'map(select(.rendered != true))' || die "dropping the rendered notes from $(notes_file) failed (see above)"
+  earlier_notes
   # A ready PR would read as reviewed while coders and the review change it; describe marks it ready again.
   [ -z "$PR_N" ] || [ "$PR_IS_DRAFT" != false ] || gh pr ready "$PR_N" --undo >/dev/null ||
     die "gh pr ready $PR_N --undo failed: run gh pr ready $PR_N --undo by hand, then re-run"
@@ -330,7 +366,7 @@ next() {
   # backend's validateRef, so a ref it rejects stops here, before it reaches the coder's prompt.
   node "$CLI" fetch "$ref" >"$LOGS/${ref//\//_}.issue.md" || die "fetch $ref failed (see above)"
   # One coder at a time writes its report here; an earlier one's would read as this coder's at land's solve stop.
-  # Its notes go with it, unless this is the same issue again: a land that stopped before there was a PR left them.
+  # Its notes go with it, unless this is the same issue again, whose coder keeps, edits or drops them.
   # Its red lines are this dispatch's coder's, and the ref is kept for result.json, which knows issues by spec id.
   rm -f "$LOGS/coder.report.md" "$LOGS/${ref//\//_}.red.md"
   [ "$ref" = "$REF" ] || rm -f "$LOGS/coder.notes.md"
@@ -339,62 +375,19 @@ next() {
   echo "$ref"
 }
 
-# post_notes <pr> <file> <tag> [<then>] — a non-empty notes file a subagent left for a person goes into the PR body's
-# notes section as one block, verbatim under `### <tag>`, then is deleted: only the body keeps it across a stop and a
-# fresh runner. The tag is written into the file first, so the file a failed write leaves is ready to add by hand;
-# <then> is what the caller's stop says to run after that.
-post_notes() {
-  local n="$1" f="$2" body new why
-  [ -s "$f" ] || return 0
-  { printf '### %s\n\n' "$3"; cat "$f"; } >"$f.tmp" && mv "$f.tmp" "$f"
-  why="adding $f to PR #$n's body failed: add its contents to the PR body's Notes for a person section by hand (gh pr edit $n), then rm $f before a re-run (on Actions the file is in the run's artifact)${4:+; then $4}"
-  [ "$PUBLISH" = yes ] || why="adding $f to $(local_body) failed: add its contents to that file's Notes for a person section by hand, then rm $f before a re-run${4:+; then $4}"
-  body=$(pr_body_read "$n") || die "$why"
-  new="$LOGS/pr-$n.notes-body.md"
-  if grep -qxF "$NOTES_END" <<<"$body"; then
-    awk -v e="$NOTES_END" -v f="$f" '$0 == e && !d { while ((getline l < f) > 0) print l; print ""; d = 1 } { print }' <<<"$body" >"$new"
-  else
-    # A new section goes before the slug line address-pr-comments reads, inside begin/end; at the end of a body a
-    # person stripped of both, so the note is never dropped.
-    awk -v s="<!-- solve-feature:slug " -v e="$END" -v nb="$NOTES_BEGIN" -v ne="$NOTES_END" -v f="$f" '
-      function section() {
-        print nb; print "## Notes for a person"; print ""; print "Delete a note here once it is handled."; print ""
-        while ((getline l < f) > 0) print l; print ""; print ne; d = 1 }
-      !d && (index($0, s) == 1 || $0 == e) { section() }
-      { print }
-      END { if (!d) section() }' <<<"$body" >"$new"
-  fi
-  pr_body_write "$n" "$new" || die "$why"
-  rm -f "$f" "$new"
-}
-
 stop() { # <step> <reason> [<log>]; exit 1
   echo "solve-feature: $REF $1 failed: $2${3:+ — log: $3}"
+  notes_named
   outcome "stopped: $REF $1 failed: $2"; exit 1
 }
 
 # address-pr-comments finds a solve-feature PR by the begin line and reads its slug from the slug line.
 BEGIN='<!-- solve-feature:begin -->' END='<!-- solve-feature:end -->'
-# The notes section, inside begin/end: post_notes adds to it, describe carries it over verbatim.
+# describe's sections for a person, inside begin/end, each rendered from the notes file (the earlier one from
+# earlier-<slug>.md): this run's standing notes, the ones the review settled, and earlier runs' notes, a record only.
 NOTES_BEGIN='<!-- solve-feature:notes:begin -->' NOTES_END='<!-- solve-feature:notes:end -->'
-# The notes the review settled, out of the notes section: fix adds to it, describe carries it over and never counts it.
 SETTLED_BEGIN='<!-- solve-feature:settled:begin -->' SETTLED_END='<!-- solve-feature:settled:end -->'
-# jq `blocks`: the notes section's {key: line number, value: line} entries, $nb/$ne its markers, split into one block
-# per note — its author from the tag post_notes wrote above it, `person` for text under none, so a coder's own `### `
-# headings stay in its block. `at` is the block's line numbers; `block` its tag and text as the body holds them.
-# A tag left after its note's text was deleted is no note. jq `section`: the body's lines as entries, from the notes
-# section's begin marker to its end marker, else to the body's end, as describe's sed range reads it.
-NOTE_BLOCKS='def blocks:
-  map(select(.value | IN($nb, $ne, "## Notes for a person", "Delete a note here once it is handled.") | not))
-  | reduce .[] as $e ([{author: "person", tag: null, at: [], lines: []}];
-      ([$e.value | capture("^### the (?<a>coder|fixer) of .* · [0-9]{4}-[0-9]{2}-[0-9]{2}$").a][0]) as $a
-      | if $a then . + [{author: $a, tag: $e.value, at: [$e.key], lines: []}]
-        else .[-1].lines += [$e.value] | .[-1].at += [$e.key] end)
-  | map(. + {text: (.lines | join("\n") | sub("^(\\s*\n)+"; "") | sub("\\s+$"; ""))})
-  | map(select(.text != "") | . + {block: ([.tag // empty] + .lines | join("\n") | sub("\\s+$"; ""))});
-def section: to_entries | ([.[] | select(.value == $nb) | .key][0]) as $b
-  | if $b == null then [] else .[$b:] | ([.[1:][] | select(.value == $ne) | .key][0]) as $f
-    | if $f == null then . else map(select(.key <= $f)) end end;'
+EARLIER_BEGIN='<!-- solve-feature:earlier:begin -->' EARLIER_END='<!-- solve-feature:earlier:end -->'
 pr_title() { # <ref-slug> — the PRD's title when the CLI's note heads the spec, else the issue's own
   local t; t=$(head -n 1 "$LOGS/spec.md" | sed -nE 's/^<!-- PRD issue #[0-9]+: (.*) -->$/\1/p' | sed 's/^PRD: //')
   [ -n "$t" ] || t=$(grep -m1 '^# ' "$LOGS/$1.issue.md" | sed 's/^# //')
@@ -466,11 +459,13 @@ land() {
   [ -f "$LOGS/$rs.issue.md" ] || die "no saved issue for $REF: run next first"
   checks_lib
   [ "$(git branch --show-current)" = "$BRANCH" ] || stop solve "branch changed to '$(git branch --show-current)'"
-  # With a PR open a note goes into its body now, so no stop below loses it; start and next delete only a local file.
-  if [ -s "$LOGS/coder.notes.md" ]; then
-    pr_view
-    [ -z "$PR_N" ] || post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)" "run land $SLUG $REF $BRANCH"
-  fi
+  # Recorded before any stop below, so the stop's result.json has it. The file stays: a re-run's land for the same
+  # issue replaces the entry with what its coder left there, and drops it when the coder left none.
+  notes_edit --arg ref "$REF" --rawfile t <([ ! -f "$LOGS/coder.notes.md" ] || cat "$LOGS/coder.notes.md") "($NOTE_TEXT) as \$x"'
+    | map(select(.author != "coder" or .ref != $ref)) as $rest
+    | if $x == "" then $rest
+      elif any(.[]; .author == "coder" and .ref == $ref) then map(if .author == "coder" and .ref == $ref then {author, ref, text: $x} else . end)
+      else . + [{author: "coder", ref: $ref, text: $x}] end' || die "recording $LOGS/coder.notes.md in $(notes_file) failed (see above)"
   [ -z "$(git status --porcelain -- "${BRANCH_WORK[@]}")" ] || stop solve "working tree left dirty$([ ! -s "$LOGS/coder.report.md" ] || echo "; why: $LOGS/coder.report.md")"
   # solve-issue's close moves the issue out of `next`; still first means it stopped short (partial, blocked).
   again=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
@@ -507,16 +502,14 @@ land() {
   fi
   pr_view
   if [ -z "$PR_N" ]; then
-    # describe writes the whole body at the end; until then it carries the markers address-pr-comments reads and,
-    # once a note lands, the notes section.
+    # describe writes the whole body at the end; until then it carries the markers address-pr-comments reads.
     f="$LOGS/pr-body.md"
     printf '%s\n' "$BEGIN" "Implemented by solve-feature (\`$SLUG\`) — in progress." "<!-- solve-feature:slug $SLUG -->" "$END" >"$f"
     pr_open "$rs" "$f"
   fi
-  # Pushed and on a PR, the issue has landed; a notes stop after this says how to add them by hand.
+  # Pushed and on a PR, the issue has landed.
   rm -f "$(landing)"
   printf '%s\n' "$checked" >"$LOGS/$rs.checks.head"
-  post_notes "$PR_N" "$LOGS/coder.notes.md" "the coder of $REF · $(date +%F)"
   echo "pr=$PR_N"
 }
 
@@ -573,16 +566,9 @@ sync() {
     push -u origin "$BRANCH" || die "git push failed: $PUSH_WHY; once it can push, or once you have pushed it, re-run"
   fi
   git rev-parse HEAD >"$LOGS/review.base"
-  # The coder notes the body holds now, for the reviewer to judge: a note a person deleted is not judged.
+  # This run's coder notes still standing, for the reviewer to judge; fix reads its report's indices against this list.
   pr_view
-  if [ -n "$PR_N" ]; then
-    local body notes="$LOGS/pr-$PR_N.coder-notes.json"
-    body=$(pr_body_read "$PR_N") || die "reading the PR body failed (see above): re-run sync $SLUG $BRANCH"
-    jq -n --rawfile s <(printf '%s\n' "$body") --arg nb "$NOTES_BEGIN" --arg ne "$NOTES_END" \
-      "$NOTE_BLOCKS"' [$s | split("\n") | section | blocks[] | select(.author == "coder") | .block]' >"$notes.tmp" ||
-      die "listing the PR body's coder notes failed (see above)"
-    if [ "$(jq length "$notes.tmp")" = 0 ]; then rm -f "$notes" "$notes.tmp"; else mv "$notes.tmp" "$notes"; fi
-  fi
+  [ -z "$PR_N" ] || coder_notes "$LOGS/pr-$PR_N.coder-notes.json" || die "listing the coder notes of $(notes_file) failed (see above)"
   local since; since=$(cat "$LOGS/review.since" 2>/dev/null || true)
   if [ -n "$since" ] && git merge-base --is-ancestor "origin/$default" "$since" 2>/dev/null &&
     git merge-base --is-ancestor "$since" HEAD 2>/dev/null; then echo "review-base=$since"
@@ -611,51 +597,41 @@ reviewed() {
   fi
   [ -f "$report" ] || stop reviewer "no review report at $report"
   jq -e . "$report" >/dev/null 2>&1 || stop reviewer "unreadable review report $report"
+  # From the second round, the fixer note standing from the first, for this round's fixer to keep, edit or drop.
+  local prev="$LOGS/pr-$PR.prev-fixer-note.md" kept=("$LOGS/pr-$PR".r[0-9]*.review.json)
+  rm -f "$prev"
+  if [ -e "${kept[0]}" ] && [ -s "$(notes_file)" ]; then
+    jq -j '[.[] | select(.author == "fixer")][0].text // empty' "$(notes_file)" >"$prev" || stop reviewer "reading $(notes_file) failed (see above)"
+    if [ -s "$prev" ]; then echo "fixer-note=$prev"; else rm -f "$prev"; fi
+  fi
   echo "findings=$(jq '.findings // [] | length' "$report")"
 }
 
-# settle_notes <report> <recovery> — each coder note the report marks settled whose block in pr-<n>.coder-notes.json
-# still matches one of the body's notes section exactly moves to the settled section, under its own heading and text and
-# the reviewer's why; then that file keeps only the coder notes still standing, for a second round, which runs no sync.
-# Fix calls it after its last stop and before the report moves, so a re-run reads the report against the file as its
-# reviewer saw it. Anything off its shape settles nothing: the note stands and holds the draft.
+# coder_notes <file> — the standing coder notes' texts as a JSON list, crew-review's notes input; none, no file.
+coder_notes() {
+  jq '[.[] | select(.author == "coder" and .settled != true) | .text]' <(if [ -s "$(notes_file)" ]; then cat "$(notes_file)"; else echo '[]'; fi) >"$1.tmp" || return 1
+  if [ "$(jq length "$1.tmp")" = 0 ]; then rm -f "$1" "$1.tmp"; else mv "$1.tmp" "$1"; fi
+}
+
+# settle_notes <report> <recovery> — each entry {note: k, settled: true, why} of the report marks the standing coder
+# note whose text is the k-th of pr-<n>.coder-notes.json, the list this round's reviewer saw, settled with that why;
+# then that file keeps only the coder notes still standing, for a second round, which runs no sync. Fix calls it after
+# its last stop and before the report moves, so a re-run reads the report against the file as its reviewer saw it.
+# Anything off its shape settles nothing: the note stands and holds the draft.
 settle_notes() {
-  local cn="$LOGS/pr-$PR.coder-notes.json" body out new="$LOGS/pr-$PR.settled-body.md" why
+  local cn="$LOGS/pr-$PR.coder-notes.json"
   [ -f "$cn" ] || return 0
-  why="moving the notes the review settled into the PR body's Settled by the review section failed; nothing moved: $2"
-  body=$(pr_body_read "$PR") || stop fix "reading the PR body failed (see above): $2"
-  out=$(jq -n --rawfile s <(printf '%s\n' "$body") --rawfile c "$cn" --slurpfile rep "$1" \
-    --arg nb "$NOTES_BEGIN" --arg ne "$NOTES_END" --arg sb "$SETTLED_BEGIN" --arg se "$SETTLED_END" \
-    --arg slug "<!-- solve-feature:slug " --arg end "$END" "$NOTE_BLOCKS"'
+  notes_edit --rawfile c "$cn" --slurpfile rep "$1" '
     def whole: type == "number" and . >= 0 and . == floor;
-    def at($v): [to_entries[] | select(.value == $v) | .key][0];
-    ($s | split("\n")) as $L
-    | ($c | try fromjson catch null | if type == "array" and all(.[]; type == "string") then . else [] end) as $list
+    ($c | try fromjson catch null | if type == "array" and all(.[]; type == "string") then . else [] end) as $list
     | [ $rep[0].notes | if type == "array" then .[] else empty end
         | select(type == "object" and .settled == true and (.why | type) == "string"
                  and (.note | whole) and .note < ($list | length)) ] as $S
-    | ( reduce ($L | section | blocks[] | select(.author == "coder")) as $k ({used: [], moved: []};
-          . as $st
-          | ([$S[] | select($list[.note] == $k.block and (.note | IN($st.used[]) | not))][0]) as $hit
-          | if $hit then .used += [$hit.note] | .moved += [$k + {why: $hit.why}] else . end) ).moved as $m
-    | [$m[].at[]] as $drop
-    | [$L | to_entries[] | select(.key | IN($drop[]) | not) | .value] as $N
-    | [$m[] | (.block | split("\n"))[], "", "Settled by the review: \(.why | gsub("\\s*\n\\s*"; " "))", ""] as $E
-    | ( if ($m | length) == 0 then $L
-        elif ($N | at($se)) != null then ($N | at($se)) as $p | $N[:$p] + $E + $N[$p:]
-        else ( if ($N | at($ne)) != null then ($N | at($ne)) + 1
-               else [$N | to_entries[] | select((.value | startswith($slug)) or .value == $end) | .key][0] // ($N | length) end ) as $p
-          | $N[:$p] + [$sb, "## Settled by the review", ""] + $E + [$se] + $N[$p:]
-        end ) as $out
-    | {moved: ($m | length), body: ($out | join("\n")),
-       standing: [$out | section | blocks[] | select(.author == "coder") | .block]}') ||
-    stop fix "settling the review's notes failed (see above): $2"
-  if [ "$(jq .moved <<<"$out")" != 0 ]; then
-    jq -j .body <<<"$out" >"$new"
-    pr_body_write "$PR" "$new" || stop fix "$why"
-    rm -f "$new"
-  fi
-  if [ "$(jq '.standing | length' <<<"$out")" = 0 ]; then rm -f "$cn"; else jq .standing <<<"$out" >"$cn"; fi
+    | reduce ($S | unique_by(.note))[] as $s (.;
+        ([to_entries[] | select(.value.author == "coder" and .value.settled != true and .value.text == $list[$s.note]) | .key][0]) as $i
+        | if $i == null then . else .[$i] += {settled: true, why: $s.why} end)' ||
+    stop fix "settling the review's notes in $(notes_file) failed (see above): $2"
+  coder_notes "$cn" || stop fix "listing the coder notes of $(notes_file) failed (see above): $2"
 }
 
 # The fixer's edits are committed, then what others pushed to the branch merged in (git refuses a merge over staged
@@ -664,8 +640,8 @@ settle_notes() {
 fix() {
   local report="$LOGS/pr-$PR.review.json" unfixed="$LOGS/pr-$PR.unfixed.json" clog="$LOGS/pr-$PR.checks.log"
   local discarded="$LOGS/pr-$PR.discarded.md" headf="$LOGS/pr-$PR.head" head_oid spec rc=0 total severe moved=no again=no
-  local pr_name="PR #$PR" fresh="; or re-run in a fresh clone"
-  [ "$PUBLISH" = yes ] || pr_name=$BRANCH fresh=""
+  local fixer_notes="$LOGS/pr-$PR.notes.md" fresh="; or re-run in a fresh clone"
+  [ "$PUBLISH" = yes ] || fresh=""
   checks_lib
   # The round's first run keeps the PR's head, so a re-run after a person pushed the fix by hand still sees it moved.
   if [ -s "$headf" ]; then head_oid=$(head -n1 "$headf")
@@ -685,9 +661,20 @@ fix() {
   git ls-files -z -m -o --exclude-standard -- "${BRANCH_WORK[@]}" | xargs -0 -r git add -A -- ||
     stop fix "git add failed (see above): stage and commit the fixer's edits by hand, then run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   git diff --cached --quiet || git commit -q -m "Fix the review's findings$([ "$PUBLISH" = no ] || echo " on PR #$PR")"
-  # Before any stop below: a re-run's start deletes the file, so only the body keeps the note. After the commit, so a
-  # failed write leaves the clean tree start needs.
-  post_notes "$PR" "$LOGS/pr-$PR.notes.md" "the fixer of $pr_name's review · $(date +%F)" "run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
+  # The round's 0-based index into result.json's rounds is the number of rounds kept: start deletes every round, and
+  # each fix adds the next.
+  local k=0 f n
+  for f in "$LOGS/pr-$PR".r[0-9]*.review.json; do
+    [[ "$f" =~ \.r([0-9]+)\.review\.json$ ]] && n=${BASH_REMATCH[1]} && [ "$n" -gt "$k" ] && k=$n || true
+  done
+  # The fixer's note replaces the run's earlier one, which its prompt offered it to keep, edit or drop: an absent file
+  # drops it. With no finding no fixer ran, so the earlier note stands. Recorded before any stop below, for its
+  # result.json.
+  if [ "$total" != 0 ] || [ -f "$fixer_notes" ]; then
+    notes_edit --argjson round "$k" --rawfile t <([ ! -f "$fixer_notes" ] || cat "$fixer_notes") "($NOTE_TEXT) as \$x"'
+      | map(select(.author != "fixer")) + (if $x == "" then [] else [{author: "fixer", round: $round, text: $x}] end)' ||
+      stop fix "recording $fixer_notes in $(notes_file) failed (see above): run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
+  fi
   # A failed fetch skips the merge: the push owns that failure.
   if fetch_branch && ! merge_in "origin/$BRANCH"; then
     local why="merging origin/$BRANCH into $BRANCH conflicts in $MERGE_CONFLICTS"
@@ -706,13 +693,6 @@ fix() {
   # behind a merge's second parent, and a fix committed here and pushed by hand still counts. The checks' rewrites are
   # not the fixer's.
   [ -z "$(git rev-list --first-parent --no-merges --invert-grep --grep="^Apply the checks' rewrites\$" -n1 HEAD "^$head_oid")" ] || moved=yes
-  # The round is kept for result.json, and the live paths emptied, so the next round's reviewer and fixer start from
-  # none. The checks log is copied: the PR writer reads the live one. Its 0-based index into result.json's rounds is
-  # its number less one: start deletes every round, and each fix adds the next.
-  local k=0 f n
-  for f in "$LOGS/pr-$PR".r[0-9]*.review.json; do
-    [[ "$f" =~ \.r([0-9]+)\.review\.json$ ]] && n=${BASH_REMATCH[1]} && [ "$n" -gt "$k" ] && k=$n || true
-  done
   # Needs a person, one typed item each (result.schema.json's needs_attention): a spec not met (or gaps named), each
   # finding the fixer left in unfixed.json, what the reviewer changed in the tree, and a fixer that changed nothing
   # without saying why (it crashed or gave up). An unfixed.json off its shape is kept whole as one item, never dropped.
@@ -736,11 +716,14 @@ fix() {
   settle_notes "$report" "run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
   # Fixes to a CRITICAL/HIGH/MEDIUM finding are worth reviewing again; SKILL.md caps that at one re-review.
   [ "$severe" = 0 ] || [ "$moved" = no ] || again=yes
+  # The round is kept for result.json, and the live paths emptied, so the next round's reviewer and fixer start from
+  # none. The checks log is copied: the PR writer reads the live one.
   k="$LOGS/pr-$PR.r$((k + 1))"
   jq -n --argjson c "$([ "$moved" = yes ] && echo true || echo false)" --arg h "$(cat "$LOGS/review.base")" \
     '{fixer_changed_code: $c, checks_commit: $h}' >"$k.fix"
   cp "$clog" "$k.checks.log"
   [ ! -f "$unfixed" ] || mv "$unfixed" "$k.unfixed.json"
+  [ ! -f "$fixer_notes" ] || mv "$fixer_notes" "$k.notes.md"
   mv "$report" "$k.review.json"
   # describe reads it: an empty list is a review with nothing needing a person.
   printf '%s\n' "$items" >"$LOGS/pr-$PR.attention.json"
@@ -765,14 +748,15 @@ unresolved_threads() {
     die "unreadable review threads for PR $PR"
 }
 
-# The whole body, written once at the end. Readiness and the outcome come after it, so a failed write never leaves a
-# ready PR with land's one-line body. A re-run rewrites all of it, text a person added included, but the notes
-# section, kept as the PR shows it.
+# The whole body, written once at the end, its notes from the run file and earlier-<slug>.md alone. Readiness and the
+# outcome come after it, so a failed write never leaves a ready PR with land's one-line body. A re-run rewrites all of
+# it, text a person added included.
 describe() {
   local f="$LOGS/pr-$PR.summary.md" att="$LOGS/pr-$PR.attention.json" datt="$LOGS/pr-$PR.describe-attention.json"
-  local body="$LOGS/pr-$PR.body.md" title="" refs result
+  local body="$LOGS/pr-$PR.body.md" title="" refs result nf earlier="$LOGS/earlier-$SLUG.md"
   [ -f "$att" ] || die "no review result at $att: run fix $SLUG $PR <branch> first"
   BRANCH=$(git branch --show-current)
+  nf=$(notes_file)
   # A review thread still open needs a person as much as fix's list does. Counted on every run, never written into
   # fix's file, so a re-run counts afresh.
   unresolved_threads
@@ -782,25 +766,33 @@ describe() {
   [ ! -f "$LOGS/spec.md" ] || prd_head=$(head -n 1 "$LOGS/spec.md")
   [[ ! "$prd_head" =~ ^'<!-- PRD issue #'([0-9]+): ]] || spec_line="Spec: PRD #${BASH_REMATCH[1]}, feature \`$SLUG\`"
   [ ! -f "$f" ] || title=$(head -n 1 "$f" | sed -n 's/^# //p')
-  # The notes section as the body holds it now, so a note a person deleted stays deleted; with no note left, none.
-  local notes settled
-  notes=$(pr_body_read "$PR") || die "reading PR $PR's body failed"
-  # The settled section is a record for a person, never a hold: carried over verbatim, never counted.
-  settled=$(sed -n "\|^$SETTLED_BEGIN\$|,\|^$SETTLED_END\$|p" <<<"$notes")
-  notes=$(sed -n "\|^$NOTES_BEGIN\$|,\|^$NOTES_END\$|p" <<<"$notes")
-  # describe's own items, in their own file so a re-run replaces them: the open review threads, and one note per block
-  # of the notes section. The notes are what a coder or fixer says a person must do or decide, so they hold the draft;
-  # read from the body, they survive a stop and a fresh runner.
-  jq -n --rawfile s <(printf '%s\n' "$notes") --argjson count "$UNRESOLVED" --arg url "$PR_URL" \
-    --arg nb "$NOTES_BEGIN" --arg ne "$NOTES_END" "$NOTE_BLOCKS"'
-    [ if $count > 0 then {type: "unresolved_threads", count: $count, url: $url} else empty end ]
-    + [ $s | split("\n") | to_entries | blocks[] | {type: "note", author, text} ]' >"$datt" || die "building describe's needs-attention list failed (see above)"
+  # describe's own item, in its own file so a re-run replaces it: the open review threads.
+  jq -n --argjson count "$UNRESOLVED" --arg url "$PR_URL" \
+    '[ if $count > 0 then {type: "unresolved_threads", count: $count, url: $url} else empty end ]' >"$datt" ||
+    die "building describe's needs-attention list failed (see above)"
+  # This run's standing notes, what a coder or fixer says a person must do or decide: they hold the draft. The settled
+  # ones and earlier runs' notes are a record, never a hold.
+  local standing sections fixer="PR #$PR"
+  [ "$PUBLISH" = yes ] || fixer=$BRANCH
+  standing=$(jq '[.[] | select(.settled != true)] | length' <(if [ -s "$nf" ]; then cat "$nf"; else echo '[]'; fi)) ||
+    die "reading $nf failed (see above)"
+  sections=$(jq -r --arg fixer "$fixer" --rawfile e <([ ! -f "$earlier" ] || cat "$earlier") \
+    --arg nb "$NOTES_BEGIN" --arg ne "$NOTES_END" --arg sb "$SETTLED_BEGIN" --arg se "$SETTLED_END" \
+    --arg eb "$EARLIER_BEGIN" --arg ee "$EARLIER_END" '
+    def block: "### the \(.author) of \(if .author == "coder" then .ref else "\($fixer)'"'"'s review" end)", "", .text, "";
+    [.[] | select(.settled != true)] as $n | [.[] | select(.settled == true)] as $s
+    | ($e | sub("^(\\s*\n)+"; "") | sub("\\s+$"; "")) as $x
+    | ( if ($n | length) > 0 then $nb, "## Notes for a person", "", "Delete a note here once it is handled.", "", ($n[] | block), $ne, "" else empty end ),
+      ( if ($s | length) > 0 then $sb, "## Settled by the review", "",
+          ($s[] | block, "Settled by the review: \(.why | gsub("\\s*\n\\s*"; " "))", ""), $se, "" else empty end ),
+      ( if $x != "" then $eb, "## Earlier runs'"'"' notes", "", $x, $ee, "" else empty end )' \
+    <(if [ -s "$nf" ]; then cat "$nf"; else echo '[]'; fi)) || die "rendering the notes of $nf failed (see above)"
   # The Needs attention lines, one owner with the draft hold and result.json: fix's items and describe's, a gap or an
-  # unfixed finding read from the report of the round it names, and one pointer line for every note.
+  # unfixed finding read from the report of the round it names, and one pointer line for the notes.
   local need rep round
   round=$(jq '[.[].round | numbers][0] // empty' "$att")
   rep="$LOGS/pr-$PR.r$((${round:-0} + 1)).review.json"
-  need=$(jq -rs --slurpfile rep <(if [ -n "$round" ] && jq -e . "$rep" >/dev/null 2>&1; then cat "$rep"; else echo '{}'; fi) '
+  need=$(jq -rs --argjson notes "$standing" --slurpfile rep <(if [ -n "$round" ] && jq -e . "$rep" >/dev/null 2>&1; then cat "$rep"; else echo '{}'; fi) '
     def line: tostring | gsub("\\s*\n\\s*"; " ");
     ($rep[0] | if type == "object" then . else {} end) as $r | ($r.gaps // []) as $g | ($r.findings // []) as $f
     | (.[0] + .[1]) as $items
@@ -815,9 +807,8 @@ describe() {
           elif .type == "fixer_changed_nothing" then "the fixer changed nothing"
           elif .type == "unresolved_threads" then "\(.count) unresolved review threads: \(.url)"
           else empty end ),
-      ( if any($items[]; .type == "note") then "notes for a person, in the section below: delete each once it is handled" else empty end )' \
+      ( if $notes > 0 then "notes for a person, in the section below: delete each once it is handled" else empty end )' \
     "$att" "$datt") || die "rendering the needs-attention list failed (see above)"
-  jq -e '.[] | select(.type == "note")' "$datt" >/dev/null || notes=""
   # The Tested line's one writer: the last gate's own verdict lines, never the writer's prose.
   local tested
   tested=$(node "$SELF/result.mjs" --logs "$LOGS" --tested-line "pr-$PR.checks.log") || die "reading the checks log $LOGS/pr-$PR.checks.log failed (see above)"
@@ -829,14 +820,16 @@ describe() {
     if [ -f "$f" ]; then if [ -n "$title" ]; then tail -n +2 "$f"; else cat "$f"; fi | sed '/./,$!d'; echo; fi
     printf '%s\n\n' "$tested"
     if [ -n "$need" ]; then printf '## Needs attention\n\n'; sed '/^- /!s/^/- /' <<<"$need"; echo; fi
-    [ -z "$notes" ] || printf '%s\n\n' "$notes"
-    [ -z "$settled" ] || printf '%s\n\n' "$settled"
+    [ -z "$sections" ] || printf '%s\n\n' "$sections"
     printf '%s\n\n' "$spec_line"
     [ -z "$refs" ] || printf '%s\n' "$refs"
     printf '%s\n' "<!-- solve-feature:slug $SLUG -->" "$END"
   } >"$body"
   pr_body_write "$PR" "$body" "$title" || die "writing PR $PR's body failed"
-  if [ "$(jq -s 'add | length' "$att" "$datt")" != 0 ]; then result=needs-attention
+  # Kept, not emptied: a re-run of describe writes the same body and its result.json still carries the notes; the next
+  # run's start drops them, as the body holds them now.
+  [ ! -s "$nf" ] || notes_edit 'map(. + {rendered: true})' || die "marking the notes of $nf rendered failed (see above)"
+  if [ "$(jq -s 'add | length' "$att" "$datt")" != 0 ] || [ "$standing" != 0 ]; then result=needs-attention
   else result=ready; pr_ready "$PR"
   fi
   # Without a PR the branch names the result: the person opens the PR from it, with the body in local_body's file.
