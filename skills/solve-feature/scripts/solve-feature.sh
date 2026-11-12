@@ -7,7 +7,8 @@
 #   | next <slug> | land <slug> <ref> <branch> | sync <slug> <branch>
 #   | reviewed <slug> <pr> <branch> | fix <slug> <pr> <branch> | describe <slug> <pr> — each function's comment states its contract.
 # Exit: 0 ok; 1 a stop (its one-line result in .coding-crew/solve-feature/outcome); 2 a usage error; 3 from next
-# when no ready issue is left; 4 from sync when its merge of the default branch conflicts, left in progress.
+# when no ready issue is left; 4 from sync, or the sync next's exit 3 and land's next run, when its merge of the
+# default branch conflicts, left in progress.
 set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGS=""
@@ -321,7 +322,9 @@ start() {
   echo "pr=$PR_N"
 }
 
-nothing_left() { # exit 3; with no open PR on the branch, the run has nothing to review and stops here
+# nothing_left — exit 3 (land: next-exit=3, exit 0); with no open PR on the branch, the run has nothing to review and
+# stops here; with one, it syncs the branch for the review, as sync does.
+nothing_left() {
   BRANCH=$(git branch --show-current); pr_view
   if [ -z "$PR_N" ]; then
     echo "solve-feature: nothing landed: no ready issue for $SLUG and no open PR" >&2
@@ -333,12 +336,16 @@ nothing_left() { # exit 3; with no open PR on the branch, the run has nothing to
     echo "red-files=$(paste -sd, - <<<"$red" | sed 's/,/, /g')"
     # Again here, beside the review step: start's line is issues behind by now, and a run lost it once (PR 343).
     echo "reviewer-model=$(model reviewer)"
+    # As sync: its stops and its exit 4 read as sync's.
+    CMD=sync; sync; CMD=next
   fi
-  exit 3
+  [ "$IN_LAND" = yes ] || exit 3
+  echo "next-exit=3"; exit 0
 }
 
-# next — the next ready issue, saved for land; prints its ref, or exits 3 when none is left (printing reviewer-model=
-# when there is a PR to review).
+# next — the next ready issue, saved for land; prints its ref (land: next=<ref>), or exits 3 when none is left
+# (printing reviewer-model= and sync's review-base= when there is a PR to review).
+IN_LAND=no
 next() {
   local rc=0 ref
   ref=$(node "$CLI" next --feature-slug "$SLUG") || rc=$?
@@ -372,7 +379,7 @@ next() {
   [ "$ref" = "$REF" ] || rm -f "$LOGS/coder.notes.md"
   printf '%s\n' "$ref" >"$LOGS/${ref//\//_}.ref"
   printf '%s\t%s\n' "$ref" "$(git branch --show-current)" >"$(landing)"
-  echo "$ref"
+  if [ "$IN_LAND" = yes ]; then echo "next=$ref"; else echo "$ref"; fi
 }
 
 stop() { # <step> <reason> [<log>]; exit 1
@@ -453,7 +460,7 @@ discard_rewrites() {
 }
 
 # land — the coder left <branch> clean with <ref> closed: merge in origin's branch, gate with the checks, push,
-# open the draft PR if there is none; prints pr=<n>.
+# open the draft PR if there is none; prints pr=<n>, then runs next as next alone does, its stops and exits included.
 land() {
   local rs="${REF//\//_}" rc=0 again clog="$LOGS/${REF//\//_}.checks.log" f checked
   [ -f "$LOGS/$rs.issue.md" ] || die "no saved issue for $REF: run next first"
@@ -511,6 +518,8 @@ land() {
   rm -f "$(landing)"
   printf '%s\n' "$checked" >"$LOGS/$rs.checks.head"
   echo "pr=$PR_N"
+  # next's REF is the issue its landing file names, which land just removed.
+  CMD=next REF="" IN_LAND=yes; next
 }
 
 # sync — before the first review: merge origin's default branch (then origin's <branch>) into <branch>, gate a merge with the checks, push it,
@@ -642,6 +651,17 @@ fix() {
   local discarded="$LOGS/pr-$PR.discarded.md" headf="$LOGS/pr-$PR.head" head_oid spec rc=0 total severe moved=no again=no
   local fixer_notes="$LOGS/pr-$PR.notes.md" fresh="; or re-run in a fresh clone"
   [ "$PUBLISH" = yes ] || fresh=""
+  # The fixer's list in the one shape every reader takes as written, [{finding?, why}], rewritten before any stop below
+  # so a stopped fix's result.json renders it as a finished one's; a file off that shape is kept whole as one why.
+  if [ -f "$unfixed" ]; then
+    jq -nc --rawfile u "$unfixed" '
+      def whole: type == "number" and . >= 0 and . == floor;
+      ($u | try fromjson catch null) as $p
+      | if ($p | type) == "array" and all($p[]; type == "object" and (.why | type) == "string" and ((has("finding") | not) or (.finding | whole)))
+        then [$p[] | if has("finding") then {finding, why} else {why} end]
+        else [{why: $u}] end' >"$unfixed.tmp" && mv "$unfixed.tmp" "$unfixed" ||
+      stop fix "rewriting $unfixed failed (see above): run fix $SLUG $PR $BRANCH, then describe $SLUG $PR"
+  fi
   checks_lib
   # The round's first run keeps the PR's head, so a re-run after a person pushed the fix by hand still sees it moved.
   if [ -s "$headf" ]; then head_oid=$(head -n1 "$headf")
@@ -695,20 +715,15 @@ fix() {
   [ -z "$(git rev-list --first-parent --no-merges --invert-grep --grep="^Apply the checks' rewrites\$" -n1 HEAD "^$head_oid")" ] || moved=yes
   # Needs a person, one typed item each (result.schema.json's needs_attention): a spec not met (or gaps named), each
   # finding the fixer left in unfixed.json, what the reviewer changed in the tree, and a fixer that changed nothing
-  # without saying why (it crashed or gave up). An unfixed.json off its shape is kept whole as one item, never dropped.
+  # without saying why (it crashed or gave up).
   local items
   items=$(jq -n --slurpfile rep "$report" --argjson round "$k" --arg moved "$moved" \
-    --rawfile u <([ ! -f "$unfixed" ] || cat "$unfixed") --arg has_u "$([ -f "$unfixed" ] && echo yes || echo no)" \
+    --slurpfile u <(if [ -f "$unfixed" ]; then cat "$unfixed"; else echo '[]'; fi) \
     --rawfile d <([ ! -f "$discarded" ] || cat "$discarded") --arg has_d "$([ -f "$discarded" ] && echo yes || echo no)" '
     ($rep[0]) as $r | ($r.findings // []) as $f | ($r.gaps // []) as $g
-    | def whole: type == "number" and . >= 0 and . == floor;
-      ($u | try fromjson catch null) as $p
-    | ( if $has_u == "no" then []
-        elif ($p | type) == "array" and all($p[]; type == "object" and (.why | type) == "string" and ((has("finding") | not) or (.finding | whole)))
-        then [$p[] | {type: "unfixed", round: $round}
-              + (if has("finding") then {finding, severity: ($f[.finding] | if type == "object" and (.severity | type) == "string" then .severity else null end)} else {severity: null} end)
-              + {why}]
-        else [{type: "unfixed", round: $round, severity: null, why: $u}] end ) as $un
+    | [$u[0][] | {type: "unfixed", round: $round}
+        + (if has("finding") then {finding, severity: ($f[.finding] | if type == "object" and (.severity | type) == "string" then .severity else null end)} else {severity: null} end)
+        + {why}] as $un
     | [ if $r.spec != "met" or ($g | length) > 0 then {type: "spec_unmet", round: $round, gaps: [range($g | length)]} else empty end ]
       + $un
       + [ if $has_d == "yes" then {type: "reviewer_changed_tree", paths: ($d | split("\n") | map(select(test("\\S"))))} else empty end ]

@@ -23,7 +23,7 @@ coder_notes() { printf '%s\n' "- tag a release once this merges" > .coding-crew/
   coder 2; coder_notes
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$output" = pr=local ] || { echo "$output"; return 1; }
+  [ "${lines[0]}" = pr=local ] || { echo "$output"; return 1; }
   [ "$(cat "$LOCAL")" = "$(cat <<EOF
 # Feat
 
@@ -39,7 +39,7 @@ EOF
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=\nreview-base=')" ]
   run bash "$SCRIPT" sync feat feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '{"spec":"met","gaps":[],"findings":[{"severity":"LOW","location":"a:1","issue":"i","fix":"f"}]}\n' > .coding-crew/solve-feature/pr-local.review.json
@@ -131,7 +131,7 @@ EOF
   [ "$(out pr)" = "" ]
   run bash "$SCRIPT" next feat; coder 2
   run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$output" = pr=local ] || { echo "$output"; return 1; }
+  [ "${lines[0]}" = pr=local ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" start feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(out pr)" = local ]
@@ -151,7 +151,7 @@ EOF
   rm .coding-crew/solve-feature/outcome
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=\nreview-base=')" ]
   no_pr_calls
 }
 
@@ -166,13 +166,13 @@ EOF
   [[ "$output" == *"run land feat 2 feature/feat; otherwise reopen 2; then re-run"* ]] || { echo "$output"; return 1; }
   [ ! -e "$LOCAL" ]
   run bash "$SCRIPT" land feat 2 feature/feat
-  [ "$output" = pr=local ] || { echo "$output"; return 1; }
+  [ "${lines[0]}" = pr=local ] || { echo "$output"; return 1; }
   run bash "$SCRIPT" next feat; [ "$output" = 3 ]
   coder 3
-  run bash "$SCRIPT" land feat 3 feature/feat; [ "$output" = pr=local ]
+  run bash "$SCRIPT" land feat 3 feature/feat; [ "${lines[0]}" = pr=local ]
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=\nreview-base=')" ]
   no_pr_calls
 }
 

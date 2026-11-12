@@ -317,7 +317,7 @@ fix_ready() {
   run bash "$SCRIPT" land feat 3 feature/feat
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "$(printf 'red-files=%s\nreviewer-model=' "$WORK/$D/2.red.md")" ]
+  [ "$output" = "$(printf 'red-files=%s\nreviewer-model=\nreview-base=' "$WORK/$D/2.red.md")" ]
 }
 
 @test "a local ref whose path has an ancestor directory named issues is still its own feature's" {
@@ -388,6 +388,28 @@ fix_ready() {
   result_ok
   [ "$(r '.rounds[1].unfixed')" = '[{"why":"[{\"finding\": \"1\", \"why\": \"w\"}]\n"}]' ]
   [ "$(r .needs_attention)" = '[{"type":"unfixed","round":1,"severity":null,"why":"[{\"finding\": \"1\", \"why\": \"w\"}]\n"}]' ]
+}
+
+@test "fix rewrites unfixed.json to [{finding?, why}] before its first stop, so a stopped fix renders it as a finished one" {
+  fix_ready
+  printf '[{"finding": 0, "why": "w", "extra": 1}, {"why": "v"}]\n' > "$D/pr-10.unfixed.json"
+  git checkout -q -b elsewhere
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$status" -eq 1 ]
+  [ "$(cat "$D/pr-10.unfixed.json")" = '[{"finding":0,"why":"w"},{"why":"v"}]' ]
+  result_ok
+  [ "$(r '.rounds[0].unfixed')" = '[{"finding":0,"why":"w"},{"why":"v"}]' ]
+  # Off its shape: one entry holding the raw text; a re-run keeps it so.
+  printf 'not json\n' > "$D/pr-10.unfixed.json"
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$(cat "$D/pr-10.unfixed.json")" = '[{"why":"not json\n"}]' ]
+  [ "$(r '.rounds[0].unfixed')" = '[{"why":"not json\n"}]' ]
+  run bash "$SCRIPT" fix feat 10 feature/feat
+  [ "$(cat "$D/pr-10.unfixed.json")" = '[{"why":"not json\n"}]' ]
+}
+
+@test "result.mjs reads unfixed.json as fix wrote it, with no shape check of its own" {
+  ! grep -qE 'whole|typeof u\.why' "$REPO_ROOT/skills/solve-feature/scripts/result.mjs" || false
 }
 
 @test "rounds[].findings keeps a non-object entry as {} at its index, so an unfixed finding index names the same finding" {

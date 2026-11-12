@@ -358,7 +358,7 @@ push_says() {
     '{"type":"unfixed","round":0,"finding":1,"severity":"MEDIUM","why":"w"}' \
     '{"type":"unfixed","round":0,"finding":7,"severity":null,"why":"out of range"}')" ]
   [ ! -e .coding-crew/solve-feature/pr-10.unfixed.json ]
-  [ "$(cat .coding-crew/solve-feature/pr-10.r1.unfixed.json)" = '[{"finding": 1, "why": "w"}, {"finding": 7, "why": "out of range"}]' ]
+  [ "$(cat .coding-crew/solve-feature/pr-10.r1.unfixed.json)" = '[{"finding":1,"why":"w"},{"finding":7,"why":"out of range"}]' ]
   [ "${lines[${#lines[@]}-1]}" = "FIX: findings=2 needs-attention=3 review-again=yes" ]
 
   # The spec unmet with no gap named, or anything but met (none, missing, unknown), still needs a person.

@@ -4,6 +4,8 @@
 
 load helpers/solve-feature
 
+bats_require_minimum_version 1.5.0
+
 # --- land: guards ----------------------------------------------------------------------
 
 # stops_at <step> <reason> — land just exited 1: nothing pushed, the stop in .coding-crew/solve-feature/outcome.
@@ -100,14 +102,14 @@ stops_at() {
   [ "$(cat .coding-crew/solve-feature/outcome)" = "stopped: 2 land failed: 2 is done but its land never finished: if its coder finished it, run land feat 2 feature/feat; otherwise reopen 2; then re-run" ]
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$output" = pr=10 ]
+  [ "${lines[0]}" = pr=10 ]
   run bash "$SCRIPT" next feat
   [ "$output" = 3 ]
 }
 
 @test "with a PR open, a re-run after a later issue's interrupted land names that land too, not the review" {
   land_ready
-  run bash "$SCRIPT" land feat 2 feature/feat; [ "$output" = pr=10 ]
+  run bash "$SCRIPT" land feat 2 feature/feat; [ "${lines[0]}" = pr=10 ]
   run bash "$SCRIPT" next feat; [ "$output" = 3 ]
   coder 3
   run bash "$SCRIPT" next feat
@@ -117,7 +119,7 @@ stops_at() {
   run bash "$SCRIPT" land feat 3 feature/feat; [ "$status" -eq 0 ]
   run bash "$SCRIPT" next feat
   [ "$status" -eq 3 ]
-  [ "$output" = "$(printf 'red-files=\nreviewer-model=')" ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=\nreview-base=')" ]
 }
 
 @test "a re-run on another branch after an interrupted land names the branch the coder worked on, not the current one" {
@@ -285,7 +287,7 @@ handed_back() {
   land_ready
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ]
-  [ "$output" = pr=10 ]
+  [ "${lines[0]}" = pr=10 ]
   [ "$(git rev-parse origin/feature/feat)" = "$(git rev-parse feature/feat)" ]
   grep -qx -- --draft "$STATE/pr-create.1"
   [ "$(cat "$STATE/pr-title")" = Feat ]
@@ -300,7 +302,7 @@ EOF
   coder 3
   run bash "$SCRIPT" land feat 3 feature/feat
   [ "$status" -eq 0 ]
-  [ "$output" = pr=10 ]
+  [ "${lines[0]}" = pr=10 ]
   [ ! -f "$STATE/pr-create.2" ]
   ! grep -qE '^pr (edit|ready|comment)|^api' "$STATE/gh.log" || false
   [ "$(git rev-parse origin/feature/feat)" = "$(git rev-parse feature/feat)" ]
@@ -445,7 +447,7 @@ pr_stopped() {
   coder 2
   run bash "$SCRIPT" land feat 2 feature/feat
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$output" = pr=10 ]
+  [ "${lines[0]}" = pr=10 ]
 }
 
 @test "land merges a commit others pushed to the branch before its checks, then pushes; nothing new makes no merge commit" {
@@ -529,4 +531,74 @@ notes() { printf '%s\n' "- tag a release once this merges" "" "- set the CREW_X 
   run bash "$SCRIPT" next feat
   [ "$output" = 2 ]
   [ ! -e .coding-crew/solve-feature/coder.notes.md ]
+}
+
+# --- land and next: next's work done in land, sync's in next's exit 3 ----------------------
+
+@test "land prints pr= then next=<ref> when an issue is ready, and next's exit-3 lines plus next-exit=3 when none is, exiting 0" {
+  land_ready
+  run --separate-stderr bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output $stderr"; return 1; }
+  [ "$output" = "$(printf 'pr=10\nnext=3')" ]
+  # next's own work: the handed-out issue saved for its land.
+  [ -s .coding-crew/solve-feature/3.issue.md ]
+  coder 3
+  run --separate-stderr bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 0 ] || { echo "$output $stderr"; return 1; }
+  [ "$output" = "$(printf 'pr=10\nred-files=\nreviewer-model=\nreview-base=\nnext-exit=3')" ]
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+}
+
+@test "next's exit 3 with an open PR merges the default branch as sync does and prints red-files=, reviewer-model= and review-base=" {
+  loop
+  main_moves fix.txt "a fix on main" && git checkout -q feature/feat
+  run --separate-stderr bash "$SCRIPT" next feat
+  [ "$status" -eq 3 ]
+  [ "$output" = "$(printf 'red-files=\nreviewer-model=\nreview-base=')" ]
+  git merge-base --is-ancestor origin/main HEAD
+  [ "$(cat "$STATE/checks.head")" = "$(git rev-parse HEAD)" ]
+  pushed
+  [ "$(cat .coding-crew/solve-feature/review.base)" = "$(git rev-parse HEAD)" ]
+}
+
+# conflicting_main — the branch and origin's main both change shared.txt.
+conflicting_main() {
+  echo mine > shared.txt && git add shared.txt && git commit -q -m "branch's shared"
+  main_moves shared.txt "main's version" && git checkout -q feature/feat
+}
+sync_conflict="stopped: sync failed: merging origin/main into feature/feat conflicts in shared.txt: the resolver did not finish it; finish it (resolve, git add, git commit --no-edit) or undo it with git merge --abort, then re-run"
+
+@test "next's exit 3 whose merge conflicts exits 4 printing conflicts= with sync's outcome and the merge in progress" {
+  loop
+  conflicting_main
+  run --separate-stderr bash "$SCRIPT" next feat
+  [ "$status" -eq 4 ]
+  [ "$(tail -1 <<<"$output")" = "conflicts=shared.txt" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "$sync_conflict" ]
+  git rev-parse -q --verify MERGE_HEAD >/dev/null
+}
+
+@test "land whose embedded sync conflicts exits 4 printing conflicts=, with sync's outcome" {
+  land_ready
+  run bash "$SCRIPT" land feat 2 feature/feat; [ "$status" -eq 0 ]
+  conflicting_main
+  coder 3
+  run --separate-stderr bash "$SCRIPT" land feat 3 feature/feat
+  [ "$status" -eq 4 ] || { echo "$output $stderr"; return 1; }
+  [ "$(head -1 <<<"$output")" = pr=10 ]
+  [ "$(tail -1 <<<"$output")" = "conflicts=shared.txt" ]
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "$sync_conflict" ]
+}
+
+@test "land whose embedded next fails exits 1 with the stop message and outcome next alone gives" {
+  land_ready
+  rm "$STATE/3.md"
+  run --separate-stderr bash "$SCRIPT" land feat 2 feature/feat
+  [ "$status" -eq 1 ]
+  local said="$stderr" ended; ended=$(cat .coding-crew/solve-feature/outcome)
+  [ "$ended" = "stopped: next failed: fetch 3 failed (see above)" ] || { echo "$ended"; return 1; }
+  run --separate-stderr bash "$SCRIPT" next feat
+  [ "$status" -eq 1 ]
+  [[ "$said" == *"$stderr" ]] || { echo "$said"; return 1; }
+  [ "$(cat .coding-crew/solve-feature/outcome)" = "$ended" ]
 }

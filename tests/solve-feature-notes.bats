@@ -21,11 +21,11 @@ coded_with_notes() {
   coder 2
   printf '%s\n' '### Merge order' '' '- merge after the infra PR' > "$D/coder.notes.md"
   run bash "$SCRIPT" land feat 2 feature/feat; [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  run bash "$SCRIPT" next feat; [ "$output" = 3 ]
+  [ "$(out next)" = 3 ]
   coder 3
   printf '%s\n' '- set the CREW_X repo variable' > "$D/coder.notes.md"
   run bash "$SCRIPT" land feat 3 feature/feat; [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$output" = pr=10 ]
+  [ "${lines[0]}" = pr=10 ]
 }
 note2=$'### Merge order\n\n- merge after the infra PR'
 note3='- set the CREW_X repo variable'
@@ -35,7 +35,7 @@ clean_review() { echo '[]' > "$D/pr-${1:-10}.attention.json"; }
 
 # --- land ------------------------------------------------------------------------------------
 
-@test "land adds a non-empty coder.notes.md to the run file as one coder entry under its ref and makes no gh pr edit call; pr= stays last" {
+@test "land adds a non-empty coder.notes.md to the run file as one coder entry under its ref and makes no gh pr edit call; pr= comes first" {
   coded_with_notes
   [ "$(jq -c . "$NF")" = "$(jq -cn --arg a "$note2" --arg b "$note3" '[{author: "coder", ref: "2", text: $a}, {author: "coder", ref: "3", text: $b}]')" ] || { cat "$NF"; return 1; }
   ! grep -q '^pr edit' "$STATE/gh.log" || false
@@ -313,7 +313,7 @@ clean_review() { echo '[]' > "$D/pr-${1:-10}.attention.json"; }
   run bash "$SCRIPT" start feat; [ "$status" -eq 0 ]
   run bash "$SCRIPT" next feat; coder 2
   echo '- tag a release once this merges' > "$D/coder.notes.md"
-  run bash "$SCRIPT" land feat 2 feature/feat; [ "$output" = pr=local ] || { echo "$output"; return 1; }
+  run bash "$SCRIPT" land feat 2 feature/feat; [ "${lines[0]}" = pr=local ] || { echo "$output"; return 1; }
   clean_review local
   run bash "$SCRIPT" describe feat local; [ "$output" = "needs-attention branch=feature/feat" ] || { echo "$output"; return 1; }
   section notes "$LOCAL" | grep -qx -- '- tag a release once this merges'

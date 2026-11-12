@@ -192,22 +192,8 @@ const readReport = (name) => {
   }
 };
 
-// The fixer's unfixed.json, as fix reads it: `[{finding?, why}]`, else the whole file as one entry's why.
-const whole = (n) => Number.isInteger(n) && n >= 0;
-const readUnfixed = (name) => {
-  const raw = text(name);
-  if (raw === null) return [];
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    parsed = null;
-  }
-  const ok =
-    Array.isArray(parsed) &&
-    parsed.every((u) => u && typeof u === "object" && !Array.isArray(u) && typeof u.why === "string" && (!("finding" in u) || whole(u.finding)));
-  return ok ? parsed.map((u) => ("finding" in u ? { finding: u.finding, why: u.why } : { why: u.why })) : [{ why: raw }];
-};
+// The fixer's unfixed.json, as fix rewrote it: `[{finding?, why}]`.
+const readUnfixed = (name) => JSON.parse(text(name) ?? "[]");
 
 result.rounds = rounds.map((r, i) => {
   const report = readReport(r.review);
