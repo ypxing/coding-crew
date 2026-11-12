@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: fewer orchestrator turns. `land` runs `next` itself and prints `next=<ref>`, or `next`'s exit-3
+  lines and `next-exit=3`; `next`'s exit 3 with a PR open merges the default branch in as `sync` does and prints
+  `review-base=` (exit 4 with `conflicts=` on a conflict), so `sync` is called only after the conflict resolver. The PR
+  writer runs on `coder-model=`. `fix` rewrites `pr-<n>.unfixed.json` to `[{finding?, why}]` before its first stop, and
+  `result.json` reads it as written (#761).
 - solve-feature: `result.json` gains `pr_text`, `{title, why, changes, risk}`, from a `pr-<n>.summary.json` the PR
   writer now also writes, so an embedding CI host reads the summary without parsing markdown; `pr_title`,
   `pr_summary` and the PR body's summary are rendered from it (falling back to `summary.md` as before). The guide's
