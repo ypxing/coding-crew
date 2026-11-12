@@ -102,12 +102,15 @@ finding with `tdd`; `solve-feature.sh fix` gates the fixes with the project's ch
 review had a CRITICAL, HIGH or MEDIUM finding and the fixer changed something, `fix` prints
 `review-again=yes` and the run reviews and fixes once more; the second fix is not reviewed again. What
 the last round did not fix is listed under `Needs attention` in the PR body, which keeps the PR a draft.
-Anything else a coder or the fixer says a person must do or decide goes into the PR body's `Notes for a person`
-section before its work is gated (a first coder's once its land opens the PR), so a stop never loses it, and `Needs attention` names the section. A note keeps the PR a draft, as the run
-ends `needs-attention`, until a person handles it: delete a note there once it is handled, and later runs keep it
-deleted; then mark the PR ready yourself, or re-run and let the run do it. The reviewer also judges each coder's note on the
-code at HEAD: one it finds settled moves to a `Settled by the review` section with its reason, where it no longer
-holds the draft; a fixer's note and your own text are never judged.
+Anything else a coder or the fixer says a person must do or decide is kept in the run's notes file,
+`.coding-crew/solve-feature/notes-<slug>.json`, as soon as its work lands (so a stop's `result.json` has it, and the
+stop names the file); `describe` renders it into the PR body's `Notes for a person` section, and `Needs attention`
+names the section. A note holds the draft for the run that wrote it: the run ends `needs-attention`, and a person handles
+it, then marks the PR ready themselves or re-runs, which counts it as an earlier note. The reviewer judges each coder's note on the code at HEAD: one it finds settled
+moves to a `Settled by the review` section with its reason, where it no longer holds the draft. From the second
+review round the fixer is handed the first round's note to keep, edit or drop, so the run keeps one fixer note. A
+re-run turns the previous body's notes, settled notes and earlier notes into one `Earlier runs' notes` section,
+copied verbatim (a note you deleted stays deleted, and your own text there is kept) as a record that holds no draft.
 
 ---
 

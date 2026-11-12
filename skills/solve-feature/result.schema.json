@@ -114,7 +114,7 @@
     },
     "needs_attention": {
       "type": "array",
-      "description": "What needs a person, one typed item per reason: the last finished fix round's items, then describe's. The run ends needs-attention exactly when this is non-empty, and the body's Needs attention lines are rendered from it; [] when the run ends ready or no review round ran. round is the 0-based index into rounds.",
+      "description": "What needs a person, one typed item per reason: the last finished fix round's items, then describe's, then this run's standing notes. The run ends needs-attention exactly when this is non-empty, and the body's Needs attention lines are rendered from it; [] when the run ends ready or no review round ran. round is the 0-based index into rounds.",
       "items": {
         "type": "object",
         "required": ["type"],
@@ -126,8 +126,8 @@
           "severity": { "type": ["string", "null"], "description": "unfixed: that finding's severity; null when it has none or the index is out of range." },
           "why": { "type": "string", "description": "unfixed: the fixer's reason, or the raw text of a file off its shape." },
           "paths": { "type": "array", "items": { "type": "string" }, "description": "reviewer_changed_tree: the paths discarded." },
-          "author": { "type": "string", "enum": ["coder", "fixer", "person"], "description": "note: from the script-written header above it; person for text under none." },
-          "text": { "type": "string", "description": "note: the note's text, as the PR body's notes section holds it." },
+          "author": { "type": "string", "enum": ["coder", "fixer"], "description": "note: who wrote it, an issue's coder or the review's fixer." },
+          "text": { "type": "string", "description": "note: the note's text as its writer left it, from the run's notes file (.coding-crew/solve-feature/notes-<slug>.json); only this run's notes the review did not settle, on every ending, stops included." },
           "count": { "type": "integer", "description": "unresolved_threads: the PR's unresolved review threads." },
           "url": { "type": "string", "description": "unresolved_threads: the PR's URL." }
         }

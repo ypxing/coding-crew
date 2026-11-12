@@ -6,6 +6,13 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- solve-feature: the run's notes for a person live in `.coding-crew/solve-feature/notes-<slug>.json`, which only the
+  script writes; `describe` is the only writer of the PR body and renders the notes, the settled notes and one flat
+  `Earlier runs' notes` section (a re-run's copy of the previous body's notes, a record that holds no draft) from it.
+  `result.json` carries the notes as `note` items on every ending, stops included; a second fix round's fixer is
+  handed the first round's note to keep, edit or drop, so one fixer note stands. Text typed into the notes section
+  no longer holds the draft (`author: "person"` is gone) (#759).
+
 ## [2.3.14]
 
 - solve-issue: Step 3's narrow read and search are now commands the coder runs instead of prose: one call prints each
