@@ -245,6 +245,21 @@ out_dir() { ls -d "$R"/.coding-crew/scratch/eval-reviewer-misses/*/ | tail -1; }
   grep -qF 'Origin: #182' "$f"
 }
 
+@test "the unasked-addition cases parse: one expected miss, and a clean control with none" {
+  run env MOD="$REPO_ROOT/scripts/eval-reviewer-misses.mjs" DIR="$REPO_ROOT/scripts/eval-reviewer-misses/cases" node -e '
+    import(process.env.MOD).then((m) => {
+      const read = (n) => m.parseCase(n, require("fs").readFileSync(`${process.env.DIR}/${n}.md`, "utf8"));
+      const miss = read("unasked-public-api"), ctl = read("unasked-private-helper");
+      if (miss.mode !== "branch" || ctl.mode !== "branch") throw new Error("both cases are branch cases");
+      if (miss.misses.length !== 1 || miss.clean) throw new Error(`miss case: ${miss.misses.length} misses`);
+      if (!/priceOfFormatted/.test(miss.misses[0].text)) throw new Error("the miss does not name priceOfFormatted");
+      if (!ctl.clean || ctl.misses.length) throw new Error("the control is not clean with no misses");
+    }).catch((e) => { console.error(e.message); process.exit(1); });
+  '
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
 @test "the docker-deps-isolation cases replay PR #382's two escapes; force-keeps-stamp carries #380's note" {
   local dir="$REPO_ROOT/scripts/eval-reviewer-misses/cases" c
   for c in force-keeps-stamp shim-mutual-exec; do
