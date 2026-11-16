@@ -1,0 +1,2 @@
+# Functions other modules may call. Anything not listed here is private to books.js.
+getBook

@@ -1,0 +1,5 @@
+{
+  "name": "bookshop",
+  "private": true,
+  "scripts": { "test": "node --test" }
+}
