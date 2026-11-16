@@ -11,4 +11,12 @@ function getBook(id) {
   return book;
 }
 
-module.exports = { getBook };
+function priceOf(id) {
+  return Math.round(getBook(id).price * 100);
+}
+
+function priceOfFormatted(id) {
+  return `$${getBook(id).price.toFixed(2)}`;
+}
+
+module.exports = { getBook, priceOf, priceOfFormatted };
