@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- crew-review: an addition the spec did not ask for is now a finding even when the change announces it — HIGH when
+  it adds public API or another contract others rely on, else LOW; the reviewer eval gains a miss case and an
+  over-flag control for it (#770).
+
 ## [2.4.0]
 
 - **Breaking** — setup-coding-crew, solve-feature: coding-crew no longer ships a GitHub Actions workflow. The reusable

@@ -174,7 +174,8 @@ No findings is a valid answer.
 
 Severity: CRITICAL loses data, opens a security hole or breaks the main path; HIGH is wrong behaviour a
 user hits; MEDIUM is a broken error or recovery path, or a broken documented rule; LOW is a wrong
-doc or message, or dead code.
+doc or message, or dead code. An addition the spec did not ask for (question 1) is a finding even when the change's
+text announces it: HIGH when it adds public API or another contract others come to rely on, else LOW.
 
 Finish by writing the report as JSON to the path you were given, or printing it when you were given none:
 
